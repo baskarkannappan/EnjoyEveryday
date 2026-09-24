@@ -1,0 +1,111 @@
+@page "/classrooms"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrgService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+ 
+    <div class="page-header">
+
+        <div>
+
+            <div class="eyebrow">
+                ENVIRONMENT
+            </div>
+
+            <h2>
+                Classrooms
+            </h2>
+
+            <p>
+                Experiences begin with the environment.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div id="classroomGrid" class="people-grid">
+
+        <div class="person">
+
+            <div class="person-avatar">
+                ▣
+            </div>
+
+            <h3>
+                Bluebirds
+            </h3>
+
+            <p>
+                18
+                children ·
+                Ages 3–4
+            </p>
+
+            <p>
+                Teacher: Priya
+            </p>
+
+        </div>
+
+
+        <div class="person">
+
+            <div class="person-avatar">
+                ◇
+            </div>
+
+            <h3>
+                Available materials
+            </h3>
+
+            <p>
+                Blocks · Paper · Crayons
+            </p>
+
+        </div>
+
+
+        <div class="person">
+
+            <div class="person-avatar">
+                ✦
+            </div>
+
+            <h3>
+                Current interests
+            </h3>
+
+            <p>
+                Animals · Building · Movement
+            </p>
+
+        </div>
+
+    </div>
+ 
+
+@code {
+    private IEnumerable<Branch>? _branches;
+    private List<Classroom> _classrooms = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // For development, we assume Organization ID is fetched from context.
+        // We'll fetch the first org for the current tenant.
+        var orgs = await OrgService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            _branches = await BranchService.GetBranchesAsync(org.Id);
+            foreach (var branch in _branches)
+            {
+                var branchClassrooms = await ClassroomService.GetClassroomsAsync(branch.Id);
+                _classrooms.AddRange(branchClassrooms);
+            }
+        }
+    }
+}

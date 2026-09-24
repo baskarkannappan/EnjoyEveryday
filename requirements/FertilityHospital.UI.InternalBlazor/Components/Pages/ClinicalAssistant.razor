@@ -1,0 +1,76 @@
+@page "/assistant"
+@using FMS.Application.DTOs
+
+<PageTitle>AI Assistant</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15" Style="height: 80vh;">
+    <h2>Clinical AI Assistant</h2>
+    
+    <FluentCard Style="flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+        @foreach (var msg in ChatHistory)
+        {
+            <div style="padding: 10px; border-radius: 8px; max-width: 80%; @(msg.IsUser ? "align-self: flex-end; background-color: var(--accent-fill-rest); color: white;" : "align-self: flex-start; background-color: var(--neutral-fill-layer-alt);")">
+                <strong>@(msg.IsUser ? "You" : "Assistant")</strong>
+                <p style="margin: 5px 0 0 0;">@msg.Text</p>
+            </div>
+        }
+    </FluentCard>
+
+    <div style="display: flex; gap: 10px; width: 100%;">
+        <FluentTextInput @bind-Value="CurrentMessage" Placeholder="Ask a question..." Style="flex-grow: 1;" />
+        <FluentButton  IconStart="@(new Icons.Regular.Size16.Send())" OnClick="SendMessage">Send</FluentButton>
+    </div>
+</FluentStack>
+
+@code {
+    private string CurrentMessage { get; set; } = string.Empty;
+    private List<ChatMessage> ChatHistory = new();
+
+    protected override void OnInitialized()
+    {
+        ChatHistory.Add(new ChatMessage { IsUser = false, Text = "Hello! I am your clinical assistant. How can I help you today?" });
+    }
+
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private void SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentMessage)) return;
+
+        var messageToSend = CurrentMessage;
+        ChatHistory.Add(new ChatMessage { IsUser = true, Text = messageToSend });
+        CurrentMessage = string.Empty;
+        
+        // Use background task so we don't block the UI thread during network call
+        _ = SendMessageToApi(messageToSend);
+    }
+
+    private async Task SendMessageToApi(string message)
+    {
+        try
+        {
+            var response = await Http.PostAsJsonAsync("http://localhost:5187/api/assistant/chat", new { Message = message });
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ChatResponseDto>();
+                ChatHistory.Add(new ChatMessage { IsUser = false, Text = result?.Message ?? "No response" });
+            }
+            else
+            {
+                ChatHistory.Add(new ChatMessage { IsUser = false, Text = $"Error: {response.StatusCode}" });
+            }
+        }
+        catch (Exception ex)
+        {
+            ChatHistory.Add(new ChatMessage { IsUser = false, Text = $"Exception: {ex.Message}" });
+        }
+        
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public class ChatMessage
+    {
+        public bool IsUser { get; set; }
+        public string Text { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,98 @@
+@page "/patients/{PatientId:guid}/timeline"
+@implements IAsyncDisposable
+@using FMS.Application.Clinical.Queries
+@using FMS.Application.Clinical.Queries
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Microsoft.AspNetCore.SignalR.Client
+
+<PageTitle>Patient Timeline</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <FluentButton IconStart="@(new Icons.Regular.Size16.ArrowLeft())" OnClick="GoBack">Back</FluentButton>
+        <h2>Timeline for Patient: @PatientId</h2>
+    </div>
+
+    @if (_isLoading)
+    {
+        <FluentSpinner />
+    }
+    else if (!_events.Any())
+    {
+        <p>No timeline events found for this patient.</p>
+    }
+    else
+    {
+        <FluentCard Style="padding: 20px;">
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="20">
+                @foreach (var evt in _events)
+                {
+                    <div style="border-left: 3px solid var(--accent-fill-rest); padding-left: 15px;">
+                        <strong style="color: var(--neutral-foreground-hint);">@evt.EventDate.ToLocalTime().ToString("g")</strong>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <h4>@evt.EventType</h4>
+                            <FluentBadge>@evt.Status</FluentBadge>
+                        </div>
+                        <p>@evt.Description</p>
+                    </div>
+                }
+            </FluentStack>
+        </FluentCard>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public Guid PatientId { get; set; }
+    [Inject] private NavigationManager NavManager { get; set; } = default!;
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private HubConnection? _hubConnection;
+    private List<TimelineEventDto> _events = new();
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        
+        // Initial load
+        try
+        {
+            var result = await Http.GetFromJsonAsync<List<TimelineEventDto>>($"http://localhost:5187/api/patients/{PatientId}/timeline");
+            if (result != null)
+            {
+                _events = result;
+            }
+        }
+        catch
+        {
+            // fallback
+        }
+        
+        _isLoading = false;
+
+        // SignalR connect
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavManager.ToAbsoluteUri("http://localhost:5187/hubs/clinical"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<TimelineEventDto>("ReceiveTimelineEvent", (evt) =>
+        {
+            _events.Insert(0, evt);
+            InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+    }
+
+    private void GoBack()
+    {
+        NavManager.NavigateTo("/patients");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is null) return;
+        await _hubConnection.DisposeAsync();
+    }
+}

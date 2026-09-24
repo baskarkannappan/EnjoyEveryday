@@ -1,0 +1,270 @@
+@page "/embryology"
+@using FMS.Application.DTOs
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+
+<PageTitle>Embryology Dashboard</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <h2>Embryology Lineage</h2>
+
+    <div style="margin-bottom: 10px;">
+        <FluentButton IconStart="@(new Icons.Regular.Size16.Add())" OnClick="OpenFertilizeDialog" Appearance="ButtonAppearance.Primary">New Fertilization</FluentButton>
+    </div>
+
+    @if (embryos == null)
+    {
+        <FluentSpinner />
+    }
+    else
+    {
+        <FluentDataGrid Items="@embryos.AsQueryable()" TGridItem="EmbryoDto">
+            <PropertyColumn Property="@(p => p.Id)" Title="Embryo ID" Sortable="true" />
+            <PropertyColumn Property="@(p => p.TreatmentCycleId)" Title="Treatment Cycle" Sortable="true" />
+            <PropertyColumn Property="@(p => p.OocyteSampleId)" Title="Oocyte Parent" />
+            <PropertyColumn Property="@(p => p.SpermSampleId)" Title="Sperm Parent" />
+            <PropertyColumn Property="@(p => p.CurrentGrade)" Title="Grade" Sortable="true" />
+            <TemplateColumn Title="State">
+                <FluentBadge>@context.State</FluentBadge>
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.FertilizationDate)" Title="Fertilized On" Format="yyyy-MM-dd HH:mm" />
+            <TemplateColumn Title="Actions">
+                <FluentButton IconStart="@(new Icons.Regular.Size16.Star())" Title="Grade Embryo" OnClick="@(() => OpenGradeDialogAsync(context.Id))" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+<FluentDialog @ref="_fertilizeDialog" Modal="true" Hidden="@(!_isDialogOpen)" OnDismiss="CloseDialog">
+    <div style="padding: 10px;">
+        <h3>Fertilize Oocytes</h3>
+        
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+            <div>
+                <label>Treatment Cycle ID:</label><br />
+                <input type="text" @bind="_request.TreatmentCycleId" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            <div>
+                <label>Oocyte Sample ID:</label><br />
+                <input type="text" @bind="_request.OocyteSampleId" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            <div>
+                <label>Sperm Sample ID:</label><br />
+                <input type="text" @bind="_request.SpermSampleId" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="color: red; margin-top: 10px;">@_errorMessage</div>
+            }
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div style="color: green; margin-top: 10px;">@_successMessage</div>
+            }
+        </FluentStack>
+
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SubmitFertilization">Fertilize</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Default" OnClick="CloseDialog">Cancel</FluentButton>
+        </div>
+    </div>
+</FluentDialog>
+<FluentDialog @ref="_gradeDialog" Modal="true" Hidden="@(!_isGradeDialogOpen)" OnDismiss="CloseGradeDialog">
+    <div style="padding: 10px;">
+        <h3>Grade Embryo</h3>
+        
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+            <p>Embryo ID: @_gradeRequest.EmbryoId</p>
+            <div>
+                <label>Grading Score:</label><br />
+                <select @bind="_gradeRequest.Grading" class="fluent-input" style="width: 100%; padding: 5px;">
+                    <option value="A+">A+</option>
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                    <option value="D">D</option>
+                </select>
+            </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="color: red; margin-top: 10px;">@_errorMessage</div>
+            }
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div style="color: green; margin-top: 10px;">@_successMessage</div>
+            }
+        </FluentStack>
+
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SubmitGrade">Save Grade</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Default" OnClick="CloseGradeDialog">Cancel</FluentButton>
+        </div>
+    </div>
+</FluentDialog>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private List<EmbryoDto>? embryos;
+    private FluentDialog _fertilizeDialog = default!;
+    private FluentDialog _gradeDialog = default!;
+    private bool _isDialogOpen = false;
+    private bool _isGradeDialogOpen = false;
+    
+    // Using string properties for inputs and parsing them manually for simplicity in the UI form
+    private FertilizeFormModel _request = new();
+    private GradeEmbryoRequestDto _gradeRequest = new();
+
+    private string _errorMessage = string.Empty;
+    private string _successMessage = string.Empty;
+
+    public class FertilizeFormModel
+    {
+        public string TreatmentCycleId { get; set; } = string.Empty;
+        public string OocyteSampleId { get; set; } = string.Empty;
+        public string SpermSampleId { get; set; } = string.Empty;
+    }
+
+    private HubConnection? _hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEmbryosAsync();
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5187/hubs/clinical")
+            .Build();
+
+        _hubConnection.On<Guid, string>("EmbryoGraded", async (embryoId, newGrade) =>
+        {
+            _successMessage = $"[Real-Time] Embryo {embryoId} was graded as {newGrade}!";
+            await LoadEmbryosAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        try 
+        {
+            await _hubConnection.StartAsync();
+        } 
+        catch 
+        {
+        }
+    }
+
+    private async Task LoadEmbryosAsync()
+    {
+        try
+        {
+            embryos = await Http.GetFromJsonAsync<List<EmbryoDto>>("http://localhost:5187/api/embryos");
+        }
+        catch
+        {
+            // fallback
+            embryos = new List<EmbryoDto>();
+        }
+    }
+
+    private void OpenFertilizeDialog()
+    {
+        _request = new FertilizeFormModel();
+        _errorMessage = string.Empty;
+        _successMessage = string.Empty;
+        _isDialogOpen = true;
+    }
+
+    private void CloseDialog()
+    {
+        _isDialogOpen = false;
+    }
+
+    private async Task SubmitFertilization()
+    {
+        _errorMessage = string.Empty;
+        _successMessage = string.Empty;
+
+        try
+        {
+            if (!Guid.TryParse(_request.TreatmentCycleId, out var cycleId) ||
+                !Guid.TryParse(_request.OocyteSampleId, out var oocyteId) ||
+                !Guid.TryParse(_request.SpermSampleId, out var spermId))
+            {
+                _errorMessage = "Please enter valid GUIDs for all fields.";
+                return;
+            }
+
+            var dto = new FertilizeRequestDto
+            {
+                TreatmentCycleId = cycleId,
+                OocyteSampleId = oocyteId,
+                SpermSampleId = spermId
+            };
+
+            var response = await Http.PostAsJsonAsync("http://localhost:5187/api/clinical/fertilize", dto);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _successMessage = "Oocytes fertilized successfully!";
+                // Reload list to see new embryos
+                await LoadEmbryosAsync();
+                await InvokeAsync(StateHasChanged);
+                
+                await Task.Delay(1500);
+                CloseDialog();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                // Likely a Consent or Scope exception
+                var problemDetails = await response.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>();
+                _errorMessage = problemDetails?.Detail ?? "Authorization or Consent failed.";
+            }
+            else
+            {
+                _errorMessage = "An unexpected error occurred.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private void OpenGradeDialogAsync(Guid embryoId)
+    {
+        _gradeRequest = new GradeEmbryoRequestDto { EmbryoId = embryoId, Grading = "A" };
+        _errorMessage = "";
+        _successMessage = "";
+        _isGradeDialogOpen = true;
+    }
+    
+    private void CloseGradeDialog()
+    {
+        _isGradeDialogOpen = false;
+    }
+
+    private async Task SubmitGrade()
+    {
+        var response = await Http.PostAsJsonAsync("http://localhost:5187/api/embryology/grade", _gradeRequest);
+        
+        if (response.IsSuccessStatusCode)
+        {
+            _successMessage = "Embryo graded successfully.";
+            _errorMessage = "";
+            await LoadEmbryosAsync();
+            await Task.Delay(1500);
+            CloseGradeDialog();
+        }
+        else
+        {
+            _errorMessage = "Failed to grade embryo.";
+            _successMessage = "";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

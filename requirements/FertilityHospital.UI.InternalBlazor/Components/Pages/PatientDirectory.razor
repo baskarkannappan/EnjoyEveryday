@@ -1,0 +1,133 @@
+@page "/patients"
+@using FMS.Application.DTOs
+
+<PageTitle>Patient Directory</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <h2>Patient Directory</h2>
+        <FluentButton Appearance="ButtonAppearance.Primary" OnClick="OpenNewPatientDialog">New Patient</FluentButton>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage)) { <div style="color: red;">@_errorMessage</div> }
+    @if (!string.IsNullOrEmpty(_successMessage)) { <div style="color: green;">@_successMessage</div> }
+
+    @if (Patients == null)
+    {
+        <p>Loading patients...</p>
+    }
+    else
+    {
+        <FluentDataGrid Items="@Patients" TGridItem="PatientDto" ResizableColumns="true">
+            <PropertyColumn Property="@(p => p.Id)" Title="ID" Sortable="true" />
+            <PropertyColumn Property="@(p => p.Name)" Title="Name" Sortable="true" />
+            <PropertyColumn Property="@(p => p.DateOfBirth)" Title="DOB" />
+            <PropertyColumn Property="@(p => p.Status)" Title="Status" />
+            <TemplateColumn Title="Actions">
+                <FluentButton OnClick="@( _ => ViewTimeline(context.Id) )">View</FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+<FluentDialog @ref="_patientDialog" Modal="true" Hidden="@(!_isDialogOpen)" OnDismiss="CloseDialog">
+    <div style="padding: 10px;">
+        <h3>Register New Patient</h3>
+        
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+            <div>
+                <label>First Name:</label><br />
+                <input type="text" @bind="_request.FirstName" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            <div>
+                <label>Last Name:</label><br />
+                <input type="text" @bind="_request.LastName" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            <div>
+                <label>Date of Birth:</label><br />
+                <input type="date" @bind="_request.DateOfBirth" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="color: red; margin-top: 10px;">@_errorMessage</div>
+            }
+        </FluentStack>
+
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SubmitPatient">Save</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Default" OnClick="CloseDialog">Cancel</FluentButton>
+        </div>
+    </div>
+</FluentDialog>
+
+@code {
+    [Inject] private NavigationManager NavManager { get; set; } = default!;
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private IQueryable<PatientDto>? Patients;
+    private FluentDialog _patientDialog = default!;
+    private bool _isDialogOpen = false;
+    private RegisterPatientRequestDto _request = new();
+    private string _errorMessage = "";
+    private string _successMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPatientsAsync();
+    }
+
+    private async Task LoadPatientsAsync()
+    {
+        try
+        {
+            var result = await Http.GetFromJsonAsync<List<PatientDto>>("http://localhost:5187/api/patients");
+            if (result != null)
+            {
+                Patients = result.AsQueryable();
+            }
+        }
+        catch { }
+    }
+
+    private void OpenNewPatientDialog()
+    {
+        _request = new RegisterPatientRequestDto { DateOfBirth = DateTime.Today.AddYears(-30) };
+        _errorMessage = "";
+        _successMessage = "";
+        _isDialogOpen = true;
+    }
+
+    private void CloseDialog()
+    {
+        _isDialogOpen = false;
+    }
+
+    private async Task SubmitPatient()
+    {
+        _errorMessage = "";
+        if (string.IsNullOrWhiteSpace(_request.FirstName) || string.IsNullOrWhiteSpace(_request.LastName))
+        {
+            _errorMessage = "First and Last name are required.";
+            return;
+        }
+
+        var response = await Http.PostAsJsonAsync("http://localhost:5187/api/patients", _request);
+        if (response.IsSuccessStatusCode)
+        {
+            _successMessage = "Patient registered successfully!";
+            await LoadPatientsAsync();
+            _isDialogOpen = false;
+            // Clear message after a short delay
+            _ = Task.Delay(3000).ContinueWith(_ => { _successMessage = ""; InvokeAsync(StateHasChanged); });
+        }
+        else
+        {
+            _errorMessage = $"Failed to register patient. Status: {response.StatusCode}";
+        }
+    }
+
+    private void ViewTimeline(string id)
+    {
+        NavManager.NavigateTo($"/patients/{id}/timeline");
+    }
+}

@@ -1,0 +1,40 @@
+@page "/consents"
+@using FMS.Application.DTOs
+
+<PageTitle>Consents</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <h2>Clinical Consents</h2>
+    </div>
+
+    @if (ConsentsList == null)
+    {
+        <p>Loading consents...</p>
+    }
+    else
+    {
+        <FluentDataGrid Items="@ConsentsList" TGridItem="ConsentDto" ResizableColumns="true">
+            <PropertyColumn Property="@(p => p.Id)" Title="ID" Sortable="true" />
+            <PropertyColumn Property="@(p => p.PatientName)" Title="Patient Name" Sortable="true" />
+            <PropertyColumn Property="@(p => p.ProcedureName)" Title="Procedure/Title" Sortable="true" />
+            <PropertyColumn Property="@(p => p.Status)" Title="Status" Sortable="true" />
+            <PropertyColumn Property="@(p => p.ConsentedOn)" Title="Consented On" Sortable="true" />
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private IQueryable<ConsentDto>? ConsentsList;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Http.GetFromJsonAsync<List<ConsentDto>>("http://localhost:5187/api/consents");
+        if (result != null)
+        {
+            ConsentsList = result.AsQueryable();
+        }
+    }
+}

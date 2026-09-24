@@ -1,0 +1,234 @@
+@page "/inventory"
+@using FMS.Application.DTOs.Cryobank
+@using FMS.Application.Cryobank.Commands
+@using Microsoft.FluentUI.AspNetCore.Components
+
+<PageTitle>Cryobank Inventory</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <h2>Cryobank Inventory</h2>
+    
+    <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" VerticalAlignment="VerticalAlignment.Center">
+        <input type="text" @bind="_assetIdInput" placeholder="Enter Asset ID (Guid)..." style="width: 300px; padding: 5px;" />
+        <FluentButton Appearance="ButtonAppearance.Primary" OnClick="LookupAssetLocation">Lookup Location</FluentButton>
+    </FluentStack>
+
+    <FluentGrid Spacing="3">
+        <FluentGridItem xs="12" sm="4">
+            <FluentCard>
+                <FluentStack Orientation="Orientation.Horizontal" HorizontalAlignment="HorizontalAlignment.SpaceBetween">
+                    <h4 style="margin-top:0">Location Hierarchy</h4>
+                    <FluentButton Appearance="ButtonAppearance.Outline" OnClick="() => _showBuildTank = !_showBuildTank">
+                        @(_showBuildTank ? "Cancel" : "Build Tank")
+                    </FluentButton>
+                </FluentStack>
+
+                @if (_showBuildTank)
+                {
+                    <div style="margin-top: 10px; padding: 10px; border: 1px dashed var(--neutral-stroke-rest);">
+                        <label>Tank Name</label><br/>
+                        <input type="text" @bind="_buildTankCommand.TankName" class="fluent-input" style="width: 100%; padding: 5px; margin-bottom: 5px;" />
+                        
+                        <label>Canisters</label><br/>
+                        <input type="number" @bind="_buildTankCommand.Canisters" class="fluent-input" style="width: 100%; padding: 5px; margin-bottom: 5px;" />
+                        
+                        <label>Canes/Canister</label><br/>
+                        <input type="number" @bind="_buildTankCommand.CanesPerCanister" class="fluent-input" style="width: 100%; padding: 5px; margin-bottom: 5px;" />
+                        
+                        <label>Goblets/Cane</label><br/>
+                        <input type="number" @bind="_buildTankCommand.GobletsPerCane" class="fluent-input" style="width: 100%; padding: 5px; margin-bottom: 5px;" />
+                        
+                        <label>Visotubes/Goblet</label><br/>
+                        <input type="number" @bind="_buildTankCommand.VisotubesPerGoblet" class="fluent-input" style="width: 100%; padding: 5px; margin-bottom: 5px;" />
+                        <FluentButton Style="margin-top:10px" Appearance="ButtonAppearance.Primary" OnClick="BuildTank">Create</FluentButton>
+                    </div>
+                }
+
+                <div style="margin-top: 15px; max-height: 500px; overflow-y: auto;">
+                    <FluentTreeView>
+                        @foreach (var tank in _tanks)
+                        {
+                            <FluentTreeItem Text="@($"Tank: {tank.Name} ({tank.Status})")" Expanded="false">
+                                @foreach (var canister in tank.Canisters)
+                                {
+                                    <FluentTreeItem Text="@($"Canister {canister.Index}")">
+                                        @foreach (var cane in canister.Canes)
+                                        {
+                                            <FluentTreeItem Text="@($"Cane {cane.Identifier}")">
+                                                @foreach (var goblet in cane.Goblets)
+                                                {
+                                                    <FluentTreeItem Text="@($"Goblet {goblet.Index}")">
+                                                        @foreach (var visotube in goblet.Visotubes)
+                                                        {
+                                                            <FluentTreeItem Text="@($"Viso {visotube.Index} {(visotube.OccupantId.HasValue ? "[Occupied]" : "[Empty]")}")" 
+                                                                          OnClick="() => SelectVisotube(tank, visotube)" />
+                                                        }
+                                                    </FluentTreeItem>
+                                                }
+                                            </FluentTreeItem>
+                                        }
+                                    </FluentTreeItem>
+                                }
+                            </FluentTreeItem>
+                        }
+                    </FluentTreeView>
+                </div>
+            </FluentCard>
+        </FluentGridItem>
+        <FluentGridItem xs="12" sm="8">
+            <FluentCard>
+                <h4 style="margin-top:0">Action Panel</h4>
+
+                @if (_selectedVisotube != null)
+                {
+                    <div style="padding: 15px; border: 1px solid var(--accent-fill-rest); border-radius: 4px; margin-bottom: 15px;">
+                        <h5>Selected Visotube: @_selectedVisotube.Id</h5>
+                        @if (_selectedVisotube.OccupantId.HasValue)
+                        {
+                            <p style="color:red">This visotube is occupied by: @_selectedVisotube.OccupantId</p>
+                        }
+                        else
+                        {
+                            <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+                                <p>This visotube is empty. You can assign an asset to it.</p>
+                                <label>Asset ID (Embryo or Sample)</label>
+                                <input type="text" @bind="_assignAssetId" class="fluent-input" style="width: 100%; padding: 5px;" />
+                                <FluentButton Appearance="ButtonAppearance.Primary" OnClick="AssignAsset">Assign Asset</FluentButton>
+                            </FluentStack>
+                        }
+                    </div>
+                }
+
+                <h4 style="margin-top:15px">Search Results</h4>
+                @if (_foundLocation != null)
+                {
+                    <div style="padding: 15px; border: 1px solid var(--neutral-stroke-rest); border-radius: 4px;">
+                        <p><strong>Tank ID:</strong> @_foundLocation.TankId</p>
+                        <p><strong>Tank Name:</strong> @_foundLocation.TankName</p>
+                        <p><strong>Visotube ID:</strong> @_foundLocation.VisotubeId</p>
+                        <p><strong>Visotube Index:</strong> @_foundLocation.VisotubeIndex</p>
+                    </div>
+                }
+                else if (_errorMessage != null)
+                {
+                    <p style="color: red;">@_errorMessage</p>
+                }
+                else
+                {
+                    <p>Enter an Asset ID to look up its location.</p>
+                }
+            </FluentCard>
+        </FluentGridItem>
+    </FluentGrid>
+</FluentStack>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private string _assetIdInput = string.Empty;
+    private AssetLocationDto? _foundLocation;
+    private string? _errorMessage;
+
+    private List<TankDto> _tanks = new();
+    private bool _showBuildTank = false;
+    private BuildTankHierarchyCommand _buildTankCommand = new() { Canisters = 2, CanesPerCanister = 5, GobletsPerCane = 2, VisotubesPerGoblet = 5 };
+
+    private TankDto? _selectedTank;
+    private VisotubeDto? _selectedVisotube;
+    private string _assignAssetId = string.Empty;
+
+    public class AssetLocationDto
+    {
+        public Guid TankId { get; set; }
+        public string TankName { get; set; } = string.Empty;
+        public Guid VisotubeId { get; set; }
+        public int VisotubeIndex { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTanksAsync();
+    }
+
+    private async Task LoadTanksAsync()
+    {
+        try
+        {
+            var result = await Http.GetFromJsonAsync<List<TankDto>>("http://localhost:5187/api/cryobank/tanks");
+            if (result != null) _tanks = result;
+        }
+        catch { }
+    }
+
+    private async Task BuildTank()
+    {
+        try
+        {
+            await Http.PostAsJsonAsync("http://localhost:5187/api/cryobank/tanks", _buildTankCommand);
+            _showBuildTank = false;
+            await LoadTanksAsync();
+        }
+        catch { }
+    }
+
+    private void SelectVisotube(TankDto tank, VisotubeDto visotube)
+    {
+        _selectedTank = tank;
+        _selectedVisotube = visotube;
+        _assignAssetId = string.Empty;
+    }
+
+    private async Task AssignAsset()
+    {
+        if (_selectedTank != null && _selectedVisotube != null && Guid.TryParse(_assignAssetId, out var assetId))
+        {
+            var command = new AssignAssetToVisotubeCommand
+            {
+                TankId = _selectedTank.Id,
+                VisotubeId = _selectedVisotube.Id,
+                OccupantId = assetId
+            };
+            try
+            {
+                var response = await Http.PostAsJsonAsync("http://localhost:5187/api/cryobank/assign", command);
+                if (response.IsSuccessStatusCode)
+                {
+                    await LoadTanksAsync();
+                    _selectedVisotube = null;
+                }
+                else
+                {
+                    _errorMessage = "Failed to assign asset (maybe already occupied?)";
+                }
+            }
+            catch { }
+        }
+    }
+
+    private async Task LookupAssetLocation()
+    {
+        _foundLocation = null;
+        _errorMessage = null;
+
+        if (Guid.TryParse(_assetIdInput, out var assetId))
+        {
+            try
+            {
+                // the endpoint we mapped earlier: /api/cryobank/inventory/{assetId}
+                var result = await Http.GetFromJsonAsync<AssetLocationDto>($"http://localhost:5187/api/cryobank/inventory/{assetId}");
+                if (result != null)
+                {
+                    _foundLocation = result;
+                }
+            }
+            catch
+            {
+                _errorMessage = "Asset location not found or server error.";
+            }
+        }
+        else
+        {
+            _errorMessage = "Please enter a valid GUID for the Asset ID.";
+        }
+    }
+}

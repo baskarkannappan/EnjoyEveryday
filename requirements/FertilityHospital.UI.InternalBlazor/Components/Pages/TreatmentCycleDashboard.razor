@@ -1,0 +1,148 @@
+@page "/treatments"
+@using FMS.Application.DTOs
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+
+<PageTitle>Treatment Cycles</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <h2>Treatment Cycles</h2>
+    
+    <div style="margin-bottom: 10px;">
+        <FluentButton IconStart="@(new Icons.Regular.Size16.Add())" OnClick="StartNewCycle">Start New Cycle</FluentButton>
+    </div>
+    
+    @if (!string.IsNullOrEmpty(_errorMessage)) { <div style="color: red;">@_errorMessage</div> }
+    @if (!string.IsNullOrEmpty(_successMessage)) { <div style="color: green;">@_successMessage</div> }
+
+    @if (treatments == null)
+    {
+        <FluentSpinner />
+    }
+    else
+    {
+        <FluentDataGrid Items="@treatments.AsQueryable()" TGridItem="TreatmentDto">
+            <PropertyColumn Property="@(p => p.Id)" Title="ID" Sortable="true" />
+            <PropertyColumn Property="@(p => p.PatientId)" Title="Patient ID" />
+            <PropertyColumn Property="@(p => p.Type)" Title="Type" Sortable="true" />
+            <TemplateColumn Title="Status">
+                <FluentBadge>@context.State</FluentBadge>
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.StartDate)" Title="Start Date" />
+            <TemplateColumn Title="Actions">
+                <FluentButton IconStart="@(new Icons.Regular.Size16.Play())" Title="Start Stimulation" Disabled="@(context.State != "Planned")" OnClick="@(() => StartStimulationAsync(context.Id))" />
+                <FluentButton IconStart="@(new Icons.Regular.Size16.Checkmark())" Title="Complete" Disabled="@(context.State == "Completed" || context.State == "Cancelled")" />
+                <FluentButton IconStart="@(new Icons.Regular.Size16.Dismiss())" Title="Cancel" Disabled="@(context.State == "Completed" || context.State == "Cancelled")" />
+                <FluentButton IconStart="@(new Icons.Regular.Size16.Eye())" Title="View Events" OnClick="@(() => SelectCycle(context.Id))" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+@if (!string.IsNullOrEmpty(_selectedCycleId) && Guid.TryParse(_selectedCycleId, out var parsedGuid))
+{
+    <ClinicalEventsSection TreatmentCycleId="parsedGuid" Events="_clinicalEvents" />
+}
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private List<TreatmentDto>? treatments;
+    private string _errorMessage = "";
+    private string _successMessage = "";
+    private HubConnection? _hubConnection;
+    private string _selectedCycleId = "";
+    private IReadOnlyList<FMS.Application.Queries.Clinical.Events.ClinicalEventDto>? _clinicalEvents;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            await LoadDataAsync();
+        }
+        catch
+        {
+            // Fallback mock data if API is not yet wired
+            treatments = new List<TreatmentDto>
+            {
+                new TreatmentDto { Id = "TC-1001", PatientId = "P-1001", Type = "IVF", State = "Planned", StartDate = DateTime.Now.AddDays(-2) },
+                new TreatmentDto { Id = "TC-1002", PatientId = "P-1002", Type = "IUI", State = "Stimulation", StartDate = DateTime.Now.AddDays(-5) },
+                new TreatmentDto { Id = "TC-1003", PatientId = "P-1003", Type = "FET", State = "Completed", StartDate = DateTime.Now.AddDays(-14) }
+            };
+        }
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5187/hubs/clinical")
+            .Build();
+
+        _hubConnection.On<Guid>("CycleStarted", async (cycleId) =>
+        {
+            _successMessage = $"[Real-Time] Cycle {cycleId} has started stimulation!";
+            await LoadDataAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        try 
+        {
+            await _hubConnection.StartAsync();
+        } 
+        catch 
+        {
+            // Ignore connection errors during initial rendering or dev environment
+        }
+    }
+
+    private async Task SelectCycle(string id)
+    {
+        _selectedCycleId = id;
+        try
+        {
+            _clinicalEvents = await Http.GetFromJsonAsync<List<FMS.Application.Queries.Clinical.Events.ClinicalEventDto>>($"http://localhost:5187/api/treatment-cycles/{id}/clinical-events");
+        }
+        catch
+        {
+            _clinicalEvents = new List<FMS.Application.Queries.Clinical.Events.ClinicalEventDto>();
+        }
+    }
+
+    private void StartNewCycle()
+    {
+        // Implementation pending
+    }
+
+    private async Task StartStimulationAsync(string treatmentCycleId)
+    {
+        var request = new StartStimulationRequestDto { TreatmentCycleId = Guid.Parse(treatmentCycleId) };
+        var response = await Http.PostAsJsonAsync("http://localhost:5187/api/treatments/start-stimulation", request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            _successMessage = $"Stimulation started for cycle {treatmentCycleId}.";
+            _errorMessage = "";
+            await LoadDataAsync();
+        }
+        else
+        {
+            _errorMessage = $"Failed to start stimulation: {response.ReasonPhrase}";
+            _successMessage = "";
+        }
+    }
+    
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            treatments = await Http.GetFromJsonAsync<List<TreatmentDto>>("http://localhost:5187/api/treatments");
+        }
+        catch { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

@@ -1,0 +1,268 @@
+@page "/experiences/studio/{Id:guid}"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject ExperienceService ExperienceService
+@inject IAiIdeaService AiIdeaService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<PageTitle>Experience Studio — EnjoyEveryday</PageTitle>
+
+@if (_experience == null)
+{
+    <FluentSpinner />
+}
+else
+{
+    <div class="studio-header">
+        <div class="studio-title">
+            <h1>Experience Studio</h1>
+            <p>Turn a small idea into something children can explore, experience and remember.</p>
+        </div>
+        <div class="header-actions">
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="SaveDraftAsync">Save Draft</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="PublishAsync">Submit</FluentButton>
+        </div>
+    </div>
+
+    <div class="studio-grid">
+        <!-- LEFT: Idea Start & AI Suggestions -->
+        <div>
+            <section class="card idea-card">
+                <div class="idea-heading">
+                    <div class="idea-icon">✦</div>
+                    <div>
+                        <strong>Start with an idea</strong>
+                        <small>It doesn't need to be complete.</small>
+                    </div>
+                </div>
+                <FluentTextArea @bind-Value="_ideaInput" Style="width: 100%;" Rows="5" Placeholder="Example: The children are fascinated by rain..." />
+                <div class="idea-actions">
+                    <button class="idea-button" @onclick="GenerateIdeas">✦ Help me explore</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>Possible directions</h2>
+                    <span>AI suggestions</span>
+                </div>
+                <div>
+                    @if (_isGeneratingIdeas)
+                    {
+                        <div style="padding: 20px; text-align: center;">
+                            <FluentSpinner />
+                            <div style="margin-top: 10px; color: var(--neutral-foreground-hint);">Brainstorming...</div>
+                        </div>
+                    }
+                    else if (_aiSuggestions.Any())
+                    {
+                        @foreach (var suggestion in _aiSuggestions)
+                        {
+                            <div class="suggestion" @onclick="@(() => ApplySuggestion(suggestion.Title, suggestion.Text))">
+                                <div class="suggestion-title">@suggestion.Title</div>
+                                <div class="suggestion-text">@suggestion.Text</div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div style="padding: 20px; text-align: center; color: var(--neutral-foreground-hint);">
+                            Tell me your idea to explore possibilities.
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <!-- CENTER: Experience Canvas -->
+        <div>
+            <section class="canvas">
+                <div class="canvas-top">
+                    <div class="canvas-title">
+                        <FluentTextInput @bind-Value="_experience.Title" Style="width: 100%; font-size: 24px; font-weight: bold; border: none; background: transparent;" />
+                        <div class="canvas-subtitle">
+                            @_experience.Status • Last Updated @_experience.UpdatedAt.ToString("MMMM dd, yyyy")
+                        </div>
+                    </div>
+                    <div class="status-pill">@_experience.Status.ToUpper()</div>
+                </div>
+
+                <div class="dna-grid">
+                    <div class="dna-card" @onclick="@(() => OpenEditDialog("Mission"))">
+                        <button class="dna-add">+</button>
+                        <div class="dna-label">Mission</div>
+                        <div class="dna-content">@GetDnaValue("Mission")</div>
+                    </div>
+
+                    <div class="dna-card" @onclick="@(() => OpenEditDialog("Discovery"))">
+                        <button class="dna-add">+</button>
+                        <div class="dna-label">Discovery</div>
+                        <div class="dna-content">@GetDnaValue("Discovery")</div>
+                    </div>
+
+                    <div class="dna-card" @onclick="@(() => OpenEditDialog("Challenge"))">
+                        <button class="dna-add">+</button>
+                        <div class="dna-label">Challenge</div>
+                        <div class="dna-content">@GetDnaValue("Challenge")</div>
+                    </div>
+
+                    <div class="dna-card" @onclick="@(() => OpenEditDialog("Together"))">
+                        <button class="dna-add">+</button>
+                        <div class="dna-label">Together</div>
+                        <div class="dna-content">@GetDnaValue("Together")</div>
+                    </div>
+
+                    <div class="dna-card full magic-card" @onclick="@(() => OpenEditDialog("MagicMoment"))">
+                        <button class="dna-add">+</button>
+                        <div class="dna-label">✦ Magic Moment</div>
+                        <div class="dna-content">@GetDnaValue("MagicMoment")</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- RIGHT: Context Panel -->
+        <div class="right-panel">
+            <section class="card">
+                <div class="card-header">
+                    <h2>Experience context</h2>
+                    <span>Classroom</span>
+                </div>
+                <div class="context-item">
+                    <div class="context-label">Children</div>
+                    <div class="context-value">Bluebirds • 18 children</div>
+                </div>
+                <div class="context-item">
+                    <div class="context-label">Age</div>
+                    <div class="context-value">3–4 years</div>
+                </div>
+                <div class="context-item">
+                    <div class="context-label">Recent interests</div>
+                    <div class="tags">
+                        <span class="tag">Bugs</span>
+                        <span class="tag">Building</span>
+                        <span class="tag">Rain</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Edit DNA Element Dialog -->
+    <FluentDialog @ref="_editDialog" Modal="true" Hidden="@_hideEditDialog" OnDismiss="CloseEditDialog">
+        <div style="padding: 20px; width: 400px;">
+            <FluentText Size="TextSize.Size400" Weight="TextWeight.Bold" Style="margin-bottom: 15px; display: block;">Edit @_editingField</FluentText>
+            
+            <FluentTextArea @bind-Value="_editingValue" Style="width: 100%;" Rows="5" />
+            
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SaveDnaElement">Save</FluentButton>
+                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="CloseEditDialog">Cancel</FluentButton>
+            </div>
+        </div>
+    </FluentDialog>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Experience? _experience;
+    private string _ideaInput = string.Empty;
+    private Dictionary<string, string> _dnaElements = new();
+    private List<AiSuggestion> _aiSuggestions = new();
+    private bool _isGeneratingIdeas = false;
+
+    // Dialog state
+    private bool _hideEditDialog = true;
+    private FluentDialog _editDialog = default!;
+    private string _editingField = string.Empty;
+    private string _editingValue = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _experience = await ExperienceService.GetExperienceByIdAsync(Id);
+        if (_experience == null)
+        {
+            NavigationManager.NavigateTo("/experiences");
+            return;
+        }
+
+        try
+        {
+            _dnaElements = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_experience.DnaPayload) ?? new();
+        }
+        catch
+        {
+            _dnaElements = new Dictionary<string, string>();
+        }
+    }
+
+    private string GetDnaValue(string key)
+    {
+        return _dnaElements.TryGetValue(key, out var val) && !string.IsNullOrWhiteSpace(val) ? val : "Click to add content...";
+    }
+
+    private async Task GenerateIdeas()
+    {
+        if (string.IsNullOrWhiteSpace(_ideaInput)) return;
+
+        _isGeneratingIdeas = true;
+        StateHasChanged();
+
+        try
+        {
+            var suggestions = await AiIdeaService.GenerateIdeasAsync(_ideaInput);
+            _aiSuggestions = suggestions.ToList();
+        }
+        finally
+        {
+            _isGeneratingIdeas = false;
+        }
+    }
+
+    private void ApplySuggestion(string title, string text)
+    {
+        if (_experience != null)
+        {
+            _experience.Title = title;
+            _experience.Description = text;
+        }
+    }
+
+    private void OpenEditDialog(string field)
+    {
+        _editingField = field;
+        _editingValue = _dnaElements.TryGetValue(field, out var val) ? val : string.Empty;
+        _hideEditDialog = false;
+    }
+
+    private void CloseEditDialog()
+    {
+        _hideEditDialog = true;
+    }
+
+    private void SaveDnaElement()
+    {
+        _dnaElements[_editingField] = _editingValue;
+        _hideEditDialog = true;
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (_experience == null) return;
+        
+        var json = System.Text.Json.JsonSerializer.Serialize(_dnaElements);
+        await ExperienceService.UpdateExperienceAsync(_experience.Id, _experience.Title, _experience.Description, json, _experience.Status, "Studio Draft Save", Guid.Empty);
+    }
+
+    private async Task PublishAsync()
+    {
+        if (_experience == null) return;
+        
+        var json = System.Text.Json.JsonSerializer.Serialize(_dnaElements);
+        await ExperienceService.UpdateExperienceAsync(_experience.Id, _experience.Title, _experience.Description, json, ExperienceStatus.Approved.ToString(), "Studio Submit", Guid.Empty);
+        NavigationManager.NavigateTo("/experiences");
+    }
+}

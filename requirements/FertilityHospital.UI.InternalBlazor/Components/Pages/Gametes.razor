@@ -1,0 +1,189 @@
+@page "/gametes"
+@using FMS.Application.DTOs
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+
+<PageTitle>Gamete Logs</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <h2>Gamete Logs (Oocytes & Sperm)</h2>
+        <FluentButton IconStart="@(new Icons.Regular.Size16.Add())" Appearance="ButtonAppearance.Primary" OnClick="OpenCollectSampleDialogAsync">Log Collection</FluentButton>
+    </div>
+    
+    @if (!string.IsNullOrEmpty(_errorMessage)) { <div style="color: red;">@_errorMessage</div> }
+    @if (!string.IsNullOrEmpty(_successMessage)) { <div style="color: green;">@_successMessage</div> }
+
+    <FluentTabs>
+        <FluentTab Label="Oocytes">
+            @if (OocytesList == null)
+            {
+                <p>Loading oocytes...</p>
+            }
+            else
+            {
+                <FluentDataGrid Items="@OocytesList" TGridItem="OocyteDto" ResizableColumns="true">
+                    <PropertyColumn Property="@(p => p.Id)" Title="ID" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.PatientName)" Title="Patient Name" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.TreatmentCycleId)" Title="Treatment Cycle ID" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.MaturityState)" Title="Maturity State" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.FertilizationStatus)" Title="Fertilization Status" Sortable="true" />
+                </FluentDataGrid>
+            }
+        </FluentTab>
+
+        <FluentTab Label="Sperm Samples">
+            @if (SpermList == null)
+            {
+                <p>Loading sperm samples...</p>
+            }
+            else
+            {
+                <FluentDataGrid Items="@SpermList" TGridItem="SpermDto" ResizableColumns="true">
+                    <PropertyColumn Property="@(p => p.Id)" Title="ID" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.PatientName)" Title="Patient Name" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.Motility)" Title="Motility" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.Concentration)" Title="Concentration" Sortable="true" />
+                    <PropertyColumn Property="@(p => p.Morphology)" Title="Morphology" Sortable="true" />
+                </FluentDataGrid>
+            }
+        </FluentTab>
+    </FluentTabs>
+</FluentStack>
+
+<FluentDialog @ref="_collectDialog" Modal="true" Hidden="@(!_isDialogOpen)" OnDismiss="CloseDialog">
+    <div style="padding: 10px;">
+        <h3>Log Sample Collection</h3>
+        
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="10">
+            <div>
+                <label>Patient ID (Guid):</label><br />
+                <input type="text" @bind="_request.PatientIdString" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            <div>
+                <label>Sample Type:</label><br />
+                <select @bind="_request.SampleType" class="fluent-input" style="width: 100%; padding: 5px;">
+                    <option value="Sperm">Sperm</option>
+                    <option value="Oocyte">Oocyte</option>
+                    <option value="Blood">Blood</option>
+                </select>
+            </div>
+            <div>
+                <label>Initial Location:</label><br />
+                <input type="text" @bind="_request.InitialLocation" class="fluent-input" style="width: 100%; padding: 5px;" />
+            </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="color: red; margin-top: 10px;">@_errorMessage</div>
+            }
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div style="color: green; margin-top: 10px;">@_successMessage</div>
+            }
+        </FluentStack>
+
+        <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SubmitCollection">Save</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Default" OnClick="CloseDialog">Cancel</FluentButton>
+        </div>
+    </div>
+</FluentDialog>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private IQueryable<OocyteDto>? OocytesList;
+    private IQueryable<SpermDto>? SpermList;
+    private string _errorMessage = "";
+    private string _successMessage = "";
+    private HubConnection? _hubConnection;
+    
+    private FluentDialog _collectDialog = default!;
+    private bool _isDialogOpen = false;
+    private CollectSampleRequestDto _request = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl("http://localhost:5187/hubs/clinical")
+            .Build();
+
+        _hubConnection.On<Guid, string>("SampleCollected", async (sampleId, type) =>
+        {
+            _successMessage = $"[Real-Time] A new {type} sample ({sampleId}) was logged!";
+            await LoadDataAsync();
+            await InvokeAsync(StateHasChanged);
+        });
+
+        try 
+        {
+            await _hubConnection.StartAsync();
+        } 
+        catch 
+        {
+        }
+    }
+    
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            var oocyteResult = await Http.GetFromJsonAsync<List<OocyteDto>>("http://localhost:5187/api/oocytes");
+            if (oocyteResult != null) OocytesList = oocyteResult.AsQueryable();
+
+            var spermResult = await Http.GetFromJsonAsync<List<SpermDto>>("http://localhost:5187/api/sperm");
+            if (spermResult != null) SpermList = spermResult.AsQueryable();
+        }
+        catch { }
+    }
+
+    private void OpenCollectSampleDialogAsync()
+    {
+        _request = new CollectSampleRequestDto();
+        _errorMessage = "";
+        _successMessage = "";
+        _isDialogOpen = true;
+    }
+    
+    private void CloseDialog()
+    {
+        _isDialogOpen = false;
+    }
+
+    private async Task SubmitCollection()
+    {
+        if (Guid.TryParse(_request.PatientIdString, out var pid))
+        {
+            _request.PatientId = pid;
+            var response = await Http.PostAsJsonAsync("http://localhost:5187/api/samples/collect", _request);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _successMessage = "Sample collection logged successfully.";
+                _errorMessage = "";
+                await LoadDataAsync();
+                await Task.Delay(1500);
+                CloseDialog();
+            }
+            else
+            {
+                _errorMessage = "Failed to log sample collection.";
+                _successMessage = "";
+            }
+        }
+        else
+        {
+            _errorMessage = "Invalid Patient ID (must be a valid Guid).";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

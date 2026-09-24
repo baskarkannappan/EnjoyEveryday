@@ -1,0 +1,73 @@
+@page "/"
+@using FMS.Application.DTOs
+
+<PageTitle>FMS Dashboard</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <h2>Clinical Dashboard</h2>
+    
+    @if (kpis == null)
+    {
+        <p>Loading...</p>
+    }
+    else
+    {
+        <FluentGrid Spacing="3" Justify="JustifyContent.FlexStart">
+            <FluentGridItem xs="12" sm="6" md="4">
+                <FluentCard Style="padding: 20px; text-align: center;">
+                    <h3 style="margin: 10px 0 5px 0;">@kpis.ActiveTreatments</h3>
+                    <p>Active Treatments</p>
+                </FluentCard>
+            </FluentGridItem>
+            <FluentGridItem xs="12" sm="6" md="4">
+                <FluentCard Style="padding: 20px; text-align: center;">
+                    <h3 style="margin: 10px 0 5px 0;">@kpis.PendingConsents</h3>
+                    <p>Pending Consents</p>
+                </FluentCard>
+            </FluentGridItem>
+            <FluentGridItem xs="12" sm="6" md="4">
+                <FluentCard Style="padding: 20px; text-align: center;">
+                    <h3 style="margin: 10px 0 5px 0;">@kpis.RecentLabResults</h3>
+                    <p>Recent Lab Results</p>
+                </FluentCard>
+            </FluentGridItem>
+        </FluentGrid>
+    }
+
+    <div style="margin-top: 30px;">
+        <h3>Recent Activity</h3>
+        <FluentDataGrid Items="@ActivityLog" TGridItem="Activity">
+            <PropertyColumn Property="@(p => p.Time)" Title="Time" Sortable="true" />
+            <PropertyColumn Property="@(p => p.PatientName)" Title="Patient" />
+            <PropertyColumn Property="@(p => p.Action)" Title="Action" />
+            <PropertyColumn Property="@(p => p.Status)" Title="Status" />
+        </FluentDataGrid>
+    </div>
+</FluentStack>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private DashboardKpisDto? kpis;
+
+    private IQueryable<Activity> ActivityLog = new List<Activity>
+    {
+        new Activity { Time = "09:15 AM", PatientName = "Jane Doe", Action = "Consent Signed", Status = "Completed" },
+        new Activity { Time = "10:30 AM", PatientName = "Mary Smith", Action = "Embryo Thawing", Status = "In Progress" },
+        new Activity { Time = "11:45 AM", PatientName = "Alice Johnson", Action = "Lab Sample Collected", Status = "Pending" },
+        new Activity { Time = "01:20 PM", PatientName = "Sarah Williams", Action = "AI Consultation", Status = "Completed" }
+    }.AsQueryable();
+
+    public class Activity
+    {
+        public string Time { get; set; } = string.Empty;
+        public string PatientName { get; set; } = string.Empty;
+        public string Action { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        kpis = await Http.GetFromJsonAsync<DashboardKpisDto>("http://localhost:5187/api/dashboard/kpis");
+    }
+}

@@ -1,0 +1,133 @@
+@page "/stories"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject ChildService ChildService
+@inject JourneyService JourneyService
+@inject OrganizationService OrganizationService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@rendermode InteractiveServer
+     <div class="page-header">
+
+        <div>
+
+            <div class="eyebrow">
+                PARENT CONNECTION
+            </div>
+
+            <h2>
+                Parent Stories
+            </h2>
+
+            <p>
+                Let parents feel their child's day.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="story">
+
+
+        <div class="story-art">
+            ✦
+        </div>
+
+
+        <div class="story-content">
+
+            <div class="story-date">
+                TODAY · BLUEBIRDS
+            </div>
+
+            <h2>
+                ❤️ Aarav's Day
+            </h2>
+
+            <p>
+                Today Aarav discovered a tiny ladybug,
+                built a little garden with his friends,
+                and tried again when their bridge fell.
+            </p>
+
+
+            <div class="little-moment">
+
+                <strong>
+                    Little Moment
+                </strong>
+
+                <p>
+                    “Aarav was watching from a distance.
+                    Then he came closer and said,
+                    ‘I found one!’”
+                </p>
+
+            </div>
+
+
+            <button id="previewStoryButton" class="primary">
+
+                Preview parent story
+
+            </button>
+
+        </div>
+
+
+    </div>
+ 
+@code {
+    private bool _isLoading = true;
+    private List<Child> _children = new();
+    private Child? _activeChild;
+    private string? _selectedChildId;
+    
+    private List<ChildStory> _stories = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // For demonstration, we'll just grab the first classroom's children
+        // In a real app, this would be based on the authenticated parent's Family Relationship
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            var branches = await BranchService.GetBranchesAsync(org.Id);
+            var branch = branches.FirstOrDefault();
+            if (branch != null)
+            {
+                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
+                var classroom = classrooms.FirstOrDefault();
+                
+                if (classroom != null)
+                {
+                    _children = (await ChildService.GetChildrenByClassroomAsync(classroom.Id)).ToList();
+                    _activeChild = _children.FirstOrDefault();
+                    if (_activeChild != null)
+                    {
+                        _selectedChildId = _activeChild.Id.ToString();
+                        await LoadChildData();
+                    }
+                }
+            }
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task LoadChildData()
+    {
+        if (Guid.TryParse(_selectedChildId, out var id))
+        {
+            _activeChild = _children.FirstOrDefault(c => c.Id == id);
+            if (_activeChild != null)
+            {
+                // Only load published/approved stories for parents
+                _stories = (await JourneyService.GetPublishedChildStoriesAsync(_activeChild.Id)).ToList();
+            }
+        }
+    }
+}

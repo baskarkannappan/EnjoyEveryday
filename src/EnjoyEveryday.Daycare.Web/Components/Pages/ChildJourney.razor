@@ -1,0 +1,231 @@
+@page "/journey"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject ChildService ChildService
+@inject JourneyService JourneyService
+@inject OrganizationService OrganizationService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@rendermode InteractiveServer
+     <div class="page-header">
+
+        <div>
+
+            <div class="eyebrow">
+                CHILD JOURNEY
+            </div>
+
+            <h2>
+                Aarav's Little World
+            </h2>
+
+            <p>
+                Experiences, accomplishments and memories.
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <div class="journey">
+
+
+        <div class="journey-header">
+
+            <div class="journey-large-avatar">
+                A
+            </div>
+
+            <div>
+
+                <h2>
+                    Aarav
+                </h2>
+
+                <p>
+                    Age 3 · Bluebirds
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="memory-area">
+
+
+            <div class="memory m1">
+
+                <div class="memory-symbol">
+                    ✦
+                </div>
+
+                <strong>
+                    Discovered
+                </strong>
+
+                <span>
+                    tiny insects
+                </span>
+
+            </div>
+
+
+            <div class="memory m2">
+
+                <div class="memory-symbol">
+                    ♡
+                </div>
+
+                <strong>
+                    Helped
+                </strong>
+
+                <span>
+                    a friend
+                </span>
+
+            </div>
+
+
+            <div class="memory m3">
+
+                <div class="memory-symbol">
+                    ◆
+                </div>
+
+                <strong>
+                    Created
+                </strong>
+
+                <span>
+                    a building
+                </span>
+
+            </div>
+
+
+            <div class="memory m4">
+
+                <div class="memory-symbol">
+                    ↻
+                </div>
+
+                <strong>
+                    Tried again
+                </strong>
+
+                <span>
+                    after it fell
+                </span>
+
+            </div>
+
+
+            <div class="memory m5">
+
+                <div class="memory-symbol">
+                    ☀
+                </div>
+
+                <strong>
+                    Explored
+                </strong>
+
+                <span>
+                    the garden
+                </span>
+
+            </div>
+
+
+        </div>
+
+    </div>
+ 
+
+@code {
+    private bool _isLoading = true;
+    private List<Child> _children = new();
+    private Child? _activeChild;
+    private Classroom? _classroom;
+    private string? _selectedChildId;
+    
+    private List<ChildStory> _stories = new();
+    private List<ChildInterest> _interests = new();
+
+    private string _newInterest = string.Empty;
+    
+    private bool _hideNewStoryDialog = true;
+    private string _newStoryContent = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            var branches = await BranchService.GetBranchesAsync(org.Id);
+            var branch = branches.FirstOrDefault();
+            if (branch != null)
+            {
+                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
+                _classroom = classrooms.FirstOrDefault();
+                
+                if (_classroom != null)
+                {
+                    _children = (await ChildService.GetChildrenByClassroomAsync(_classroom.Id)).ToList();
+                    _activeChild = _children.FirstOrDefault();
+                    if (_activeChild != null)
+                    {
+                        _selectedChildId = _activeChild.Id.ToString();
+                        await LoadChildData();
+                    }
+                }
+            }
+        }
+
+        _isLoading = false;
+    }
+
+    private async Task LoadChildData()
+    {
+        if (Guid.TryParse(_selectedChildId, out var id))
+        {
+            _activeChild = _children.FirstOrDefault(c => c.Id == id);
+            if (_activeChild != null)
+            {
+                _stories = (await JourneyService.GetChildStoriesAsync(_activeChild.Id)).ToList();
+                _interests = (await JourneyService.GetChildInterestsAsync(_activeChild.Id)).ToList();
+            }
+        }
+    }
+
+    private async Task AddInterest()
+    {
+        if (!string.IsNullOrWhiteSpace(_newInterest) && _activeChild != null)
+        {
+            await JourneyService.AddInterestAsync(_activeChild.Id, _newInterest.Trim());
+            _newInterest = string.Empty;
+            await LoadChildData();
+        }
+    }
+
+    private async Task SaveStory()
+    {
+        if (!string.IsNullOrWhiteSpace(_newStoryContent) && _activeChild != null)
+        {
+            await JourneyService.CreateStoryAsync(_activeChild.Id, Guid.NewGuid(), null, _newStoryContent.Trim());
+            _newStoryContent = string.Empty;
+            _hideNewStoryDialog = true;
+            await LoadChildData();
+        }
+    }
+
+    private async Task ApproveStory(ChildStory story)
+    {
+        await JourneyService.ApproveStoryAsync(story.Id);
+        await LoadChildData();
+    }
+}

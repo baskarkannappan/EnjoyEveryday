@@ -1,0 +1,41 @@
+@page "/pregnancies"
+@using FMS.Application.DTOs
+
+<PageTitle>Pregnancy Tracker</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="15">
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <h2>Pregnancy Tracker</h2>
+    </div>
+
+    @if (PregnanciesList == null)
+    {
+        <p>Loading pregnancies...</p>
+    }
+    else
+    {
+        <FluentDataGrid Items="@PregnanciesList" TGridItem="PregnancyDto" ResizableColumns="true">
+            <PropertyColumn Property="@(p => p.Id)" Title="ID" Sortable="true" />
+            <PropertyColumn Property="@(p => p.PatientName)" Title="Patient Name" Sortable="true" />
+            <PropertyColumn Property="@(p => p.TreatmentCycleId)" Title="Treatment Cycle ID" Sortable="true" />
+            <PropertyColumn Property="@(p => p.EstimatedDueDate)" Title="Estimated Due Date" Sortable="true" />
+            <PropertyColumn Property="@(p => p.BetaHcgLevel)" Title="Beta HCG" Sortable="true" />
+            <PropertyColumn Property="@(p => p.UltrasoundFetalHeartbeat)" Title="Fetal Heartbeat" Sortable="true" />
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+@code {
+    [Inject] private HttpClient Http { get; set; } = default!;
+
+    private IQueryable<PregnancyDto>? PregnanciesList;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Http.GetFromJsonAsync<List<PregnancyDto>>("http://localhost:5187/api/pregnancies");
+        if (result != null)
+        {
+            PregnanciesList = result.AsQueryable();
+        }
+    }
+}
