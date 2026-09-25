@@ -1,4 +1,4 @@
-@page "/stories"
+﻿@page "/stories"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject ChildService ChildService
@@ -12,11 +12,16 @@
     Title="Parent Stories" 
     Subtitle="Let parents feel their child's day.">
 </PageHero>
+
+    <div style="margin-top: 16px; margin-bottom: 16px;">
+        <button class="primary" @onclick="OpenStoryDialog">+ Add Parent Story</button>
+    </div>
+
 @if (_stories != null && _stories.Count > 0) {
     @foreach (var story in _stories) {
         <StoryCard 
-            Icon="💖" 
-            Date="@(story.CreatedAt.ToString("MMM dd") + " · BLUEBIRDS")" 
+            Icon="ðŸ’–" 
+            Date="@(story.CreatedAt.ToString("MMM dd") + " Â· BLUEBIRDS")" 
             Title="Story Update" 
             Content="@story.Content" 
             MomentTitle="Little Moment" 
@@ -26,17 +31,75 @@
     }
 } else {
     <StoryCard 
-        Icon="💖" 
-        Date="TODAY · BLUEBIRDS" 
-        Title="✨ Aarav's Day" 
+        Icon="ðŸ’–" 
+        Date="TODAY Â· BLUEBIRDS" 
+        Title="âœ¨ Aarav's Day" 
         Content="Today Aarav discovered a tiny ladybug, built a little garden with his friends, and tried again when their bridge fell." 
         MomentTitle="Little Moment" 
-        MomentText="“Aarav was watching from a distance. Then he came closer and said, ‘I found one!’”" 
+        MomentText="â€œAarav was watching from a distance. Then he came closer and said, â€˜I found one!â€™â€" 
         ActionText="Preview parent story" 
     />
 }
 
+
+@if (_isModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseDialog"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
+        <h3>Add Parent Story</h3>
+        
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Child</label>
+            <select @bind="_selectedChildId" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                @foreach (var child in _children)
+                {
+                    <option value="@child.Id">@child.FirstName @child.LastName</option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label>Story Content</label>
+            <textarea @bind="_newStoryContent" rows="4" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button class="secondary" @onclick="CloseDialog">Cancel</button>
+            <button class="primary" @onclick="ConfirmStory">Post Story</button>
+        </div>
+    </dialog>
+}
+
 @code {
+        private string _newStoryContent = string.Empty;
+    private bool _isModalOpen = false;
+
+    private void OpenStoryDialog()
+    {
+        _isModalOpen = true;
+        _newStoryContent = string.Empty;
+        if (_children.Any() && string.IsNullOrEmpty(_selectedChildId))
+        {
+            _selectedChildId = _children.First().Id.ToString();
+        }
+    }
+
+    private void CloseDialog()
+    {
+        _isModalOpen = false;
+    }
+
+    private async Task ConfirmStory()
+    {
+        if (string.IsNullOrEmpty(_selectedChildId) || string.IsNullOrEmpty(_newStoryContent)) return;
+        var childId = Guid.Parse(_selectedChildId);
+        // Assuming a dummy teacher ID for now, since we don't have auth context in this simplified view
+        var teacherId = Guid.NewGuid(); 
+        await JourneyService.CreateStoryAsync(childId, teacherId, null, _newStoryContent);
+        await LoadChildData();
+        CloseDialog();
+    }
+
     private List<Child> _children = new();
     private Child? _activeChild;
     private string? _selectedChildId;
@@ -79,3 +142,4 @@
         }
     }
 }
+

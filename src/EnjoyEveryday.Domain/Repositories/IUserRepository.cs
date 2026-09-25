@@ -1,4 +1,4 @@
-using EnjoyEveryday.Domain.Entities;
+﻿using EnjoyEveryday.Domain.Entities;
 
 namespace EnjoyEveryday.Domain.Repositories;
 
@@ -10,4 +10,6 @@ public interface IUserRepository
     Task<User> AddAsync(User user, string passwordHash, CancellationToken cancellationToken = default);
     Task UpdateAsync(User user, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
+    Task AssignRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default);
 }
+

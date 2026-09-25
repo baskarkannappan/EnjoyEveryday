@@ -1,11 +1,20 @@
 @page "/harvest"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject ExperienceService ExperienceService
+@rendermode InteractiveServer
 <PageHero 
     Eyebrow="EXPERIENCE MEMORY" 
     Title="Harvest & Insights" 
     Subtitle="What happened matters more than simply completing the activity.">
 </PageHero>
+
+    <div style="margin-top: 16px; margin-bottom: 16px;">
+        <button class="primary" @onclick="OpenFeedbackDialog">+ Log Feedback</button>
+    </div>
+
 <div class="insight">
-    <div class="insight-icon">💡</div>
+    <div class="insight-icon">ðŸ’¡</div>
     <div>
         <strong>Your daycare is learning.</strong>
         <p>
@@ -19,7 +28,7 @@
     <div class="panel">
         <h3>Experience performance</h3>
         <div class="panel-description">
-            Program signals — not child scores.
+            Program signals â€” not child scores.
         </div>
         <div class="harvest-row harvest-heading">
             <span>EXPERIENCE</span>
@@ -27,9 +36,9 @@
             <span>RESPONSE</span>
             <span>INSIGHT</span>
         </div>
-        <HarvestRow Title="Our Little City" Subtitle="Created by Priya" Uses="12" Response="💬 10" />
-        <HarvestRow Title="Frog Rescue" Subtitle="AI + Teacher" Uses="8" Response="💬 6" />
-        <HarvestRow Title="Giant Painting" Subtitle="Created by Daniel" Uses="6" Response="💬 5" />
+        <HarvestRow Title="Our Little City" Subtitle="Created by Priya" Uses="12" Response="ðŸ’¬ 10" />
+        <HarvestRow Title="Frog Rescue" Subtitle="AI + Teacher" Uses="8" Response="ðŸ’¬ 6" />
+        <HarvestRow Title="Giant Painting" Subtitle="Created by Daniel" Uses="6" Response="ðŸ’¬ 5" />
     </div>
     <div class="panel">
         <h3>What teachers are saying</h3>
@@ -45,21 +54,75 @@
         <span>1</span>
         <strong>Create</strong>
     </div>
-    <span>↻</span>
+    <span>â†»</span>
     <div class="flywheel-step active">
         <span>2</span>
         <strong>Experience</strong>
     </div>
-    <span>↻</span>
+    <span>â†»</span>
     <div class="flywheel-step">
         <span>3</span>
         <strong>Harvest</strong>
     </div>
-    <span>↻</span>
+    <span>â†»</span>
     <div class="flywheel-step">
         <span>4</span>
         <strong>Adapt</strong>
     </div>
 </div>
-@code {
+@if (_isModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseDialog"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
+        <h3>Log Feedback</h3>
+        
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Experience</label>
+            <select @bind="_selectedExperienceId" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                @foreach (var exp in _experiences)
+                {
+                    <option value="@exp.Id">@exp.Title</option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label>Teacher Quote / Insight</label>
+            <textarea @bind="_feedbackText" rows="4" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button class="secondary" @onclick="CloseDialog">Cancel</button>
+            <button class="primary" @onclick="ConfirmFeedback">Save Feedback</button>
+        </div>
+    </dialog>
 }
+
+@code {
+    private List<Experience> _experiences = new();
+    private string _feedbackText = string.Empty;
+    private string? _selectedExperienceId;
+    private bool _isModalOpen = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+    }
+
+    private void OpenFeedbackDialog()
+    {
+        _isModalOpen = true;
+        _feedbackText = string.Empty;
+        if (_experiences.Any()) { _selectedExperienceId = _experiences.First().Id.ToString(); }
+    }
+
+    private void CloseDialog() => _isModalOpen = false;
+
+    private async Task ConfirmFeedback()
+    {
+        if (string.IsNullOrEmpty(_selectedExperienceId) || string.IsNullOrEmpty(_feedbackText)) return;
+        // Mock feedback save
+        CloseDialog();
+    }
+}
+

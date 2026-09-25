@@ -1,4 +1,4 @@
-using Dapper;
+﻿using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Data;
@@ -90,6 +90,19 @@ public class UserRepository : IUserRepository
         await connection.ExecuteAsync(sql, user);
     }
 
+    public async Task AssignRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT @UserId, id
+            FROM roles
+            WHERE name = @RoleName
+            ON CONFLICT DO NOTHING";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteAsync(sql, new { UserId = userId, RoleName = roleName });
+    }
+
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = @"
@@ -100,3 +113,4 @@ public class UserRepository : IUserRepository
         await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
     }
 }
+

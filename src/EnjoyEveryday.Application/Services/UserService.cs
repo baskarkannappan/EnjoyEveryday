@@ -39,7 +39,7 @@ public class UserService
         return await _userRepository.GetByIdAsync(tenantId, id, cancellationToken);
     }
 
-    public async Task<User> CreateUserAsync(string email, string firstName, string lastName, string passwordHash, CancellationToken cancellationToken = default)
+    public async Task<User> CreateUserAsync(string email, string firstName, string lastName, string passwordHash, string? roleName = null, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
         var user = new User
@@ -55,7 +55,14 @@ public class UserService
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        return await _userRepository.AddAsync(user, passwordHash, cancellationToken);
+        var createdUser = await _userRepository.AddAsync(user, passwordHash, cancellationToken);
+
+        if (!string.IsNullOrEmpty(roleName))
+        {
+            await _userRepository.AssignRoleAsync(createdUser.Id, roleName, cancellationToken);
+        }
+
+        return createdUser;
     }
 
     public async Task UpdateUserAsync(User user, CancellationToken cancellationToken = default)
@@ -73,3 +80,4 @@ public class UserService
         await _userRepository.DeleteAsync(tenantId, id, cancellationToken);
     }
 }
+

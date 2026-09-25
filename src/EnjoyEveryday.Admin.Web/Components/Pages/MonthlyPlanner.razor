@@ -1,4 +1,4 @@
-@page "/planner"
+﻿@page "/planner"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject PlannerService PlannerService
@@ -73,13 +73,13 @@
         <div class="calendar">
             <div class="calendar-header">
                 <button id="previousMonth" class="calendar-arrow">
-                    ‹
+                    â€¹
                 </button>
                 <strong>
                     September 2026
                 </strong>
                 <button id="nextMonth" class="calendar-arrow">
-                    ›
+                    â€º
                 </button>
             </div>
             <div class="week">
@@ -141,20 +141,53 @@
                     movement and animal experiences.
                 </p>
                 <button id="addAISuggestion" class="text-button">
-                    Add suggestion →
+                    Add suggestion â†’
                 </button>
             </div>
         </div>
     </div>
 </section>
+
+@if (_isModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseDialog"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
+        <h3>Schedule Experience</h3>
+        
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Experience</label>
+            <select @bind="_dialogSelectedExperienceId" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                @foreach (var exp in _experiences)
+                {
+                    <option value="@exp.Id">@exp.Title</option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label>Time of Day</label>
+            <select @bind="_dialogTimeOfDay" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="Morning">Morning</option>
+                <option value="Afternoon">Afternoon</option>
+            </select>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            <button class="secondary" @onclick="CloseDialog">Cancel</button>
+            <button class="primary" @onclick="ConfirmSchedule">Schedule</button>
+        </div>
+    </dialog>
+}
 @code {
     private DateOnly _currentDate;
+    private DateTime? _currentDateTime;
     private List<Classroom> _classrooms = new();
     private string? _selectedClassroomId;
     private List<Experience> _experiences = new();
     private List<ExperienceSchedule> _schedules = new();
     // Dialog state
     private DateOnly _dialogDate;
+    private bool _isModalOpen = false;
     private string _dialogTimeOfDay = string.Empty;
     private string? _dialogSelectedExperienceId;
     protected override async Task OnInitializedAsync()
@@ -163,6 +196,7 @@
         var today = DateTime.Today;
         int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
         _currentDate = DateOnly.FromDateTime(today.AddDays(-1 * diff));
+        _currentDateTime = _currentDate.ToDateTime(TimeOnly.MinValue);
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
         if (org != null)
@@ -180,6 +214,7 @@
         }
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
         await LoadSchedules();
+        CloseDialog();
     }
     private async Task LoadSchedules()
     {
@@ -190,6 +225,16 @@
         _schedules = (await PlannerService.GetMonthlyScheduleAsync(cid, _currentDate.Year, _currentDate.Month)).ToList();
         StateHasChanged();
     }
+        private async Task OnCalendarValueChanged()
+    {
+        if (_currentDateTime.HasValue)
+        {
+            _currentDate = DateOnly.FromDateTime(_currentDateTime.Value);
+            await LoadSchedules();
+        CloseDialog();
+        }
+    }
+
     private void PreviousWeek()
     {
         _currentDate = _currentDate.AddDays(-7);
@@ -221,6 +266,24 @@
             _dialogSelectedExperienceId = _experiences.First().Id.ToString();
         }
     }
+        private void OpenScheduleDialogLocal()
+    {
+        _isModalOpen = true;
+        if (_currentDateTime.HasValue) {
+             _dialogDate = DateOnly.FromDateTime(_currentDateTime.Value);
+        } else {
+             _dialogDate = _currentDate;
+        }
+        if (_experiences.Any()) {
+            _dialogSelectedExperienceId = _experiences.First().Id.ToString();
+        }
+    }
+
+    private void CloseDialog()
+    {
+        _isModalOpen = false;
+    }
+
     private async Task ConfirmSchedule()
     {
         if (string.IsNullOrEmpty(_dialogSelectedExperienceId) || string.IsNullOrEmpty(_selectedClassroomId)) return;
@@ -228,6 +291,7 @@
         var clsId = Guid.Parse(_selectedClassroomId);
         await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
         await LoadSchedules();
+        CloseDialog();
     }
     private string GetExperienceType(Experience experience)
     {
@@ -244,3 +308,4 @@
         return "Experience";
     }
 }
+
