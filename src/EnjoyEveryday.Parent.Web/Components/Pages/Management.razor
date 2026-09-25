@@ -5,116 +5,36 @@
 @inject OrganizationService OrganizationService
 @inject DashboardService DashboardService
 @rendermode InteractiveServer
-     <div class="page-header">
-
-        <div>
-
-            <div class="eyebrow">
-                DAYCARE MANAGEMENT
-            </div>
-
-            <h2>
-                Management
-            </h2>
-
-            <p>
-                A calm view of what is happening.
-            </p>
-
-        </div>
-
-    </div>
-
-
-    <div class="metrics">
-
-
-        <div class="metric">
-
-            <small>
-                CHILDREN
-            </small>
-
-            <strong>
-                42
-            </strong>
-
-            <span>
-                Across branches
-            </span>
-
-        </div>
-
-
-        <div class="metric">
-
-            <small>
-                EXPERIENCES
-            </small>
-
-            <strong>
-                128
-            </strong>
-
-            <span>
-                In your library
-            </span>
-
-        </div>
-
-
-        <div class="metric">
-
-            <small>
-                THIS MONTH
-            </small>
-
-            <strong>
-                42
-            </strong>
-
-            <span>
-                Experiences happened
-            </span>
-
-        </div>
-
-
-        <div class="metric">
-
-            <small>
-                HARVESTED
-            </small>
-
-            <strong>
-                31
-            </strong>
-
-            <span>
-                Teacher responses
-            </span>
-
-        </div>
-
-
-    </div> 
+<PageHero 
+    Eyebrow="DAYCARE MANAGEMENT" 
+    Title="Management" 
+    Subtitle="A calm view of what is happening.">
+</PageHero>
+<div class="metrics">
+    @if (_orgMetrics != null) {
+        <MetricCard Label="BRANCHES" Value="@_orgMetrics.TotalBranches.ToString()" Subtext="Active branches" />
+        <MetricCard Label="CLASSROOMS" Value="@_orgMetrics.TotalClassrooms.ToString()" Subtext="Total classrooms" />
+        <MetricCard Label="CHILDREN" Value="@_orgMetrics.TotalChildren.ToString()" Subtext="Across branches" />
+        <MetricCard Label="TEACHERS" Value="@_orgMetrics.TotalTeachers.ToString()" Subtext="Active educators" />
+    } else {
+        <MetricCard Label="BRANCHES" Value="0" Subtext="Active branches" />
+        <MetricCard Label="CLASSROOMS" Value="0" Subtext="Total classrooms" />
+        <MetricCard Label="CHILDREN" Value="0" Subtext="Across branches" />
+        <MetricCard Label="TEACHERS" Value="0" Subtext="Active educators" />
+    }
+</div> 
 @code {
-    private bool _isLoading = true;
     private Organization? _org;
     private OrganizationMetrics? _orgMetrics;
     private List<BranchMetrics> _branchMetrics = new();
-
     protected override async Task OnInitializedAsync()
     {
         var orgs = await OrganizationService.GetOrganizationsAsync();
         _org = orgs.FirstOrDefault();
-        
         if (_org != null)
         {
             _orgMetrics = await DashboardService.GetOrganizationMetricsAsync(_org.Id);
             _branchMetrics = (await DashboardService.GetBranchMetricsAsync(_org.Id)).ToList();
         }
-
-        _isLoading = false;
     }
 }

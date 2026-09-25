@@ -13,12 +13,10 @@
 <section
     id="page-today"
     class="page active">
-
-
     <PageHero 
-        Eyebrow="MONDAY · SEPTEMBER 21" 
+        Eyebrow="MONDAY &middot; SEPTEMBER 21" 
         Title="Let's make today memorable." 
-        Subtitle="Bluebirds classroom · 18 children · Ages 3–4">
+        Subtitle="Bluebirds classroom &middot; 18 children &middot; Ages 3&ndash;4">
         <RightContent>
             <div class="weather">
                 <div id="weatherIcon" class="weather-icon">☁</div>
@@ -29,286 +27,87 @@
             </div>
         </RightContent>
     </PageHero>
-
     <div class="section-title">
-
         <div>
-
             <h3>
                 Today's rhythm
             </h3>
-
             <span>
                 A gentle plan — not a checklist.
             </span>
-
         </div>
-
-
         <button
             class="secondary"
             data-page-link="planner">
-
             View month
-
         </button>
-
     </div>
-
-
     <div class="rhythm">
-
-
-        <div class="rhythm-card">
-
-            <span class="number">
-                01
-            </span>
-
-            <div class="type">
-                EXPLORE
-            </div>
-
-            <h3>
-                Tiny Discoveries
-            </h3>
-
-            <p>
-                15 min · Indoor
-            </p>
-
-            <button
-                class="text-button"
-                data-experience="tiny">
-
-                View →
-
-            </button>
-
-        </div>
-
-
-        <div class="rhythm-card selected">
-
-            <span class="number">
-                02
-            </span>
-
-            <div class="type">
-                CREATE
-            </div>
-
-            <h3>
-                Our Little City
-            </h3>
-
-            <p>
-                25 min · Blocks
-            </p>
-
-            <button
-                class="primary start-experience"
-                data-experience="city">
-
-                Start experience
-
-            </button>
-
-        </div>
-
-
-        <div class="rhythm-card">
-
-            <span class="number">
-                03
-            </span>
-
-            <div class="type">
-                MOVE
-            </div>
-
-            <h3>
-                Animal Adventure
-            </h3>
-
-            <p>
-                10 min · Indoor
-            </p>
-
-            <button
-                class="text-button"
-                data-experience="animals">
-
-                View →
-
-            </button>
-
-        </div>
-
-
-        <div class="rhythm-card">
-
-            <span class="number">
-                04
-            </span>
-
-            <div class="type">
-                STORY
-            </div>
-
-            <h3>
-                The Little Seed
-            </h3>
-
-            <p>
-                10 min · Circle
-            </p>
-
-            <button
-                class="text-button"
-                data-experience="seed">
-
-                View →
-
-            </button>
-
-        </div>
-
-
+        @{
+            int index = 1;
+        }
+        @foreach (var schedule in _schedules)
+        {
+            var exp = GetExperience(schedule.ExperienceId);
+            if (exp != null)
+            {
+                var num = index.ToString("D2");
+                var type = GetExperienceType(exp).ToUpper();
+                var desc = $"{schedule.TimeOfDay} &middot; {exp.Status}";
+                <RhythmCard Number="@num" Type="@type" Title="@exp.Title" Description="@desc" IsSelected="@(index == 1)" ActionText="@(index == 1 ? "Start experience" : "View")" />
+                index++;
+            }
+        }
     </div>
-
-
     <div class="two-column">
-
-
         <div class="panel">
-
             <h3>
                 Classroom feeling
             </h3>
-
             <div class="panel-description">
                 What does the room feel like right now?
             </div>
-
-
             <div class="feelings">
-
-
-                <button class="feeling active">
-
-                    <span class="feeling-icon">
-                        ☀
-                    </span>
-
-                    <span class="feeling-name">
-                        Energetic
-                    </span>
-
-                </button>
-
-
-                <button class="feeling">
-
-                    <span class="feeling-icon">
-                        ◐
-                    </span>
-
-                    <span class="feeling-name">
-                        Curious
-                    </span>
-
-                </button>
-
-
-                <button class="feeling">
-
-                    <span class="feeling-icon">
-                        ☁
-                    </span>
-
-                    <span class="feeling-name">
-                        Quiet
-                    </span>
-
-                </button>
-
-
-                <button class="feeling">
-
-                    <span class="feeling-icon">
-                        ↗
-                    </span>
-
-                    <span class="feeling-name">
-                        Restless
-                    </span>
-
-                </button>
-
-
+                <FeelingButton Icon="☀" Name="Energetic" IsActive="true" />
+                <FeelingButton Icon="◐" Name="Curious" />
+                <FeelingButton Icon="☁" Name="Quiet" />
+                <FeelingButton Icon="↗" Name="Restless" />
             </div>
-
         </div>
-
-
         <div class="panel">
-
             <h3>
                 ✨ Today's surprise
             </h3>
-
             <div class="panel-description">
                 Something unexpected.
             </div>
-
-
             <div class="surprise">
-
                 <strong>
                     Something strange is hiding.
                 </strong>
-
                 <p>
                     Can the children discover it?
                 </p>
-
                 <button
                     id="surpriseButton"
                     class="text-button">
-
                     Reveal later →
-
                 </button>
-
             </div>
-
         </div>
-
-
     </div>
-
-
 </section>
-
-
-
 @code {
-    private bool _isLoading = true;
     private List<ExperienceSchedule> _schedules = new();
     private List<Experience> _experiences = new();
     private Classroom? _classroom;
     private ClassroomContextData? _contextData;
-
-    private bool _hideExecutionDialog = true;
     private ExperienceSchedule? _activeSchedule;
     private string _selectedRating = string.Empty;
     private string _feedbackNotes = string.Empty;
-
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
         if (org != null)
@@ -319,11 +118,9 @@
             {
                 var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
                 _classroom = classrooms.FirstOrDefault();
-                
                 if (_classroom != null)
                 {
                     _contextData = await ContextService.GetClassroomContextAsync(_classroom.Id);
-
                     var today = DateOnly.FromDateTime(DateTime.Today);
                     _schedules = (await PlannerService.GetMonthlyScheduleAsync(_classroom.Id, today.Year, today.Month))
                                  .Where(s => s.ScheduledDate == today)
@@ -331,36 +128,26 @@
                 }
             }
         }
-
-        _isLoading = false;
     }
-
     private Experience? GetExperience(Guid experienceId)
     {
         return _experiences.FirstOrDefault(e => e.Id == experienceId);
     }
-
     private async Task OpenExecutionDialog(ExperienceSchedule schedule)
     {
         _activeSchedule = schedule;
         _selectedRating = string.Empty;
         _feedbackNotes = string.Empty;
-        
         if (schedule.Status == "Planned")
         {
             await ExecutionService.StartExperienceAsync(schedule.Id);
             schedule.Status = "Started";
         }
-        
-        _hideExecutionDialog = false;
     }
-
     private void CloseExecutionDialog()
     {
-        _hideExecutionDialog = true;
         _activeSchedule = null;
     }
-
     private async Task CompleteExperience()
     {
         if (_activeSchedule != null && !string.IsNullOrEmpty(_selectedRating))
@@ -368,9 +155,21 @@
             // Note: For now using a dummy TeacherId since auth is not fully implemented on UI side.
             await ExecutionService.CompleteExperienceAsync(_activeSchedule.Id, Guid.NewGuid(), _selectedRating, _feedbackNotes);
             _activeSchedule.Status = "Completed";
-            
-            _hideExecutionDialog = true;
             _activeSchedule = null;
         }
+    }
+    private string GetExperienceType(Experience experience)
+    {
+        if (string.IsNullOrEmpty(experience.DnaPayload)) return "Experience";
+        try 
+        {
+            var json = System.Text.Json.JsonDocument.Parse(experience.DnaPayload);
+            if (json.RootElement.TryGetProperty("type", out var typeElement))
+            {
+                return typeElement.GetString() ?? "Experience";
+            }
+        }
+        catch { }
+        return "Experience";
     }
 }

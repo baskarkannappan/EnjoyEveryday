@@ -1,4 +1,4 @@
-using EnjoyEveryday.Domain.Entities;
+﻿using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
 
@@ -55,6 +55,11 @@ public class ExperienceService
         experience.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _experienceRepository.UpdateAsync(experience, changeReason, modifiedByUserId, cancellationToken);
+    }
+
+    public async Task DeleteExperienceAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await _experienceRepository.DeleteAsync(_tenantContext.TenantId, id, cancellationToken);
     }
 
     public async Task<IEnumerable<ExperienceVersion>> GetExperienceHistoryAsync(Guid id, CancellationToken cancellationToken = default)

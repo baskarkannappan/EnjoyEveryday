@@ -51,4 +51,16 @@ public class ChildService
 
         return await _childRepository.AddAsync(child, cancellationToken);
     }
+
+    public async Task UpdateChildAsync(Child child, CancellationToken cancellationToken = default)
+    {
+        child.UpdatedAt = DateTimeOffset.UtcNow;
+        await _childRepository.UpdateAsync(child, cancellationToken);
+    }
+
+    public async Task DeleteChildAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        await _childRepository.DeleteAsync(tenantId, id, cancellationToken);
+    }
 }

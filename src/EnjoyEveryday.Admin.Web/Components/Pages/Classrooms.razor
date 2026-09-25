@@ -1,111 +1,180 @@
-@page "/classrooms"
+﻿@page "/classrooms"
+
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+
 @inject ClassroomService ClassroomService
 @inject BranchService BranchService
 @inject OrganizationService OrgService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
- 
-    <div class="page-header">
 
-        <div>
+<PageHero 
+    Eyebrow="ENVIRONMENT" 
+    Title="Classrooms" 
+    Subtitle="Experiences begin with the environment.">
+    <RightContent>
+        <button id="addClassroomButton" class="primary" @onclick="OpenAddClassroomModal">
+            + Add classroom
+        </button>
+    </RightContent>
+</PageHero>
 
-            <div class="eyebrow">
-                ENVIRONMENT
+<div id="classroomGrid" class="people-grid">
+    @if (_classrooms != null && _classrooms.Any())
+    {
+        @foreach (var classroom in _classrooms)
+        {
+            <div @onclick="() => OpenEditClassroomModal(classroom)" style="cursor: pointer;">
+                <IconCard Icon="🏫" Title="@classroom.Name">
+                    <p>@(classroom.Capacity?.ToString() ?? "18") children · Ages @(classroom.AgeGroup ?? "3–4")</p>
+                    <p>Environment: @(classroom.Environment ?? "Indoor")</p>
+                </IconCard>
             </div>
+        }
+    }
+    else if (_classrooms != null && !_classrooms.Any())
+    {
+        <p>No classrooms found. Generating sample data...</p>
+    }
+</div>
 
-            <h2>
-                Classrooms
-            </h2>
-
-            <p>
-                Experiences begin with the environment.
-            </p>
-
+@if (_isModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseDialog"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
+        <h3>@(_isEditing ? "Edit Classroom" : "Add Classroom")</h3>
+        
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Name</label>
+            <input @bind="_currentClassroom.Name" type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
         </div>
 
-    </div>
-
-
-    <div id="classroomGrid" class="people-grid">
-
-        <div class="person">
-
-            <div class="person-avatar">
-                ▣
-            </div>
-
-            <h3>
-                Bluebirds
-            </h3>
-
-            <p>
-                18
-                children ·
-                Ages 3–4
-            </p>
-
-            <p>
-                Teacher: Priya
-            </p>
-
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Age Group (e.g. 3-4)</label>
+            <input @bind="_currentClassroom.AgeGroup" type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
         </div>
 
-
-        <div class="person">
-
-            <div class="person-avatar">
-                ◇
-            </div>
-
-            <h3>
-                Available materials
-            </h3>
-
-            <p>
-                Blocks · Paper · Crayons
-            </p>
-
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label>Capacity</label>
+            <input @bind="_currentClassroom.Capacity" type="number" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
         </div>
 
-
-        <div class="person">
-
-            <div class="person-avatar">
-                ✦
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                @if (_isEditing)
+                {
+                    <button class="secondary" style="color: red; border-color: red;" @onclick="DeleteClassroomAsync">Delete</button>
+                }
             </div>
-
-            <h3>
-                Current interests
-            </h3>
-
-            <p>
-                Animals · Building · Movement
-            </p>
-
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="secondary" @onclick="CloseDialog">Cancel</button>
+                <button class="primary" @onclick="SaveClassroomAsync">Save</button>
+            </div>
         </div>
-
-    </div>
- 
+    </dialog>
+}
 
 @code {
-    private IEnumerable<Branch>? _branches;
-    private List<Classroom> _classrooms = new();
+    private IEnumerable<Classroom>? _classrooms;
+    private Classroom _currentClassroom = new();
+    private bool _isModalOpen = false;
+    private bool _isEditing = false;
+    private Guid _defaultBranchId;
 
     protected override async Task OnInitializedAsync()
     {
-        // For development, we assume Organization ID is fetched from context.
-        // We'll fetch the first org for the current tenant.
         var orgs = await OrgService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
         {
-            _branches = await BranchService.GetBranchesAsync(org.Id);
-            foreach (var branch in _branches)
-            {
-                var branchClassrooms = await ClassroomService.GetClassroomsAsync(branch.Id);
-                _classrooms.AddRange(branchClassrooms);
-            }
+            var branches = await BranchService.GetBranchesAsync(defaultOrg.Id);
+            _defaultBranchId = branches.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        
+        await LoadClassroomsAsync();
+
+        if (_classrooms != null && !_classrooms.Any() && _defaultBranchId != Guid.Empty)
+        {
+            await InsertSampleDataAsync();
+        }
+    }
+
+    private async Task LoadClassroomsAsync()
+    {
+        if (_defaultBranchId != Guid.Empty)
+        {
+            _classrooms = await ClassroomService.GetClassroomsAsync(_defaultBranchId);
+        }
+    }
+
+    private async Task InsertSampleDataAsync()
+    {
+        await ClassroomService.CreateClassroomAsync(_defaultBranchId, "Bluebirds", "3–4", 18, "Indoor");
+        await ClassroomService.CreateClassroomAsync(_defaultBranchId, "Sunflowers", "4–5", 16, "Indoor");
+        await LoadClassroomsAsync();
+    }
+
+    private void OpenAddClassroomModal()
+    {
+        _currentClassroom = new Classroom { AgeGroup = "3-4", Capacity = 15, Environment = "Indoor" };
+        _isEditing = false;
+        _isModalOpen = true;
+    }
+
+    private void OpenEditClassroomModal(Classroom classroom)
+    {
+        _currentClassroom = new Classroom
+        {
+            Id = classroom.Id,
+            TenantId = classroom.TenantId,
+            BranchId = classroom.BranchId,
+            Name = classroom.Name,
+            AgeGroup = classroom.AgeGroup,
+            Capacity = classroom.Capacity,
+            Environment = classroom.Environment,
+            IsActive = classroom.IsActive
+        };
+        _isEditing = true;
+        _isModalOpen = true;
+    }
+
+    private void CloseDialog()
+    {
+        _isModalOpen = false;
+    }
+
+    private async Task SaveClassroomAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_currentClassroom.Name))
+        {
+            return;
+        }
+
+        if (_isEditing)
+        {
+            await ClassroomService.UpdateClassroomAsync(_currentClassroom);
+        }
+        else
+        {
+            await ClassroomService.CreateClassroomAsync(
+                _defaultBranchId,
+                _currentClassroom.Name,
+                _currentClassroom.AgeGroup,
+                _currentClassroom.Capacity,
+                _currentClassroom.Environment ?? "Indoor");
+        }
+
+        await LoadClassroomsAsync();
+        CloseDialog();
+    }
+
+    private async Task DeleteClassroomAsync()
+    {
+        if (_currentClassroom.Id != Guid.Empty)
+        {
+            await ClassroomService.DeleteClassroomAsync(_currentClassroom.Id);
+            await LoadClassroomsAsync();
+            CloseDialog();
         }
     }
 }

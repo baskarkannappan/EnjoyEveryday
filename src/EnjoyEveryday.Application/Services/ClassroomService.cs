@@ -56,4 +56,10 @@ public class ClassroomService
         classroom.UpdatedAt = DateTimeOffset.UtcNow;
         await _classroomRepository.UpdateAsync(classroom, cancellationToken);
     }
+
+    public async Task DeleteClassroomAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        await _classroomRepository.DeleteAsync(tenantId, id, cancellationToken);
+    }
 }

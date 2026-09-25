@@ -1,4 +1,4 @@
-using EnjoyEveryday.Domain.Repositories;
+﻿using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Audit;
 using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Infrastructure.Repositories;
@@ -19,6 +19,8 @@ public static class InfrastructureServiceRegistration
         IConfiguration configuration)
     {
         // Database
+        Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
+
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is required.");
 
@@ -45,3 +47,4 @@ public static class InfrastructureServiceRegistration
         return services;
     }
 }
+

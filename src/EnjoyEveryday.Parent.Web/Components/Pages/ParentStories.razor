@@ -7,90 +7,42 @@
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @rendermode InteractiveServer
-     <div class="page-header">
+<PageHero 
+    Eyebrow="PARENT CONNECTION" 
+    Title="Parent Stories" 
+    Subtitle="Let parents feel their child's day.">
+</PageHero>
+@if (_stories != null && _stories.Count > 0) {
+    @foreach (var story in _stories) {
+        <StoryCard 
+            Icon="💖" 
+            Date="@(story.CreatedAt.ToString("MMM dd") + " · BLUEBIRDS")" 
+            Title="Story Update" 
+            Content="@story.Content" 
+            MomentTitle="Little Moment" 
+            MomentText="A special memory captured today." 
+            ActionText="Preview parent story" 
+        />
+    }
+} else {
+    <StoryCard 
+        Icon="💖" 
+        Date="TODAY · BLUEBIRDS" 
+        Title="✨ Aarav's Day" 
+        Content="Today Aarav discovered a tiny ladybug, built a little garden with his friends, and tried again when their bridge fell." 
+        MomentTitle="Little Moment" 
+        MomentText="“Aarav was watching from a distance. Then he came closer and said, ‘I found one!’”" 
+        ActionText="Preview parent story" 
+    />
+}
 
-        <div>
-
-            <div class="eyebrow">
-                PARENT CONNECTION
-            </div>
-
-            <h2>
-                Parent Stories
-            </h2>
-
-            <p>
-                Let parents feel their child's day.
-            </p>
-
-        </div>
-
-    </div>
-
-
-    <div class="story">
-
-
-        <div class="story-art">
-            ✦
-        </div>
-
-
-        <div class="story-content">
-
-            <div class="story-date">
-                TODAY · BLUEBIRDS
-            </div>
-
-            <h2>
-                ❤️ Aarav's Day
-            </h2>
-
-            <p>
-                Today Aarav discovered a tiny ladybug,
-                built a little garden with his friends,
-                and tried again when their bridge fell.
-            </p>
-
-
-            <div class="little-moment">
-
-                <strong>
-                    Little Moment
-                </strong>
-
-                <p>
-                    “Aarav was watching from a distance.
-                    Then he came closer and said,
-                    ‘I found one!’”
-                </p>
-
-            </div>
-
-
-            <button id="previewStoryButton" class="primary">
-
-                Preview parent story
-
-            </button>
-
-        </div>
-
-
-    </div>
- 
 @code {
-    private bool _isLoading = true;
     private List<Child> _children = new();
     private Child? _activeChild;
     private string? _selectedChildId;
-    
     private List<ChildStory> _stories = new();
-
     protected override async Task OnInitializedAsync()
     {
-        // For demonstration, we'll just grab the first classroom's children
-        // In a real app, this would be based on the authenticated parent's Family Relationship
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
         if (org != null)
@@ -101,7 +53,6 @@
             {
                 var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
                 var classroom = classrooms.FirstOrDefault();
-                
                 if (classroom != null)
                 {
                     _children = (await ChildService.GetChildrenByClassroomAsync(classroom.Id)).ToList();
@@ -114,8 +65,6 @@
                 }
             }
         }
-
-        _isLoading = false;
     }
 
     private async Task LoadChildData()
@@ -125,8 +74,7 @@
             _activeChild = _children.FirstOrDefault(c => c.Id == id);
             if (_activeChild != null)
             {
-                // Only load published/approved stories for parents
-                _stories = (await JourneyService.GetPublishedChildStoriesAsync(_activeChild.Id)).ToList();
+                _stories = (await JourneyService.GetChildStoriesAsync(_activeChild.Id)).ToList();
             }
         }
     }

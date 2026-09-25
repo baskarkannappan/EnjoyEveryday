@@ -1,4 +1,4 @@
-using EnjoyEveryday.Domain.Entities;
+﻿using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
 
@@ -56,5 +56,20 @@ public class UserService
         };
 
         return await _userRepository.AddAsync(user, passwordHash, cancellationToken);
+    }
+
+    public async Task UpdateUserAsync(User user, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        if (user.TenantId != tenantId) throw new UnauthorizedAccessException("Cross-tenant update attempted.");
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        user.DisplayName = $"{user.FirstName} {user.LastName}";
+        await _userRepository.UpdateAsync(user, cancellationToken);
+    }
+
+    public async Task DeleteUserAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        await _userRepository.DeleteAsync(tenantId, id, cancellationToken);
     }
 }

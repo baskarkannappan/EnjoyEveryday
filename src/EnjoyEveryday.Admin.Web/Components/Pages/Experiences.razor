@@ -1,578 +1,118 @@
-@page "/experiences"
+﻿@page "/experiences"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject ExperienceService ExperienceService
- <section id="page-experiences" class="page active">
+@inject UserService UserService
 
-
-    <div class="page-header">
-
-        <div>
-
-            <div class="eyebrow">
-                YOUR EXPERIENCE LIBRARY
-            </div>
-
-            <h2>
-                My Experiences
-            </h2>
-
-            <p>
-                Your daycare's growing collection.
-                Every experience gets better with use.
-            </p>
-
-        </div>
-
-
-        <button id="createExperienceButton" class="primary">
-
-            + Create experience
-
-        </button>
-
-    </div>
-
-
-    <div class="tabs">
-
-
-        <button class="tab active" data-filter="all">
-
-            All
-
-        </button>
-
-
-        <button class="tab" data-filter="created">
-
-            Created by us
-
-        </button>
-
-
-        <button class="tab" data-filter="platform">
-
-            Platform
-
-        </button>
-
-
-        <button class="tab" data-filter="ai">
-
-            AI created
-
-        </button>
-
-
-    </div>
-
+<section id="page-experiences" class="page active">
+    <PageHero 
+        Eyebrow="YOUR EXPERIENCE LIBRARY" 
+        Title="My Experiences" 
+        Subtitle="Your daycare's growing collection. Every experience gets better with use.">
+        <RightContent>
+            <button id="createExperienceButton" class="primary" @onclick="OpenAddExperienceModal">
+                + Create experience
+            </button>
+        </RightContent>
+    </PageHero>
 
     <div class="search-row">
-
         <input id="experienceSearch" class="search" placeholder="Search experiences...">
-
-
         <select id="ageFilter" class="filter">
-
-            <option value="all">
-                All ages
-            </option>
-
-            <option value="3–4">
-                3–4
-            </option>
-
-            <option value="4–5">
-                4–5
-            </option>
-
+            <option value="all">All ages</option>
+            <option value="3-4">3-4</option>
+            <option value="4-5">4-5</option>
         </select>
-
-
         <select id="typeFilter" class="filter">
-
-            <option value="all">
-                All types
-            </option>
-
-            <option value="Explore">
-                Explore
-            </option>
-
-            <option value="Create">
-                Create
-            </option>
-
-            <option value="Move">
-                Move
-            </option>
-
-            <option value="Together">
-                Together
-            </option>
-
+            <option value="all">All types</option>
+            <option value="Explore">Explore</option>
+            <option value="Create">Create</option>
+            <option value="Move">Move</option>
         </select>
-
     </div>
 
-
     <div id="experienceGrid" class="experience-grid">
+        @if (_experiences != null && _experiences.Any()) {
+            @foreach (var exp in _experiences) {
+                var type = "Experience";
+                try {
+                    var json = System.Text.Json.JsonDocument.Parse(exp.DnaPayload);
+                    if (json.RootElement.TryGetProperty("type", out var typeElement)) {
+                        type = typeElement.GetString() ?? "Experience";
+                    }
+                } catch {}
 
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Create
-                    </span>
-
-                    <span class="chip gray">
-                        Tenant Approved
-                    </span>
-
+                <div @onclick="() => OpenEditExperienceModal(exp)" style="cursor: pointer;">
+                    <ExperienceCard Type="@type" Status="@exp.Status" Title="@exp.Title" Description="@exp.Description" Ages="3-4" Duration="15 min" Setting="Indoor" Uses="1" Version="v1" Id="@exp.Id.ToString()" />
                 </div>
+            }
+        }
+        else if (_experiences != null && !_experiences.Any())
+        {
+            <p>No experiences found. Generating sample data...</p>
+        }
+    </div>
+</section>
 
-
-                <h3>
-                    Our Little City
-                </h3>
-
-
-                <div class="experience-description">
-                    Children build a city together and discover what makes a community.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        3–4
-                    </span>
-
-                    <span>
-                        25 min
-                    </span>
-
-                    <span>
-                        Indoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        12
-                        uses ·
-                        v3
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="city">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
+@if (_isModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseDialog"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 450px;">
+        <h3>@(_isEditing ? "Edit Experience" : "Add Experience")</h3>
         
-
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Explore
-                    </span>
-
-                    <span class="chip gray">
-                        Platform Approved
-                    </span>
-
-                </div>
-
-
-                <h3>
-                    Tiny Discoveries
-                </h3>
-
-
-                <div class="experience-description">
-                    Look closely at tiny things hiding in the classroom.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        3–4
-                    </span>
-
-                    <span>
-                        15 min
-                    </span>
-
-                    <span>
-                        Indoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        19
-                        uses ·
-                        v2
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="tiny">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-        
-
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Together
-                    </span>
-
-                    <span class="chip gray">
-                        Experimental
-                    </span>
-
-                </div>
-
-
-                <h3>
-                    Frog Rescue
-                </h3>
-
-
-                <div class="experience-description">
-                    A cooperative rescue mission involving planning and imagination.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        3–4
-                    </span>
-
-                    <span>
-                        20 min
-                    </span>
-
-                    <span>
-                        Indoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        8
-                        uses ·
-                        v2
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="frog">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-        
-
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Move
-                    </span>
-
-                    <span class="chip gray">
-                        Tenant Approved
-                    </span>
-
-                </div>
-
-
-                <h3>
-                    Animal Adventure
-                </h3>
-
-
-                <div class="experience-description">
-                    Move, sound and imagine like different animals.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        3–4
-                    </span>
-
-                    <span>
-                        10 min
-                    </span>
-
-                    <span>
-                        Indoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        9
-                        uses ·
-                        v1
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="animals">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-        
-
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Create
-                    </span>
-
-                    <span class="chip gray">
-                        Tenant Approved
-                    </span>
-
-                </div>
-
-
-                <h3>
-                    Giant Painting
-                </h3>
-
-
-                <div class="experience-description">
-                    A large shared painting where every child contributes.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        4–5
-                    </span>
-
-                    <span>
-                        30 min
-                    </span>
-
-                    <span>
-                        Outdoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        6
-                        uses ·
-                        v2
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="painting">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-        
-
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Explore
-                    </span>
-
-                    <span class="chip gray">
-                        Platform Approved
-                    </span>
-
-                </div>
-
-
-                <h3>
-                    Nature Detectives
-                </h3>
-
-
-                <div class="experience-description">
-                    Children investigate what they can find and notice outdoors.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        4–5
-                    </span>
-
-                    <span>
-                        20 min
-                    </span>
-
-                    <span>
-                        Outdoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        15
-                        uses ·
-                        v3
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="nature">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-        
-
-            <article class="experience">
-
-                <div class="experience-top">
-
-                    <span class="chip green">
-                        Story
-                    </span>
-
-                    <span class="chip gray">
-                        Platform Approved
-                    </span>
-
-                </div>
-
-
-                <h3>
-                    The Little Seed
-                </h3>
-
-
-                <div class="experience-description">
-                    A quiet story about growing, waiting and discovering.
-                </div>
-
-
-                <div class="experience-meta">
-
-                    <span>
-                        3–5
-                    </span>
-
-                    <span>
-                        10 min
-                    </span>
-
-                    <span>
-                        Indoor
-                    </span>
-
-                </div>
-
-
-                <div class="experience-bottom">
-
-                    <span class="experience-usage">
-                        21
-                        uses ·
-                        v4
-                    </span>
-
-
-                    <button class="text-button view-experience" data-id="seed">
-
-                        View →
-
-                    </button>
-
-                </div>
-
-            </article>
-
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Title</label>
+            <input @bind="_currentExperience.Title" type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
         </div>
 
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Description</label>
+            <textarea @bind="_currentExperience.Description" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; height: 80px;"></textarea>
+        </div>
 
-</section>
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label>DNA Payload (JSON)</label>
+            <textarea @bind="_currentExperience.DnaPayload" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; height: 80px; font-family: monospace;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                @if (_isEditing)
+                {
+                    <button class="secondary" style="color: red; border-color: red;" @onclick="DeleteExperienceAsync">Delete</button>
+                }
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="secondary" @onclick="CloseDialog">Cancel</button>
+                <button class="primary" @onclick="SaveExperienceAsync">Save</button>
+            </div>
+        </div>
+    </dialog>
+}
+
 @code {
-    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
-
     private IEnumerable<Experience>? _experiences;
-    private bool _hideAddModal = true;
-    private Experience _newExperience = new();
-    private FluentDialog _addDialog = default!;
+    private Experience _currentExperience = new();
+    private bool _isModalOpen = false;
+    private bool _isEditing = false;
+    private Guid _defaultUserId = Guid.Parse("50000000-0000-0000-0000-000000000001");
 
     protected override async Task OnInitializedAsync()
     {
+        var users = await UserService.GetUsersAsync();
+        _defaultUserId = users.FirstOrDefault()?.Id ?? Guid.Empty;
+
+        if (_defaultUserId == Guid.Empty)
+        {
+            var newUser = await UserService.CreateUserAsync("system@enjoyeveryday.com", "System", "User", "TEMP_HASH");
+            _defaultUserId = newUser.Id;
+        }
         await LoadExperiencesAsync();
+
+        if (_experiences != null && !_experiences.Any())
+        {
+            await InsertSampleDataAsync();
+        }
     }
 
     private async Task LoadExperiencesAsync()
@@ -580,26 +120,78 @@
         _experiences = await ExperienceService.GetExperiencesAsync();
     }
 
+    private async Task InsertSampleDataAsync()
+    {
+        await ExperienceService.CreateExperienceAsync("Finger Painting", "Messy fun with colors", "{\"type\": \"Create\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Story Time", "Reading The Hungry Caterpillar", "{\"type\": \"Explore\"}", _defaultUserId);
+        await LoadExperiencesAsync();
+    }
+
     private void OpenAddExperienceModal()
     {
-        _newExperience = new Experience();
-        _hideAddModal = false;
+        _currentExperience = new Experience { DnaPayload = "{\"type\": \"Experience\"}" };
+        _isEditing = false;
+        _isModalOpen = true;
+    }
+
+    private void OpenEditExperienceModal(Experience exp)
+    {
+        _currentExperience = new Experience
+        {
+            Id = exp.Id,
+            TenantId = exp.TenantId,
+            Title = exp.Title,
+            Description = exp.Description,
+            Status = exp.Status,
+            DnaPayload = exp.DnaPayload,
+            CreatedByUserId = exp.CreatedByUserId
+        };
+        _isEditing = true;
+        _isModalOpen = true;
     }
 
     private void CloseDialog()
     {
-        _hideAddModal = true;
+        _isModalOpen = false;
     }
 
     private async Task SaveExperienceAsync()
     {
-        if (!string.IsNullOrWhiteSpace(_newExperience.Title))
+        if (string.IsNullOrWhiteSpace(_currentExperience.Title)) return;
+
+        if (_isEditing)
         {
-            // Placeholder: dummy user ID until auth is fully hooked up
-            var dummyUserId = Guid.Empty; 
-            await ExperienceService.CreateExperienceAsync(_newExperience.Title, _newExperience.Description, "{}", dummyUserId);
-            _hideAddModal = true;
+            await ExperienceService.UpdateExperienceAsync(
+                _currentExperience.Id,
+                _currentExperience.Title,
+                _currentExperience.Description ?? "",
+                _currentExperience.DnaPayload ?? "{}",
+                _currentExperience.Status ?? "Idea",
+                "Manual Update",
+                _defaultUserId);
+        }
+        else
+        {
+            await ExperienceService.CreateExperienceAsync(
+                _currentExperience.Title,
+                _currentExperience.Description ?? "",
+                _currentExperience.DnaPayload ?? "{}",
+                _defaultUserId);
+        }
+
+        await LoadExperiencesAsync();
+        CloseDialog();
+    }
+
+    private async Task DeleteExperienceAsync()
+    {
+        if (_currentExperience.Id != Guid.Empty)
+        {
+            await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);
             await LoadExperiencesAsync();
+            CloseDialog();
         }
     }
 }
+
+

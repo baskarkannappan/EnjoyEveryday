@@ -1,80 +1,91 @@
-@page "/teachers"
+﻿@page "/teachers"
+
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+
 @inject UserService UserService
 
-    <div class="page-header">
+<PageHero 
+    Eyebrow="PEOPLE" 
+    Title="Teachers" 
+    Subtitle="Less typing. More teaching.">
+    <RightContent>
+        <button id="addTeacherButton" class="primary" @onclick="OpenAddTeacherModal">
+            + Add teacher
+        </button>
+    </RightContent>
+</PageHero>
 
-        <div>
-
-            <div class="eyebrow">
-                PEOPLE
+<div id="teacherGrid" class="people-grid">
+    @if (_teachers != null && _teachers.Any())
+    {
+        @foreach (var teacher in _teachers)
+        {
+            <div @onclick="() => OpenEditTeacherModal(teacher)" style="cursor: pointer;">
+                <PersonCard AvatarInitials="@(teacher.FirstName?.FirstOrDefault().ToString() ?? "?")" 
+                            Name="@teacher.DisplayName" 
+                            Subtitle="Experience Facilitator" 
+                            HighlightTitle="Today's support" 
+                            HighlightText="4 experiences planned. Keep room for child-led exploration." />
             </div>
+        }
+    }
+    else if (_teachers != null && !_teachers.Any())
+    {
+        <p>No teachers found. Generating sample data...</p>
+    }
+</div>
 
-            <h2>
-                Teachers
-            </h2>
-
-            <p>
-                Less typing. More teaching.
-            </p>
-
+@if (_isModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseDialog"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
+        <h3>@(_isEditing ? "Edit Teacher" : "Add Teacher")</h3>
+        
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>First Name</label>
+            <input @bind="_currentTeacher.FirstName" type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
         </div>
 
-    </div>
-
-
-    <div id="teacherGrid" class="people-grid">
-
-        <div class="person">
-
-            <div class="person-header">
-
-                <div class="person-avatar">
-                    P
-                </div>
-
-                <div>
-
-                    <h3>
-                        Priya
-                    </h3>
-
-                    <p>
-                        Experience Facilitator
-                    </p>
-
-                </div>
-
-            </div>
-
-
-            <div class="person-interest">
-
-                <strong>
-                    Today's support
-                </strong>
-
-                <p>
-                    4 experiences planned.
-                    Keep room for child-led exploration.
-                </p>
-
-            </div>
-
+        <div class="field" style="margin-bottom: 1rem;">
+            <label>Last Name</label>
+            <input @bind="_currentTeacher.LastName" type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
         </div>
 
-    </div>
- 
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label>Email</label>
+            <input @bind="_currentTeacher.Email" type="email" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
+        </div>
+
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                @if (_isEditing)
+                {
+                    <button class="secondary" style="color: red; border-color: red;" @onclick="DeleteTeacherAsync">Delete</button>
+                }
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="secondary" @onclick="CloseDialog">Cancel</button>
+                <button class="primary" @onclick="SaveTeacherAsync">Save</button>
+            </div>
+        </div>
+    </dialog>
+}
+
 @code {
     private IEnumerable<User>? _teachers;
-    private bool _hideAddModal = true;
-    private User _newTeacher = new();
-    private FluentDialog _addDialog = default!;
+    private User _currentTeacher = new();
+    private bool _isModalOpen = false;
+    private bool _isEditing = false;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadTeachersAsync();
+
+        if (_teachers != null && !_teachers.Any())
+        {
+            await InsertSampleDataAsync();
+        }
     }
 
     private async Task LoadTeachersAsync()
@@ -82,25 +93,73 @@
         _teachers = await UserService.GetTeachersAsync();
     }
 
+    private async Task InsertSampleDataAsync()
+    {
+        await UserService.CreateUserAsync("jane.doe@example.com", "Jane", "Doe", "TEMP_HASH");
+        await UserService.CreateUserAsync("john.smith@example.com", "John", "Smith", "TEMP_HASH");
+        await LoadTeachersAsync();
+    }
+
     private void OpenAddTeacherModal()
     {
-        _newTeacher = new User();
-        _hideAddModal = false;
+        _currentTeacher = new User();
+        _isEditing = false;
+        _isModalOpen = true;
+    }
+
+    private void OpenEditTeacherModal(User teacher)
+    {
+        _currentTeacher = new User
+        {
+            Id = teacher.Id,
+            TenantId = teacher.TenantId,
+            FirstName = teacher.FirstName,
+            LastName = teacher.LastName,
+            Email = teacher.Email,
+            DisplayName = teacher.DisplayName,
+            IsActive = teacher.IsActive
+        };
+        _isEditing = true;
+        _isModalOpen = true;
     }
 
     private void CloseDialog()
     {
-        _hideAddModal = true;
+        _isModalOpen = false;
     }
 
     private async Task SaveTeacherAsync()
     {
-        if (!string.IsNullOrWhiteSpace(_newTeacher.FirstName) && !string.IsNullOrWhiteSpace(_newTeacher.LastName) && !string.IsNullOrWhiteSpace(_newTeacher.Email))
+        if (string.IsNullOrWhiteSpace(_currentTeacher.FirstName) || string.IsNullOrWhiteSpace(_currentTeacher.LastName) || string.IsNullOrWhiteSpace(_currentTeacher.Email))
         {
-            // Placeholder: password generation / email invite would go here
-            await UserService.CreateUserAsync(_newTeacher.Email, _newTeacher.FirstName, _newTeacher.LastName, "TEMP_HASH_REPLACE_ME");
-            _hideAddModal = true;
+            return;
+        }
+
+        if (_isEditing)
+        {
+            await UserService.UpdateUserAsync(_currentTeacher);
+        }
+        else
+        {
+            await UserService.CreateUserAsync(
+                _currentTeacher.Email,
+                _currentTeacher.FirstName,
+                _currentTeacher.LastName,
+                "TEMP_HASH");
+        }
+
+        await LoadTeachersAsync();
+        CloseDialog();
+    }
+
+    private async Task DeleteTeacherAsync()
+    {
+        if (_currentTeacher.Id != Guid.Empty)
+        {
+            await UserService.DeleteUserAsync(_currentTeacher.Id);
             await LoadTeachersAsync();
+            CloseDialog();
         }
     }
 }
+

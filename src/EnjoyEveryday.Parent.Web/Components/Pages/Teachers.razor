@@ -2,104 +2,46 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject UserService UserService
-
-    <div class="page-header">
-
-        <div>
-
-            <div class="eyebrow">
-                PEOPLE
-            </div>
-
-            <h2>
-                Teachers
-            </h2>
-
-            <p>
-                Less typing. More teaching.
-            </p>
-
-        </div>
-
-    </div>
-
-
-    <div id="teacherGrid" class="people-grid">
-
-        <div class="person">
-
-            <div class="person-header">
-
-                <div class="person-avatar">
-                    P
-                </div>
-
-                <div>
-
-                    <h3>
-                        Priya
-                    </h3>
-
-                    <p>
-                        Experience Facilitator
-                    </p>
-
-                </div>
-
-            </div>
-
-
-            <div class="person-interest">
-
-                <strong>
-                    Today's support
-                </strong>
-
-                <p>
-                    4 experiences planned.
-                    Keep room for child-led exploration.
-                </p>
-
-            </div>
-
-        </div>
-
-    </div>
- 
+<PageHero 
+    Eyebrow="PEOPLE" 
+    Title="Teachers" 
+    Subtitle="Less typing. More teaching.">
+    <RightContent>
+        <button id="addTeacherButton" class="primary" @onclick="OpenAddTeacherModal">
+            + Add teacher
+        </button>
+    </RightContent>
+</PageHero>
+<div id="teacherGrid" class="people-grid">
+    @if (_teachers != null) {
+        @foreach (var teacher in _teachers) {
+            <PersonCard AvatarInitials="@teacher.FirstName.Substring(0,1)" Name="@teacher.FirstName" Subtitle="Experience Facilitator" HighlightTitle="Today's support" HighlightText="4 experiences planned. Keep room for child-led exploration." />
+        }
+    }
+</div>
 @code {
     private IEnumerable<User>? _teachers;
-    private bool _hideAddModal = true;
     private User _newTeacher = new();
-    private FluentDialog _addDialog = default!;
-
     protected override async Task OnInitializedAsync()
     {
         await LoadTeachersAsync();
     }
-
     private async Task LoadTeachersAsync()
     {
         _teachers = await UserService.GetTeachersAsync();
     }
-
     private void OpenAddTeacherModal()
     {
         _newTeacher = new User();
-        _hideAddModal = false;
     }
-
     private void CloseDialog()
     {
-        _hideAddModal = true;
     }
-
     private async Task SaveTeacherAsync()
     {
         if (!string.IsNullOrWhiteSpace(_newTeacher.FirstName) && !string.IsNullOrWhiteSpace(_newTeacher.LastName) && !string.IsNullOrWhiteSpace(_newTeacher.Email))
         {
-            // Placeholder: password generation / email invite would go here
             await UserService.CreateUserAsync(_newTeacher.Email, _newTeacher.FirstName, _newTeacher.LastName, "TEMP_HASH_REPLACE_ME");
-            _hideAddModal = true;
             await LoadTeachersAsync();
         }
     }

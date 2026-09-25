@@ -7,146 +7,45 @@
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @rendermode InteractiveServer
-     <div class="page-header">
 
+<PageHero 
+    Eyebrow="CHILD JOURNEY" 
+    Title="Aarav's Little World" 
+    Subtitle="Experiences, accomplishments and memories.">
+</PageHero>
+
+<div class="journey">
+    <div class="journey-header">
+        <div class="journey-large-avatar">
+            @(_activeChild?.FirstName.Substring(0,1) ?? "A")
+        </div>
         <div>
-
-            <div class="eyebrow">
-                CHILD JOURNEY
-            </div>
-
-            <h2>
-                Aarav's Little World
-            </h2>
-
-            <p>
-                Experiences, accomplishments and memories.
-            </p>
-
+            <h2>@(_activeChild?.FirstName ?? "Aarav")</h2>
+            <p>Age 3 &middot; Bluebirds</p>
         </div>
-
     </div>
 
-
-    <div class="journey">
-
-
-        <div class="journey-header">
-
-            <div class="journey-large-avatar">
-                A
-            </div>
-
-            <div>
-
-                <h2>
-                    Aarav
-                </h2>
-
-                <p>
-                    Age 3 · Bluebirds
-                </p>
-
-            </div>
-
-        </div>
-
-
-        <div class="memory-area">
-
-
-            <div class="memory m1">
-
-                <div class="memory-symbol">
-                    ✦
-                </div>
-
-                <strong>
-                    Discovered
-                </strong>
-
-                <span>
-                    tiny insects
-                </span>
-
-            </div>
-
-
-            <div class="memory m2">
-
-                <div class="memory-symbol">
-                    ♡
-                </div>
-
-                <strong>
-                    Helped
-                </strong>
-
-                <span>
-                    a friend
-                </span>
-
-            </div>
-
-
-            <div class="memory m3">
-
-                <div class="memory-symbol">
-                    ◆
-                </div>
-
-                <strong>
-                    Created
-                </strong>
-
-                <span>
-                    a building
-                </span>
-
-            </div>
-
-
-            <div class="memory m4">
-
-                <div class="memory-symbol">
-                    ↻
-                </div>
-
-                <strong>
-                    Tried again
-                </strong>
-
-                <span>
-                    after it fell
-                </span>
-
-            </div>
-
-
-            <div class="memory m5">
-
-                <div class="memory-symbol">
-                    ☀
-                </div>
-
-                <strong>
-                    Explored
-                </strong>
-
-                <span>
-                    the garden
-                </span>
-
-            </div>
-
-
-        </div>
-
+    <div class="memory-area">
+        @if (_stories != null && _stories.Count > 0) {
+            int count = 1;
+            foreach (var story in _stories) {
+                var css = "m" + count;
+                <MemoryCard CssClass="@css" Icon="✦" Action="Discovered" Detail="Story Update" />
+                count++;
+                if(count > 5) break;
+            }
+        }
+        @if (_stories == null || _stories.Count == 0) {
+            <MemoryCard CssClass="m1" Icon="✦" Action="Discovered" Detail="tiny insects" />
+            <MemoryCard CssClass="m2" Icon="♡" Action="Helped" Detail="a friend" />
+            <MemoryCard CssClass="m3" Icon="◆" Action="Created" Detail="a building" />
+            <MemoryCard CssClass="m4" Icon="↻" Action="Tried again" Detail="after it fell" />
+            <MemoryCard CssClass="m5" Icon="☀" Action="Explored" Detail="the garden" />
+        }
     </div>
+</div>
  
-
 @code {
-    private bool _isLoading = true;
     private List<Child> _children = new();
     private Child? _activeChild;
     private Classroom? _classroom;
@@ -157,7 +56,6 @@
 
     private string _newInterest = string.Empty;
     
-    private bool _hideNewStoryDialog = true;
     private string _newStoryContent = string.Empty;
 
     protected override async Task OnInitializedAsync()
@@ -185,8 +83,6 @@
                 }
             }
         }
-
-        _isLoading = false;
     }
 
     private async Task LoadChildData()
@@ -212,20 +108,21 @@
         }
     }
 
-    private async Task SaveStory()
+    private void OpenNewStoryDialog()
+    {
+        _newStoryContent = string.Empty;
+    }
+
+    private void CloseNewStoryDialog()
+    {
+    }
+
+    private async Task SaveStoryAsync()
     {
         if (!string.IsNullOrWhiteSpace(_newStoryContent) && _activeChild != null)
         {
-            await JourneyService.CreateStoryAsync(_activeChild.Id, Guid.NewGuid(), null, _newStoryContent.Trim());
-            _newStoryContent = string.Empty;
-            _hideNewStoryDialog = true;
+            await JourneyService.CreateStoryAsync(_activeChild.Id, Guid.Empty, null, _newStoryContent);
             await LoadChildData();
         }
-    }
-
-    private async Task ApproveStory(ChildStory story)
-    {
-        await JourneyService.ApproveStoryAsync(story.Id);
-        await LoadChildData();
     }
 }

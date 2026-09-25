@@ -24,8 +24,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<EnjoyEveryday.Shared.Tenancy.ITenantContext>(sp => 
             new EnjoyEveryday.Shared.Tenancy.TenantContext 
             { 
-                TenantId = Guid.Parse("00000000-0000-0000-0000-000000000001"), 
-                TenantName = "Default Organization" 
+                TenantId = Guid.Parse("10000000-0000-0000-0000-000000000001"), 
+                TenantName = "Little Stars Daycare" 
             });
 
         return services;
