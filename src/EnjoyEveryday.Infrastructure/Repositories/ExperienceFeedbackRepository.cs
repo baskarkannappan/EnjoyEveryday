@@ -1,4 +1,4 @@
-using Dapper;
+﻿using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Data;
@@ -47,4 +47,34 @@ public class ExperienceFeedbackRepository : IExperienceFeedbackRepository
         await connection.ExecuteAsync(sql, feedback);
         return feedback;
     }
+
+    public async Task<IEnumerable<ExperienceFeedback>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+        var sql = @"
+            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId,
+                   teacher_id as TeacherId, rating as Rating, notes as Notes, created_at as CreatedAt
+            FROM experience_feedback
+            WHERE tenant_id = @TenantId
+            ORDER BY created_at DESC";
+        return await connection.QueryAsync<ExperienceFeedback>(sql, new { TenantId = tenantId });
+    }
+
+    public async Task UpdateAsync(ExperienceFeedback feedback, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+        var sql = @"
+            UPDATE experience_feedback
+            SET rating = @Rating, notes = @Notes
+            WHERE id = @Id AND tenant_id = @TenantId";
+        await connection.ExecuteAsync(sql, feedback);
+    }
+
+    public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+        var sql = "DELETE FROM experience_feedback WHERE id = @Id AND tenant_id = @TenantId";
+        await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
+    }
 }
+

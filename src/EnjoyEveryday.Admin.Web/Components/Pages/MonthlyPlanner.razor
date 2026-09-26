@@ -10,7 +10,7 @@
  <section id="page-planner" class="page active">
     <PageHero 
         Eyebrow="PLAN THE MONTH" 
-        Title="September 2026" 
+        Title="@_currentDate.ToString("MMMM yyyy")" 
         Subtitle="Give the month a rhythm. Leave room for children to lead.">
         <RightContent>
             <div class="planner-controls">
@@ -72,14 +72,14 @@
     <div class="planner-layout">
         <div class="calendar">
             <div class="calendar-header">
-                <button id="previousMonth" class="calendar-arrow">
-                    â€¹
+                <button id="previousMonth" class="calendar-arrow" @onclick="PreviousMonth">
+                    &lt;
                 </button>
                 <strong>
-                    September 2026
+                    @_currentDate.ToString("MMMM yyyy")
                 </strong>
-                <button id="nextMonth" class="calendar-arrow">
-                    â€º
+                <button id="nextMonth" class="calendar-arrow" @onclick="NextMonth">
+                    &gt;
                 </button>
             </div>
             <div class="week">
@@ -98,13 +98,14 @@
                     <div class="day">
                         <div class="day-number @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "today" : "")">
                             @iterDay
+                            <button class="text-button" style="float: right; padding: 0; min-width: auto; font-size: 14px;" @onclick='() => OpenScheduleDialog(currentDate, "Morning")'>+</button>
                         </div>
                         @foreach (var schedule in dailySchedules)
                         {
                             var experience = _experiences.FirstOrDefault(e => e.Id == schedule.ExperienceId);
                             if (experience != null)
                             {
-                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "")">
+                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "")" style="cursor: pointer;" @onclick="() => EditSchedule(schedule)">
                                     <strong>@experience.Title</strong>
                                     <span>
                                         @GetExperienceType(experience) &middot; @schedule.Status
@@ -152,7 +153,7 @@
 {
     <div class="modal-backdrop" @onclick="CloseDialog"></div>
     <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
-        <h3>Schedule Experience</h3>
+        <h3>@(_currentScheduleId.HasValue ? "Edit Experience" : "Schedule Experience")</h3>
         
         <div class="field" style="margin-bottom: 1rem;">
             <label>Experience</label>
@@ -172,9 +173,17 @@
             </select>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-            <button class="secondary" @onclick="CloseDialog">Cancel</button>
-            <button class="primary" @onclick="ConfirmSchedule">Schedule</button>
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                @if (_currentScheduleId.HasValue)
+                {
+                    <button class="secondary" style="color: red; border-color: red;" @onclick="DeleteSchedule">Delete</button>
+                }
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="secondary" @onclick="CloseDialog">Cancel</button>
+                <button class="primary" @onclick="ConfirmSchedule">Save</button>
+            </div>
         </div>
     </dialog>
 }
@@ -190,6 +199,7 @@
     private bool _isModalOpen = false;
     private string _dialogTimeOfDay = string.Empty;
     private string? _dialogSelectedExperienceId;
+    private Guid? _currentScheduleId;
     protected override async Task OnInitializedAsync()
     {
         // Set to current week's Monday
@@ -235,9 +245,14 @@
         }
     }
 
-    private void PreviousWeek()
+    private void PreviousMonth()
     {
-        _currentDate = _currentDate.AddDays(-7);
+        _currentDate = _currentDate.AddMonths(-1);
+        _ = LoadSchedules();
+    }
+    private void NextMonth()
+    {
+        _currentDate = _currentDate.AddMonths(1);
         _ = LoadSchedules();
     }
     private void NextWeek()
@@ -259,23 +274,32 @@
     }
     private void OpenScheduleDialog(DateOnly date, string timeOfDay)
     {
+        _currentScheduleId = null;
         _dialogDate = date;
         _dialogTimeOfDay = timeOfDay;
         if (_experiences.Any())
         {
             _dialogSelectedExperienceId = _experiences.First().Id.ToString();
         }
-    }
-        private void OpenScheduleDialogLocal()
-    {
         _isModalOpen = true;
-        if (_currentDateTime.HasValue) {
-             _dialogDate = DateOnly.FromDateTime(_currentDateTime.Value);
-        } else {
-             _dialogDate = _currentDate;
-        }
-        if (_experiences.Any()) {
-            _dialogSelectedExperienceId = _experiences.First().Id.ToString();
+    }
+
+    private void EditSchedule(ExperienceSchedule schedule)
+    {
+        _currentScheduleId = schedule.Id;
+        _dialogDate = schedule.ScheduledDate;
+        _dialogTimeOfDay = schedule.TimeOfDay;
+        _dialogSelectedExperienceId = schedule.ExperienceId.ToString();
+        _isModalOpen = true;
+    }
+
+    private async Task DeleteSchedule()
+    {
+        if (_currentScheduleId.HasValue)
+        {
+            await PlannerService.DeleteScheduleAsync(_currentScheduleId.Value);
+            await LoadSchedules();
+            CloseDialog();
         }
     }
 
@@ -289,7 +313,23 @@
         if (string.IsNullOrEmpty(_dialogSelectedExperienceId) || string.IsNullOrEmpty(_selectedClassroomId)) return;
         var expId = Guid.Parse(_dialogSelectedExperienceId);
         var clsId = Guid.Parse(_selectedClassroomId);
-        await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
+        
+        if (_currentScheduleId.HasValue)
+        {
+            var scheduleToUpdate = _schedules.FirstOrDefault(s => s.Id == _currentScheduleId.Value);
+            if (scheduleToUpdate != null)
+            {
+                scheduleToUpdate.ExperienceId = expId;
+                scheduleToUpdate.TimeOfDay = _dialogTimeOfDay;
+                scheduleToUpdate.ScheduledDate = _dialogDate;
+                await PlannerService.UpdateScheduleAsync(scheduleToUpdate);
+            }
+        }
+        else
+        {
+            await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
+        }
+        
         await LoadSchedules();
         CloseDialog();
     }

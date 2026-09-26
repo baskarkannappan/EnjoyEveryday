@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
@@ -36,8 +36,14 @@ public class PlannerService
         return await _scheduleRepository.CreateAsync(schedule);
     }
 
+        public async Task UpdateScheduleAsync(ExperienceSchedule schedule)
+    {
+        await _scheduleRepository.UpdateAsync(schedule);
+    }
+
     public async Task DeleteScheduleAsync(Guid id)
     {
         await _scheduleRepository.DeleteAsync(id);
     }
 }
+

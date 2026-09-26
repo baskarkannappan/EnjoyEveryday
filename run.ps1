@@ -32,15 +32,15 @@ Write-Host "Starting Daycare Web Project..." -ForegroundColor Green
 $WebCmd = "cd '$PSScriptRoot\src\EnjoyEveryday.Daycare.Web'; dotnet run --no-build"
 Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $WebCmd
 
-# Start the Admin Web Project in a new PowerShell window
-Write-Host "Starting Admin Web Project..." -ForegroundColor Green
-$AdminCmd = "cd '$PSScriptRoot\src\EnjoyEveryday.Admin.Web'; dotnet run --no-build"
-Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $AdminCmd
+# # Start the Admin Web Project in a new PowerShell window
+# Write-Host "Starting Admin Web Project..." -ForegroundColor Green
+# $AdminCmd = "cd '$PSScriptRoot\src\EnjoyEveryday.Admin.Web'; dotnet run --no-build"
+# Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $AdminCmd
 
 # Start the Parent Web Project in a new PowerShell window
-Write-Host "Starting Parent Web Project..." -ForegroundColor Green
-$ParentCmd = "cd '$PSScriptRoot\src\EnjoyEveryday.Parent.Web'; dotnet run --no-build"
-Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $ParentCmd
+# Write-Host "Starting Parent Web Project..." -ForegroundColor Green
+# $ParentCmd = "cd '$PSScriptRoot\src\EnjoyEveryday.Parent.Web'; dotnet run --no-build"
+# Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $ParentCmd
 
 Write-Host ""
 Write-Host "All applications are starting up in new windows." -ForegroundColor Cyan

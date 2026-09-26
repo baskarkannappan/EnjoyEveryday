@@ -1,90 +1,269 @@
-﻿@page "/experiences"
+@page "/experiences"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using Microsoft.FluentUI.AspNetCore.Components
 @inject ExperienceService ExperienceService
 @inject UserService UserService
 
-<section id="page-experiences" class="page active">
-    <PageHero 
-        Eyebrow="YOUR EXPERIENCE LIBRARY" 
-        Title="My Experiences" 
-        Subtitle="Your daycare's growing collection. Every experience gets better with use.">
-        <RightContent>
-            <button id="createExperienceButton" class="primary" @onclick="OpenAddExperienceModal">
-                + Create experience
-            </button>
-        </RightContent>
-    </PageHero>
+<style>
+    .page-header {
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+    }
+    .page-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #1a1f1c;
+        margin: 0 0 0.5rem 0;
+        letter-spacing: -0.02em;
+    }
+    .page-subtitle {
+        color: #667069;
+        font-size: 1.1rem;
+        margin: 0;
+    }
+    
+    .toolbar {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        background: white;
+        padding: 1rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        align-items: center;
+    }
+    
+    .search-input {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 1rem;
+        transition: all 0.2s;
+    }
+    .search-input:focus {
+        outline: none;
+        border-color: #4CAF50;
+        box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+    }
+    
+    .filter-select {
+        padding: 0.75rem 2rem 0.75rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 1rem;
+        background-color: white;
+        cursor: pointer;
+    }
+    
+    .sort-select {
+        padding: 0.75rem 2rem 0.75rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 1rem;
+        background-color: #f8fafc;
+        font-weight: 500;
+        cursor: pointer;
+    }
 
-    <div class="search-row">
-        <input id="experienceSearch" class="search" placeholder="Search experiences...">
-        <select id="ageFilter" class="filter">
+    .experiences-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 2rem;
+        margin-bottom: 3rem;
+    }
+
+    .experience-card-wrapper {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border-radius: 12px;
+        cursor: pointer;
+        height: 100%;
+    }
+    .experience-card-wrapper:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0,0,0,0.08);
+    }
+
+    .custom-pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: white;
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        margin-top: 2rem;
+    }
+    
+    .page-info {
+        color: #64748b;
+        font-weight: 500;
+    }
+    
+    .page-controls {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .page-btn {
+        background: white;
+        border: 1px solid #e2e8f0;
+        color: #334155;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .page-btn:hover:not(:disabled) {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+    }
+    .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: white;
+        border-radius: 12px;
+        color: #64748b;
+        font-size: 1.1rem;
+    }
+</style>
+
+<section id="page-experiences" class="page active">
+    <div class="page-header">
+        <div>
+            <div style="font-size: 0.8rem; font-weight: 700; color: #4CAF50; letter-spacing: 0.05em; margin-bottom: 0.5rem; text-transform: uppercase;">Your Experience Library</div>
+            <h1 class="page-title">My Experiences</h1>
+            <p class="page-subtitle">Your daycare's growing collection. Every experience gets better with use.</p>
+        </div>
+        <button class="primary" style="padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600;" @onclick="OpenAddExperienceModal">
+            + Create experience
+        </button>
+    </div>
+
+    <div class="toolbar">
+        <input class="search-input" placeholder="Search experiences by title or description..." @bind="searchTerm" @bind:event="oninput">
+        
+        <select class="filter-select">
             <option value="all">All ages</option>
             <option value="3-4">3-4</option>
             <option value="4-5">4-5</option>
         </select>
-        <select id="typeFilter" class="filter">
+        
+        <select class="filter-select" @bind="typeTerm">
             <option value="all">All types</option>
             <option value="Explore">Explore</option>
             <option value="Create">Create</option>
             <option value="Move">Move</option>
         </select>
+        
+        <select class="sort-select" @bind="sortBy">
+            <option value="newest">Sort by: Newest</option>
+            <option value="oldest">Sort by: Oldest</option>
+            <option value="a-z">Sort by: A-Z</option>
+            <option value="z-a">Sort by: Z-A</option>
+        </select>
     </div>
 
-    <div id="experienceGrid" class="experience-grid">
-        @if (_experiences != null && _experiences.Any()) {
-            @foreach (var exp in _experiences) {
+    @if (_experiences == null)
+    {
+        <div class="empty-state">Loading experiences...</div>
+    }
+    else if (!PaginatedExperiences.Any())
+    {
+        <div class="empty-state">
+            <svg style="width: 48px; height: 48px; color: #cbd5e1; margin-bottom: 1rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            <br />
+            No experiences found matching your filters.
+        </div>
+    }
+    else
+    {
+        <div class="experiences-grid">
+            @foreach (var context in PaginatedExperiences)
+            {
                 var type = "Experience";
                 try {
-                    var json = System.Text.Json.JsonDocument.Parse(exp.DnaPayload);
+                    var json = System.Text.Json.JsonDocument.Parse(context.DnaPayload);
                     if (json.RootElement.TryGetProperty("type", out var typeElement)) {
                         type = typeElement.GetString() ?? "Experience";
                     }
                 } catch {}
-
-                <div @onclick="() => OpenEditExperienceModal(exp)" style="cursor: pointer;">
-                    <ExperienceCard Type="@type" Status="@exp.Status" Title="@exp.Title" Description="@exp.Description" Ages="3-4" Duration="15 min" Setting="Indoor" Uses="1" Version="v1" Id="@exp.Id.ToString()" />
+                
+                <div class="experience-card-wrapper" @onclick="() => OpenEditExperienceModal(context)">
+                    <EnjoyEveryday.UI.Shared.Components.ExperienceCard 
+                        Type="@type" 
+                        Status="@(context.Status ?? "Idea")" 
+                        Title="@context.Title" 
+                        Description="@context.Description" 
+                        Ages="3-4" 
+                        Duration="15 min" 
+                        Setting="Indoor" 
+                        Uses="1" 
+                        Version="v1" 
+                        Id="@context.Id.ToString()" />
                 </div>
             }
-        }
-        else if (_experiences != null && !_experiences.Any())
-        {
-            <p>No experiences found. Generating sample data...</p>
-        }
-    </div>
+        </div>
+        
+        <div class="custom-pagination">
+            <div class="page-info">
+                Showing @((CurrentPage - 1) * ItemsPerPage + 1) to @Math.Min(CurrentPage * ItemsPerPage, TotalItems) of @TotalItems experiences
+            </div>
+            <div class="page-controls">
+                <button class="page-btn" disabled="@(!CanGoPrevious)" @onclick="GoToPreviousPage">
+                    &larr; Previous
+                </button>
+                <div style="display: flex; align-items: center; padding: 0 0.5rem; font-weight: 600; color: #334155;">
+                    Page @CurrentPage of @TotalPages
+                </div>
+                <button class="page-btn" disabled="@(!CanGoNext)" @onclick="GoToNextPage">
+                    Next &rarr;
+                </button>
+            </div>
+        </div>
+    }
 </section>
 
 @if (_isModalOpen)
 {
-    <div class="modal-backdrop" @onclick="CloseDialog"></div>
-    <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 450px;">
-        <h3>@(_isEditing ? "Edit Experience" : "Add Experience")</h3>
+    <div class="modal-backdrop" @onclick="CloseDialog" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); border: none; width: 500px; max-width: 90vw;">
+        <h3 style="margin-top: 0; font-size: 1.5rem; color: #1e293b; margin-bottom: 1.5rem;">@(_isEditing ? "Edit Experience" : "Add Experience")</h3>
         
-        <div class="field" style="margin-bottom: 1rem;">
-            <label>Title</label>
-            <input @bind="_currentExperience.Title" type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
-        </div>
-
-        <div class="field" style="margin-bottom: 1rem;">
-            <label>Description</label>
-            <textarea @bind="_currentExperience.Description" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; height: 80px;"></textarea>
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569;">Title</label>
+            <input @bind="_currentExperience.Title" type="text" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem;" />
         </div>
 
         <div class="field" style="margin-bottom: 1.5rem;">
-            <label>DNA Payload (JSON)</label>
-            <textarea @bind="_currentExperience.DnaPayload" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; height: 80px; font-family: monospace;"></textarea>
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569;">Description</label>
+            <textarea @bind="_currentExperience.Description" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 8px; height: 100px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
         </div>
 
-        <div style="display: flex; justify-content: space-between;">
+        <div class="field" style="margin-bottom: 2rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569;">DNA Payload (JSON)</label>
+            <textarea @bind="_currentExperience.DnaPayload" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 8px; height: 80px; font-family: monospace; font-size: 0.9rem; resize: vertical;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
                 @if (_isEditing)
                 {
-                    <button class="secondary" style="color: red; border-color: red;" @onclick="DeleteExperienceAsync">Delete</button>
+                    <button class="secondary" style="color: #ef4444; border: 1px solid #ef4444; background: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;" @onclick="DeleteExperienceAsync">Delete</button>
                 }
             </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="secondary" @onclick="CloseDialog">Cancel</button>
-                <button class="primary" @onclick="SaveExperienceAsync">Save</button>
+            <div style="display: flex; gap: 1rem;">
+                <button class="secondary" style="background: white; border: 1px solid #e2e8f0; color: #475569; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;" @onclick="CloseDialog">Cancel</button>
+                <button class="primary" style="background: #10b981; border: none; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;" @onclick="SaveExperienceAsync">Save</button>
             </div>
         </div>
     </dialog>
@@ -92,6 +271,79 @@
 
 @code {
     private IEnumerable<Experience>? _experiences;
+    
+    // Pagination & Filtering State
+    private string _searchTerm = "";
+    private string searchTerm 
+    {
+        get => _searchTerm;
+        set { _searchTerm = value; CurrentPage = 1; }
+    }
+    
+    private string _typeTerm = "all";
+    private string typeTerm
+    {
+        get => _typeTerm;
+        set { _typeTerm = value; CurrentPage = 1; }
+    }
+    
+    private string _sortBy = "newest";
+    private string sortBy
+    {
+        get => _sortBy;
+        set { _sortBy = value; CurrentPage = 1; }
+    }
+
+    public int CurrentPage { get; set; } = 1;
+    public int ItemsPerPage { get; set; } = 6;
+    
+    public int TotalItems => FilteredAndSortedExperiences.Count();
+    public int TotalPages => (int)Math.Ceiling(TotalItems / (double)ItemsPerPage) == 0 ? 1 : (int)Math.Ceiling(TotalItems / (double)ItemsPerPage);
+    public bool CanGoPrevious => CurrentPage > 1;
+    public bool CanGoNext => CurrentPage < TotalPages;
+    
+    private void GoToPreviousPage() { if (CanGoPrevious) CurrentPage--; }
+    private void GoToNextPage() { if (CanGoNext) CurrentPage++; }
+
+    private IQueryable<Experience> FilteredAndSortedExperiences
+    {
+        get
+        {
+            if (_experiences == null) return Array.Empty<Experience>().AsQueryable();
+            var q = _experiences.AsQueryable();
+            
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                q = q.Where(e => (e.Title != null && e.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) || 
+                                 (e.Description != null && e.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
+            }
+            if (!string.IsNullOrWhiteSpace(typeTerm) && typeTerm != "all")
+            {
+                q = q.Where(e => e.DnaPayload != null && e.DnaPayload.Contains($"\"type\": \"{typeTerm}\""));
+            }
+            
+            // Sorting
+            q = sortBy switch
+            {
+                "newest" => q.OrderByDescending(e => e.Id), // Assuming ID correlates with creation time for sample data
+                "oldest" => q.OrderBy(e => e.Id),
+                "a-z" => q.OrderBy(e => e.Title),
+                "z-a" => q.OrderByDescending(e => e.Title),
+                _ => q
+            };
+            
+            return q;
+        }
+    }
+
+    private IEnumerable<Experience> PaginatedExperiences
+    {
+        get
+        {
+            return FilteredAndSortedExperiences.Skip((CurrentPage - 1) * ItemsPerPage).Take(ItemsPerPage).ToList();
+        }
+    }
+
     private Experience _currentExperience = new();
     private bool _isModalOpen = false;
     private bool _isEditing = false;
@@ -124,6 +376,13 @@
     {
         await ExperienceService.CreateExperienceAsync("Finger Painting", "Messy fun with colors", "{\"type\": \"Create\"}", _defaultUserId);
         await ExperienceService.CreateExperienceAsync("Story Time", "Reading The Hungry Caterpillar", "{\"type\": \"Explore\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Building Blocks", "Learn geometry and physics with wooden blocks", "{\"type\": \"Create\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Nature Walk", "Collecting leaves and bugs", "{\"type\": \"Explore\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Dance Party", "Moving to rhythm and music", "{\"type\": \"Move\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Sensory Bin", "Water and sand play for tactile development", "{\"type\": \"Explore\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Obstacle Course", "Climbing and jumping exercises", "{\"type\": \"Move\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Clay Modeling", "Sculpting animals out of soft clay", "{\"type\": \"Create\"}", _defaultUserId);
+        
         await LoadExperiencesAsync();
     }
 
@@ -193,5 +452,3 @@
         }
     }
 }
-
-

@@ -1,7 +1,14 @@
 @page "/harvest"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using Microsoft.FluentUI.AspNetCore.Components
 @inject ExperienceService ExperienceService
+@inject FeedbackService FeedbackService
+@inject PlannerService PlannerService
+@inject OrganizationService OrganizationService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject UserService UserService
 @rendermode InteractiveServer
 <PageHero 
     Eyebrow="EXPERIENCE MEMORY" 
@@ -25,28 +32,38 @@
     </div>
 </div>
 <div class="harvest-layout">
-    <div class="panel">
-        <h3>Experience performance</h3>
-        <div class="panel-description">
-            Program signals â€” not child scores.
-        </div>
-        <div class="harvest-row harvest-heading">
-            <span>EXPERIENCE</span>
-            <span>USES</span>
-            <span>RESPONSE</span>
-            <span>INSIGHT</span>
-        </div>
-        <HarvestRow Title="Our Little City" Subtitle="Created by Priya" Uses="12" Response="ðŸ’¬ 10" />
-        <HarvestRow Title="Frog Rescue" Subtitle="AI + Teacher" Uses="8" Response="ðŸ’¬ 6" />
-        <HarvestRow Title="Giant Painting" Subtitle="Created by Daniel" Uses="6" Response="ðŸ’¬ 5" />
-    </div>
+        <ExperiencePerformanceGrid Items="@_performanceItems" />
     <div class="panel">
         <h3>What teachers are saying</h3>
         <div class="panel-description">
             Recent feedback
         </div>
-        <TeacherQuote QuoteText="The children loved jumping but lost interest after five minutes." AuthorInfo="Priya &middot; Bluebirds" />
-        <TeacherQuote QuoteText="Adding animals completely changed the experience." AuthorInfo="Sarah &middot; Butterflies" />
+        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 1rem;">
+            <input type="text" @bind="searchTerm" @bind:event="oninput" placeholder="Filter feedback..." style="width: 300px; padding: 5px; border-radius: 4px; border: 1px solid #ccc;" />
+        </div>
+        <style>
+            .feedback-grid thead, .feedback-grid .fluent-data-grid-header {
+                display: none !important;
+            }
+            .feedback-grid .fluent-data-grid-cell {
+                padding: 0 !important;
+                white-space: normal !important;
+            }
+        </style>
+        <FluentDataGrid Items="@FilteredFeedbacks" Pagination="@pagination" TGridItem="ExperienceFeedback" Class="feedback-grid"  Style="width: 100%; border: none; --data-grid-border: none; --data-grid-row-border-bottom: none;">
+            <TemplateColumn>
+                <div style="padding: 1.5rem 0; border-bottom: 1px solid #e1e5e2; width: 100%; cursor: pointer;" @onclick="() => EditFeedback(context)">
+                    <div style="color: #6fbab3; font-size: 1.2rem; font-style: italic; font-family: serif; font-weight: bold; margin-bottom: 12px;">//</div>
+                    <div style="color: #101820; font-size: 0.95rem; margin-bottom: 16px; line-height: 1.4;">
+                        @context.Notes
+                    </div>
+                    <div style="color: var(--muted); font-size: 0.8rem;">
+                        &mdash; Priya &bull; Bluebirds
+                    </div>
+                </div>
+            </TemplateColumn>
+        </FluentDataGrid>
+        <FluentPaginator State="@pagination" />
     </div>
 </div>
 <div class="flywheel">
@@ -74,7 +91,7 @@
 {
     <div class="modal-backdrop" @onclick="CloseDialog"></div>
     <dialog open class="modal" style="display: block; position: fixed; top: 20%; left: 50%; transform: translate(-50%, -10%); z-index: 1000; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: none; width: 400px;">
-        <h3>Log Feedback</h3>
+        <h3>@(_currentFeedbackId.HasValue ? "Edit Feedback" : "Log Feedback")</h3>
         
         <div class="field" style="margin-bottom: 1rem;">
             <label>Experience</label>
@@ -86,34 +103,104 @@
             </select>
         </div>
 
+        
         <div class="field" style="margin-bottom: 1.5rem;">
+            <label>Rating</label>
+            <select @bind="_rating" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="Loved it">Loved it</option>
+                <option value="Good">Good</option>
+                <option value="Difficult">Difficult</option>
+                <option value="Didn't work">Didn't work</option>
+            </select>
+        </div>
+<div class="field" style="margin-bottom: 1.5rem;">
             <label>Teacher Quote / Insight</label>
             <textarea @bind="_feedbackText" rows="4" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"></textarea>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+            @if (_currentFeedbackId.HasValue)
+            {
+                <button class="secondary" style="color: red; border-color: red; margin-right: auto;" @onclick="DeleteFeedback">Delete</button>
+            }
             <button class="secondary" @onclick="CloseDialog">Cancel</button>
-            <button class="primary" @onclick="ConfirmFeedback">Save Feedback</button>
+            <button class="primary" @onclick="ConfirmFeedback">Save</button>
         </div>
     </dialog>
 }
 
 @code {
+    private IQueryable<EnjoyEveryday.Admin.Web.Components.ExperiencePerformanceGrid.ExperiencePerformanceItem> _performanceItems = new List<EnjoyEveryday.Admin.Web.Components.ExperiencePerformanceGrid.ExperiencePerformanceItem>
+    {
+        new EnjoyEveryday.Admin.Web.Components.ExperiencePerformanceGrid.ExperiencePerformanceItem { Title = "Our Little City", Subtitle = "Created by Priya", Uses = 12, Response = "💬 10" },
+        new EnjoyEveryday.Admin.Web.Components.ExperiencePerformanceGrid.ExperiencePerformanceItem { Title = "Frog Rescue", Subtitle = "AI + Teacher", Uses = 8, Response = "💬 6" },
+        new EnjoyEveryday.Admin.Web.Components.ExperiencePerformanceGrid.ExperiencePerformanceItem { Title = "Giant Painting", Subtitle = "Created by Daniel", Uses = 6, Response = "💬 5" }
+    }.AsQueryable();
+
     private List<Experience> _experiences = new();
+    private List<ExperienceSchedule> _schedules = new();
+    private List<ExperienceFeedback> _feedbacks = new();
+    
     private string _feedbackText = string.Empty;
+    private string _rating = "Good";
     private string? _selectedExperienceId;
+    PaginationState pagination = new PaginationState { ItemsPerPage = 5 };
+    string searchTerm = "";
+    IQueryable<ExperienceFeedback> FilteredFeedbacks
+    {
+        get
+        {
+            var q = _feedbacks.AsQueryable();
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                q = q.Where(f => (f.Notes != null && f.Notes.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) || (f.Rating != null && f.Rating.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)));
+            }
+            return q;
+        }
+    }
+    private Guid? _currentFeedbackId;
     private bool _isModalOpen = false;
 
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        var date = DateTime.Today;
+        // In a real app we'd fetch schedules for the classroom, we'll just fetch a generic list or mock it.
+        // Actually Feedback requires a scheduleId. We'll just create a dummy schedule if none exists.
+        await LoadFeedbacks();
+    }
+
+    private async Task LoadFeedbacks()
+    {
+        _feedbacks = (await FeedbackService.GetAllFeedbackAsync()).ToList();
+        StateHasChanged();
     }
 
     private void OpenFeedbackDialog()
     {
+        _currentFeedbackId = null;
         _isModalOpen = true;
         _feedbackText = string.Empty;
+        _rating = "Good";
         if (_experiences.Any()) { _selectedExperienceId = _experiences.First().Id.ToString(); }
+    }
+
+    private void EditFeedback(ExperienceFeedback feedback)
+    {
+        _currentFeedbackId = feedback.Id;
+        _feedbackText = feedback.Notes ?? "";
+        _rating = feedback.Rating ?? "Good";
+        _isModalOpen = true;
+    }
+
+    private async Task DeleteFeedback()
+    {
+        if (_currentFeedbackId.HasValue)
+        {
+            await FeedbackService.DeleteFeedbackAsync(_currentFeedbackId.Value);
+            await LoadFeedbacks();
+            CloseDialog();
+        }
     }
 
     private void CloseDialog() => _isModalOpen = false;
@@ -121,8 +208,38 @@
     private async Task ConfirmFeedback()
     {
         if (string.IsNullOrEmpty(_selectedExperienceId) || string.IsNullOrEmpty(_feedbackText)) return;
-        // Mock feedback save
+        
+        // Find a real teacher
+        var users = await UserService.GetUsersAsync();
+        var teacherId = users.FirstOrDefault()?.Id ?? Guid.Empty;
+        
+        var expId = Guid.Parse(_selectedExperienceId);
+
+        // Find a real schedule ID or create one
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        var branch = (await BranchService.GetBranchesAsync(org.Id)).FirstOrDefault();
+        var classroom = (await ClassroomService.GetClassroomsAsync(branch.Id)).FirstOrDefault();
+        
+        var schedule = await PlannerService.ScheduleExperienceAsync(expId, classroom.Id, DateOnly.FromDateTime(DateTime.Today), "Morning");
+        var scheduleId = schedule.Id;
+
+        if (_currentFeedbackId.HasValue)
+        {
+            var feedback = await FeedbackService.GetFeedbackByIdAsync(_currentFeedbackId.Value);
+            if (feedback != null)
+            {
+                feedback.Notes = _feedbackText;
+                feedback.Rating = _rating;
+                await FeedbackService.UpdateFeedbackAsync(feedback);
+            }
+        }
+        else
+        {
+            await FeedbackService.CreateFeedbackAsync(scheduleId, teacherId, _rating, _feedbackText);
+        }
+        
+        await LoadFeedbacks();
         CloseDialog();
     }
 }
-
