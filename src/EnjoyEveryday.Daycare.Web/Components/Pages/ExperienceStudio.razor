@@ -1,213 +1,173 @@
-@page "/experiences/studio/{Id:guid}"
-@using EnjoyEveryday.Application.Services
-@using EnjoyEveryday.Domain.Entities
-@inject ExperienceService ExperienceService
-@inject IAiIdeaService AiIdeaService
-@inject NavigationManager NavigationManager
+@page "/studio"
 @rendermode InteractiveServer
-<PageTitle>Experience Studio — EnjoyEveryday</PageTitle>
-@if (_experience == null)
-{
-    <FluentSpinner />
-}
-else
-{
-    <PageHero Title="Experience Studio" Subtitle="Turn a small idea into something children can explore, experience and remember.">
-        <RightContent>
-            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="SaveDraftAsync">Save Draft</FluentButton>
-            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="PublishAsync">Submit</FluentButton>
-        </RightContent>
-    </PageHero>
-    <div class="studio-grid">
-        <!-- LEFT: Idea Start & AI Suggestions -->
-        <div>
-            <section class="card idea-card">
-                <div class="idea-heading">
-                    <div class="idea-icon">?</div>
-                    <div>
-                        <strong>Start with an idea</strong>
-                        <small>It doesn't need to be complete.</small>
-                    </div>
-                </div>
-                <FluentTextArea @bind-Value="_ideaInput" Style="width: 100%;" Rows="5" Placeholder="Example: The children are fascinated by rain..." />
-                <div class="idea-actions">
-                    <button class="idea-button" @onclick="GenerateIdeas">? Help me explore</button>
-                </div>
-            </section>
-            <section class="card">
-                <div class="card-header">
-                    <h2>Possible directions</h2>
-                    <span>AI suggestions</span>
-                </div>
-                <div>
-                    @if (_isGeneratingIdeas)
-                    {
-                        <div style="padding: 20px; text-align: center;">
-                            <FluentSpinner />
-                            <div style="margin-top: 10px; color: var(--neutral-foreground-hint);">Brainstorming...</div>
-                        </div>
-                    }
-                    else if (_aiSuggestions.Any())
-                    {
-                        @foreach (var suggestion in _aiSuggestions)
-                        {
-                            <div class="suggestion" @onclick="@(() => ApplySuggestion(suggestion.Title, suggestion.Text))">
-                                <div class="suggestion-title">@suggestion.Title</div>
-                                <div class="suggestion-text">@suggestion.Text</div>
-                            </div>
-                        }
-                    }
-                    else
-                    {
-                        <div style="padding: 20px; text-align: center; color: var(--neutral-foreground-hint);">
-                            Tell me your idea to explore possibilities.
-                        </div>
-                    }
-                </div>
-            </section>
+@using EnjoyEveryday.UI.Shared.Components
+
+<PageHero 
+    Eyebrow="Little Stars" 
+    Title="Experience Studio" 
+    Subtitle="">
+</PageHero>
+
+<div class="studio-grid">
+
+    <!-- LEFT PANEL -->
+    <div>
+        <div class="card idea-card" style="margin-bottom: 20px;">
+            <button class="idea-button" style="width: 100%;">
+                &#10022; Help me explore
+            </button>
         </div>
-        <!-- CENTER: Experience Canvas -->
-        <div>
-            <section class="canvas">
-                <div class="canvas-top">
-                    <div class="canvas-title">
-                        <FluentTextInput @bind-Value="_experience.Title" Style="width: 100%; font-size: 24px; font-weight: bold; border: none; background: transparent;" />
-                        <div class="canvas-subtitle">
-                            @_experience.Status &bull; Last Updated @_experience.UpdatedAt.ToString("MMMM dd, yyyy")
-                        </div>
-                    </div>
-                    <div class="status-pill">@_experience.Status.ToUpper()</div>
-                </div>
-                <div class="dna-grid">
-                    <DnaCard Label="Mission" Content="@GetDnaValue("Mission")" OnClick="@(() => OpenEditDialog("Mission"))" />
-                    <DnaCard Label="Discovery" Content="@GetDnaValue("Discovery")" OnClick="@(() => OpenEditDialog("Discovery"))" />
-                    <DnaCard Label="Challenge" Content="@GetDnaValue("Challenge")" OnClick="@(() => OpenEditDialog("Challenge"))" />
-                    <DnaCard Label="Together" Content="@GetDnaValue("Together")" OnClick="@(() => OpenEditDialog("Together"))" />
-                    <DnaCard Label="? Magic Moment" Content="@GetDnaValue("MagicMoment")" CssClass="full magic-card" OnClick="@(() => OpenEditDialog("MagicMoment"))" />
-                </div>
-            </section>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Possible directions</h2>
+                <span>AI suggestions</span>
+            </div>
+            
+            <StudioIdeaCard Title="Rain Detectives" Icon="&#x2614;" Subtitle="Listen, look and investigate what changes when rain arrives." />
+            <StudioIdeaCard Title="Build a Water World" Icon="&#x1F4A7;" Subtitle="Create rivers, bridges and little worlds using simple materials." />
+            <StudioIdeaCard Title="Rainbow Makers" Icon="&#x1F308;" Subtitle="Explore light, colour and unexpected patterns." />
+            <StudioIdeaCard Title="Who Lives in the Rain?" Icon="&#x1F438;" Subtitle="Turn rain into an imaginary animal discovery adventure." />
         </div>
-        <!-- RIGHT: Context Panel -->
-        <div class="right-panel">
-            <section class="card">
-                <div class="card-header">
-                    <h2>Experience context</h2>
-                    <span>Classroom</span>
-                </div>
-                <div class="context-item">
-                    <div class="context-label">Children</div>
-                    <div class="context-value">Bluebirds &bull; 18 children</div>
-                </div>
-                <div class="context-item">
-                    <div class="context-label">Age</div>
-                    <div class="context-value">3–4 years</div>
-                </div>
-                <div class="context-item">
-                    <div class="context-label">Recent interests</div>
-                    <div class="tags">
-                        <span class="tag">Bugs</span>
-                        <span class="tag">Building</span>
-                        <span class="tag">Rain</span>
-                    </div>
-                </div>
-            </section>
-        </div>
-    </div>
-    <!-- Edit DNA Element Dialog -->
-    <FluentDialog @ref="_editDialog" Modal="true" Hidden="@_hideEditDialog" OnDismiss="CloseEditDialog">
-        <div style="padding: 20px; width: 400px;">
-            <FluentText Size="TextSize.Size400" Weight="TextWeight.Bold" Style="margin-bottom: 15px; display: block;">Edit @_editingField</FluentText>
-            <FluentTextArea @bind-Value="_editingValue" Style="width: 100%;" Rows="5" />
-            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SaveDnaElement">Save</FluentButton>
-                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="CloseEditDialog">Cancel</FluentButton>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Experience context</h2>
+                <span>Classroom</span>
+            </div>
+            
+            <div class="context-item">
+                <div class="context-label">Children</div>
+                <div class="context-value">Bluebirds &bull; 18 children</div>
+            </div>
+            
+            <div class="context-item">
+                <div class="context-label">Age</div>
+                <div class="context-value">3&ndash;4 years</div>
             </div>
         </div>
-    </FluentDialog>
-}
-@code {
-    [Parameter]
-    public Guid Id { get; set; }
-    private Experience? _experience;
-    private string _ideaInput = string.Empty;
-    private Dictionary<string, string> _dnaElements = new();
-    private List<AiSuggestion> _aiSuggestions = new();
-    private bool _isGeneratingIdeas = false;
-    // Dialog state
-    private bool _hideEditDialog = true;
-    private FluentDialog _editDialog = default!;
-    private string _editingField = string.Empty;
-    private string _editingValue = string.Empty;
-    protected override async Task OnInitializedAsync()
-    {
-        _experience = await ExperienceService.GetExperienceByIdAsync(Id);
-        if (_experience == null)
-        {
-            NavigationManager.NavigateTo("/experiences");
-            return;
-        }
-        try
-        {
-            _dnaElements = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_experience.DnaPayload) ?? new();
-        }
-        catch
-        {
-            _dnaElements = new Dictionary<string, string>();
-        }
-    }
-    private string GetDnaValue(string key)
-    {
-        return _dnaElements.TryGetValue(key, out var val) && !string.IsNullOrWhiteSpace(val) ? val : "Click to add content...";
-    }
-    private async Task GenerateIdeas()
-    {
-        if (string.IsNullOrWhiteSpace(_ideaInput)) return;
-        _isGeneratingIdeas = true;
-        StateHasChanged();
-        try
-        {
-            var suggestions = await AiIdeaService.GenerateIdeasAsync(_ideaInput);
-            _aiSuggestions = suggestions.ToList();
-        }
-        finally
-        {
-            _isGeneratingIdeas = false;
-        }
-    }
-    private void ApplySuggestion(string title, string text)
-    {
-        if (_experience != null)
-        {
-            _experience.Title = title;
-            _experience.Description = text;
-        }
-    }
-    private void OpenEditDialog(string field)
-    {
-        _editingField = field;
-        _editingValue = _dnaElements.TryGetValue(field, out var val) ? val : string.Empty;
-        _hideEditDialog = false;
-    }
-    private void CloseEditDialog()
-    {
-        _hideEditDialog = true;
-    }
-    private void SaveDnaElement()
-    {
-        _dnaElements[_editingField] = _editingValue;
-        _hideEditDialog = true;
-    }
-    private async Task SaveDraftAsync()
-    {
-        if (_experience == null) return;
-        var json = System.Text.Json.JsonSerializer.Serialize(_dnaElements);
-        await ExperienceService.UpdateExperienceAsync(_experience.Id, _experience.Title, _experience.Description, json, _experience.Status, "Studio Draft Save", Guid.Empty);
-    }
-    private async Task PublishAsync()
-    {
-        if (_experience == null) return;
-        var json = System.Text.Json.JsonSerializer.Serialize(_dnaElements);
-        await ExperienceService.UpdateExperienceAsync(_experience.Id, _experience.Title, _experience.Description, json, ExperienceStatus.Approved.ToString(), "Studio Submit", Guid.Empty);
-        NavigationManager.NavigateTo("/experiences");
-    }
-}
+    </div>
+
+    <!-- CENTER CANVAS -->
+    <div>
+        <div class="canvas">
+            <div class="canvas-top">
+                <div class="canvas-title">
+                    <input id="experienceTitle" value="Rain Detectives" />
+                    <div class="canvas-subtitle">
+                        Draft &bull; Created by Priya &bull; September 20, 2026
+                    </div>
+                </div>
+                <div class="status-pill">
+                    DRAFT
+                </div>
+            </div>
+
+            <div class="dna-grid">
+                <StudioDnaCard Label="Challenge">
+                    <Content>Can we build something that keeps a toy dry?</Content>
+                </StudioDnaCard>
+                <StudioDnaCard Label="Together">
+                    <Content>Build one shelter with a friend.</Content>
+                </StudioDnaCard>
+                <StudioDnaCard Label="Create">
+                    <Content>Design your own rain shelter.</Content>
+                </StudioDnaCard>
+                <StudioDnaCard Label="Child Choice">
+                    <Content>Children choose what they want to protect.</Content>
+                </StudioDnaCard>
+                
+                <StudioMagicMoment Content="The children discover that the same rain can sound completely different on different materials." />
+
+                <StudioDnaCard Label="Accomplishment">
+                    <Content>&quot;We made something that kept it dry!&quot;</Content>
+                </StudioDnaCard>
+                <StudioDnaCard Label="Reflection">
+                    <Content>What surprised you?</Content>
+                </StudioDnaCard>
+                
+                <StudioDnaCard IsFull="true" Label="Teacher Guidance">
+                    <Content>
+                        <strong>Watch:</strong> Notice which materials children choose.<br><br>
+                        <strong>Ask:</strong> &quot;What could make it stronger?&quot;<br><br>
+                        <strong>Try:</strong> Let children test their own ideas before suggesting a solution.
+                    </Content>
+                </StudioDnaCard>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <aside class="right-panel">
+        <div class="card">
+            <div class="card-header">
+                <h2>Experience details</h2>
+            </div>
+            
+            <div class="context-item">
+                <div class="context-label">Age</div>
+                <div class="context-value">3&ndash;4 years</div>
+            </div>
+            
+            <div class="context-item">
+                <div class="context-label">Group size</div>
+                <div class="context-value">6&ndash;18 children</div>
+            </div>
+            
+            <div class="context-item">
+                <div class="context-label">Environment</div>
+                <div class="context-value">Indoor / Outdoor</div>
+            </div>
+            
+            <div class="context-item">
+                <div class="context-label">Materials</div>
+                <div class="tags">
+                    <span class="tag">Blocks</span>
+                    <span class="tag">Paper</span>
+                    <span class="tag">Cups</span>
+                    <span class="tag">Water tray</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card idea-card">
+            <div class="idea-heading">
+                <div class="idea-icon">&#10022;</div>
+                <div>
+                    <strong>Improve with AI</strong>
+                    <small>Keep the teacher in control.</small>
+                </div>
+            </div>
+            
+            <div class="suggestion">
+                <div class="suggestion-title">Make it more playful</div>
+                <div class="suggestion-text">Add an imaginary mission: &quot;A tiny animal needs a dry home.&quot;</div>
+            </div>
+            
+            <div class="suggestion">
+                <div class="suggestion-title">Add more child choice</div>
+                <div class="suggestion-text">Let children decide which animal needs help first.</div>
+            </div>
+            
+            <button class="idea-button" style="width: 100%; margin-top: 10px;">
+                Improve this experience
+            </button>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>Versions</h2>
+                <span>History</span>
+            </div>
+            <div class="version">
+                <strong>v1</strong>
+                <span>Created today</span>
+            </div>
+            <div class="version">
+                <strong style="color:var(--muted)">No previous versions</strong>
+                <span>&mdash;</span>
+            </div>
+        </div>
+    </aside>
+
+</div>

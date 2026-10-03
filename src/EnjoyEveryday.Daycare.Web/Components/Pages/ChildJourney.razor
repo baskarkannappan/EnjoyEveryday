@@ -1,128 +1,172 @@
 @page "/journey"
-@using EnjoyEveryday.Application.Services
-@using EnjoyEveryday.Domain.Entities
-@inject ChildService ChildService
-@inject JourneyService JourneyService
-@inject OrganizationService OrganizationService
-@inject BranchService BranchService
-@inject ClassroomService ClassroomService
 @rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Journey
+@using EnjoyEveryday.UI.Shared.Components.Planning
 
-<PageHero 
-    Eyebrow="CHILD JOURNEY" 
-    Title="Aarav's Little World" 
-    Subtitle="Experiences, accomplishments and memories.">
-</PageHero>
-
-<div class="journey">
-    <div class="journey-header">
-        <div class="journey-large-avatar">
-            @(_activeChild?.FirstName.Substring(0,1) ?? "A")
+<PageTopbar Breadcrumb="EnjoyEveryday · Little Stars · Bluebirds" Title="Aarav's Journey">
+    <RightContent>
+        <button class="circle-btn" style="width: 38px; height: 38px; border: 1px solid #e7ebe7; border-radius: 50%; background: white; margin-right: 8px;">🔔</button>
+        <button class="circle-btn" style="width: 38px; height: 38px; border: 1px solid #e7ebe7; border-radius: 50%; background: white; margin-right: 8px;">?</button>
+        <div style="width: 38px; height: 38px; border-radius: 50%; background: #dce9df; display: flex; align-items: center; justify-content: center; font-weight: 750; color: #365844; font-size: 14px;">
+            BP
         </div>
+    </RightContent>
+</PageTopbar>
+
+<section class="content" style="max-width: 1380px; margin: auto; padding: 34px;">
+    
+    <div class="child-header">
+        <div class="child-identity">
+            <div class="child-avatar">A</div>
+            <div>
+                <div class="child-name">Aarav Patel</div>
+                <div class="child-meta">
+                    <span>Age 3 Years, 4 Months</span>
+                    <span>Bluebirds</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="secondary-btn" @onclick='() => OpenModal("share")'>Download PDF</button>
+            <button class="primary-btn" @onclick='() => OpenModal("memory")'>Log Moment</button>
+        </div>
+    </div>
+        
+    <div class="journey-summary">
+        <JourneySummaryCard Label="Experiences" Value="124" Text="Total guided and free play moments captured." />
+        <JourneySummaryCard Label="Current Focus" Value="Connection" Text="Showing strong growth in social empathy." IsFeatured="true" />
+        <JourneySummaryCard Label="AI Highlights" Value="12" Text="Insights generated from recent observations." />
+        <JourneySummaryCard Label="Milestones" Value="3" Text="Developmental markers observed this month." />
+    </div>
+
+    <div class="main-grid">
         <div>
-            <h2>@(_activeChild?.FirstName ?? "Aarav")</h2>
-            <p>Age 3 &middot; Bluebirds</p>
+            <div class="timeline-controls">
+                <button class="filter-btn @(_currentFilter == "all" ? "active" : "")" @onclick='() => SetFilter("all")'>All Activity</button>
+                <button class="filter-btn @(_currentFilter == "Discovery" ? "active" : "")" @onclick='() => SetFilter("Discovery")'>Discover</button>
+                <button class="filter-btn @(_currentFilter == "Create" ? "active" : "")" @onclick='() => SetFilter("Create")'>Create</button>
+                <button class="filter-btn @(_currentFilter == "Connection" ? "active" : "")" @onclick='() => SetFilter("Connection")'>Connect</button>
+                <button class="filter-btn" style="margin-left: auto;">+ Filter</button>
+            </div>
+
+            <div class="timeline">
+                @if (_currentFilter == "all" || _currentFilter == "Discovery")
+                {
+                    <JourneyTimelineCard 
+                        DateString="YESTERDAY" Type="Discovery" Title="Building a block tower with Sarah" Time="10:15 AM"
+                        Description="Aarav spent 20 minutes trying to stack the wooden blocks as high as he could. When it fell down, he didn't get upset — he just laughed and started over, this time asking Sarah to help hold the bottom pieces."
+                        Quote="Look, it's a giant castle!" Tags="@(new List<string> { "Collaboration", "Persistence", "Motor Skills" })" />
+                }
+                
+                @if (_currentFilter == "all" || _currentFilter == "Create")
+                {
+                    <JourneyTimelineCard 
+                        DateString="TUESDAY" Type="Create" Title="Finger painting the ocean" Time="2:30 PM"
+                        Description="Mixed blue and yellow to see what would happen. Was very surprised when it turned green, and spent the rest of the time trying to mix other colors."
+                        Tags="@(new List<string> { "Sensory", "Curiosity" })" />
+                }
+                
+                @if (_currentFilter == "all" || _currentFilter == "Connection")
+                {
+                    <JourneyTimelineCard 
+                        DateString="MONDAY" Type="Connection" Title="Helping clean up the library" Time="4:00 PM"
+                        Description="Without being asked, Aarav started putting the books back on the shelf after reading time. He organized them by size."
+                        Tags="@(new List<string> { "Responsibility", "Sorting" })" />
+                }
+            </div>
+        </div>
+
+        <div>
+            <SidePanel Title="Growing Interests" Subtitle="Based on last 30 days">
+                <InterestBar Name="Building & Blocks" Value="85" Note="Consistently engages with spatial activities." />
+                <InterestBar Name="Color Mixing" Value="60" Note="Recent spike after art class." />
+                <InterestBar Name="Animal Stories" Value="45" />
+                <InterestBar Name="Music & Rhythm" Value="20" />
+            </SidePanel>
+            
+            <div class="card ai-card">
+                <div class="ai-heading">
+                    <div class="ai-icon">🧠</div>
+                    <div>
+                        <strong>Spatial to Social</strong>
+                        <small>AI Analysis</small>
+                    </div>
+                </div>
+                <div class="ai-text">
+                    Aarav loves building alone. Try introducing a 'City Planning' experience where he has to negotiate space with 2 other children to build a shared town.
+                </div>
+                <div class="ai-suggestion">
+                    Experience: Cooperative City Building
+                </div>
+                <button class="ai-button" @onclick='() => OpenModal("idea")'>Create this experience</button>
+            </div>
+
+            <SidePanel Title="Accomplishments">
+                <AccomplishmentRow Icon="🌟" Title="Empathy in Action" Description="Comforted a crying friend." />
+                <AccomplishmentRow Icon="🧩" Title="Complex Sorting" Description="Sorted toys by shape and color." />
+                <AccomplishmentRow Icon="🎨" Title="Color Theory" Description="Discovered how to mix green." />
+            </SidePanel>
+
+            <JourneyMemoryCard Title="First self-portrait" Text="Used the new chalk pastels to draw his family." />
         </div>
     </div>
-
-    <div class="memory-area">
-        @if (_stories != null && _stories.Count > 0) {
-            int count = 1;
-            foreach (var story in _stories) {
-                var css = "m" + count;
-                <MemoryCard CssClass="@css" Icon="✦" Action="Discovered" Detail="Story Update" />
-                count++;
-                if(count > 5) break;
-            }
-        }
-        @if (_stories == null || _stories.Count == 0) {
-            <MemoryCard CssClass="m1" Icon="✦" Action="Discovered" Detail="tiny insects" />
-            <MemoryCard CssClass="m2" Icon="♡" Action="Helped" Detail="a friend" />
-            <MemoryCard CssClass="m3" Icon="◆" Action="Created" Detail="a building" />
-            <MemoryCard CssClass="m4" Icon="↻" Action="Tried again" Detail="after it fell" />
-            <MemoryCard CssClass="m5" Icon="☀" Action="Explored" Detail="the garden" />
-        }
+    
+    <div class="journey-note">
+        Every child's journey is unique. <strong>EnjoyEveryday</strong> helps you see the patterns.
     </div>
-</div>
- 
+
+</section>
+
+@if (_isModalOpen)
+{
+    <div class="modal-overlay show" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <button class="modal-close" @onclick="CloseModal">✕</button>
+            <h2>@_modalTitle</h2>
+            <p>@_modalText</p>
+            <div class="modal-options">
+                <button class="modal-option" @onclick="CloseModal">Add another memory</button>
+                <button class="modal-option" @onclick="CloseModal">Create an experience from this</button>
+                <button class="modal-option" @onclick="CloseModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
-    private List<Child> _children = new();
-    private Child? _activeChild;
-    private Classroom? _classroom;
-    private string? _selectedChildId;
-    
-    private List<ChildStory> _stories = new();
-    private List<ChildInterest> _interests = new();
+    private string _currentFilter = "all";
+    private bool _isModalOpen = false;
+    private string _modalTitle = "";
+    private string _modalText = "";
 
-    private string _newInterest = string.Empty;
-    
-    private string _newStoryContent = string.Empty;
-
-    protected override async Task OnInitializedAsync()
+    private void SetFilter(string filter)
     {
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        _currentFilter = filter;
+    }
+
+    private void OpenModal(string type)
+    {
+        if (type == "share")
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
-            {
-                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-                _classroom = classrooms.FirstOrDefault();
-                
-                if (_classroom != null)
-                {
-                    _children = (await ChildService.GetChildrenByClassroomAsync(_classroom.Id)).ToList();
-                    _activeChild = _children.FirstOrDefault();
-                    if (_activeChild != null)
-                    {
-                        _selectedChildId = _activeChild.Id.ToString();
-                        await LoadChildData();
-                    }
-                }
-            }
+            _modalTitle = "Share Aarav's Journey";
+            _modalText = "Create a parent-friendly version of Aarav's journey. Only approved memories, experiences and observations will be included.";
         }
-    }
-
-    private async Task LoadChildData()
-    {
-        if (Guid.TryParse(_selectedChildId, out var id))
+        else if (type == "memory")
         {
-            _activeChild = _children.FirstOrDefault(c => c.Id == id);
-            if (_activeChild != null)
-            {
-                _stories = (await JourneyService.GetChildStoriesAsync(_activeChild.Id)).ToList();
-                _interests = (await JourneyService.GetChildInterestsAsync(_activeChild.Id)).ToList();
-            }
+            _modalTitle = "Add a Memory";
+            _modalText = "Capture something that happened today that feels worth remembering. A memory can be a teacher note, a child's words, a creation or an approved photo.";
         }
-    }
-
-    private async Task AddInterest()
-    {
-        if (!string.IsNullOrWhiteSpace(_newInterest) && _activeChild != null)
+        else if (type == "idea")
         {
-            await JourneyService.AddInterestAsync(_activeChild.Id, _newInterest.Trim());
-            _newInterest = string.Empty;
-            await LoadChildData();
+            _modalTitle = "Aarav's Possible Next Experience";
+            _modalText = "Build a Tiny Insect Shelter could combine Aarav's interest in building and bugs while creating an opportunity for collaboration. This is only a suggestion — the teacher decides what happens next.";
         }
+        _isModalOpen = true;
     }
 
-    private void OpenNewStoryDialog()
+    private void CloseModal()
     {
-        _newStoryContent = string.Empty;
-    }
-
-    private void CloseNewStoryDialog()
-    {
-    }
-
-    private async Task SaveStoryAsync()
-    {
-        if (!string.IsNullOrWhiteSpace(_newStoryContent) && _activeChild != null)
-        {
-            await JourneyService.CreateStoryAsync(_activeChild.Id, Guid.Empty, null, _newStoryContent);
-            await LoadChildData();
-        }
+        _isModalOpen = false;
     }
 }

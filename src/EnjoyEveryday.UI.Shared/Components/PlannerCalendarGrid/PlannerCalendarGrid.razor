@@ -1,0 +1,46 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+
+<div class="section-card">
+    <div class="section-header">
+        <h2>This month</h2>
+        <span>Flexible rhythm</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px;">
+        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">MON</div>
+        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">TUE</div>
+        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">WED</div>
+        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">THU</div>
+        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">FRI</div>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
+        @for (int day = 1; day <= DateTime.DaysInMonth(CurrentDate.Year, CurrentDate.Month); day++)
+        {
+            var iterDay = day;
+            var currentDate = new DateOnly(CurrentDate.Year, CurrentDate.Month, iterDay);
+            var dailyItems = Items?.Where(s => s.Date == currentDate).OrderBy(s => s.Subtitle).ToList() ?? new List<CalendarItem>();
+
+            <div style="border: 1px solid #e8ece9; border-radius: 15px; padding: 10px; min-height: 140px; display: flex; flex-direction: column; transition: .2s;" onmouseover="this.style.borderColor='#cbd9ce'; this.style.transform='translateY(-1px)';" onmouseout="this.style.borderColor='#e8ece9'; this.style.transform='translateY(0)';">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <strong style="font-size: 14px; color: @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "#263d32" : "#89a995"); @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "background: #dce9df; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;" : "")">@iterDay</strong>
+                    <button style="border: 0; background: transparent; color: #89a995; font-size: 18px; font-weight: 300;" @onclick="() => OnAddClick.InvokeAsync(currentDate)">+</button>
+                </div>
+                @foreach (var item in dailyItems)
+                {
+                    <div style="background: #f1f5f1; border-radius: 10px; padding: 8px; margin-bottom: 5px; cursor: pointer; font-size: 10px; border: 1px solid transparent; transition: .2s;" onmouseover="this.style.background='#eaf2ec';" onmouseout="this.style.background='#f1f5f1';" @onclick="() => OnItemClick.InvokeAsync(item)">
+                        <strong style="color: #263d32; display: block; margin-bottom: 2px;">@item.Title</strong>
+                        <span style="color: #8b958f;">@item.Subtitle</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public DateOnly CurrentDate { get; set; }
+    [Parameter] public IEnumerable<CalendarItem>? Items { get; set; }
+    [Parameter] public EventCallback<DateOnly> OnAddClick { get; set; }
+    [Parameter] public EventCallback<CalendarItem> OnItemClick { get; set; }
+}
