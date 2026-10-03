@@ -4,6 +4,9 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject ExperienceService ExperienceService
 @inject UserService UserService
+@inject PlannerService PlannerService
+@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@using Dapper
 
 <style>
     .page-header {
@@ -198,7 +201,7 @@
                     }
                 } catch {}
                 
-                <div class="experience-card-wrapper" @onclick="() => OpenEditExperienceModal(context)">
+                <div class="experience-card-wrapper" @onclick="() => OpenViewExperienceModal(context)">
                     <EnjoyEveryday.UI.Shared.Components.ExperienceCard 
                         Type="@type" 
                         Status="@(context.Status ?? "Idea")" 
@@ -235,39 +238,178 @@
 
 @if (_isModalOpen)
 {
-    <div class="modal-backdrop" @onclick="CloseDialog" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
-    <dialog open class="modal" style="display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04); border: none; width: 500px; max-width: 90vw;">
-        <h3 style="margin-top: 0; font-size: 1.5rem; color: #1e293b; margin-bottom: 1.5rem;">@(_isEditing ? "Edit Experience" : "Add Experience")</h3>
+    <div class="modal-backdrop" @onclick="CloseDialog" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: white; padding: 2.5rem; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); border: none; width: 750px; max-width: 95vw;">
         
-        <div class="field" style="margin-bottom: 1.5rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569;">Title</label>
-            <input @bind="_currentExperience.Title" type="text" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem;" />
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
+            <div>
+                <div style="color: #557c6c; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 8px;">@(_isEditing ? "EDIT" : "CREATE")</div>
+                <h3 style="margin: 0 0 8px 0; font-size: 2rem; font-weight: 800; color: #26332d; letter-spacing: -0.5px;">@(_isEditing ? "Edit Experience" : "Create an Experience")</h3>
+                <p style="margin: 0; color: #7c877f; font-size: 0.95rem;">Capture what you already know works with your children.</p>
+            </div>
+            <button style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: #7c877f; padding: 0;" @onclick="CloseDialog">✕</button>
         </div>
 
         <div class="field" style="margin-bottom: 1.5rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569;">Description</label>
-            <textarea @bind="_currentExperience.Description" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 8px; height: 100px; font-size: 1rem; font-family: inherit; resize: vertical;"></textarea>
+            <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Experience Name</label>
+            <input @bind="_currentExperience.Title" placeholder="Build a Rainy-Day City" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; outline: none;" />
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="field">
+                <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Age</label>
+                <select @bind="experienceAge" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; background: white; outline: none; cursor: pointer;">
+                    <option value="3-4">3–4</option>
+                    <option value="4-5">4–5</option>
+                    <option value="5-6">5–6</option>
+                </select>
+            </div>
+            <div class="field">
+                <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Duration</label>
+                <select @bind="experienceDuration" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; background: white; outline: none; cursor: pointer;">
+                    <option value="15 minutes">15 minutes</option>
+                    <option value="30 minutes">30 minutes</option>
+                    <option value="45 minutes">45 minutes</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+            <div class="field">
+                <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Type</label>
+                <select @bind="experienceType" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; background: white; outline: none; cursor: pointer;">
+                    <option value="Explore">Explore</option>
+                    <option value="Create">Create</option>
+                    <option value="Move">Move</option>
+                </select>
+            </div>
+            <div class="field">
+                <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Environment</label>
+                <select @bind="experienceEnvironment" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; background: white; outline: none; cursor: pointer;">
+                    <option value="Indoor">Indoor</option>
+                    <option value="Outdoor">Outdoor</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Experience</label>
+            <textarea @bind="_currentExperience.Description" placeholder="Describe what children will experience..." style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; height: 120px; font-size: 1.05rem; resize: vertical; color: #26332d; outline: none; font-family: inherit;"></textarea>
         </div>
 
         <div class="field" style="margin-bottom: 2rem;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569;">DNA Payload (JSON)</label>
-            <textarea @bind="_currentExperience.DnaPayload" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 8px; height: 80px; font-family: monospace; font-size: 0.9rem; resize: vertical;"></textarea>
+            <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Materials</label>
+            <input @bind="experienceMaterials" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; outline: none;" />
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                @if (_isEditing)
-                {
-                    <button class="secondary" style="color: #ef4444; border: 1px solid #ef4444; background: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;" @onclick="DeleteExperienceAsync">Delete</button>
-                }
-            </div>
-            <div style="display: flex; gap: 1rem;">
-                <button class="secondary" style="background: white; border: 1px solid #e2e8f0; color: #475569; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;" @onclick="CloseDialog">Cancel</button>
-                <button class="primary" style="background: #10b981; border: none; color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;" @onclick="SaveExperienceAsync">Save</button>
-            </div>
+        <div style="border-top: 1px solid #e1e6df; padding-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+            @if (_isEditing)
+            {
+                <button type="button" class="secondary" style="border: 1px solid #ff4d4d; color: #ff4d4d; background: white; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer; margin-right: auto;" @onclick="DeleteExperienceAsync">Delete</button>
+            }
+            <button type="button" class="secondary" style="border: 1px solid #e1e6df; background: white; color: #26332d; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="SaveDraftAsync">Save draft</button>
+            <button type="button" class="primary" style="background: #557c6c; border: none; color: white; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="SaveToLibraryAsync">Save to my library</button>
         </div>
     </dialog>
 }
+
+
+@if (_isViewModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseViewDialog" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: white; padding: 2.5rem; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); border: none; width: 750px; max-width: 95vw;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+            <div>
+                <div style="color: #557c6c; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 8px;">EXPERIENCE</div>
+                <h3 style="margin: 0; font-size: 2rem; font-weight: 800; color: #26332d; letter-spacing: -0.5px;">@_currentExperience.Title</h3>
+            </div>
+            <button style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: #7c877f; padding: 0;" @onclick="CloseViewDialog">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 2rem; flex-wrap: wrap;">
+            <span style="background: #f8f9f5; color: #7c877f; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;">Age 3–4</span>
+            <span style="background: #f8f9f5; color: #7c877f; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;">25 min</span>
+            <span style="background: #f8f9f5; color: #7c877f; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;">Indoor</span>
+            <span style="background: #f8f9f5; color: #7c877f; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;">6–18 children</span>
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <div style="font-size: 0.75rem; font-weight: 800; color: #7c877f; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Today's Mission</div>
+            <div style="font-size: 1.05rem; color: #26332d;">@(_currentExperience.Description ?? "No description available.")</div>
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <div style="font-size: 0.75rem; font-weight: 800; color: #7c877f; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Discover</div>
+            <div style="font-size: 1.05rem; color: #26332d;">What does our city need?</div>
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <div style="font-size: 0.75rem; font-weight: 800; color: #7c877f; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Challenge</div>
+            <div style="font-size: 1.05rem; color: #26332d;">Can we build a bridge?</div>
+        </div>
+
+        <div style="margin-bottom: 2rem;">
+            <div style="font-size: 0.75rem; font-weight: 800; color: #7c877f; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Joy Moment</div>
+            <div style="font-size: 1.05rem; color: #26332d;">The whole city comes together.</div>
+        </div>
+
+        <div style="border-top: 1px solid #e1e6df; padding-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+            @if (_currentExperience.Status != "Draft")
+            {
+                <button type="button" class="secondary" style="border: 1px solid #e1e6df; background: white; color: #26332d; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="ScheduleExperience">Schedule</button>
+            }
+            else
+            {
+                <button type="button" class="secondary" style="border: 1px solid #e1e6df; background: #f0f0f0; color: #a0a0a0; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: not-allowed;" disabled title="Cannot schedule a draft">Schedule</button>
+            }
+            <button type="button" class="secondary" style="border: 1px solid #e1e6df; background: white; color: #26332d; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="() => { CloseViewDialog(); OpenEditExperienceModal(_currentExperience); }">Edit</button>
+            <button type="button" class="secondary" style="border: 1px solid #e1e6df; background: white; color: #26332d; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="DuplicateExperience">Duplicate</button>
+            <button class="primary" style="background: #557c6c; border: none; color: white; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z" fill="currentColor"/>
+                </svg>
+                Improve with AI
+            </button>
+        </div>
+    </dialog>
+}
+
+
+
+@if (_isScheduleModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseScheduleModal" style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+    <dialog open class="modal" style="display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; background: white; padding: 2.5rem; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); border: none; width: 500px; max-width: 95vw;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
+            <div>
+                <h3 style="margin: 0 0 8px 0; font-size: 1.5rem; font-weight: 800; color: #26332d; letter-spacing: -0.5px;">Schedule Experience</h3>
+                <p style="margin: 0; color: #7c877f; font-size: 0.95rem;">When would you like to run @_currentExperience.Title?</p>
+            </div>
+            <button style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: #7c877f; padding: 0;" @onclick="CloseScheduleModal">✕</button>
+        </div>
+
+        <div class="field" style="margin-bottom: 1.5rem;">
+            <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Date</label>
+            <input type="date" @bind="_scheduleDate" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; outline: none;" />
+        </div>
+
+        <div class="field" style="margin-bottom: 2rem;">
+            <label style="display: block; font-size: 0.75rem; font-weight: 800; color: #26332d; margin-bottom: 8px; text-transform: uppercase;">Time of Day</label>
+            <select @bind="_scheduleTimeOfDay" style="width: 100%; padding: 14px 16px; border: 1px solid #e1e6df; border-radius: 10px; font-size: 1.05rem; color: #26332d; background: white; outline: none; cursor: pointer;">
+                <option value="Morning">Morning</option>
+                <option value="Afternoon">Afternoon</option>
+            </select>
+        </div>
+
+        <div style="border-top: 1px solid #e1e6df; padding-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+            <button type="button" class="secondary" style="border: 1px solid #e1e6df; background: white; color: #26332d; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="CloseScheduleModal">Cancel</button>
+            <button type="button" class="primary" style="background: #557c6c; border: none; color: white; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer;" @onclick="SaveScheduleAsync">Add to Calendar</button>
+        </div>
+    </dialog>
+}
+
 
 @code {
     private IEnumerable<Experience>? _experiences;
@@ -344,8 +486,101 @@
         }
     }
 
+    
+    private string experienceAge = "3-4";
+    private string experienceDuration = "15 minutes";
+    private string experienceType = "Explore";
+    private string experienceEnvironment = "Indoor";
+    private string experienceMaterials = "";
+
+    
+    private async Task SaveToLibraryAsync()
+    {
+        _currentExperience.Status = "Idea";
+        await SaveExperienceAsync();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        _currentExperience.Status = "Draft";
+        await SaveExperienceAsync();
+    }
+
     private Experience _currentExperience = new();
+    
     private bool _isModalOpen = false;
+    private bool _isViewModalOpen = false;
+
+    private void OpenViewExperienceModal(Experience exp)
+    {
+        _currentExperience = exp;
+        _isViewModalOpen = true;
+    }
+
+    
+    private async Task DuplicateExperience()
+    {
+        var sourceExp = _currentExperience;
+        await ExperienceService.CreateExperienceAsync(
+            sourceExp.Title + " (Copy)",
+            sourceExp.Description ?? "",
+            sourceExp.DnaPayload ?? "{}",
+            _defaultUserId,
+            "Idea"
+        );
+        await LoadExperiencesAsync();
+        CloseViewDialog();
+    }
+
+
+    private bool _isScheduleModalOpen = false;
+    private DateTime _scheduleDate = DateTime.Today;
+    private string _scheduleTimeOfDay = "Morning";
+
+    private void ScheduleExperience()
+    {
+        CloseViewDialog();
+        _scheduleDate = DateTime.Today;
+        _scheduleTimeOfDay = "Morning";
+        _isScheduleModalOpen = true;
+    }
+
+    private void CloseScheduleModal()
+    {
+        _isScheduleModalOpen = false;
+    }
+
+    private async Task SaveScheduleAsync()
+    {
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var classroomId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+        
+        if (!classroomId.HasValue || classroomId.Value == Guid.Empty)
+        {
+            var branchId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM branches LIMIT 1");
+            if (!branchId.HasValue || branchId.Value == Guid.Empty)
+            {
+                branchId = Guid.NewGuid();
+                var tenantId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM tenants LIMIT 1") ?? Guid.NewGuid();
+                var orgId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM organizations LIMIT 1") ?? Guid.NewGuid();
+                await connection.ExecuteAsync("INSERT INTO branches (id, tenant_id, organization_id, name, is_active, created_at, updated_at) VALUES (@Id, @TenantId, @OrgId, 'Main Branch', true, @Now, @Now)", new { Id = branchId.Value, TenantId = tenantId, OrgId = orgId, Now = DateTimeOffset.UtcNow });
+            }
+            
+            classroomId = Guid.NewGuid();
+            var tId = await connection.QueryFirstOrDefaultAsync<Guid>("SELECT tenant_id FROM branches WHERE id = @Id", new { Id = branchId.Value });
+            await connection.ExecuteAsync("INSERT INTO classrooms (id, tenant_id, branch_id, name, is_active, created_at, updated_at) VALUES (@Id, @TenantId, @BranchId, 'Room A', true, @Now, @Now)", new { Id = classroomId.Value, TenantId = tId, BranchId = branchId.Value, Now = DateTimeOffset.UtcNow });
+        }
+
+        await PlannerService.ScheduleExperienceAsync(_currentExperience.Id, classroomId.Value, DateOnly.FromDateTime(_scheduleDate), _scheduleTimeOfDay);
+        _isScheduleModalOpen = false;
+    }
+
+
+    private void CloseViewDialog()
+    {
+        _isViewModalOpen = false;
+    }
+
     private bool _isEditing = false;
     private Guid _defaultUserId = Guid.Parse("50000000-0000-0000-0000-000000000001");
 
@@ -389,6 +624,12 @@
     private void OpenAddExperienceModal()
     {
         _currentExperience = new Experience { DnaPayload = "{\"type\": \"Experience\"}" };
+        experienceAge = "3-4";
+        experienceDuration = "15 minutes";
+        experienceType = "Explore";
+        experienceEnvironment = "Indoor";
+        experienceMaterials = "";
+
         _isEditing = false;
         _isModalOpen = true;
     }
@@ -435,7 +676,8 @@
                 _currentExperience.Title,
                 _currentExperience.Description ?? "",
                 _currentExperience.DnaPayload ?? "{}",
-                _defaultUserId);
+                _defaultUserId,
+                _currentExperience.Status);
         }
 
         await LoadExperiencesAsync();

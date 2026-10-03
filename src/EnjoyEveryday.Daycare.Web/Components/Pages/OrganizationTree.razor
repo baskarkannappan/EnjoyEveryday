@@ -1,0 +1,448 @@
+@page "/organization"
+@using EnjoyEveryday.UI.Shared.Components
+@rendermode InteractiveServer
+
+<PageTopbar Breadcrumb="Little Stars Daycare / Organization" Title="People & Places">
+    <RightContent>
+    </RightContent>
+</PageTopbar>
+
+<section class="page active-page" style="background-color: #f8fbfa; min-height: calc(100vh - 80px); padding: 40px; overflow-x: auto; position: relative;">
+    
+    <div class="org-tree">
+        <ul>
+            <li>
+                <!-- Root Node -->
+                <div class="org-node root-node" style="position: relative; cursor: pointer; transition: transform 0.2s; box-shadow: 0 10px 30px rgba(0,0,0,0.06);" @onclick="() => SelectEntity(Daycare, null)">
+                    <div class="node-icon" style="background: linear-gradient(135deg, #fff7d6 0%, #ffdf70 100%);">🏫</div>
+                    <div class="node-content">
+                        <h3>@Daycare.Name</h3>
+                        <p>@Daycare.Description</p>
+                        <div class="meta">
+                            <span>🏠 @Daycare.Classrooms.Count Classrooms</span>
+                            <span class="divider">|</span>
+                            <span>👥 @Daycare.Classrooms.Sum(c => c.Children.Count) Children</span>
+                            <span class="divider">|</span>
+                            <span>👩‍🏫 @Daycare.Classrooms.Sum(c => c.Teachers.Count) Teachers</span>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-left: auto;">
+                        <button class="primary" @onclick:stopPropagation="true" @onclick="AddClassroom" style="background: var(--accent, #557c6c); color: white; border-radius: 8px; padding: 8px 12px; border: none; font-weight: 650; cursor: pointer; font-size: 0.85rem;">
+                            + Add Classroom
+                        </button>
+                        <button class="secondary" @onclick:stopPropagation="true" @onclick="() => Daycare.IsCollapsed = !Daycare.IsCollapsed" style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-weight: 650; cursor: pointer; font-size: 0.85rem;">
+                            @(Daycare.IsCollapsed ? "Expand All" : "Collapse All")
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Classrooms Level -->
+                @if (Daycare.Classrooms.Any() && !Daycare.IsCollapsed)
+                {
+                    <ul>
+                        @foreach (var classroom in Daycare.Classrooms)
+                        {
+                            <li>
+                                <!-- Classroom Node -->
+                                <div class="org-node classroom-node @classroom.ColorTheme" style="cursor: pointer;" @onclick="() => SelectEntity(classroom, null)"
+                                     @ondragover:preventDefault="true" 
+                                     @ondrop="() => HandleDrop(classroom)">
+                                     
+                                    <button class="remove-btn" @onclick:stopPropagation="true" @onclick="() => RemoveClassroom(classroom)" title="Remove Classroom">✕</button>
+                                    
+                                    <div class="classroom-header">
+                                        <div class="classroom-icon" style="background: rgba(255,255,255,0.6); backdrop-filter: blur(4px);">@classroom.Icon</div>
+                                        <div class="classroom-title">
+                                            <h4>@classroom.Name</h4>
+                                            <span>Classroom</span>
+                                        </div>
+                                        <div class="classroom-age">Ages @classroom.Ages</div>
+                                        
+                                        <button @onclick:stopPropagation="true" @onclick="() => classroom.IsCollapsed = !classroom.IsCollapsed" style="margin-left: auto; border: none; background: transparent; font-size: 1.2rem; cursor: pointer; opacity: 0.5;">
+                                            @(classroom.IsCollapsed ? "▼" : "▲")
+                                        </button>
+                                    </div>
+                                    
+                                    @if (!classroom.IsCollapsed)
+                                    {
+                                        <div class="classroom-meta" style="margin-bottom: 10px;">
+                                            <span style="cursor: pointer;" @onclick:stopPropagation="true" @onclick="() => classroom.AreChildrenCollapsed = !classroom.AreChildrenCollapsed">
+                                                👥 @classroom.Children.Count Children @(classroom.AreChildrenCollapsed ? "▼" : "▲")
+                                            </span>
+                                            <span class="divider">|</span>
+                                            <span style="cursor: pointer;" @onclick:stopPropagation="true" @onclick="() => classroom.AreTeachersCollapsed = !classroom.AreTeachersCollapsed">
+                                                👩‍🏫 @classroom.Teachers.Count Teachers @(classroom.AreTeachersCollapsed ? "▼" : "▲")
+                                            </span>
+                                        </div>
+                                        
+                                        <!-- Teachers Grid -->
+                                        @if (!classroom.AreTeachersCollapsed)
+                                        {
+                                            <div class="teachers-grid">
+                                                @foreach (var teacher in classroom.Teachers)
+                                                {
+                                                    <div class="teacher-card" draggable="true" @ondragstart="() => HandleDragStart(teacher, classroom)" @onclick:stopPropagation="true" @onclick="() => SelectEntity(teacher, classroom)">
+                                                        <button class="remove-btn-small" @onclick:stopPropagation="true" @onclick="() => RemoveTeacher(classroom, teacher)">✕</button>
+                                                        <div class="teacher-avatar" style="background-image: url('@teacher.PhotoUrl'); background-size: cover; background-position: center; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                                                            @if (string.IsNullOrEmpty(teacher.PhotoUrl))
+                                                            {
+                                                                @(teacher.Name.Substring(0, 1))
+                                                            }
+                                                        </div>
+                                                        <div class="teacher-info">
+                                                            <h5>@teacher.Name</h5>
+                                                            <span class="role">@teacher.Role</span>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                <button class="add-teacher-btn" @onclick:stopPropagation="true" @onclick="() => AddTeacher(classroom)">
+                                                    + Add Teacher
+                                                </button>
+                                            </div>
+                                        }
+                                        
+                                        <!-- Children Footer -->
+                                        @if (!classroom.AreChildrenCollapsed)
+                                        {
+                                            <div class="children-footer" style="flex-wrap: wrap;">
+                                                <div class="children-avatars" style="display: flex; gap: -5px;">
+                                                    @foreach (var child in classroom.Children.Take(5))
+                                                    {
+                                                        <img src="@child.PhotoUrl" alt="@child.Name" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-left: -8px;" title="@child.Name" />
+                                                    }
+                                                    @if (classroom.Children.Count > 5)
+                                                    {
+                                                        <div style="width: 32px; height: 32px; border-radius: 50%; background: #e5e7eb; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: #4b5563; border: 2px solid white; margin-left: -8px; z-index: 10;">
+                                                            +@(classroom.Children.Count - 5)
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <div class="children-info" style="margin-left: 10px;">
+                                                    <h5>@classroom.Children.Count Children</h5>
+                                                </div>
+                                                
+                                                <div style="display: flex; gap: 5px; margin-left: auto;">
+                                                    <button class="add-child-btn" @onclick:stopPropagation="true" @onclick="() => AddChild(classroom)" title="Add Child">+</button>
+                                                </div>
+                                                
+                                                <!-- Children Grid Details -->
+                                                <div style="width: 100%; margin-top: 15px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 15px;">
+                                                    @foreach (var child in classroom.Children)
+                                                    {
+                                                        <div draggable="true" @ondragstart="() => HandleDragStart(child, classroom)" @onclick:stopPropagation="true" @onclick="() => SelectEntity(child, classroom)" 
+                                                             style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; background: white; padding: 4px 8px; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); cursor: pointer; position: relative;">
+                                                            <button class="remove-btn-small" style="top: -4px; right: -4px; width: 16px; height: 16px; font-size: 8px;" @onclick:stopPropagation="true" @onclick="() => RemoveChild(classroom, child)">✕</button>
+                                                            <img src="@child.PhotoUrl" style="width: 24px; height: 24px; border-radius: 50%;" />
+                                                            <span style="font-weight: 600; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px;">@child.Name</span>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </li>
+        </ul>
+    </div>
+</section>
+
+<!-- Side Panel for Edit -->
+@if (_selectedEntity != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 1000;" @onclick="ClosePanel"></div>
+    <div style="position: fixed; right: 0; top: 0; width: 100%; max-width: 400px; height: 100vh; background: white; box-shadow: -5px 0 25px rgba(0,0,0,0.1); z-index: 1001; padding: 30px; display: flex; flex-direction: column; transition: transform 0.3s; transform: translateX(0); box-sizing: border-box;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h3 style="margin: 0; font-size: 1.5rem;">Edit Details</h3>
+            <button @onclick="ClosePanel" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">✕</button>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 1rem; flex-grow: 1; overflow-y: auto; padding-bottom: 20px;">
+            @if (_selectedEntity is OrgDaycare daycare)
+            {
+                <div class="field"><label>Name</label><input @bind="daycare.Name" /></div>
+                <div class="field"><label>Description</label><textarea @bind="daycare.Description"></textarea></div>
+            }
+            else if (_selectedEntity is OrgClassroom classrm)
+            {
+                <div class="field"><label>Name</label><input @bind="classrm.Name" /></div>
+                <div class="field"><label>Icon Emoji</label><input @bind="classrm.Icon" /></div>
+                <div class="field"><label>Ages</label><input @bind="classrm.Ages" /></div>
+                <div class="field">
+                    <label>Color Theme</label>
+                    <select @bind="classrm.ColorTheme">
+                        <option value="theme-blue">Serene Blue</option>
+                        <option value="theme-purple">Primary Purple</option>
+                        <option value="theme-green">Accent Green</option>
+                        <option value="theme-yellow">Secondary Yellow</option>
+                        <option value="theme-red">Danger Red</option>
+                        <option value="theme-teal">Ocean Teal</option>
+                    </select>
+                </div>
+            }
+            else if (_selectedEntity is OrgTeacher teacher)
+            {
+                <div style="display: flex; justify-content: center; margin-bottom: 1rem;">
+                    <img src="@teacher.PhotoUrl" style="width: 100px; height: 100px; border-radius: 50%; border: 3px solid #e5e7eb;" />
+                </div>
+                <div class="field"><label>Photo URL</label><input @bind="teacher.PhotoUrl" /></div>
+                <div class="field"><label>Name</label><input @bind="teacher.Name" /></div>
+                <div class="field"><label>Role</label><input @bind="teacher.Role" /></div>
+            }
+            else if (_selectedEntity is OrgChild child)
+            {
+                <div style="display: flex; justify-content: center; margin-bottom: 1rem;">
+                    <img src="@child.PhotoUrl" style="width: 100px; height: 100px; border-radius: 50%; border: 3px solid #e5e7eb;" />
+                </div>
+                <div class="field"><label>Photo URL</label><input @bind="child.PhotoUrl" /></div>
+                <div class="field"><label>Name</label><input @bind="child.Name" /></div>
+            }
+        </div>
+        
+        <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid #e5e7eb; display: flex; gap: 10px;">
+            @if (!(_selectedEntity is OrgDaycare))
+            {
+                <button class="secondary" style="flex: 1; border-color: #ef4444; color: #ef4444;" @onclick="DeleteSelected">Delete</button>
+                <button class="secondary" style="flex: 1;" @onclick="DuplicateSelected">Duplicate</button>
+            }
+            <button class="primary" style="flex: 1;" @onclick="ClosePanel">Save</button>
+        </div>
+    </div>
+}
+
+@code {
+    private OrgDaycare Daycare = new();
+    
+    // Edit Panel State
+    private object? _selectedEntity;
+    private OrgClassroom? _selectedEntityParentClassroom;
+
+    // Drag & Drop State
+    private object? _draggedEntity;
+    private OrgClassroom? _draggedSourceClassroom;
+
+    protected override void OnInitialized()
+    {
+        Daycare = new OrgDaycare
+        {
+            Name = "EnjoyEveryday Daycare",
+            Description = "A happy place to learn and grow",
+            Classrooms = new List<OrgClassroom>
+            {
+                new OrgClassroom
+                {
+                    Name = "Bluebirds",
+                    Ages = "1-2",
+                    Icon = "🐦",
+                    ColorTheme = "theme-blue",
+                    Teachers = new List<OrgTeacher>
+                    {
+                        new OrgTeacher { Name = "Priya", Role = "Lead Teacher", PhotoUrl = "https://i.pravatar.cc/150?u=priya" },
+                        new OrgTeacher { Name = "Daniel", Role = "Assistant Teacher", PhotoUrl = "https://i.pravatar.cc/150?u=daniel" }
+                    },
+                    Children = GenerateChildren(8)
+                },
+                new OrgClassroom
+                {
+                    Name = "Butterflies",
+                    Ages = "2-3",
+                    Icon = "🦋",
+                    ColorTheme = "theme-purple",
+                    Teachers = new List<OrgTeacher>
+                    {
+                        new OrgTeacher { Name = "Sarah", Role = "Lead Teacher", PhotoUrl = "https://i.pravatar.cc/150?u=sarah" },
+                        new OrgTeacher { Name = "Maya", Role = "Assistant Teacher", PhotoUrl = "https://i.pravatar.cc/150?u=maya" }
+                    },
+                    Children = GenerateChildren(10)
+                }
+            }
+        };
+    }
+
+    // -- Selection & Side Panel --
+    
+    private void SelectEntity(object entity, OrgClassroom? parent)
+    {
+        _selectedEntity = entity;
+        _selectedEntityParentClassroom = parent;
+    }
+    
+    private void ClosePanel()
+    {
+        _selectedEntity = null;
+        _selectedEntityParentClassroom = null;
+    }
+
+    private void DeleteSelected()
+    {
+        if (_selectedEntity is OrgClassroom classrm)
+        {
+            RemoveClassroom(classrm);
+        }
+        else if (_selectedEntity is OrgTeacher teacher && _selectedEntityParentClassroom != null)
+        {
+            RemoveTeacher(_selectedEntityParentClassroom, teacher);
+        }
+        else if (_selectedEntity is OrgChild child && _selectedEntityParentClassroom != null)
+        {
+            RemoveChild(_selectedEntityParentClassroom, child);
+        }
+        ClosePanel();
+    }
+
+    private void DuplicateSelected()
+    {
+        if (_selectedEntity is OrgClassroom classrm)
+        {
+            var copy = new OrgClassroom
+            {
+                Name = classrm.Name + " (Copy)",
+                Ages = classrm.Ages,
+                Icon = classrm.Icon,
+                ColorTheme = classrm.ColorTheme,
+                Teachers = classrm.Teachers.Select(t => new OrgTeacher { Name = t.Name, Role = t.Role, PhotoUrl = t.PhotoUrl }).ToList(),
+                Children = classrm.Children.Select(c => new OrgChild { Name = c.Name, PhotoUrl = c.PhotoUrl }).ToList()
+            };
+            Daycare.Classrooms.Add(copy);
+        }
+        else if (_selectedEntity is OrgTeacher teacher && _selectedEntityParentClassroom != null)
+        {
+            var copy = new OrgTeacher { Name = teacher.Name + " (Copy)", Role = teacher.Role, PhotoUrl = teacher.PhotoUrl };
+            _selectedEntityParentClassroom.Teachers.Add(copy);
+        }
+        else if (_selectedEntity is OrgChild child && _selectedEntityParentClassroom != null)
+        {
+            var copy = new OrgChild { Name = child.Name + " (Copy)", PhotoUrl = child.PhotoUrl };
+            _selectedEntityParentClassroom.Children.Add(copy);
+        }
+        ClosePanel();
+    }
+
+    // -- Drag and Drop --
+
+    private void HandleDragStart(object entity, OrgClassroom source)
+    {
+        _draggedEntity = entity;
+        _draggedSourceClassroom = source;
+    }
+
+    private void HandleDrop(OrgClassroom targetClassroom)
+    {
+        if (_draggedEntity == null || _draggedSourceClassroom == null) return;
+        if (_draggedSourceClassroom == targetClassroom) return; // Dropped in same place
+
+        if (_draggedEntity is OrgTeacher teacher)
+        {
+            _draggedSourceClassroom.Teachers.Remove(teacher);
+            targetClassroom.Teachers.Add(teacher);
+        }
+        else if (_draggedEntity is OrgChild child)
+        {
+            _draggedSourceClassroom.Children.Remove(child);
+            targetClassroom.Children.Add(child);
+        }
+
+        _draggedEntity = null;
+        _draggedSourceClassroom = null;
+    }
+
+    // -- Generators & Helpers --
+
+    private List<OrgChild> GenerateChildren(int count)
+    {
+        var names = new[] { "Leo", "Mia", "Noah", "Emma", "Oliver", "Ava", "Elijah", "Charlotte", "William", "Amelia", "James", "Harper" };
+        var rand = new Random();
+        var children = new List<OrgChild>();
+        for (int i = 0; i < count; i++)
+        {
+            var name = names[rand.Next(names.Length)];
+            children.Add(new OrgChild { Name = name, PhotoUrl = $"https://i.pravatar.cc/150?u=child_{Guid.NewGuid()}" });
+        }
+        return children;
+    }
+
+    private void AddClassroom()
+    {
+        var themes = new[] { "theme-blue", "theme-purple", "theme-green", "theme-yellow", "theme-red", "theme-teal" };
+        var icons = new[] { "🌟", "🦊", "🦁", "🐢", "🐸", "🌈", "🎈", "🎨" };
+        var names = new[] { "Stars", "Foxes", "Lions", "Turtles", "Frogs", "Rainbows", "Balloons", "Artists" };
+        var rand = new Random();
+        
+        Daycare.Classrooms.Add(new OrgClassroom
+        {
+            Name = names[rand.Next(names.Length)],
+            Ages = "3-4",
+            Icon = icons[rand.Next(icons.Length)],
+            ColorTheme = themes[rand.Next(themes.Length)],
+            Children = GenerateChildren(rand.Next(3, 7))
+        });
+    }
+
+    private void RemoveClassroom(OrgClassroom classroom) => Daycare.Classrooms.Remove(classroom);
+
+    private void AddTeacher(OrgClassroom classroom)
+    {
+        var names = new[] { "Alex", "Jordan", "Taylor", "Casey", "Morgan" };
+        var name = names[new Random().Next(names.Length)];
+        classroom.Teachers.Add(new OrgTeacher
+        {
+            Name = name,
+            Role = "Assistant Teacher",
+            PhotoUrl = $"https://i.pravatar.cc/150?u={Guid.NewGuid()}"
+        });
+    }
+
+    private void RemoveTeacher(OrgClassroom classroom, OrgTeacher teacher) => classroom.Teachers.Remove(teacher);
+
+    private void AddChild(OrgClassroom classroom)
+    {
+        var names = new[] { "Leo", "Mia", "Noah", "Emma", "Oliver", "Ava" };
+        var name = names[new Random().Next(names.Length)];
+        classroom.Children.Add(new OrgChild { Name = name, PhotoUrl = $"https://i.pravatar.cc/150?u=child_{Guid.NewGuid()}" });
+    }
+
+    private void RemoveChild(OrgClassroom classroom, OrgChild child) => classroom.Children.Remove(child);
+
+    // -- Models --
+
+    public class OrgDaycare
+    {
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool IsCollapsed { get; set; } = false;
+        public List<OrgClassroom> Classrooms { get; set; } = new();
+    }
+
+    public class OrgClassroom
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Name { get; set; } = "";
+        public string Ages { get; set; } = "";
+        public string Icon { get; set; } = "";
+        public string ColorTheme { get; set; } = "";
+        public bool IsCollapsed { get; set; } = false;
+        public bool AreTeachersCollapsed { get; set; } = false;
+        public bool AreChildrenCollapsed { get; set; } = false;
+        public List<OrgTeacher> Teachers { get; set; } = new();
+        public List<OrgChild> Children { get; set; } = new();
+    }
+
+    public class OrgTeacher
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Name { get; set; } = "";
+        public string Role { get; set; } = "";
+        public string PhotoUrl { get; set; } = "";
+    }
+
+    public class OrgChild
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public string Name { get; set; } = "";
+        public string PhotoUrl { get; set; } = "";
+    }
+}

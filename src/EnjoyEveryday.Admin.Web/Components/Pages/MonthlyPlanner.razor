@@ -6,6 +6,8 @@
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject ExperienceService ExperienceService
+@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@using Dapper
 @rendermode InteractiveServer
  <section id="page-planner" class="page active">
     <PageHero 
@@ -94,7 +96,7 @@
                 {
                     var iterDay = day;
                     var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
-                    var dailySchedules = GetSchedulesForDay(currentDate, "Morning").ToList();
+                    var dailySchedules = _schedules.Where(s => s.ScheduledDate == currentDate).OrderBy(s => s.TimeOfDay).ToList();
                     <div class="day">
                         <div class="day-number @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "today" : "")">
                             @iterDay
@@ -108,7 +110,7 @@
                                 <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "")" style="cursor: pointer;" @onclick="() => EditSchedule(schedule)">
                                     <strong>@experience.Title</strong>
                                     <span>
-                                        @GetExperienceType(experience) &middot; @schedule.Status
+                                        @GetExperienceType(experience) &middot; @schedule.TimeOfDay
                                     </span>
                                 </div>
                             }
@@ -207,22 +209,16 @@
         int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
         _currentDate = DateOnly.FromDateTime(today.AddDays(-1 * diff));
         _currentDateTime = _currentDate.ToDateTime(TimeOnly.MinValue);
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+        if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
-            {
-                _classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-            }
+            _selectedClassroomId = fallbackId.Value.ToString();
         }
-        if (_classrooms.Any())
-        {
-            _selectedClassroomId = _classrooms.First().Id.ToString();
-        }
+
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        
         await LoadSchedules();
         CloseDialog();
     }
@@ -240,7 +236,17 @@
         if (_currentDateTime.HasValue)
         {
             _currentDate = DateOnly.FromDateTime(_currentDateTime.Value);
-            await LoadSchedules();
+                    if (string.IsNullOrEmpty(_selectedClassroomId))
+        {
+            using var connection = await DbConnectionFactory.CreateConnectionAsync();
+            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
+            {
+                _selectedClassroomId = fallbackId.Value.ToString();
+            }
+        }
+
+        await LoadSchedules();
         CloseDialog();
         }
     }
@@ -298,7 +304,17 @@
         if (_currentScheduleId.HasValue)
         {
             await PlannerService.DeleteScheduleAsync(_currentScheduleId.Value);
-            await LoadSchedules();
+                    if (string.IsNullOrEmpty(_selectedClassroomId))
+        {
+            using var connection = await DbConnectionFactory.CreateConnectionAsync();
+            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
+            {
+                _selectedClassroomId = fallbackId.Value.ToString();
+            }
+        }
+
+        await LoadSchedules();
             CloseDialog();
         }
     }
@@ -330,6 +346,16 @@
             await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
         }
         
+                if (string.IsNullOrEmpty(_selectedClassroomId))
+        {
+            using var connection = await DbConnectionFactory.CreateConnectionAsync();
+            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
+            {
+                _selectedClassroomId = fallbackId.Value.ToString();
+            }
+        }
+
         await LoadSchedules();
         CloseDialog();
     }

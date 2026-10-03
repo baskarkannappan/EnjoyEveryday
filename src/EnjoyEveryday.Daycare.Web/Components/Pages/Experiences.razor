@@ -1,39 +1,62 @@
 @page "/experiences"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using Microsoft.FluentUI.AspNetCore.Components
+@using EnjoyEveryday.UI.Shared.Components
 @inject ExperienceService ExperienceService
-<section id="page-experiences" class="page active">
-    <PageHero 
-        Eyebrow="YOUR EXPERIENCE LIBRARY" 
-        Title="My Experiences" 
-        Subtitle="Your daycare's growing collection. Every experience gets better with use.">
+@inject UserService UserService
+@inject PlannerService PlannerService
+@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@using Dapper
+
+<PageTopbar Breadcrumb="Little Stars Daycare / Experiences" Title="Experiences">
+    <RightContent>
+        <button class="icon-button" style="border: 1px solid var(--border, #e4e7df); background: white; border-radius: 10px; width: 38px; height: 38px; position: relative;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-top: 4px;">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span style="position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; background: #b96b55; border-radius: 50%;"></span>
+        </button>
+        <button class="primary" style="display: flex; align-items: center; gap: 6px; background: var(--accent, #557c6c); color: white; border-radius: 10px; padding: 10px 15px; border: none; font-weight: 650; font-size: 12px;">
+            <span style="font-size: 14px;">âœ¨</span> + Ask Experience AI
+        </button>
+    </RightContent>
+</PageTopbar>
+
+<section id="page-experiences" class="page active-page">
+    <PageHeader 
+        Eyebrow="YOUR EXPERIENCE LIBRARY"
+        Title="My Experiences"
+        Description="Your daycare's growing collection. Every experience gets better with use.">
         <RightContent>
             <button id="createExperienceButton" class="primary" @onclick="OpenAddExperienceModal">
                 + Create experience
             </button>
         </RightContent>
-    </PageHero>
-    <div class="tabs">
-        <button class="tab active" data-filter="all">All</button>
-        <button class="tab" data-filter="created">Created by us</button>
-        <button class="tab" data-filter="platform">Platform</button>
-        <button class="tab" data-filter="ai">AI created</button>
-    </div>
-    <div class="search-row">
-        <input id="experienceSearch" class="search" placeholder="Search experiences...">
-        <select id="ageFilter" class="filter">
-            <option value="all">All ages</option>
-            <option value="3–4">3–4</option>
-            <option value="4–5">4–5</option>
-        </select>
-        <select id="typeFilter" class="filter">
-            <option value="all">All types</option>
-            <option value="Explore">Explore</option>
-            <option value="Create">Create</option>
-            <option value="Move">Move</option>
-            <option value="Together">Together</option>
-        </select>
-    </div>
+    </PageHeader>
+
+    <FilterTabs 
+        Tabs="ExperienceTabs" 
+        ActiveTab="@ActiveFilter" 
+        OnTabSelected="(val) => ActiveFilter = val" />
+
+    <SearchFilterRow SearchPlaceholder="Search experiences..." @bind-SearchQuery="SearchText">
+        <Filters>
+            <select id="ageFilter" class="filter">
+                <option value="all">All ages</option>
+                <option value="3-4">3-4</option>
+                <option value="4-5">4-5</option>
+            </select>
+            <select id="typeFilter" class="filter">
+                <option value="all">All types</option>
+                <option value="Explore">Explore</option>
+                <option value="Create">Create</option>
+                <option value="Move">Move</option>
+            </select>
+        </Filters>
+    </SearchFilterRow>
+
     <div id="experienceGrid" class="experience-grid">
         @if (_experiences != null) {
             @foreach (var exp in _experiences) {
@@ -44,36 +67,272 @@
                         type = typeElement.GetString() ?? "Experience";
                     }
                 } catch {}
-                <ExperienceCard Type="@type" Status="@exp.Status" Title="@exp.Title" Description="@exp.Description" Ages="3–4" Duration="15 min" Setting="Indoor" Uses="1" Version="v1" Id="@exp.Id.ToString()" />
+
+                <ExperienceCard 
+                    Type="@type" 
+                    Status="@(exp.Status ?? "Idea")" 
+                    Title="@exp.Title" 
+                    Description="@exp.Description" 
+                    Ages="3-4" 
+                    Duration="15 min" 
+                    Setting="Indoor" 
+                    Uses="1" 
+                    Version="v1" 
+                    Id="@exp.Id.ToString()"
+                    OnClick="() => OpenViewExperienceModal(exp)" />
             }
         }
     </div>
 </section>
+
+<ExperienceCreateModal 
+    IsOpen="@_isModalOpen"
+    IsEditing="@_isEditing"
+    @bind-Title="_currentExperience.Title"
+    @bind-Description="_currentExperience.Description"
+    @bind-Age="experienceAge"
+    @bind-Duration="experienceDuration"
+    @bind-Type="experienceType"
+    @bind-Environment="experienceEnvironment"
+    @bind-Materials="experienceMaterials"
+    OnClose="CloseDialog"
+    OnSaveDraft="SaveDraftAsync"
+    OnSaveLibrary="SaveToLibraryAsync"
+    OnDelete="DeleteExperienceAsync" />
+
+<ExperienceViewModal 
+    IsOpen="@_isViewModalOpen"
+    Title="@(_currentExperience?.Title ?? "Experience")"
+    Mission="@(_currentExperience?.Description ?? "No description available.")"
+    Discover="What does our city need?"
+    Challenge="Can we build a bridge?"
+    JoyMoment="The whole city comes together."
+    OnClose="CloseViewDialog"
+    OnSchedule="ScheduleExperience"
+    OnDuplicate="DuplicateExperience"
+    OnImprove="() => {}" />
+
+<ExperienceScheduleModal 
+    IsOpen="@_isScheduleModalOpen"
+    @bind-ScheduleDate="_scheduleDate"
+    @bind-ScheduleTimeOfDay="_scheduleTimeOfDay"
+    OnClose="CloseScheduleModal"
+    OnSave="SaveScheduleAsync" />
+
 @code {
-    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     private IEnumerable<Experience>? _experiences;
-    private Experience _newExperience = new();
+    
+    private string ActiveFilter { get; set; } = "all";
+    private string SearchText { get; set; } = "";
+    
+    private List<FilterTabs.TabItem> ExperienceTabs = new()
+    {
+        new FilterTabs.TabItem { Text = "All", Value = "all" },
+        new FilterTabs.TabItem { Text = "Created by us", Value = "created" },
+        new FilterTabs.TabItem { Text = "Platform", Value = "platform" },
+        new FilterTabs.TabItem { Text = "AI created", Value = "ai" }
+    };
+    
+    private string experienceAge = "3-4";
+    private string experienceDuration = "15 minutes";
+    private string experienceType = "Explore";
+    private string experienceEnvironment = "Indoor";
+    private string experienceMaterials = "";
+
+    private async Task SaveToLibraryAsync()
+    {
+        _currentExperience.Status = "Idea";
+        await SaveExperienceAsync();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        _currentExperience.Status = "Draft";
+        await SaveExperienceAsync();
+    }
+
+    private Experience _currentExperience = new();
+    
+    private bool _isModalOpen = false;
+    private bool _isViewModalOpen = false;
+
+    private void OpenViewExperienceModal(Experience exp)
+    {
+        _currentExperience = exp;
+        _isViewModalOpen = true;
+    }
+
+    private async Task DuplicateExperience()
+    {
+        var sourceExp = _currentExperience;
+        await ExperienceService.CreateExperienceAsync(
+            sourceExp.Title + " (Copy)",
+            sourceExp.Description ?? "",
+            sourceExp.DnaPayload ?? "{}",
+            _defaultUserId,
+            "Idea"
+        );
+        await LoadExperiencesAsync();
+        CloseViewDialog();
+    }
+
+    private bool _isScheduleModalOpen = false;
+    private DateTime _scheduleDate = DateTime.Today;
+    private string _scheduleTimeOfDay = "Morning";
+
+    private void ScheduleExperience()
+    {
+        CloseViewDialog();
+        _scheduleDate = DateTime.Today;
+        _scheduleTimeOfDay = "Morning";
+        _isScheduleModalOpen = true;
+    }
+
+    private void CloseScheduleModal()
+    {
+        _isScheduleModalOpen = false;
+    }
+
+    private async Task SaveScheduleAsync()
+    {
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var classroomId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+        
+        if (!classroomId.HasValue || classroomId.Value == Guid.Empty)
+        {
+            var branchId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM branches LIMIT 1");
+            if (!branchId.HasValue || branchId.Value == Guid.Empty)
+            {
+                branchId = Guid.NewGuid();
+                var tenantId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM tenants LIMIT 1") ?? Guid.NewGuid();
+                var orgId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM organizations LIMIT 1") ?? Guid.NewGuid();
+                await connection.ExecuteAsync("INSERT INTO branches (id, tenant_id, organization_id, name, is_active, created_at, updated_at) VALUES (@Id, @TenantId, @OrgId, 'Main Branch', true, @Now, @Now)", new { Id = branchId.Value, TenantId = tenantId, OrgId = orgId, Now = DateTimeOffset.UtcNow });
+            }
+            
+            classroomId = Guid.NewGuid();
+            var tId = await connection.QueryFirstOrDefaultAsync<Guid>("SELECT tenant_id FROM branches WHERE id = @Id", new { Id = branchId.Value });
+            await connection.ExecuteAsync("INSERT INTO classrooms (id, tenant_id, branch_id, name, is_active, created_at, updated_at) VALUES (@Id, @TenantId, @BranchId, 'Room A', true, @Now, @Now)", new { Id = classroomId.Value, TenantId = tId, BranchId = branchId.Value, Now = DateTimeOffset.UtcNow });
+        }
+
+        await PlannerService.ScheduleExperienceAsync(_currentExperience.Id, classroomId.Value, DateOnly.FromDateTime(_scheduleDate), _scheduleTimeOfDay);
+        _isScheduleModalOpen = false;
+    }
+
+    private void CloseViewDialog()
+    {
+        _isViewModalOpen = false;
+    }
+
+    private bool _isEditing = false;
+    private Guid _defaultUserId = Guid.Parse("50000000-0000-0000-0000-000000000001");
+
     protected override async Task OnInitializedAsync()
     {
+        var users = await UserService.GetUsersAsync();
+        _defaultUserId = users.FirstOrDefault()?.Id ?? Guid.Empty;
+
+        if (_defaultUserId == Guid.Empty)
+        {
+            var newUser = await UserService.CreateUserAsync("system@enjoyeveryday.com", "System", "User", "TEMP_HASH");
+            _defaultUserId = newUser.Id;
+        }
         await LoadExperiencesAsync();
+
+        if (_experiences != null && !_experiences.Any())
+        {
+            await InsertSampleDataAsync();
+        }
     }
+
     private async Task LoadExperiencesAsync()
     {
         _experiences = await ExperienceService.GetExperiencesAsync();
     }
+
+    private async Task InsertSampleDataAsync()
+    {
+        await ExperienceService.CreateExperienceAsync("Finger Painting", "Messy fun with colors", "{\"type\": \"Create\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Story Time", "Reading The Hungry Caterpillar", "{\"type\": \"Explore\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Building Blocks", "Learn geometry and physics with wooden blocks", "{\"type\": \"Create\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Nature Walk", "Collecting leaves and bugs", "{\"type\": \"Explore\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Dance Party", "Moving to rhythm and music", "{\"type\": \"Move\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Sensory Bin", "Water and sand play for tactile development", "{\"type\": \"Explore\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Obstacle Course", "Climbing and jumping exercises", "{\"type\": \"Move\"}", _defaultUserId);
+        await ExperienceService.CreateExperienceAsync("Clay Modeling", "Sculpting animals out of soft clay", "{\"type\": \"Create\"}", _defaultUserId);
+        
+        await LoadExperiencesAsync();
+    }
+
     private void OpenAddExperienceModal()
     {
-        _newExperience = new Experience();
+        _currentExperience = new Experience { DnaPayload = "{\"type\": \"Experience\"}" };
+        experienceAge = "3-4";
+        experienceDuration = "15 minutes";
+        experienceType = "Explore";
+        experienceEnvironment = "Indoor";
+        experienceMaterials = "";
+
+        _isEditing = false;
+        _isModalOpen = true;
     }
+
+    private void OpenEditExperienceModal(Experience exp)
+    {
+        _currentExperience = new Experience
+        {
+            Id = exp.Id,
+            TenantId = exp.TenantId,
+            Title = exp.Title,
+            Description = exp.Description,
+            Status = exp.Status,
+            DnaPayload = exp.DnaPayload,
+            CreatedByUserId = exp.CreatedByUserId
+        };
+        _isEditing = true;
+        _isModalOpen = true;
+    }
+
     private void CloseDialog()
     {
+        _isModalOpen = false;
     }
+
     private async Task SaveExperienceAsync()
     {
-        if (!string.IsNullOrWhiteSpace(_newExperience.Title))
+        if (string.IsNullOrWhiteSpace(_currentExperience.Title)) return;
+
+        if (_isEditing)
         {
-            await ExperienceService.CreateExperienceAsync(_newExperience.Title, _newExperience.Description ?? "", "{}", Guid.NewGuid());
+            await ExperienceService.UpdateExperienceAsync(
+                _currentExperience.Id,
+                _currentExperience.Title,
+                _currentExperience.Description ?? "",
+                _currentExperience.DnaPayload ?? "{}",
+                _currentExperience.Status ?? "Idea",
+                "Manual Update",
+                _defaultUserId);
+        }
+        else
+        {
+            await ExperienceService.CreateExperienceAsync(
+                _currentExperience.Title,
+                _currentExperience.Description ?? "",
+                _currentExperience.DnaPayload ?? "{}",
+                _defaultUserId,
+                _currentExperience.Status);
+        }
+
+        await LoadExperiencesAsync();
+        CloseDialog();
+    }
+
+    private async Task DeleteExperienceAsync()
+    {
+        if (_currentExperience.Id != Guid.Empty)
+        {
+            await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);
             await LoadExperiencesAsync();
+            CloseDialog();
         }
     }
 }

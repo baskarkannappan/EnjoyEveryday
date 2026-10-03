@@ -25,7 +25,7 @@ public class ExperienceService
         return await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
     }
 
-    public async Task<Experience> CreateExperienceAsync(string title, string description, string dnaPayload, Guid createdByUserId, CancellationToken cancellationToken = default)
+    public async Task<Experience> CreateExperienceAsync(string title, string description, string dnaPayload, Guid createdByUserId, string? status = null, CancellationToken cancellationToken = default)
     {
         var experience = new Experience
         {
@@ -33,7 +33,7 @@ public class ExperienceService
             TenantId = _tenantContext.TenantId,
             Title = title,
             Description = description,
-            Status = ExperienceStatus.Idea.ToString(),
+            Status = status ?? ExperienceStatus.Idea.ToString(),
             DnaPayload = dnaPayload,
             CreatedByUserId = createdByUserId,
             CreatedAt = DateTimeOffset.UtcNow,

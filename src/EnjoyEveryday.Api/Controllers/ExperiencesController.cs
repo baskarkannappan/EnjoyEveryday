@@ -48,7 +48,7 @@ public class ExperiencesController : ControllerBase
         var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString();
         var userId = Guid.Parse(userIdString);
 
-        var experience = await _experienceService.CreateExperienceAsync(request.Title, request.Description, request.DnaPayload, userId, cancellationToken);
+        var experience = await _experienceService.CreateExperienceAsync(request.Title, request.Description, request.DnaPayload, userId, null, cancellationToken);
         return CreatedAtAction(nameof(GetExperience), new { id = experience.Id }, experience);
     }
 

@@ -6,241 +6,317 @@
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject ExperienceService ExperienceService
+@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@using Dapper
 @rendermode InteractiveServer
- <section id="page-planner" class="page active">
-    <PageHero 
-        Eyebrow="PLAN THE MONTH" 
-        Title="September 2026" 
-        Subtitle="Give the month a rhythm. Leave room for children to lead.">
-        <RightContent>
-            <div class="planner-controls">
-                <button id="generateMonthButton" class="secondary">? Generate with AI</button>
-                <button id="publishMonthButton" class="primary">Publish month</button>
+
+<div class="content">
+    <section id="calendar" style="display: block;">
+        <div class="welcome">
+            <div>
+                <h1>Experience Calendar</h1>
+                <p>@_currentDate.ToString("MMMM yyyy") • OUR WORLD</p>
             </div>
-        </RightContent>
-    </PageHero>
-    <div class="month-settings">
-        <div class="field">
-            <label>
-                MONTH THEME
-            </label>
-            <input id="monthTheme" value="Our World">
-        </div>
-        <div class="field">
-            <label>
-                EXPERIENCES / WEEK
-            </label>
-            <select>
-                <option>
-                    3
-                </option>
-                <option>
-                    4
-                </option>
-                <option>
-                    5
-                </option>
-            </select>
-        </div>
-        <div class="field">
-            <label>
-                OUTDOOR
-            </label>
-            <select>
-                <option>
-                    At least 1 / week
-                </option>
-                <option>
-                    At least 2 / week
-                </option>
-            </select>
-        </div>
-        <div class="field">
-            <label>
-                CREATIVE
-            </label>
-            <select>
-                <option>
-                    At least 1 / week
-                </option>
-                <option>
-                    At least 2 / week
-                </option>
-            </select>
-        </div>
-    </div>
-    <div class="planner-layout">
-        <div class="calendar">
-            <div class="calendar-header">
-                <button id="previousMonth" class="calendar-arrow">
-                    ‹
-                </button>
-                <strong>
-                    September 2026
-                </strong>
-                <button id="nextMonth" class="calendar-arrow">
-                    ›
-                </button>
+            <div style="display: flex; gap: 10px;">
+                <button class="ai-action" style="background: transparent; color: #263d32; border: 1px solid #dfe9e0;" @onclick="PreviousMonth">&lt; Previous</button>
+                <button class="ai-action" style="background: transparent; color: #263d32; border: 1px solid #dfe9e0;" @onclick="NextMonth">Next &gt;</button>
             </div>
-            <div class="week">
-                <div>MON</div>
-                <div>TUE</div>
-                <div>WED</div>
-                <div>THU</div>
-                <div>FRI</div>
-            </div>
-            <div id="calendarGrid" class="calendar-grid">
-                @for (int day = 1; day <= DateTime.DaysInMonth(_currentDate.Year, _currentDate.Month); day++)
-                {
-                    var iterDay = day;
-                    var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
-                    var dailySchedules = GetSchedulesForDay(currentDate, "Morning").ToList();
-                    <div class="day">
-                        <div class="day-number @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "today" : "")">
-                            @iterDay
-                        </div>
-                        @foreach (var schedule in dailySchedules)
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- LEFT: Calendar Grid -->
+            <div>
+                <div class="section-card">
+                    <div class="section-header">
+                        <h2>This month</h2>
+                        <span>Flexible rhythm</span>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px;">
+                        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">MON</div>
+                        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">TUE</div>
+                        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">WED</div>
+                        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">THU</div>
+                        <div style="color: #9aa39d; font-size: 10px; font-weight: 700; text-align: center;">FRI</div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
+                        @for (int day = 1; day <= DateTime.DaysInMonth(_currentDate.Year, _currentDate.Month); day++)
                         {
-                            var experience = _experiences.FirstOrDefault(e => e.Id == schedule.ExperienceId);
-                            if (experience != null)
-                            {
-                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "")">
-                                    <strong>@experience.Title</strong>
-                                    <span>
-                                        @GetExperienceType(experience) &middot; @schedule.Status
-                                    </span>
+                            var iterDay = day;
+                            var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
+                            var dailySchedules = _schedules.Where(s => s.ScheduledDate == currentDate).OrderBy(s => s.TimeOfDay).ToList();
+
+                            <div style="border: 1px solid #e8ece9; border-radius: 15px; padding: 10px; min-height: 140px; display: flex; flex-direction: column; transition: .2s;" onmouseover="this.style.borderColor='#cbd9ce'; this.style.transform='translateY(-1px)';" onmouseout="this.style.borderColor='#e8ece9'; this.style.transform='translateY(0)';">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong style="font-size: 14px; color: @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "#263d32" : "#89a995"); @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "background: #dce9df; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;" : "")">@iterDay</strong>
+                                    <button style="border: 0; background: transparent; color: #89a995; font-size: 18px; font-weight: 300;" @onclick='() => OpenScheduleDialog(currentDate, "Morning")'>+</button>
                                 </div>
-                            }
+                                @foreach (var schedule in dailySchedules)
+                                {
+                                    var experience = _experiences.FirstOrDefault(e => e.Id == schedule.ExperienceId);
+                                    if (experience != null)
+                                    {
+                                        <div style="background: #f1f5f1; border-radius: 10px; padding: 8px; margin-bottom: 5px; cursor: pointer; font-size: 10px; border: 1px solid transparent; transition: .2s;" onmouseover="this.style.background='#eaf2ec';" onmouseout="this.style.background='#f1f5f1';" @onclick="() => EditSchedule(schedule)">
+                                            <strong style="color: #263d32; display: block; margin-bottom: 2px;">@experience.Title</strong>
+                                            <span style="color: #8b958f;">@schedule.TimeOfDay</span>
+                                        </div>
+                                    }
+                                }
+                            </div>
                         }
                     </div>
-                }
+                </div>
+            </div>
+
+            <!-- RIGHT: AI / Balance -->
+            <div>
+                <div class="section-card ai-card">
+                    <div class="ai-header">
+                        <div class="ai-icon">✦</div>
+                        <div>
+                            <strong>EnjoyEveryday Intelligence</strong>
+                            <small>Watching the month with you</small>
+                        </div>
+                    </div>
+                    <div class="ai-message">
+                        Children recently enjoyed building, movement and animal experiences.
+                    </div>
+                    <button class="ai-action" onclick="alert('AI Suggestions coming soon!')">
+                        Add suggestion →
+                    </button>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-header">
+                        <h2>Month balance</h2>
+                        <span>Program rhythm</span>
+                    </div>
+
+                    <div class="moment">
+                        <div class="moment-name" style="display: flex; justify-content: space-between;">
+                            <span>EXPLORE</span>
+                            <span>4</span>
+                        </div>
+                        <div style="height: 4px; background: #e8ece9; border-radius: 2px; margin-top: 5px; overflow: hidden;">
+                            <div style="width: 72%; height: 100%; background: #89a995;"></div>
+                        </div>
+                    </div>
+
+                    <div class="moment">
+                        <div class="moment-name" style="display: flex; justify-content: space-between;">
+                            <span>CREATE</span>
+                            <span>3</span>
+                        </div>
+                        <div style="height: 4px; background: #e8ece9; border-radius: 2px; margin-top: 5px; overflow: hidden;">
+                            <div style="width: 55%; height: 100%; background: #89a995;"></div>
+                        </div>
+                    </div>
+
+                    <div class="moment">
+                        <div class="moment-name" style="display: flex; justify-content: space-between;">
+                            <span>TOGETHER</span>
+                            <span>3</span>
+                        </div>
+                        <div style="height: 4px; background: #e8ece9; border-radius: 2px; margin-top: 5px; overflow: hidden;">
+                            <div style="width: 55%; height: 100%; background: #89a995;"></div>
+                        </div>
+                    </div>
+
+                    <div class="moment">
+                        <div class="moment-name" style="display: flex; justify-content: space-between;">
+                            <span>MOVE</span>
+                            <span>2</span>
+                        </div>
+                        <div style="height: 4px; background: #e8ece9; border-radius: 2px; margin-top: 5px; overflow: hidden;">
+                            <div style="width: 38%; height: 100%; background: #89a995;"></div>
+                        </div>
+                    </div>
+
+                </div>
             </div>
         </div>
-        <div class="planner-side">
-            <div class="panel">
-                <h3>
-                    Month balance
-                </h3>
-                <div class="panel-description">
-                    Program rhythm
+    </section>
+</div>
+
+@if (_isModalOpen)
+{
+    <div class="modal-overlay show">
+        <div class="modal">
+            <button class="modal-close" @onclick="CloseDialog">✕</button>
+            <h2>@(_currentScheduleId.HasValue ? "Edit Experience" : "Schedule Experience")</h2>
+            <p>@(_dialogDate.ToString("MMMM d, yyyy"))</p>
+            
+            <div style="margin-top: 20px; display: grid; gap: 15px;">
+                <div>
+                    <label style="display: block; font-size: 11px; color: #8a958e; margin-bottom: 5px; font-weight: 700;">EXPERIENCE</label>
+                    <select @bind="_dialogSelectedExperienceId" style="width: 100%; padding: 12px; border: 1px solid #e7ebe7; border-radius: 10px; outline: none;">
+                        @foreach (var exp in _experiences)
+                        {
+                            <option value="@exp.Id">@exp.Title</option>
+                        }
+                    </select>
                 </div>
-                <BalanceRow Label="Explore" Percentage="72" Value="4" />
-                <BalanceRow Label="Create" Percentage="55" Value="3" />
-                <BalanceRow Label="Together" Percentage="55" Value="3" />
-                <BalanceRow Label="Move" Percentage="38" Value="2" />
+                <div>
+                    <label style="display: block; font-size: 11px; color: #8a958e; margin-bottom: 5px; font-weight: 700;">TIME OF DAY</label>
+                    <select @bind="_dialogTimeOfDay" style="width: 100%; padding: 12px; border: 1px solid #e7ebe7; border-radius: 10px; outline: none;">
+                        <option value="Morning">Morning</option>
+                        <option value="Afternoon">Afternoon</option>
+                    </select>
+                </div>
             </div>
-            <div class="panel ai-planner">
-                <div class="ai-symbol">
-                    ?
+
+            <div style="display: flex; justify-content: space-between; margin-top: 25px; align-items: center; border-top: 1px solid #edf0ed; padding-top: 20px;">
+                <div>
+                    @if (_currentScheduleId.HasValue)
+                    {
+                        <button style="border: 1px solid #ffccd5; background: #fff0f2; color: #d92d4b; padding: 10px 15px; border-radius: 10px; font-size: 12px; font-weight: 700;" @onclick="DeleteSchedule">Delete</button>
+                    }
                 </div>
-                <h3 style="margin-top:12px">
-                    AI noticed something
-                </h3>
-                <p class="panel-description">
-                    Children recently enjoyed building,
-                    movement and animal experiences.
-                </p>
-                <button id="addAISuggestion" class="text-button">
-                    Add suggestion →
-                </button>
+                <div style="display: flex; gap: 10px;">
+                    <button style="border: 1px solid #e7ebe7; background: white; padding: 10px 15px; border-radius: 10px; font-size: 12px; font-weight: 700;" @onclick="CloseDialog">Cancel</button>
+                    <button class="ai-action" @onclick="ConfirmSchedule">Save</button>
+                </div>
             </div>
         </div>
     </div>
-</section>
+}
+
 @code {
     private DateOnly _currentDate;
+    private DateTime? _currentDateTime;
     private List<Classroom> _classrooms = new();
     private string? _selectedClassroomId;
     private List<Experience> _experiences = new();
     private List<ExperienceSchedule> _schedules = new();
     // Dialog state
     private DateOnly _dialogDate;
+    private bool _isModalOpen = false;
     private string _dialogTimeOfDay = string.Empty;
     private string? _dialogSelectedExperienceId;
+    private Guid? _currentScheduleId;
+
     protected override async Task OnInitializedAsync()
     {
-        // Set to current week's Monday
+        // Set to current month's first day
         var today = DateTime.Today;
-        int diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
-        _currentDate = DateOnly.FromDateTime(today.AddDays(-1 * diff));
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        _currentDate = new DateOnly(today.Year, today.Month, 1);
+        _currentDateTime = _currentDate.ToDateTime(TimeOnly.MinValue);
+        
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+        if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
-            {
-                _classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-            }
+            _selectedClassroomId = fallbackId.Value.ToString();
         }
-        if (_classrooms.Any())
-        {
-            _selectedClassroomId = _classrooms.First().Id.ToString();
-        }
+
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        
         await LoadSchedules();
+        CloseDialog();
     }
+
     private async Task LoadSchedules()
     {
         if (string.IsNullOrEmpty(_selectedClassroomId)) return;
         StateHasChanged();
         var cid = Guid.Parse(_selectedClassroomId);
-        // Load for current month
         _schedules = (await PlannerService.GetMonthlyScheduleAsync(cid, _currentDate.Year, _currentDate.Month)).ToList();
         StateHasChanged();
     }
-    private void PreviousWeek()
+
+    private void PreviousMonth()
     {
-        _currentDate = _currentDate.AddDays(-7);
+        _currentDate = _currentDate.AddMonths(-1);
         _ = LoadSchedules();
     }
-    private void NextWeek()
+
+    private void NextMonth()
     {
-        _currentDate = _currentDate.AddDays(7);
+        _currentDate = _currentDate.AddMonths(1);
         _ = LoadSchedules();
     }
-    private IEnumerable<ExperienceSchedule> GetSchedulesForDay(DateOnly date, string timeOfDay)
-    {
-        return _schedules.Where(s => s.ScheduledDate == date && s.TimeOfDay == timeOfDay);
-    }
-    private string GetExperienceTitle(Guid experienceId)
-    {
-        return _experiences.FirstOrDefault(e => e.Id == experienceId)?.Title ?? "Unknown";
-    }
-    private void OpenExperience(Guid experienceId)
-    {
-        // Typically navigates to a viewer
-    }
+
     private void OpenScheduleDialog(DateOnly date, string timeOfDay)
     {
+        _currentScheduleId = null;
         _dialogDate = date;
         _dialogTimeOfDay = timeOfDay;
         if (_experiences.Any())
         {
             _dialogSelectedExperienceId = _experiences.First().Id.ToString();
         }
+        _isModalOpen = true;
     }
+
+    private void EditSchedule(ExperienceSchedule schedule)
+    {
+        _currentScheduleId = schedule.Id;
+        _dialogDate = schedule.ScheduledDate;
+        _dialogTimeOfDay = schedule.TimeOfDay;
+        _dialogSelectedExperienceId = schedule.ExperienceId.ToString();
+        _isModalOpen = true;
+    }
+
+    private async Task DeleteSchedule()
+    {
+        if (_currentScheduleId.HasValue)
+        {
+            await PlannerService.DeleteScheduleAsync(_currentScheduleId.Value);
+            
+            if (string.IsNullOrEmpty(_selectedClassroomId))
+            {
+                using var connection = await DbConnectionFactory.CreateConnectionAsync();
+                var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+                if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
+                {
+                    _selectedClassroomId = fallbackId.Value.ToString();
+                }
+            }
+
+            await LoadSchedules();
+            CloseDialog();
+        }
+    }
+
+    private void CloseDialog()
+    {
+        _isModalOpen = false;
+    }
+
     private async Task ConfirmSchedule()
     {
         if (string.IsNullOrEmpty(_dialogSelectedExperienceId) || string.IsNullOrEmpty(_selectedClassroomId)) return;
         var expId = Guid.Parse(_dialogSelectedExperienceId);
         var clsId = Guid.Parse(_selectedClassroomId);
-        await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
-        await LoadSchedules();
-    }
-    private string GetExperienceType(Experience experience)
-    {
-        if (string.IsNullOrEmpty(experience.DnaPayload)) return "Experience";
-        try 
+        
+        if (_currentScheduleId.HasValue)
         {
-            var json = System.Text.Json.JsonDocument.Parse(experience.DnaPayload);
-            if (json.RootElement.TryGetProperty("type", out var typeElement))
+            var scheduleToUpdate = _schedules.FirstOrDefault(s => s.Id == _currentScheduleId.Value);
+            if (scheduleToUpdate != null)
             {
-                return typeElement.GetString() ?? "Experience";
+                scheduleToUpdate.ExperienceId = expId;
+                scheduleToUpdate.TimeOfDay = _dialogTimeOfDay;
+                scheduleToUpdate.ScheduledDate = _dialogDate;
+                await PlannerService.UpdateScheduleAsync(scheduleToUpdate);
             }
         }
-        catch { }
-        return "Experience";
+        else
+        {
+            await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
+        }
+        
+        if (string.IsNullOrEmpty(_selectedClassroomId))
+        {
+            using var connection = await DbConnectionFactory.CreateConnectionAsync();
+            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
+            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
+            {
+                _selectedClassroomId = fallbackId.Value.ToString();
+            }
+        }
+
+        await LoadSchedules();
+        CloseDialog();
     }
 }

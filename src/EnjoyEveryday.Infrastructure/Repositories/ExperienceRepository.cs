@@ -109,11 +109,19 @@ public class ExperienceRepository : IExperienceRepository
 
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
+        // Remove from scheduler to ensure a clean deletion
+        await connection.ExecuteAsync("DELETE FROM experience_schedules WHERE experience_id = @Id", new { Id = id });
+
+        // Remove version history
+        await connection.ExecuteAsync("DELETE FROM experience_versions WHERE experience_id = @Id", new { Id = id });
+
+        // Remove the experience itself
         const string sql = @"
             DELETE FROM experiences
             WHERE id = @Id AND tenant_id = @TenantId";
-
-        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+            
         await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
     }
     
