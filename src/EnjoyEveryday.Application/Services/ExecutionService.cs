@@ -8,19 +8,22 @@ public class ExecutionService
 {
     private readonly IExperienceScheduleRepository _scheduleRepository;
     private readonly IExperienceFeedbackRepository _feedbackRepository;
+    private readonly IExperienceSessionRepository _sessionRepository;
     private readonly ITenantContext _tenantContext;
 
     public ExecutionService(
         IExperienceScheduleRepository scheduleRepository,
         IExperienceFeedbackRepository feedbackRepository,
+        IExperienceSessionRepository sessionRepository,
         ITenantContext tenantContext)
     {
         _scheduleRepository = scheduleRepository;
         _feedbackRepository = feedbackRepository;
+        _sessionRepository = sessionRepository;
         _tenantContext = tenantContext;
     }
 
-    public async Task StartExperienceAsync(Guid scheduleId, CancellationToken cancellationToken = default)
+    public async Task<Guid> StartExperienceAsync(Guid scheduleId, Guid teacherId, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
@@ -29,6 +32,25 @@ public class ExecutionService
 
         schedule.Status = "Started";
         await _scheduleRepository.UpdateAsync(schedule);
+
+        var session = new ExperienceSession
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            ExperienceId = schedule.ExperienceId,
+            ExperienceScheduleId = schedule.Id,
+            ClassroomId = schedule.ClassroomId,
+            SessionDate = DateTime.UtcNow.Date,
+            StartTime = DateTime.UtcNow.TimeOfDay,
+            Status = "Active",
+            PrimaryTeacherId = teacherId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        await _sessionRepository.CreateSessionAsync(session, cancellationToken);
+        
+        return session.Id;
     }
 
     public async Task CompleteExperienceAsync(Guid scheduleId, Guid teacherId, string rating, string? notes, CancellationToken cancellationToken = default)
@@ -52,5 +74,19 @@ public class ExecutionService
             CreatedAt = DateTimeOffset.UtcNow
         };
         await _feedbackRepository.AddAsync(feedback, cancellationToken);
+    }
+
+    public async Task CompleteExperienceWithParticipationsAsync(Guid scheduleId, Guid teacherId, string rating, string? notes, IEnumerable<ExperienceParticipation> participations, CancellationToken cancellationToken = default)
+    {
+        var session = await _sessionRepository.GetSessionByScheduleIdAsync(scheduleId, cancellationToken);
+        if (session != null)
+        {
+            session.Status = "Completed";
+            session.EndTime = DateTime.UtcNow.TimeOfDay;
+            await _sessionRepository.UpdateSessionAsync(session, cancellationToken);
+            await _sessionRepository.SaveParticipationsAsync(session.Id, participations, cancellationToken);
+        }
+
+        await CompleteExperienceAsync(scheduleId, teacherId, rating, notes, cancellationToken);
     }
 }

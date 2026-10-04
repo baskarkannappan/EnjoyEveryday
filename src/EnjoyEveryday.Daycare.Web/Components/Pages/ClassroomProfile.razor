@@ -1,0 +1,199 @@
+@page "/classrooms/view/{Id:guid}"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.ClassroomWizard
+@using System.Text.Json
+
+@inject ClassroomService ClassroomService
+@inject NavigationManager NavigationManager
+
+<PageHero 
+    Eyebrow="ENVIRONMENT" 
+    Title="Classroom Profile" 
+    Subtitle="Read-only view of the classroom's configuration.">
+    <RightContent>
+        <button class="secondary" @onclick='() => NavigationManager.NavigateTo("/classrooms")'>
+            Back to List
+        </button>
+        <button class="primary" @onclick='() => NavigationManager.NavigateTo($"/classrooms/edit/{Id}")'>
+            Edit Profile
+        </button>
+    </RightContent>
+</PageHero>
+
+<div style="max-width: 900px; margin: 0 auto; padding: 30px 40px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+    @if (_isLoading)
+    {
+        <p>Loading profile...</p>
+    }
+    else if (_classroom == null)
+    {
+        <p>Classroom not found.</p>
+    }
+    else
+    {
+        <div style="display: flex; gap: 2rem; margin-bottom: 2rem; align-items: center;">
+            <div style="width: 100px; height: 100px; border-radius: 50%; background: #e4e7df; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                @if (!string.IsNullOrEmpty(_classroom.PhotoUrl))
+                {
+                    <img src="@_classroom.PhotoUrl" style="width: 100%; height: 100%; object-fit: cover;" alt="@_classroom.Name" />
+                }
+                else
+                {
+                    <span style="font-size: 2.5rem; color: #666;">@(_classroom.Name?.FirstOrDefault().ToString() ?? "?")</span>
+                }
+            </div>
+            <div>
+                <h1 style="margin: 0 0 0.5rem 0; font-size: 2rem; color: #26332d;">@_classroom.Name</h1>
+                <p style="margin: 0; color: #666; font-size: 1.1rem;">@(_model.ClassroomType ?? "Classroom") · @(_model.AgeGroup ?? "")</p>
+                <div style="margin-top: 0.5rem;">
+                    <span style="display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; background: @(_classroom.Status == "Active" ? "#eaf2ec" : "#f5f5f5"); color: @(_classroom.Status == "Active" ? "#52745e" : "#666");">
+                        @_classroom.Status
+                    </span>
+                    <span style="margin-left: 1rem; font-size: 0.9rem; color: #7c877f;">
+                        Profile Completion: @_classroom.ProfileCompletionPercentage%
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+            <!-- Basic Information -->
+            <div style="background: #fcfdfc; padding: 1.5rem; border: 1px solid #e4e7df; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #26332d; font-size: 1.25rem; margin-bottom: 1rem; border-bottom: 1px solid #e4e7df; padding-bottom: 0.5rem;">Basic Information</h3>
+                <dl style="margin: 0;">
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Classroom Name</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@_classroom.Name</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Code</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.Code ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Description</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.Description ?? "-")</dd>
+                </dl>
+            </div>
+
+            <!-- Capacity & Environment -->
+            <div style="background: #fcfdfc; padding: 1.5rem; border: 1px solid #e4e7df; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #26332d; font-size: 1.25rem; margin-bottom: 1rem; border-bottom: 1px solid #e4e7df; padding-bottom: 0.5rem;">Capacity & Environment</h3>
+                <dl style="margin: 0;">
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Capacity</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.Capacity?.ToString() ?? "-") children</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Environment Type</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.Environment ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Age Group</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.AgeGroup ?? "-")</dd>
+                </dl>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+            <!-- Teachers -->
+            <div style="background: #fcfdfc; padding: 1.5rem; border: 1px solid #e4e7df; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #26332d; font-size: 1.25rem; margin-bottom: 1rem; border-bottom: 1px solid #e4e7df; padding-bottom: 0.5rem;">Assigned Teachers</h3>
+                <dl style="margin: 0;">
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Lead Teacher</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.LeadTeacher ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Assistant Teachers</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.AssistantTeachers ?? "-")</dd>
+                </dl>
+            </div>
+
+            <!-- Schedule & Routine -->
+            <div style="background: #fcfdfc; padding: 1.5rem; border: 1px solid #e4e7df; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #26332d; font-size: 1.25rem; margin-bottom: 1rem; border-bottom: 1px solid #e4e7df; padding-bottom: 0.5rem;">Schedule</h3>
+                <dl style="margin: 0;">
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Operating Hours</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.OpeningTime?.ToString("HH:mm") ?? "-") to @(_model.ClosingTime?.ToString("HH:mm") ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Key Daily Times</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">
+                        Arrival: @(_model.ArrivalTime?.ToString("HH:mm") ?? "-")<br />
+                        Meal: @(_model.MealTime?.ToString("HH:mm") ?? "-")<br />
+                        Nap: @(_model.NapTime?.ToString("HH:mm") ?? "-")<br />
+                        Departure: @(_model.DepartureTime?.ToString("HH:mm") ?? "-")
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+            <!-- Safety -->
+            <div style="background: #fcfdfc; padding: 1.5rem; border: 1px solid #e4e7df; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #26332d; font-size: 1.25rem; margin-bottom: 1rem; border-bottom: 1px solid #e4e7df; padding-bottom: 0.5rem;">Safety Information</h3>
+                <dl style="margin: 0;">
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Emergency Exit Route</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.EmergencyExit ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">First Aid Kit Location</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.FirstAidLocation ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Assembly Point</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.AssemblyPoint ?? "-")</dd>
+                </dl>
+            </div>
+
+            <!-- Resources -->
+            <div style="background: #fcfdfc; padding: 1.5rem; border: 1px solid #e4e7df; border-radius: 8px;">
+                <h3 style="margin-top: 0; color: #26332d; font-size: 1.25rem; margin-bottom: 1rem; border-bottom: 1px solid #e4e7df; padding-bottom: 0.5rem;">Resources & Equipment</h3>
+                <dl style="margin: 0;">
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Key Equipment</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.Equipment ?? "-")</dd>
+                    
+                    <dt style="font-weight: 600; color: #666; font-size: 0.85rem; text-transform: uppercase;">Learning Resources</dt>
+                    <dd style="margin: 0 0 1rem 0; color: #26332d;">@(_model.LearningResources ?? "-")</dd>
+                </dl>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private bool _isLoading = true;
+    private Classroom? _classroom;
+    private ClassroomWizardModel _model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _classroom = await ClassroomService.GetClassroomByIdAsync(Id);
+            
+            if (_classroom != null && !string.IsNullOrWhiteSpace(_classroom.DraftData))
+            {
+                try
+                {
+                    _model = JsonSerializer.Deserialize<ClassroomWizardModel>(_classroom.DraftData) ?? new();
+                }
+                catch
+                {
+                    // Fallback
+                    _model.Name = _classroom.Name;
+                    _model.AgeGroup = _classroom.AgeGroup ?? "3-4 years";
+                    _model.Capacity = _classroom.Capacity;
+                    _model.Environment = _classroom.Environment;
+                    _model.ClassroomType = _classroom.ClassroomType ?? "Preschool";
+                }
+            }
+            else if (_classroom != null)
+            {
+                _model.Name = _classroom.Name;
+                _model.AgeGroup = _classroom.AgeGroup ?? "3-4 years";
+                _model.Capacity = _classroom.Capacity;
+                _model.Environment = _classroom.Environment;
+                _model.ClassroomType = _classroom.ClassroomType ?? "Preschool";
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

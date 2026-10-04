@@ -1,8 +1,14 @@
 @page "/journey"
+@page "/journey/{ChildId:guid}"
 @rendermode InteractiveServer
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.Journey
 @using EnjoyEveryday.UI.Shared.Components.Planning
+@using EnjoyEveryday.UI.Shared.Components.ChildJourney
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+
+@inject IChildJourneyService JourneyService
 
 <PageTopbar Breadcrumb="EnjoyEveryday · Little Stars · Bluebirds" Title="Aarav's Journey">
     <RightContent>
@@ -29,7 +35,7 @@
         </div>
         <div class="header-actions">
             <button class="secondary-btn" @onclick='() => OpenModal("share")'>Download PDF</button>
-            <button class="primary-btn" @onclick='() => OpenModal("memory")'>Log Moment</button>
+            <button class="primary-btn" @onclick="OpenAddMomentDialog">Log Moment</button>
         </div>
     </div>
         
@@ -51,28 +57,28 @@
             </div>
 
             <div class="timeline">
-                @if (_currentFilter == "all" || _currentFilter == "Discovery")
+                @if (_entries != null && _entries.Any())
                 {
-                    <JourneyTimelineCard 
-                        DateString="YESTERDAY" Type="Discovery" Title="Building a block tower with Sarah" Time="10:15 AM"
-                        Description="Aarav spent 20 minutes trying to stack the wooden blocks as high as he could. When it fell down, he didn't get upset — he just laughed and started over, this time asking Sarah to help hold the bottom pieces."
-                        Quote="Look, it's a giant castle!" Tags="@(new List<string> { "Collaboration", "Persistence", "Motor Skills" })" />
+                    @foreach (var entry in _entries)
+                    {
+                        var entryTags = GetTagsForEntry(entry.Id);
+                        
+                        <JourneyTimelineCard 
+                            DateString="@entry.ObservationDate.ToString("MMM dd")" 
+                            Type="@entry.JourneyType" 
+                            Title="@(string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title)" 
+                            Time="@entry.ObservationDate.ToString("t")"
+                            Description="@entry.Observation"
+                            Quote="@entry.ChildVoice" 
+                            Tags="@entryTags"
+                            OnDelete="() => DeleteEntry(entry.Id)" />
+                    }
                 }
-                
-                @if (_currentFilter == "all" || _currentFilter == "Create")
+                else
                 {
-                    <JourneyTimelineCard 
-                        DateString="TUESDAY" Type="Create" Title="Finger painting the ocean" Time="2:30 PM"
-                        Description="Mixed blue and yellow to see what would happen. Was very surprised when it turned green, and spent the rest of the time trying to mix other colors."
-                        Tags="@(new List<string> { "Sensory", "Curiosity" })" />
-                }
-                
-                @if (_currentFilter == "all" || _currentFilter == "Connection")
-                {
-                    <JourneyTimelineCard 
-                        DateString="MONDAY" Type="Connection" Title="Helping clean up the library" Time="4:00 PM"
-                        Description="Without being asked, Aarav started putting the books back on the shelf after reading time. He organized them by size."
-                        Tags="@(new List<string> { "Responsibility", "Sorting" })" />
+                    <div style="padding: 24px; text-align: center; color: #666; background: #f9faf9; border-radius: 8px;">
+                        No moments logged yet. Click "Log Moment" to start Aarav's journey!
+                    </div>
                 }
             </div>
         </div>
@@ -134,15 +140,89 @@
     </div>
 }
 
+<AddJourneyMomentDialog @ref="_addMomentDialog" ChildId="@_childId" TeacherId="@(Guid.Parse("50000000-0000-0000-0000-000000000001"))" OnSaved="OnMomentSaved" />
+
 @code {
+    [Parameter]
+    public Guid? ChildId { get; set; }
+
+    private AddJourneyMomentDialog _addMomentDialog = default!;
+    
+    private Guid _childId => ChildId ?? Guid.Parse("C0000000-0000-0000-0000-000000000001");
+    private List<ChildJourneyEntry>? _allEntries;
+    private List<ChildJourneyEntry>? _entries;
+    private Dictionary<Guid, List<DevelopmentArea>> _entryAreas = new();
+    
     private string _currentFilter = "all";
     private bool _isModalOpen = false;
     private string _modalTitle = "";
     private string _modalText = "";
 
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var entries = await JourneyService.GetChildJourneyAsync(_childId);
+        _allEntries = entries.ToList();
+        
+        var allAreas = await JourneyService.GetDevelopmentAreasAsync();
+        var areaDict = allAreas.ToDictionary(a => a.Id);
+        
+        _entryAreas.Clear();
+        foreach (var entry in _allEntries)
+        {
+            var areaIds = await JourneyService.GetDevelopmentAreasForEntryAsync(entry.Id);
+            var areas = areaIds.Where(areaDict.ContainsKey).Select(id => areaDict[id]).ToList();
+            _entryAreas[entry.Id] = areas;
+        }
+        
+        ApplyFilter();
+    }
+
+    private List<string> GetTagsForEntry(Guid entryId)
+    {
+        if (_entryAreas.TryGetValue(entryId, out var areas))
+        {
+            return areas.Select(a => a.Name).ToList();
+        }
+        return new List<string>();
+    }
+
     private void SetFilter(string filter)
     {
         _currentFilter = filter;
+        ApplyFilter();
+    }
+    
+    private void ApplyFilter()
+    {
+        if (_allEntries == null) return;
+        
+        if (_currentFilter == "all")
+        {
+            _entries = _allEntries;
+        }
+        else if (_currentFilter == "Discovery")
+        {
+            // For MVP: Example filter by JourneyType or something related
+            _entries = _allEntries.Where(e => e.JourneyType == "Discovery" || (string.IsNullOrEmpty(e.JourneyType) == false && e.JourneyType.Contains("Discover"))).ToList();
+        }
+        else if (_currentFilter == "Create")
+        {
+            // Example filter for Create
+            _entries = _allEntries.Where(e => e.JourneyType == "Create" || GetTagsForEntry(e.Id).Any(t => t.Contains("Creat"))).ToList();
+        }
+        else if (_currentFilter == "Connection")
+        {
+            _entries = _allEntries.Where(e => e.JourneyType == "Connection" || GetTagsForEntry(e.Id).Any(t => t.Contains("Social") || t.Contains("Emot"))).ToList();
+        }
+        else
+        {
+            _entries = _allEntries;
+        }
     }
 
     private void OpenModal(string type)
@@ -165,8 +245,26 @@
         _isModalOpen = true;
     }
 
+    private async Task OpenAddMomentDialog()
+    {
+        await _addMomentDialog.OpenAsync();
+    }
+
+    private async Task OnMomentSaved()
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+    }
+
     private void CloseModal()
     {
         _isModalOpen = false;
+    }
+    
+    private async Task DeleteEntry(Guid entryId)
+    {
+        // Simple confirm dialog would be better here, but for MVP we directly delete
+        await JourneyService.DeleteJourneyEntryAsync(entryId);
+        await LoadDataAsync();
     }
 }

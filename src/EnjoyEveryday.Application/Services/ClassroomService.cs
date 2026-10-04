@@ -4,7 +4,7 @@ using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
 
-public class ClassroomService
+public class ClassroomService : IClassroomService
 {
     private readonly IClassroomRepository _classroomRepository;
     private readonly ITenantContext _tenantContext;
@@ -13,6 +13,12 @@ public class ClassroomService
     {
         _classroomRepository = classroomRepository;
         _tenantContext = tenantContext;
+    }
+
+    public async Task<IEnumerable<Classroom>> GetAllClassroomsAsync(CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _classroomRepository.GetAllAsync(tenantId, cancellationToken);
     }
 
     public async Task<IEnumerable<Classroom>> GetClassroomsAsync(Guid branchId, CancellationToken cancellationToken = default)
@@ -43,6 +49,21 @@ public class ClassroomService
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
+
+        return await _classroomRepository.AddAsync(classroom, cancellationToken);
+    }
+
+    public async Task<Classroom> CreateClassroomAsync(Classroom classroom, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        classroom.TenantId = tenantId;
+        if (classroom.Id == Guid.Empty)
+        {
+            classroom.Id = Guid.NewGuid();
+        }
+        
+        classroom.CreatedAt = DateTimeOffset.UtcNow;
+        classroom.UpdatedAt = DateTimeOffset.UtcNow;
 
         return await _classroomRepository.AddAsync(classroom, cancellationToken);
     }

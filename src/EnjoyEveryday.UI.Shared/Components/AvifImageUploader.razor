@@ -1,0 +1,59 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<div class="avif-image-uploader" style="@Style">
+    <label>
+        <span class="upload-btn" style="cursor: pointer; display: inline-block; padding: 8px 12px; background: #557660; color: white; border-radius: 8px; font-size: 14px;">
+            @ButtonText
+        </span>
+        <input type="file" accept="image/*" @ref="_fileInput" @onchange="HandleFileSelected" style="display: none;" />
+    </label>
+    @if (_isProcessing)
+    {
+        <span style="font-size: 12px; color: #666; margin-left: 10px;">Converting to AVIF...</span>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? Value { get; set; }
+
+    [Parameter]
+    public EventCallback<string> ValueChanged { get; set; }
+    
+    [Parameter]
+    public string ButtonText { get; set; } = "Upload Image";
+
+    [Parameter]
+    public string Style { get; set; } = "";
+
+    private ElementReference _fileInput;
+    private bool _isProcessing = false;
+
+    private async Task HandleFileSelected(ChangeEventArgs e)
+    {
+        _isProcessing = true;
+        StateHasChanged();
+        
+        try
+        {
+            // Call the JS interop to convert to AVIF base64 data url
+            var result = await JSRuntime.InvokeAsync<string>("window.imageConverter.convertToAvif", _fileInput);
+            
+            if (!string.IsNullOrEmpty(result))
+            {
+                Value = result;
+                await ValueChanged.InvokeAsync(result);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error converting image: {ex.Message}");
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+}

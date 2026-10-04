@@ -1,0 +1,203 @@
+@namespace EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
+@using Microsoft.FluentUI.AspNetCore.Components
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.UI.Shared.Components.ChildJourney
+@inject ChildService ChildService
+@inject ExecutionService ExecutionService
+@inject NavigationManager NavigationManager
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop show" style="background-color: rgba(0,0,0,0.5); position: fixed; inset: 0; z-index: 1050; display: flex; align-items: center; justify-content: center;" @onclick="CloseDialog">
+        <div class="modal" @onclick:stopPropagation="true" style="width: 800px; max-height: 90vh; overflow-y: auto; background: white; padding: 24px; border-radius: 12px; margin: auto; position: relative;">
+            <button class="modal-close" style="position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="CloseDialog">✕</button>
+            
+            <h2 style="margin-top: 0; margin-bottom: 8px; color: #26332d;">Active Session</h2>
+            
+            @if (_session == null)
+            {
+                <p>Loading session...</p>
+            }
+            else
+            {
+                <p style="color: #666; margin-bottom: 24px;">Experience: <strong>@_experienceTitle</strong></p>
+
+                <h3 style="font-size: 16px; margin-bottom: 16px; color: #26332d; border-bottom: 1px solid #e4e7df; padding-bottom: 8px;">Children Participation</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+                    @foreach (var child in _children)
+                    {
+                        var status = GetParticipationStatus(child.Id);
+                        
+                        <div style="border: 1px solid #e4e7df; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: @(status == "Participated" ? "#fcfdfc" : "#fff")">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <strong style="color: #26332d;">@child.FirstName @child.LastName</strong>
+                                
+                                <select value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #e4e7df; font-size: 13px;">
+                                    <option value="Participated">Participated</option>
+                                    <option value="Declined">Declined</option>
+                                    <option value="Absent">Absent</option>
+                                </select>
+                            </div>
+                            
+                            @if (status == "Participated")
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenMomentDialog(child.Id)" style="padding: 4px 12px; border-radius: 4px; border: 1px solid #52745e; color: #52745e; background: transparent; cursor: pointer; font-size: 13px; align-self: flex-start;">
+                                    + Log Moment
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+                
+                <div style="border-top: 1px solid #e4e7df; padding-top: 16px; margin-bottom: 24px;">
+                    <h3 style="font-size: 16px; margin-bottom: 12px; color: #26332d;">Session Feedback (Optional)</h3>
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px;">Rating</label>
+                    <select @bind="_rating" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #e4e7df; margin-bottom: 12px;">
+                        <option value="Great">Great - They loved it</option>
+                        <option value="Good">Good - Went as expected</option>
+                        <option value="Okay">Okay - Some challenges</option>
+                        <option value="Poor">Poor - Needs redesign</option>
+                    </select>
+                    
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px;">Teacher Notes</label>
+                    <textarea @bind="_notes" rows="3" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #e4e7df; resize: none;"></textarea>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                    <button class="secondary" @onclick="CloseDialog" style="padding: 8px 16px; border: 1px solid #e4e7df; background: white; border-radius: 6px; cursor: pointer;">Close (Keep Active)</button>
+                    <button class="primary" @onclick="EndSession" style="padding: 8px 16px; border: none; background: #263d32; color: white; border-radius: 6px; cursor: pointer;">End Session & Save</button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<AddJourneyMomentDialog @ref="_momentDialog" 
+                        TeacherId="@TeacherId" 
+                        ClassroomId="@_session?.ClassroomId" 
+                        ExperienceId="@_session?.ExperienceId"
+                        ExperienceSessionId="@_session?.Id"
+                        ExperienceParticipationId="@(_selectedChildId.HasValue && _participations.TryGetValue(_selectedChildId.Value, out var p) ? p.Id : null)"
+                        ChildId="@_selectedChildId" />
+
+@inject EnjoyEveryday.Domain.Repositories.IExperienceSessionRepository SessionRepository
+@inject ExperienceService ExperienceService
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+    
+    [Parameter]
+    public Guid ScheduleId { get; set; }
+    
+    [Parameter]
+    public Guid TeacherId { get; set; }
+    
+    [Parameter]
+    public EventCallback OnSessionEnded { get; set; }
+    
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private ExperienceSession? _session;
+    private string _experienceTitle = "";
+    private List<Child> _children = new();
+    private Dictionary<Guid, ExperienceParticipation> _participations = new();
+    
+    private string _rating = "Great";
+    private string _notes = "";
+    
+    private AddJourneyMomentDialog _momentDialog = default!;
+    private Guid? _selectedChildId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && ScheduleId != Guid.Empty && (_session == null || _session.ExperienceScheduleId != ScheduleId))
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _session = await SessionRepository.GetSessionByScheduleIdAsync(ScheduleId);
+        
+        if (_session != null)
+        {
+            var expList = await ExperienceService.GetExperiencesAsync();
+            var exp = expList.FirstOrDefault(e => e.Id == _session.ExperienceId);
+            _experienceTitle = exp?.Title ?? "Unknown";
+            
+            _children = (await ChildService.GetChildrenByClassroomAsync(_session.ClassroomId)).ToList();
+            
+            _participations.Clear();
+            foreach (var child in _children)
+            {
+                _participations[child.Id] = new ExperienceParticipation
+                {
+                    Id = Guid.NewGuid(),
+                    ExperienceSessionId = _session.Id,
+                    ChildId = child.Id,
+                    ParticipationStatus = "Participated"
+                };
+            }
+            
+            var existing = await SessionRepository.GetParticipationsForSessionAsync(_session.Id);
+            foreach (var part in existing)
+            {
+                if (_participations.ContainsKey(part.ChildId))
+                {
+                    _participations[part.ChildId].Id = part.Id;
+                    _participations[part.ChildId].ParticipationStatus = part.ParticipationStatus;
+                }
+            }
+        }
+        
+        StateHasChanged();
+    }
+
+    private string GetParticipationStatus(Guid childId)
+    {
+        if (_participations.TryGetValue(childId, out var p)) return p.ParticipationStatus;
+        return "Participated";
+    }
+
+    private void UpdateStatus(Guid childId, string status)
+    {
+        if (_participations.TryGetValue(childId, out var p))
+        {
+            p.ParticipationStatus = status;
+        }
+    }
+
+    private async Task OpenMomentDialog(Guid childId)
+    {
+        _selectedChildId = childId;
+        await _momentDialog.OpenAsync();
+    }
+
+    private async Task EndSession()
+    {
+        if (_session != null)
+        {
+            await ExecutionService.CompleteExperienceWithParticipationsAsync(ScheduleId, TeacherId, _rating, _notes, _participations.Values);
+            
+            if (OnSessionEnded.HasDelegate)
+            {
+                await OnSessionEnded.InvokeAsync();
+            }
+            
+            CloseDialog();
+        }
+    }
+
+    private void CloseDialog()
+    {
+        if (OnClose.HasDelegate)
+        {
+            OnClose.InvokeAsync();
+        }
+    }
+}

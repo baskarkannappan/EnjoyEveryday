@@ -1,0 +1,156 @@
+@page "/classrooms/new"
+@page "/classrooms/edit/{Id:guid}"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.ClassroomWizard
+@using System.Text.Json
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrgService
+@inject NavigationManager NavigationManager
+
+<PageHero 
+    Eyebrow="ENVIRONMENT" 
+    Title="@(Id.HasValue ? "Edit Classroom" : "Add Classroom")" 
+    Subtitle="Let's configure the learning environment.">
+</PageHero>
+
+<div style="max-width: 900px; margin: 0 auto; padding: 30px 40px;">
+    <ClassroomCreationWizard Model="_wizardModel" OnSaveDraft="HandleSaveDraft" OnSubmit="HandleSubmit" />
+</div>
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private ClassroomWizardModel _wizardModel = new();
+    private Guid _defaultBranchId;
+    private Classroom? _existingClassroom;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgs = await OrgService.GetOrganizationsAsync();
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
+        {
+            var branches = await BranchService.GetBranchesAsync(defaultOrg.Id);
+            _defaultBranchId = branches.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+
+        if (Id.HasValue)
+        {
+            _existingClassroom = await ClassroomService.GetClassroomByIdAsync(Id.Value);
+            if (_existingClassroom != null)
+            {
+                if (!string.IsNullOrWhiteSpace(_existingClassroom.DraftData))
+                {
+                    try
+                    {
+                        _wizardModel = JsonSerializer.Deserialize<ClassroomWizardModel>(_existingClassroom.DraftData) ?? new();
+                    }
+                    catch
+                    {
+                        // Fallback if parsing fails
+                        PopulateModelFromEntity(_existingClassroom);
+                    }
+                }
+                else
+                {
+                    PopulateModelFromEntity(_existingClassroom);
+                }
+            }
+        }
+    }
+
+    private void PopulateModelFromEntity(Classroom classroom)
+    {
+        _wizardModel.Name = classroom.Name;
+        _wizardModel.Code = classroom.Code;
+        _wizardModel.Description = classroom.Description;
+        _wizardModel.ClassroomType = classroom.ClassroomType;
+        _wizardModel.AgeGroup = classroom.AgeGroup;
+        _wizardModel.MinAgeMonths = classroom.MinAgeMonths;
+        _wizardModel.MaxAgeMonths = classroom.MaxAgeMonths;
+        _wizardModel.Capacity = classroom.Capacity;
+        _wizardModel.Environment = classroom.Environment;
+        _wizardModel.PhotoUrl = classroom.PhotoUrl;
+    }
+
+    private async Task HandleSaveDraft(ClassroomWizardModel model)
+    {
+        await SaveClassroom(model, "Draft");
+        NavigationManager.NavigateTo("/classrooms");
+    }
+
+    private async Task HandleSubmit(ClassroomWizardModel model)
+    {
+        await SaveClassroom(model, "Active");
+        NavigationManager.NavigateTo("/classrooms");
+    }
+
+    private async Task SaveClassroom(ClassroomWizardModel model, string status)
+    {
+        if (_existingClassroom != null)
+        {
+            _existingClassroom.Name = model.Name;
+            _existingClassroom.Code = model.Code;
+            _existingClassroom.Description = model.Description;
+            _existingClassroom.ClassroomType = model.ClassroomType;
+            _existingClassroom.AgeGroup = model.AgeGroup;
+            _existingClassroom.MinAgeMonths = model.MinAgeMonths;
+            _existingClassroom.MaxAgeMonths = model.MaxAgeMonths;
+            _existingClassroom.Capacity = model.Capacity;
+            _existingClassroom.Environment = model.Environment ?? "Indoor";
+            _existingClassroom.PhotoUrl = model.PhotoUrl;
+            _existingClassroom.Status = status;
+            _existingClassroom.DraftData = JsonSerializer.Serialize(model);
+            _existingClassroom.ProfileCompletionPercentage = GetCompletionPercentage(model);
+
+            await ClassroomService.UpdateClassroomAsync(_existingClassroom);
+        }
+        else
+        {
+            var classroom = new Classroom
+            {
+                BranchId = _defaultBranchId,
+                Name = model.Name,
+                Code = model.Code,
+                Description = model.Description,
+                ClassroomType = model.ClassroomType,
+                AgeGroup = model.AgeGroup,
+                MinAgeMonths = model.MinAgeMonths,
+                MaxAgeMonths = model.MaxAgeMonths,
+                Capacity = model.Capacity,
+                Environment = model.Environment ?? "Indoor",
+                PhotoUrl = model.PhotoUrl,
+                Status = status,
+                DraftData = JsonSerializer.Serialize(model),
+                ProfileCompletionPercentage = GetCompletionPercentage(model)
+            };
+
+            await ClassroomService.CreateClassroomAsync(classroom);
+        }
+    }
+
+    private int GetCompletionPercentage(ClassroomWizardModel model)
+    {
+        int totalFields = 12; 
+        int filledFields = 0;
+
+        if (!string.IsNullOrWhiteSpace(model.Name)) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.ClassroomType)) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.AgeGroup)) filledFields++;
+        if (model.Capacity.HasValue) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.Environment)) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.LeadTeacher)) filledFields++;
+        if (model.OpeningTime.HasValue) filledFields++;
+        if (model.ArrivalTime.HasValue) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.EmergencyExit)) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.AssemblyPoint)) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.Equipment)) filledFields++;
+        if (!string.IsNullOrWhiteSpace(model.LearningResources)) filledFields++;
+
+        return (int)Math.Round((double)filledFields / totalFields * 100);
+    }
+}

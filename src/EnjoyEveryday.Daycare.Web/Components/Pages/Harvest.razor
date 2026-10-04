@@ -3,6 +3,7 @@
 @using EnjoyEveryday.Domain.Entities
 @using Microsoft.FluentUI.AspNetCore.Components
 @using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.ChildJourney
 @inject ExperienceService ExperienceService
 @inject FeedbackService FeedbackService
 @inject PlannerService PlannerService
@@ -12,19 +13,22 @@
 @inject UserService UserService
 @rendermode InteractiveServer
 
+@inject HarvestService HarvestService
+
 <PageHero 
     Eyebrow="EXPERIENCE MEMORY" 
     Title="Harvest & Insights" 
     Subtitle="What happened matters more than simply completing the activity.">
 </PageHero>
 
-<div style="margin-top: 16px; margin-bottom: 16px;">
+<div style="margin-top: 16px; margin-bottom: 16px; display: flex; gap: 12px;">
     <button class="primary" @onclick="OpenFeedbackDialog">+ Log Feedback</button>
+    <button class="secondary" @onclick="OpenMomentDialog">Log Child Moment</button>
 </div>
 
 <HarvestInsightCard 
     Title="Your daycare is learning."
-    Message="42 experiences happened this month. 31 received teacher feedback. 8 patterns were discovered." />
+    Message="@($"{_metrics.TotalExperiences} experiences happened this month. {_metrics.TotalFeedbacks} received teacher feedback. {_metrics.PatternsDiscovered} patterns were discovered.")" />
 
 <div class="harvest-layout">
     <ExperiencePerformanceGrid Items="@_performanceItems" OnViewClick="OnViewClick" />
@@ -47,13 +51,14 @@
     OnSave="ConfirmFeedback"
     OnDelete="DeleteFeedback" />
 
+<AddJourneyMomentDialog @ref="_addMomentDialog" TeacherId="@(Guid.Parse("50000000-0000-0000-0000-000000000001"))" OnSaved="OnMomentSaved" />
+
+@using EnjoyEveryday.Domain.Repositories
 @code {
-    private IQueryable<ExperiencePerformanceItem> _performanceItems = new List<ExperiencePerformanceItem>
-    {
-        new ExperiencePerformanceItem { Title = "Our Little City", Subtitle = "Created by Priya", Uses = 12, Response = "💬 10" },
-        new ExperiencePerformanceItem { Title = "Frog Rescue", Subtitle = "AI + Teacher", Uses = 8, Response = "💬 6" },
-        new ExperiencePerformanceItem { Title = "Giant Painting", Subtitle = "Created by Daniel", Uses = 6, Response = "💬 5" }
-    }.AsQueryable();
+    private AddJourneyMomentDialog _addMomentDialog = default!;
+
+    private HarvestMetricsDto _metrics = new HarvestMetricsDto();
+    private IQueryable<ExperiencePerformanceItem> _performanceItems = new List<ExperiencePerformanceItem>().AsQueryable();
 
     private List<FlywheelStep> _flywheelSteps = new()
     {
@@ -86,6 +91,17 @@
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        
+        _metrics = await HarvestService.GetMonthlyMetricsAsync();
+        var dtos = await HarvestService.GetPerformanceItemsAsync();
+        _performanceItems = dtos.Select(d => new ExperiencePerformanceItem 
+        { 
+            Title = d.Title, 
+            Subtitle = d.Subtitle, 
+            Uses = d.Uses, 
+            Response = d.Response 
+        }).AsQueryable();
+        
         await LoadFeedbacks();
     }
 
@@ -102,6 +118,16 @@
         _feedbackText = string.Empty;
         _rating = "Good";
         if (_experiences.Any()) { _selectedExperienceId = _experiences.First().Id.ToString(); }
+    }
+
+    private async Task OpenMomentDialog()
+    {
+        await _addMomentDialog.OpenAsync();
+    }
+
+    private void OnMomentSaved()
+    {
+        StateHasChanged();
     }
 
     private void EditFeedback(FeedbackItem item)

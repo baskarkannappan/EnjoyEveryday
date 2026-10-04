@@ -212,99 +212,40 @@
 
                         <div class="timeline">
 
-                            <div class="timeline-item">
-
-                                <div class="timeline-dot"></div>
-
-                                <div class="timeline-time">
-                                    8:30 AM
+                            @foreach(var sched in _todaySchedules)
+                            {
+                                var expTitle = _experiences.FirstOrDefault(e => e.Id == sched.ExperienceId)?.Title ?? "Unknown Experience";
+                                <div class="timeline-item">
+                                    <div class="timeline-dot"></div>
+                                    <div class="timeline-time">
+                                        @sched.TimeOfDay
+                                    </div>
+                                    <div class="timeline-title">
+                                        @expTitle
+                                    </div>
+                                    <div class="timeline-sub">
+                                        Status: @sched.Status
+                                        @if(sched.Status == "Scheduled")
+                                        {
+                                            <button class="btn btn-sm btn-primary ml-3" @onclick="() => StartSession(sched.Id)" style="margin-left: 10px; padding: 2px 8px; border-radius: 4px; background-color: #263d32; color: white; border: none; cursor: pointer;">Start</button>
+                                        }
+                                        else if (sched.Status == "Started" || sched.Status == "Active")
+                                        {
+                                            <button class="btn btn-sm btn-outline-success ml-3" @onclick="() => OpenActiveSession(sched.Id)" style="margin-left: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid #263d32; color: #263d32; background: transparent; cursor: pointer;">View Active Session</button>
+                                        }
+                                    </div>
                                 </div>
+                            }
 
-                                <div class="timeline-title">
-                                    Children arrive
+
+                            @if(!_todaySchedules.Any())
+                            {
+                                <div class="timeline-item">
+                                    <div class="timeline-dot"></div>
+                                    <div class="timeline-time">No plans</div>
+                                    <div class="timeline-title">Nothing scheduled for today.</div>
                                 </div>
-
-                                <div class="timeline-sub">
-                                    Welcome, settling in and free exploration
-                                </div>
-
-                            </div>
-
-
-                            <div class="timeline-item">
-
-                                <div class="timeline-dot"></div>
-
-                                <div class="timeline-time">
-                                    9:30 AM
-                                </div>
-
-                                <div class="timeline-title">
-                                    Explore
-                                </div>
-
-                                <div class="timeline-sub">
-                                    Bugs, nature and things we can discover
-                                </div>
-
-                            </div>
-
-
-                            <div class="timeline-item">
-
-                                <div class="timeline-dot"></div>
-
-                                <div class="timeline-time">
-                                    10:30 AM
-                                </div>
-
-                                <div class="timeline-title">
-                                    Create
-                                </div>
-
-                                <div class="timeline-sub">
-                                    Building, drawing, making and imagining
-                                </div>
-
-                            </div>
-
-
-                            <div class="timeline-item">
-
-                                <div class="timeline-dot"></div>
-
-                                <div class="timeline-time">
-                                    11:30 AM
-                                </div>
-
-                                <div class="timeline-title">
-                                    Together
-                                </div>
-
-                                <div class="timeline-sub">
-                                    Group experience and shared discovery
-                                </div>
-
-                            </div>
-
-
-                            <div class="timeline-item">
-
-                                <div class="timeline-dot"></div>
-
-                                <div class="timeline-time">
-                                    2:00 PM
-                                </div>
-
-                                <div class="timeline-title">
-                                    Stories &amp; quiet moments
-                                </div>
-
-                                <div class="timeline-sub">
-                                    Reflection, stories and connection
-                                </div>
-
-                            </div>
+                            }
 
                         </div>
 
@@ -847,3 +788,64 @@
         </section>
 
     </div>
+    
+    <EnjoyEveryday.UI.Shared.Components.ActiveSessionModal.ActiveSessionModal 
+        IsOpen="@_isSessionModalOpen" 
+        ScheduleId="@_activeSessionScheduleId" 
+        TeacherId="@_teacherId" 
+        OnSessionEnded="OnSessionEnded" 
+        OnClose="() => _isSessionModalOpen = false" />
+
+@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@using Dapper
+@inject NavigationManager NavigationManager
+
+@code {
+    private List<ExperienceSchedule> _todaySchedules = new();
+    private List<Experience> _experiences = new();
+    private Guid _teacherId = Guid.Parse("50000000-0000-0000-0000-000000000001"); // Mock teacher
+
+    protected override async Task OnInitializedAsync()
+    {
+        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        // Load all schedules for today
+        var today = DateTime.UtcNow.Date;
+        var sql = "SELECT * FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
+        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
+    }
+
+    private bool _isSessionModalOpen = false;
+    private Guid _activeSessionScheduleId;
+
+    private async Task StartSession(Guid scheduleId)
+    {
+        var sessionId = await ExecutionService.StartExperienceAsync(scheduleId, _teacherId);
+        
+        // Refresh schedules
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var today = DateTime.UtcNow.Date;
+        var sql = "SELECT * FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
+        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
+        
+        StateHasChanged();
+        
+        OpenActiveSession(scheduleId);
+    }
+
+    private void OpenActiveSession(Guid scheduleId)
+    {
+        _activeSessionScheduleId = scheduleId;
+        _isSessionModalOpen = true;
+    }
+    
+    private async Task OnSessionEnded()
+    {
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var today = DateTime.UtcNow.Date;
+        var sql = "SELECT * FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
+        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
+        StateHasChanged();
+    }
+}

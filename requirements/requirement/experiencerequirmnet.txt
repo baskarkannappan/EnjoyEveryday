@@ -1,0 +1,1872 @@
+# Experience Integration Requirements
+
+## EnjoyEveryday
+
+## 1. Purpose
+
+The existing EnjoyEveryday system contains:
+
+* Experience Library
+* Experience Studio
+* Experience Planning
+* Harvest & Insight
+* Child
+* Child Journey
+* Class
+* Teacher
+
+The goal of this requirement is to connect these existing areas through a single Experience lifecycle.
+
+The system should treat **Experience as the central learning/activity concept**.
+
+Do not redesign the existing UI unless required for integration.
+
+The implementation should primarily add:
+
+* Domain relationships
+* Data model
+* Business rules
+* Application services
+* APIs
+* Persistence
+* Navigation/context
+* Validation
+* Audit
+* Child Journey integration
+* Harvest & Insight integration
+
+---
+
+# 2. Core Concept
+
+The system must distinguish between:
+
+### Experience
+
+A reusable definition of something teachers can do with children.
+
+Example:
+
+> Rainbow Builders
+
+It describes:
+
+* What the experience is
+* Intended age group
+* Purpose
+* Development areas
+* Materials
+* Instructions
+* Expected duration
+* Environment
+* Safety considerations
+
+An Experience does NOT represent a specific occurrence.
+
+---
+
+### Experience Session
+
+An actual occurrence of an Experience.
+
+Example:
+
+> Rainbow Builders conducted in Bluebirds classroom on October 4, 2026.
+
+The Experience Session records:
+
+* When it happened
+* Where it happened
+* Which teacher facilitated it
+* Which children participated
+* What actually happened
+
+Therefore:
+
+**Experience = reusable definition**
+
+**Experience Session = actual execution**
+
+---
+
+# 3. Target Relationship
+
+Implement the following relationship:
+
+```text
+Experience Library
+       │
+       ▼
+    Experience
+       │
+       ├──────────────► Experience Studio
+       │
+       ▼
+Experience Planning
+       │
+       ▼
+Experience Session
+       │
+       ├──────────────► Class
+       │
+       ├──────────────► Teacher
+       │
+       └──────────────► Children
+                         │
+                         ▼
+                Experience Participation
+                         │
+                         ▼
+                   Child Journey
+                         │
+                         ▼
+                    Harvest
+                         │
+                         ▼
+                    Insights
+```
+
+The important rule is:
+
+> Do not connect Child Journey directly to the reusable Experience as the primary relationship.
+
+Child Journey should connect to the **actual Experience Session**.
+
+---
+
+# 4. Domain Model
+
+Implement the following entities.
+
+## 4.1 Experience
+
+Represents a reusable experience definition.
+
+Recommended fields:
+
+```text
+ExperienceId
+TenantId
+Name
+ShortDescription
+Description
+ExperienceType
+Category
+AgeGroup
+MinAgeMonths
+MaxAgeMonths
+EstimatedDurationMinutes
+LearningIntent
+PreparationInstructions
+FacilitationInstructions
+ReflectionPrompts
+EnvironmentRequirements
+SafetyNotes
+Status
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+Version
+```
+
+Possible statuses:
+
+```text
+Draft
+Published
+Archived
+```
+
+An Experience belongs to one Tenant.
+
+An Experience must never be accessible across tenants.
+
+---
+
+# 5. Experience Development Areas
+
+An Experience can support multiple development areas.
+
+Examples:
+
+```text
+Social
+Emotional
+Communication
+Language
+Cognitive
+Physical
+Creative
+Collaboration
+Independence
+Understanding
+```
+
+Create a many-to-many relationship:
+
+```text
+Experience
+    │
+    └── ExperienceDevelopmentArea
+              │
+              └── DevelopmentArea
+```
+
+Do not store development areas as a comma-separated string.
+
+---
+
+# 6. Experience Materials
+
+An Experience may require materials.
+
+Create:
+
+```text
+ExperienceMaterial
+```
+
+Recommended fields:
+
+```text
+ExperienceMaterialId
+ExperienceId
+Name
+Description
+Quantity
+Optional
+PreparationRequired
+```
+
+Examples:
+
+```text
+Colored paper
+Blocks
+Paint
+Water
+Natural objects
+Story cards
+Music
+```
+
+---
+
+# 7. Experience Studio
+
+Experience Studio is responsible for creating and improving the reusable Experience.
+
+The workflow should be:
+
+```text
+Create Experience
+       ↓
+Define Intent
+       ↓
+Define Development Areas
+       ↓
+Define Materials
+       ↓
+Define Instructions
+       ↓
+Define Safety
+       ↓
+Preview
+       ↓
+Publish
+```
+
+Once published, the Experience becomes available to Experience Planning.
+
+Experience Studio must not directly create Child Journey entries.
+
+---
+
+# 8. Experience Planning
+
+Experience Planning decides:
+
+> Which Experience are we going to conduct, with which class, on which date, and with which teacher?
+
+Planning should reference:
+
+```text
+ExperienceId
+ClassroomId
+TeacherId
+PlannedDate
+PlannedStartTime
+PlannedEndTime
+```
+
+Create:
+
+```text
+ExperiencePlan
+```
+
+Recommended fields:
+
+```text
+ExperiencePlanId
+TenantId
+ExperienceId
+BranchId
+ClassroomId
+PlannedDate
+PlannedStartTime
+PlannedEndTime
+Status
+PrimaryTeacherId
+PlanningNotes
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+Version
+```
+
+Statuses:
+
+```text
+Planned
+Confirmed
+Started
+Completed
+Cancelled
+```
+
+---
+
+# 9. Experience Session
+
+When an Experience actually starts or is executed, create an:
+
+```text
+ExperienceSession
+```
+
+This represents what actually happened.
+
+Recommended fields:
+
+```text
+ExperienceSessionId
+TenantId
+ExperienceId
+ExperiencePlanId
+BranchId
+ClassroomId
+SessionDate
+StartTime
+EndTime
+Status
+PrimaryTeacherId
+ActualNotes
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+Version
+```
+
+Statuses:
+
+```text
+Planned
+InProgress
+Completed
+Cancelled
+```
+
+Important:
+
+An Experience Session must reference the Experience version that was used.
+
+If the reusable Experience is later changed, historical sessions must continue to represent the version used at that time.
+
+Do not change historical session meaning when an Experience is edited.
+
+---
+
+# 10. Teachers
+
+An Experience Session can have one or more teachers.
+
+Do not assume only one teacher.
+
+Create:
+
+```text
+ExperienceSessionTeacher
+```
+
+Fields:
+
+```text
+ExperienceSessionTeacherId
+ExperienceSessionId
+TeacherId
+Role
+```
+
+Possible roles:
+
+```text
+LeadTeacher
+SupportingTeacher
+Observer
+Assistant
+```
+
+The Teacher domain remains the source of truth for teacher information.
+
+Do not duplicate teacher profile information inside Experience.
+
+---
+
+# 11. Class
+
+An Experience Session belongs to one Classroom.
+
+Relationship:
+
+```text
+Classroom
+     │
+     └── ExperienceSession
+```
+
+A Classroom can have many Experience Sessions.
+
+An Experience Session belongs to exactly one Classroom.
+
+The Classroom domain remains the source of truth for:
+
+* Classroom
+* Branch
+* Capacity
+* Classroom teachers
+* Classroom status
+
+Do not duplicate Classroom master information in Experience.
+
+---
+
+# 12. Children and Participation
+
+An Experience Session can have many children.
+
+Create:
+
+```text
+ExperienceParticipation
+```
+
+Recommended fields:
+
+```text
+ExperienceParticipationId
+ExperienceSessionId
+ChildId
+EnrollmentId
+ParticipationStatus
+StartedAt
+CompletedAt
+ParticipationNotes
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+```
+
+Participation statuses:
+
+```text
+Invited
+Participated
+PartiallyParticipated
+Observed
+Declined
+Absent
+```
+
+The Child domain remains the source of truth for child identity.
+
+The Enrollment domain remains the source of truth for the child's relationship with the daycare/classroom.
+
+---
+
+# 13. Important Child Relationship
+
+The system must NOT simply store:
+
+```text
+Experience → Child
+```
+
+because this loses important historical context.
+
+Instead:
+
+```text
+Experience
+    ↓
+ExperienceSession
+    ↓
+ExperienceParticipation
+    ↓
+Child
+```
+
+This allows the system to answer:
+
+* Which experience?
+* When?
+* Which classroom?
+* Which teacher?
+* Which child?
+* Did the child participate?
+* How did the child participate?
+* What did the teacher observe?
+
+---
+
+# 14. Child Journey Integration
+
+Child Journey should be connected to the actual Experience Session.
+
+Recommended relationship:
+
+```text
+ExperienceSession
+       │
+       ▼
+ExperienceParticipation
+       │
+       ▼
+ChildJourneyEntry
+```
+
+ChildJourneyEntry should contain:
+
+```text
+JourneyEntryId
+TenantId
+ChildId
+EnrollmentId
+ClassroomId
+TeacherId
+ExperienceSessionId
+ExperienceParticipationId
+JourneyType
+Title
+Observation
+ChildVoice
+TeacherReflection
+ObservationDate
+ParentVisibilityStatus
+Status
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+Version
+```
+
+The existing Child Journey design should remain the authority for journey data.
+
+---
+
+# 15. Teacher Journey Capture
+
+After completing an Experience Session, the teacher should be able to capture a small observation for one or more children.
+
+The teacher flow should be extremely simple:
+
+```text
+Experience Completed
+        ↓
+Children Participated
+        ↓
+Select Child
+        ↓
+What happened?
+        ↓
+What did you notice?
+        ↓
+Save
+```
+
+Example:
+
+> Maya worked with two other children and helped them build the bridge.
+
+This creates a Child Journey Entry.
+
+The teacher should NOT be required to complete a large assessment form.
+
+---
+
+# 16. Quick Capture
+
+Provide a quick capture capability from the Experience Session.
+
+Example:
+
+```text
+Rainbow Builders
+Completed
+
+Children
+✓ Maya
+✓ Arjun
+✓ Sara
+✓ Liam
+
+Capture a little moment
+
+Maya
+"She helped another child connect the blocks."
+
+Development:
+Collaboration
+Communication
+
+[Save to Journey]
+```
+
+The existing UI can be reused.
+
+The important requirement is that the saved record references:
+
+```text
+ExperienceSessionId
+ExperienceParticipationId
+ChildId
+TeacherId
+ClassroomId
+```
+
+---
+
+# 17. Little Moments
+
+If the system already contains Little Moments, an Experience Session may produce one or more Little Moments.
+
+Relationship:
+
+```text
+ExperienceSession
+       │
+       └── LittleMoment
+```
+
+A Little Moment may optionally reference:
+
+```text
+ChildId
+TeacherId
+ExperienceParticipationId
+```
+
+Example:
+
+> During Rainbow Builders, Maya helped Liam finish his bridge.
+
+That Little Moment can then contribute to Child Journey.
+
+Do not automatically create a Journey Entry for every Little Moment unless explicitly configured.
+
+---
+
+# 18. Media / Evidence
+
+Experience Session observations can have evidence.
+
+Evidence may include:
+
+```text
+Photo
+Video
+Audio
+Document
+Text
+```
+
+Use the existing Media domain rather than creating a second media system.
+
+Recommended relationship:
+
+```text
+ExperienceSession
+      ↓
+ExperienceParticipation
+      ↓
+ChildJourneyEntry
+      ↓
+JourneyEvidence
+      ↓
+Media
+```
+
+A photo may be associated with:
+
+* Experience Session
+* Child
+* Journey Entry
+* Little Moment
+
+according to existing privacy and consent rules.
+
+---
+
+# 19. Harvest
+
+Harvest & Insight should collect information generated during Experience Sessions.
+
+Harvest should be able to use:
+
+```text
+Experience
+ExperienceSession
+ExperienceParticipation
+ChildJourneyEntry
+LittleMoment
+Media
+Milestone
+TeacherObservation
+```
+
+Example:
+
+```text
+Experience:
+Rainbow Builders
+
+Sessions:
+12
+
+Children:
+38
+
+Journey observations:
+27
+
+Little moments:
+19
+
+Development areas observed:
+Collaboration
+Communication
+Creative
+Problem Solving
+```
+
+Harvest should not modify historical Experience or Journey records.
+
+It creates derived insights/read models.
+
+---
+
+# 20. Insight
+
+Insights should be generated from actual evidence.
+
+Example:
+
+```text
+Over the last 4 weeks:
+
+Children participated in
+18 creative experiences.
+
+Collaboration was observed
+42 times.
+
+Communication was observed
+31 times.
+
+Several children increasingly
+worked independently.
+```
+
+Important:
+
+Insights must be traceable back to source records.
+
+For example:
+
+```text
+Insight
+   ↓
+Evidence
+   ↓
+ChildJourneyEntry
+   ↓
+ExperienceSession
+   ↓
+Experience
+```
+
+Never generate an insight that cannot be traced to source evidence.
+
+---
+
+# 21. Parent Experience
+
+Parents should eventually be able to see approved information from an Experience.
+
+Example:
+
+```text
+Today's Experience
+
+Rainbow Builders
+
+Today the children explored
+building with colors and shapes.
+
+Maya:
+"She helped another child
+complete their bridge."
+
+Development noticed:
+Collaboration
+Communication
+Creativity
+```
+
+Parent visibility must be controlled by:
+
+```text
+ParentVisibilityStatus
+```
+
+Possible values:
+
+```text
+Private
+PendingReview
+Approved
+Published
+Hidden
+```
+
+Teacher/internal notes must never automatically become parent-visible.
+
+---
+
+# 22. Experience Lifecycle
+
+Implement the following lifecycle:
+
+```text
+CREATE
+   ↓
+DRAFT
+   ↓
+PUBLISHED
+   ↓
+PLANNED
+   ↓
+SESSION STARTED
+   ↓
+CHILDREN PARTICIPATE
+   ↓
+SESSION COMPLETED
+   ↓
+OBSERVATIONS CAPTURED
+   ↓
+CHILD JOURNEY UPDATED
+   ↓
+HARVEST
+   ↓
+INSIGHTS
+   ↓
+PARENT STORY
+```
+
+Not every Experience Session must produce a Child Journey entry.
+
+A journey entry is created only when the teacher records something meaningful.
+
+---
+
+# 23. Business Rules
+
+## Rule 1 — Tenant Isolation
+
+Every Experience-related entity must contain TenantId where required.
+
+A tenant must never see another tenant's:
+
+* Experiences
+* Sessions
+* Children
+* Teachers
+* Journey entries
+* Insights
+* Media
+
+---
+
+## Rule 2 — Experience Cannot Be Deleted If Used
+
+If an Experience has been used in an Experience Session:
+
+Do not physically delete it.
+
+Set:
+
+```text
+Status = Archived
+```
+
+Historical sessions must remain valid.
+
+---
+
+## Rule 3 — Historical Integrity
+
+Changing an Experience must not change historical sessions.
+
+Use Experience versioning.
+
+Example:
+
+```text
+Rainbow Builders v1
+     ↓
+Session on Oct 1
+
+Rainbow Builders v2
+     ↓
+Session on Oct 10
+```
+
+Both historical sessions must remain accurate.
+
+---
+
+## Rule 4 — Completed Sessions
+
+Once an Experience Session is completed:
+
+* Do not silently change classroom
+* Do not silently change date
+* Do not silently change teacher
+* Do not silently change participating children
+
+Changes must follow existing correction/audit rules.
+
+---
+
+## Rule 5 — Child Journey Authority
+
+Experience provides context.
+
+Child Journey provides the child's developmental story.
+
+Therefore:
+
+```text
+Experience ≠ Assessment
+```
+
+Experience should never automatically assign a developmental score to a child.
+
+---
+
+## Rule 6 — Teacher Authority
+
+AI may suggest:
+
+* Experience recommendations
+* Development areas
+* Observation summaries
+* Patterns
+* Possible next experiences
+
+AI must not:
+
+* Invent observations
+* Invent child behavior
+* Create false evidence
+* Diagnose children
+* Automatically publish parent content
+* Override teacher observations
+
+---
+
+# 24. Recommended API/Application Operations
+
+Implement application-level operations such as:
+
+```text
+CreateExperience
+UpdateExperience
+PublishExperience
+ArchiveExperience
+
+PlanExperience
+ConfirmExperiencePlan
+
+StartExperienceSession
+AddExperienceParticipant
+UpdateParticipation
+CompleteExperienceSession
+CancelExperienceSession
+
+CaptureChildJourneyFromExperience
+CreateLittleMomentFromExperience
+AttachEvidenceToExperience
+```
+
+The exact API naming can follow the existing application conventions.
+
+Do not introduce a completely separate architecture if the current application already has established patterns.
+
+---
+
+# 25. Queries
+
+The system should support queries such as:
+
+### Experience
+
+```text
+GetExperience
+GetExperiences
+GetPublishedExperiences
+GetExperienceHistory
+```
+
+### Planning
+
+```text
+GetPlannedExperiencesForClassroom
+GetToday'sExperiences
+GetUpcomingExperiences
+```
+
+### Session
+
+```text
+GetExperienceSession
+GetExperienceSessionsForClassroom
+GetExperienceSessionsForTeacher
+GetExperienceSessionsForChild
+```
+
+### Child
+
+```text
+GetChildExperiences
+GetChildExperienceHistory
+```
+
+### Journey
+
+```text
+GetJourneyEntriesForExperience
+GetChildJourneyFromExperience
+```
+
+### Insight
+
+```text
+GetExperienceInsights
+GetClassroomExperienceInsights
+GetChildExperiencePatterns
+```
+
+---
+
+# 26. Today's Experience
+
+The existing teacher experience should expose the actual Experience Sessions scheduled for today.
+
+Conceptually:
+
+```text
+TODAY
+
+Rainbow Builders
+10:00 AM
+Bluebirds
+Ms. Priya
+
+[Start]
+
+------------------
+
+Water Discovery
+11:30 AM
+Bluebirds
+Ms. Priya
+
+[Start]
+```
+
+After starting:
+
+```text
+Rainbow Builders
+
+Children
+18 participating
+
+[Capture Little Moment]
+
+[Observe Child]
+
+[Add Photo]
+
+[Complete Experience]
+```
+
+The UI should remain consistent with the existing EnjoyEveryday design.
+
+---
+
+# 27. Child View
+
+When viewing a child, the system should be able to show:
+
+```text
+Maya
+
+Child Journey
+
+Today
+ └── Rainbow Builders
+     └── Maya helped another child
+         Collaboration
+
+Yesterday
+ └── Story Circle
+     └── Maya shared her idea
+         Communication
+
+Last Week
+ └── Nature Discovery
+     └── Maya explored independently
+         Independence
+```
+
+This creates the child's living journey.
+
+---
+
+# 28. Classroom View
+
+A classroom should be able to show:
+
+```text
+Bluebirds
+
+Today's Experiences
+
+Rainbow Builders
+Completed
+
+Water Discovery
+Planned
+
+Story Circle
+Planned
+```
+
+Historical view:
+
+```text
+Experience History
+
+September
+24 experiences
+
+October
+8 experiences
+```
+
+---
+
+# 29. Teacher View
+
+A teacher should be able to see:
+
+```text
+My Experiences
+
+Today
+3
+
+This Week
+14
+
+Children Observed
+28
+
+Little Moments
+17
+```
+
+This is derived information.
+
+Do not create duplicate teacher activity data if it can be calculated from Experience Sessions.
+
+---
+
+# 30. Experience Library
+
+The Experience Library should show reusable Experiences.
+
+Example:
+
+```text
+Rainbow Builders
+Creative
+3–5 years
+30 minutes
+
+Communication
+Collaboration
+Creative
+
+[Use in Plan]
+```
+
+Clicking:
+
+```text
+Use in Plan
+```
+
+should create an Experience Plan.
+
+It should NOT directly create a Child Journey record.
+
+---
+
+# 31. Experience Planning → Session
+
+The key transition is:
+
+```text
+Experience Plan
+       ↓
+Start
+       ↓
+Experience Session
+```
+
+When the teacher starts a planned Experience:
+
+1. Create or activate Experience Session.
+2. Load Classroom.
+3. Load assigned Teacher(s).
+4. Load eligible Children.
+5. Create ExperienceParticipation records as appropriate.
+6. Allow teacher to record participation.
+7. Allow observations.
+8. Allow Little Moments.
+9. Allow evidence.
+10. Complete the Session.
+
+---
+
+# 32. Eligibility
+
+When planning an Experience for a Classroom, validate:
+
+* Classroom belongs to the current Tenant.
+* Classroom is active.
+* Teacher belongs to the current Tenant.
+* Teacher is eligible to work with the Classroom according to existing assignment rules.
+* Experience belongs to the current Tenant.
+* Experience is Published.
+* Experience age range is compatible with the Classroom/children where required.
+
+Do not silently block legitimate mixed-age scenarios if the existing business rules permit them.
+
+---
+
+# 33. Audit
+
+Audit important changes to:
+
+```text
+Experience
+ExperiencePlan
+ExperienceSession
+ExperienceParticipation
+ChildJourneyEntry
+LittleMoment
+ParentVisibilityStatus
+```
+
+Capture:
+
+```text
+Who
+What
+When
+Before
+After
+Reason where required
+```
+
+Use the existing audit mechanism if one already exists.
+
+Do not create a second audit framework.
+
+---
+
+# 34. Concurrency
+
+Experience Session and Child Journey updates should use the existing concurrency strategy.
+
+At minimum protect:
+
+```text
+ExperienceSession
+ExperienceParticipation
+ChildJourneyEntry
+```
+
+from conflicting updates.
+
+If the application already uses a Version/RowVersion pattern, follow that pattern.
+
+---
+
+# 35. Notifications
+
+Do not introduce notifications as part of the first implementation unless the existing notification infrastructure already exists.
+
+The integration should expose events/application hooks so notifications can be added later.
+
+Potential future events:
+
+```text
+ExperiencePlanned
+ExperienceStarted
+ExperienceCompleted
+ChildJourneyCreated
+LittleMomentCreated
+ExperienceInsightGenerated
+ParentStoryPublished
+```
+
+---
+
+# 36. Domain Event Concept
+
+The application may publish internal events such as:
+
+```text
+ExperienceSessionStarted
+ExperienceSessionCompleted
+ExperienceParticipationRecorded
+ChildJourneyEntryCreated
+LittleMomentCreated
+```
+
+Harvest & Insight should consume these events or equivalent application-level signals.
+
+Avoid tightly coupling Harvest & Insight to the Experience UI.
+
+---
+
+# 37. Important Architectural Principle
+
+Use the following separation:
+
+```text
+EXPERIENCE
+"What can we do?"
+
+EXPERIENCE PLAN
+"What are we going to do?"
+
+EXPERIENCE SESSION
+"What did we actually do?"
+
+PARTICIPATION
+"Who took part?"
+
+CHILD JOURNEY
+"What did we notice about this child?"
+
+LITTLE MOMENT
+"What beautiful/meaningful moment happened?"
+
+HARVEST
+"What evidence have we collected?"
+
+INSIGHT
+"What patterns are emerging?"
+```
+
+This separation is the foundation of the integration.
+
+---
+
+# 38. End-to-End Example
+
+Example:
+
+### Step 1 — Library
+
+Teacher finds:
+
+```text
+Rainbow Builders
+```
+
+---
+
+### Step 2 — Planning
+
+Teacher plans:
+
+```text
+Rainbow Builders
+Bluebirds
+October 4
+10:00 AM
+Ms. Priya
+```
+
+---
+
+### Step 3 — Session
+
+At 10:00 AM:
+
+```text
+Start Experience
+```
+
+System creates:
+
+```text
+ExperienceSession
+```
+
+---
+
+### Step 4 — Participation
+
+Children participate:
+
+```text
+Maya
+Arjun
+Liam
+Sara
+...
+```
+
+System creates:
+
+```text
+ExperienceParticipation
+```
+
+---
+
+### Step 5 — Observation
+
+Teacher notices:
+
+> Maya helped Liam connect the blocks.
+
+Teacher selects:
+
+```text
+Collaboration
+Communication
+```
+
+---
+
+### Step 6 — Child Journey
+
+System creates:
+
+```text
+ChildJourneyEntry
+
+Child:
+Maya
+
+Experience:
+Rainbow Builders
+
+Session:
+October 4
+
+Observation:
+Maya helped Liam connect the blocks.
+
+Development:
+Collaboration
+Communication
+```
+
+---
+
+### Step 7 — Little Moment
+
+Teacher optionally creates:
+
+```text
+Little Moment
+
+"Maya and Liam built the tallest bridge together."
+```
+
+---
+
+### Step 8 — Evidence
+
+Teacher attaches a photo.
+
+---
+
+### Step 9 — Harvest
+
+Harvest now knows:
+
+```text
+Experience:
+Rainbow Builders
+
+Children:
+18
+
+Observations:
+12
+
+Little Moments:
+7
+
+Photos:
+5
+```
+
+---
+
+### Step 10 — Insight
+
+After several weeks:
+
+```text
+Collaboration is increasingly appearing
+in Maya's Experience observations.
+
+Maya has participated in 8 collaborative
+experiences during the last month.
+```
+
+The insight must link back to actual Journey entries.
+
+---
+
+# 39. Implementation Order for Antigravity
+
+Implement in this order.
+
+## Phase 1 — Domain Relationships
+
+First inspect the existing code and identify:
+
+```text
+Experience
+Classroom
+Teacher
+Child
+ChildJourney
+ExperiencePlanning
+Harvest
+Insight
+```
+
+Do not create duplicate entities if they already exist.
+
+Add only the missing relationships.
+
+---
+
+## Phase 2 — Experience Session
+
+Implement:
+
+```text
+ExperienceSession
+```
+
+This is the most important missing bridge.
+
+---
+
+## Phase 3 — Participation
+
+Implement:
+
+```text
+ExperienceParticipation
+ExperienceSessionTeacher
+```
+
+---
+
+## Phase 4 — Planning Integration
+
+Connect:
+
+```text
+Experience Planning
+        ↓
+ExperienceSession
+```
+
+---
+
+## Phase 5 — Teacher Execution
+
+Connect:
+
+```text
+Today's Experience
+        ↓
+Start
+        ↓
+ExperienceSession
+```
+
+---
+
+## Phase 6 — Child Journey
+
+Connect:
+
+```text
+ExperienceParticipation
+        ↓
+ChildJourneyEntry
+```
+
+---
+
+## Phase 7 — Little Moments and Evidence
+
+Connect existing:
+
+```text
+LittleMoment
+Media
+```
+
+to Experience Session / Journey.
+
+---
+
+## Phase 8 — Harvest
+
+Read:
+
+```text
+Experience
+ExperienceSession
+Participation
+Journey
+LittleMoments
+Evidence
+```
+
+and produce the existing Harvest output.
+
+---
+
+## Phase 9 — Insight
+
+Build insights from actual harvested evidence.
+
+---
+
+# 40. Antigravity Implementation Instructions
+
+Before making changes:
+
+1. Inspect the existing solution structure.
+2. Identify the current Experience entities.
+3. Identify the current Experience Library implementation.
+4. Identify Experience Studio implementation.
+5. Identify Experience Planning implementation.
+6. Identify Child implementation.
+7. Identify Child Journey implementation.
+8. Identify Classroom implementation.
+9. Identify Teacher implementation.
+10. Identify Harvest & Insight implementation.
+11. Identify existing repository/service/application patterns.
+12. Identify existing database migrations.
+13. Identify existing audit/concurrency/security patterns.
+
+Do not replace existing architecture.
+
+Do not create duplicate versions of existing entities.
+
+Do not redesign existing screens unless required.
+
+Follow the existing coding conventions.
+
+---
+
+# 41. Antigravity Validation
+
+After implementation, verify the complete flow:
+
+```text
+Create Experience
+        ↓
+Publish Experience
+        ↓
+Plan Experience
+        ↓
+Assign Classroom
+        ↓
+Assign Teacher
+        ↓
+Start Session
+        ↓
+Load Children
+        ↓
+Record Participation
+        ↓
+Complete Session
+        ↓
+Capture Child Observation
+        ↓
+Create Child Journey Entry
+        ↓
+Create Little Moment
+        ↓
+Attach Evidence
+        ↓
+Harvest
+        ↓
+Generate Insight
+```
+
+Verify that every step retains:
+
+```text
+Tenant
+Experience
+Session
+Classroom
+Teacher
+Child
+Participation
+Journey
+```
+
+---
+
+# 42. Acceptance Criteria
+
+The implementation is complete when:
+
+* An Experience can be created and published.
+* A published Experience can be planned.
+* A plan can be associated with a Classroom.
+* A plan can be associated with one or more Teachers.
+* A planned Experience can become an Experience Session.
+* A Session can contain participating Children.
+* Participation status can be recorded.
+* A Teacher can complete an Experience Session.
+* A Teacher can capture a Child observation from the Session.
+* The observation creates a Child Journey Entry.
+* The Journey Entry references the actual Experience Session.
+* Little Moments can reference the Experience Session.
+* Existing Media can be attached as evidence.
+* Harvest can retrieve Experience Session evidence.
+* Insight can use harvested evidence.
+* Historical Sessions remain correct when an Experience is later changed.
+* Tenant isolation is enforced.
+* Existing authorization rules are respected.
+* Existing audit mechanisms are used.
+* Existing UI design is preserved.
+* No duplicate Experience, Child, Teacher, Classroom, or Journey domain is introduced.
+
+---
+
+# 43. Final Target Architecture
+
+The final conceptual architecture should be:
+
+```text
+                    ┌───────────────────┐
+                    │ EXPERIENCE LIBRARY│
+                    └─────────┬─────────┘
+                              │
+                              ▼
+                    ┌───────────────────┐
+                    │    EXPERIENCE     │
+                    │  Reusable Idea    │
+                    └─────────┬─────────┘
+                              │
+               ┌──────────────┴──────────────┐
+               ▼                             ▼
+      ┌─────────────────┐           ┌─────────────────┐
+      │ EXPERIENCE      │           │ EXPERIENCE      │
+      │ STUDIO          │           │ PLANNING        │
+      └─────────────────┘           └────────┬────────┘
+                                              │
+                                              ▼
+                                   ┌────────────────────┐
+                                   │ EXPERIENCE SESSION │
+                                   │ Actual occurrence  │
+                                   └───────┬────────────┘
+                                           │
+                   ┌───────────────────────┼──────────────────────┐
+                   ▼                       ▼                      ▼
+              CLASSROOM                TEACHER                CHILDREN
+                                                                  │
+                                                                  ▼
+                                                       PARTICIPATION
+                                                                  │
+                                                                  ▼
+                                                         CHILD JOURNEY
+                                                                  │
+                                             ┌────────────────────┴────────────┐
+                                             ▼                                 ▼
+                                      LITTLE MOMENT                         EVIDENCE
+                                             │                                 │
+                                             └────────────────┬────────────────┘
+                                                              ▼
+                                                          HARVEST
+                                                              │
+                                                              ▼
+                                                           INSIGHT
+                                                              │
+                                                              ▼
+                                                       PARENT STORY
+```
+
+## Core principle
+
+**Experience is the center of the Everyday learning loop.**
+
+The system should answer four simple questions:
+
+> **What did we plan?** → Experience Planning
+> **What did we do?** → Experience Session
+> **Who experienced it?** → Participation
+> **What did we learn about the child?** → Child Journey
+
+This creates a connected system instead of separate modules.

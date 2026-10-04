@@ -44,6 +44,9 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IExperienceFeedbackRepository, ExperienceFeedbackRepository>();
         services.AddScoped<IChildStoryRepository, ChildStoryRepository>();
         services.AddScoped<ITeacherRepository, TeacherRepository>();
+        services.AddScoped<IChildJourneyRepository, ChildJourneyRepository>();
+        services.AddScoped<IExperienceSessionRepository, ExperienceSessionRepository>();
+        services.AddScoped<IHarvestRepository, HarvestRepository>();
 
         return services;
     }

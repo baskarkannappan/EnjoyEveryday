@@ -23,10 +23,12 @@
     {
         @foreach (var teacher in _teachers)
         {
-            <div @onclick='() => NavigationManager.NavigateTo($"/teachers/edit/{teacher.Id}")' style="cursor: pointer;">
+            <div @onclick='() => NavigationManager.NavigateTo($"/teachers/view/{teacher.UserId}")' style="cursor: pointer;">
                 <PersonCard AvatarInitials="@(teacher.FirstName?.FirstOrDefault().ToString() ?? "?")" 
-                            Name="@teacher.DisplayName" 
-                            Subtitle="Experience Facilitator" 
+                            PhotoUrl="@teacher.ProfilePhotoUrl"
+                            Name="@teacher.FullName" 
+                            Subtitle="@(string.IsNullOrWhiteSpace(teacher.Status) ? "Draft" : teacher.Status)" 
+                            Progress="@teacher.ProfileCompletionPercentage"
                             HighlightTitle="Today's support" 
                             HighlightText="4 experiences planned. Keep room for child-led exploration." />
             </div>
@@ -34,33 +36,24 @@
     }
     else if (_teachers != null && !_teachers.Any())
     {
-        <p>No teachers found. Generating sample data...</p>
+        <p>No teachers found. Click "Add teacher" to get started.</p>
     }
 </div>
 
 @code {
-    private IEnumerable<User>? _teachers;
+    private IEnumerable<Teacher>? _teachers;
+
+    [Inject]
+    private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadTeachersAsync();
-
-        if (_teachers != null && !_teachers.Any())
-        {
-            await InsertSampleDataAsync();
-        }
     }
 
     private async Task LoadTeachersAsync()
     {
-        _teachers = await UserService.GetTeachersAsync();
-    }
-
-    private async Task InsertSampleDataAsync()
-    {
-        await UserService.CreateUserAsync("jane.doe@example.com", "Jane", "Doe", "TEMP_HASH", "Teacher");
-        await UserService.CreateUserAsync("john.smith@example.com", "John", "Smith", "TEMP_HASH", "Teacher");
-        await LoadTeachersAsync();
+        _teachers = await TeacherService.GetAllTeachersAsync(TenantContext.TenantId);
     }
 }
 

@@ -14,10 +14,19 @@ public class ClassroomRepository : IClassroomRepository
         _connectionFactory = connectionFactory;
     }
 
+    private const string SelectFields = @"
+        id, tenant_id as TenantId, branch_id as BranchId, name, display_name as DisplayName, short_name as ShortName, 
+        code, description, classroom_type as ClassroomType, status, age_group as AgeGroup, 
+        min_age_months as MinAgeMonths, max_age_months as MaxAgeMonths, capacity, 
+        current_enrollment as CurrentEnrollment, environment, photo_url as PhotoUrl, 
+        draft_data as DraftData, profile_completion_percentage as ProfileCompletionPercentage, 
+        is_active as IsActive, created_at as CreatedAt, created_by as CreatedBy, 
+        updated_at as UpdatedAt, updated_by as UpdatedBy";
+
     public async Task<Classroom?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, branch_id, name, age_group, capacity, environment, is_active, created_at, updated_at
+        string sql = $@"
+            SELECT {SelectFields}
             FROM classrooms
             WHERE id = @Id AND tenant_id = @TenantId";
 
@@ -27,8 +36,8 @@ public class ClassroomRepository : IClassroomRepository
 
     public async Task<IEnumerable<Classroom>> GetByBranchIdAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, branch_id, name, age_group, capacity, environment, is_active, created_at, updated_at
+        string sql = $@"
+            SELECT {SelectFields}
             FROM classrooms
             WHERE branch_id = @BranchId AND tenant_id = @TenantId
             ORDER BY name";
@@ -37,15 +46,38 @@ public class ClassroomRepository : IClassroomRepository
         return await connection.QueryAsync<Classroom>(sql, new { BranchId = branchId, TenantId = tenantId });
     }
 
+    public async Task<IEnumerable<Classroom>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        string sql = $@"
+            SELECT {SelectFields}
+            FROM classrooms
+            WHERE tenant_id = @TenantId
+            ORDER BY name";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryAsync<Classroom>(sql, new { TenantId = tenantId });
+    }
+
     public async Task<Classroom> AddAsync(Classroom classroom, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            INSERT INTO classrooms (id, tenant_id, branch_id, name, age_group, capacity, environment, is_active, created_at, updated_at)
-            VALUES (@Id, @TenantId, @BranchId, @Name, @AgeGroup, @Capacity, @Environment, @IsActive, @CreatedAt, @UpdatedAt)
-            RETURNING id, tenant_id, branch_id, name, age_group, capacity, environment, is_active, created_at, updated_at";
+            INSERT INTO classrooms (
+                id, tenant_id, branch_id, name, display_name, short_name, code, description, 
+                classroom_type, status, age_group, min_age_months, max_age_months, capacity, 
+                current_enrollment, environment, photo_url, draft_data, profile_completion_percentage, 
+                is_active, created_at, created_by, updated_at, updated_by
+            )
+            VALUES (
+                @Id, @TenantId, @BranchId, @Name, @DisplayName, @ShortName, @Code, @Description, 
+                @ClassroomType, @Status, @AgeGroup, @MinAgeMonths, @MaxAgeMonths, @Capacity, 
+                @CurrentEnrollment, @Environment, @PhotoUrl, @DraftData::jsonb, @ProfileCompletionPercentage, 
+                @IsActive, @CreatedAt, @CreatedBy, @UpdatedAt, @UpdatedBy
+            )
+            RETURNING id;";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleAsync<Classroom>(sql, classroom);
+        await connection.ExecuteAsync(sql, classroom);
+        return classroom;
     }
 
     public async Task UpdateAsync(Classroom classroom, CancellationToken cancellationToken = default)
@@ -53,11 +85,24 @@ public class ClassroomRepository : IClassroomRepository
         const string sql = @"
             UPDATE classrooms
             SET name = @Name,
+                display_name = @DisplayName,
+                short_name = @ShortName,
+                code = @Code,
+                description = @Description,
+                classroom_type = @ClassroomType,
+                status = @Status,
                 age_group = @AgeGroup,
+                min_age_months = @MinAgeMonths,
+                max_age_months = @MaxAgeMonths,
                 capacity = @Capacity,
+                current_enrollment = @CurrentEnrollment,
                 environment = @Environment,
+                photo_url = @PhotoUrl,
+                draft_data = @DraftData::jsonb,
+                profile_completion_percentage = @ProfileCompletionPercentage,
                 is_active = @IsActive,
-                updated_at = @UpdatedAt
+                updated_at = @UpdatedAt,
+                updated_by = @UpdatedBy
             WHERE id = @Id AND tenant_id = @TenantId";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

@@ -1,0 +1,246 @@
+@namespace EnjoyEveryday.UI.Shared.Components.ChildJourney
+@using Microsoft.FluentUI.AspNetCore.Components
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+
+@inject IChildJourneyService JourneyService
+@inject ChildService ChildService
+
+@if (!_hideDialog)
+{
+    <div class="modal-backdrop show" @onclick="CloseDialog">
+        <div class="modal" @onclick:stopPropagation="true" style="width: 500px; padding: 24px; border-radius: 12px; margin: auto; position: relative;">
+            <button class="modal-close" @onclick="CloseDialog">✕</button>
+    @if (_step == 1)
+    {
+        <h3 style="margin-top: 0; color: #26332d;">What did you notice?</h3>
+        
+        @if (ChildId == null)
+        {
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 8px;">Which child?</label>
+                <select @bind="_selectedChildId" style="width: 100%; padding: 12px; border: 1px solid #e4e7df; border-radius: 8px; font-family: inherit;">
+                    <option value="">-- Select a child --</option>
+                    @if (_allChildren != null)
+                    {
+                        @foreach (var child in _allChildren)
+                        {
+                            <option value="@child.Id">@child.FirstName @child.LastName</option>
+                        }
+                    }
+                </select>
+            </div>
+        }
+
+        <div style="margin-bottom: 20px;">
+            <textarea @bind="_observation" rows="3" style="width: 100%; padding: 12px; border: 1px solid #e4e7df; border-radius: 8px; font-family: inherit; resize: none;" placeholder="e.g., Maya built a tall tower by herself."></textarea>
+        </div>
+
+        <p style="font-size: 14px; font-weight: 600; color: #52745e; margin-bottom: 12px;">Quick observations:</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px;">
+            @foreach (var quickObs in _quickObservations)
+            {
+                <span style="padding: 8px 12px; background: #f5f5f5; border-radius: 16px; font-size: 13px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s ease;" 
+                      @onclick="() => AppendObservation(quickObs)"
+                      onmouseover="this.style.background='#eaf2ec'; this.style.borderColor='#52745e'; this.style.color='#26332d'"
+                      onmouseout="this.style.background='#f5f5f5'; this.style.borderColor='transparent'; this.style.color='inherit'">
+                    @quickObs
+                </span>
+            }
+        </div>
+    }
+    else if (_step == 2)
+    {
+        <h3 style="margin-top: 0; color: #26332d;">What did this show?</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; max-height: 300px; overflow-y: auto;">
+            @if (_allAreas != null)
+            {
+                @foreach (var area in _allAreas)
+                {
+                    <label style="display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid @(_selectedAreas.Contains(area.Id) ? "#52745e" : "#e4e7df"); border-radius: 8px; cursor: pointer; background: @(_selectedAreas.Contains(area.Id) ? "#fcfdfc" : "white");">
+                        <input type="checkbox" checked="@_selectedAreas.Contains(area.Id)" @onchange="@(e => ToggleArea(area.Id, (bool)(e.Value ?? false)))" style="width: 18px; height: 18px;" />
+                        <span style="font-size: 15px; color: #26332d; font-weight: 500;">@area.Name</span>
+                    </label>
+                }
+            }
+            else
+            {
+                <p>Loading areas...</p>
+            }
+        </div>
+        
+        <div style="margin-bottom: 24px;">
+            <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 8px;">Attach Photo (Optional)</label>
+            <AvifImageUploader @bind-Value="_photoUrl" ButtonText="Capture or Select Photo" />
+        </div>
+        
+        <div style="margin-bottom: 24px; padding-top: 12px; border-top: 1px solid #e4e7df;">
+            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                <input type="checkbox" @bind="_isParentVisible" style="width: 18px; height: 18px;" />
+                <span style="font-size: 15px; color: #26332d; font-weight: 500;">Visible to parents</span>
+            </label>
+        </div>
+    }
+
+    <div style="display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #e4e7df; padding-top: 16px;">
+        <button class="secondary" @onclick="CloseDialog">Cancel</button>
+        
+        @if (_step == 1)
+        {
+            <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || (ChildId == null && _selectedChildId == null))">Next</button>
+        }
+        else
+        {
+            <button class="secondary" @onclick="() => _step = 1">Back</button>
+            <button class="primary" @onclick="SaveJourneyMoment" disabled="@_isSaving">@(_isSaving ? "Saving..." : "Save Moment")</button>
+        }
+    </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Guid? ChildId { get; set; }
+
+    [Parameter]
+    public Guid TeacherId { get; set; }
+
+    [Parameter]
+    public Guid? ClassroomId { get; set; }
+
+    [Parameter]
+    public Guid? ExperienceId { get; set; }
+
+    [Parameter]
+    public Guid? ExperienceSessionId { get; set; }
+
+    [Parameter]
+    public Guid? ExperienceParticipationId { get; set; }
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    private bool _hideDialog = true;
+    private int _step = 1;
+    
+    private string _observation = "";
+    private string _photoUrl = "";
+    private bool _isSaving = false;
+    private bool _isParentVisible = false;
+    
+    private List<DevelopmentArea>? _allAreas;
+    private HashSet<Guid> _selectedAreas = new();
+
+    private List<Child>? _allChildren;
+    private Guid? _selectedChildId;
+
+    private readonly string[] _quickObservations = new[]
+    {
+        "🌱 Tried something new",
+        "💬 Communicated an idea",
+        "🤝 Helped a friend",
+        "🧩 Solved a problem",
+        "❤️ Expressed an emotion",
+        "🎨 Showed creativity",
+        "⭐ Did something independently",
+        "👂 Listened and followed",
+        "🏃 Moved confidently"
+    };
+
+    public async Task OpenAsync()
+    {
+        _step = 1;
+        _observation = "";
+        _photoUrl = "";
+        _isParentVisible = false;
+        _selectedAreas.Clear();
+        _selectedChildId = null;
+        
+        _allAreas ??= (await JourneyService.GetDevelopmentAreasAsync()).ToList();
+        
+        if (ChildId == null)
+        {
+            _allChildren ??= (await ChildService.GetChildrenAsync()).ToList();
+        }
+        
+        _hideDialog = false;
+        StateHasChanged();
+    }
+
+    private void CloseDialog()
+    {
+        _hideDialog = true;
+    }
+
+    private void AppendObservation(string obs)
+    {
+        if (!string.IsNullOrWhiteSpace(_observation))
+        {
+            _observation += " ";
+        }
+        _observation += obs;
+    }
+
+    private void GoToNextStep()
+    {
+        // Don't proceed if child is missing in activity integration mode
+        if (ChildId == null && _selectedChildId == null) return;
+        _step = 2;
+    }
+
+    private void ToggleArea(Guid areaId, bool isSelected)
+    {
+        if (isSelected) _selectedAreas.Add(areaId);
+        else _selectedAreas.Remove(areaId);
+    }
+
+    private async Task SaveJourneyMoment()
+    {
+        _isSaving = true;
+        try
+        {
+            var targetChildId = ChildId ?? _selectedChildId!.Value;
+            
+            var entry = new ChildJourneyEntry
+            {
+                ChildId = targetChildId,
+                TeacherId = TeacherId,
+                ClassroomId = ClassroomId,
+                ExperienceId = ExperienceId,
+                ExperienceSessionId = ExperienceSessionId,
+                ExperienceParticipationId = ExperienceParticipationId,
+                JourneyType = "Observation",
+                Observation = _observation,
+                ObservationDate = DateTimeOffset.UtcNow,
+                IsParentVisible = _isParentVisible,
+                ParentVisibilityStatus = _isParentVisible ? "Approved" : "Draft"
+            };
+
+            await JourneyService.CreateJourneyEntryAsync(entry, _selectedAreas);
+            
+            if (!string.IsNullOrEmpty(_photoUrl))
+            {
+                // To keep it simple, we use the Evidence mechanism to store the photo URL
+                var evidence = new ChildJourneyEvidence
+                {
+                    JourneyEntryId = entry.Id,
+                    EvidenceType = "Photo",
+                    TextContent = _photoUrl // Storing AVIF Base64 or URL in TextContent for simplicity
+                };
+                await JourneyService.CreateJourneyEvidenceAsync(evidence);
+            }
+
+            _hideDialog = true;
+            if (OnSaved.HasDelegate)
+            {
+                await OnSaved.InvokeAsync();
+            }
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

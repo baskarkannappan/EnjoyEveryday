@@ -15,11 +15,13 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ExperienceService>();
         services.AddScoped<PlannerService>();
         services.AddScoped<ExecutionService>();
+        services.AddScoped<HarvestService>();
         services.AddScoped<JourneyService>();
         services.AddScoped<DashboardService>();
         services.AddScoped<ClassroomContextService>();
         services.AddScoped<FeedbackService>();
         services.AddScoped<ITeacherService, TeacherService>();
+        services.AddScoped<IChildJourneyService, ChildJourneyService>();
         services.AddHttpClient<IAiIdeaService, AiIdeaService>();
 
         // Register a default mock TenantContext for now until auth is built

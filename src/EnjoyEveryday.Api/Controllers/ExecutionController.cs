@@ -17,9 +17,9 @@ public class ExecutionController : ControllerBase
     }
 
     [HttpPost("{scheduleId}/start")]
-    public async Task<IActionResult> StartExperience(Guid scheduleId, CancellationToken cancellationToken)
+    public async Task<IActionResult> StartExperience(Guid scheduleId, [FromQuery] Guid teacherId, CancellationToken cancellationToken)
     {
-        await _executionService.StartExperienceAsync(scheduleId, cancellationToken);
+        await _executionService.StartExperienceAsync(scheduleId, teacherId, cancellationToken);
         return Ok();
     }
 

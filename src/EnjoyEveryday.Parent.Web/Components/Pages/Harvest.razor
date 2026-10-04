@@ -9,7 +9,7 @@
 
 <HarvestInsightCard 
     Title="Your daycare is learning."
-    Message="42 experiences happened this month. 31 received teacher feedback. 8 patterns were discovered." />
+    Message="@($"{_metrics.TotalExperiences} experiences happened this month. {_metrics.TotalFeedbacks} received teacher feedback. {_metrics.PatternsDiscovered} patterns were discovered.")" />
 
 <div class="harvest-layout">
     <ExperiencePerformanceGrid Items="@_performanceItems" OnViewClick="OnViewClick" />
@@ -20,19 +20,37 @@
 
 <Flywheel Steps="@_flywheelSteps" />
 
-@code {
-    private IQueryable<ExperiencePerformanceItem> _performanceItems = new List<ExperiencePerformanceItem>
-    {
-        new ExperiencePerformanceItem { Title = "Our Little City", Subtitle = "Created by Priya", Uses = 12, Response = "💬 10" },
-        new ExperiencePerformanceItem { Title = "Frog Rescue", Subtitle = "AI + Teacher", Uses = 8, Response = "💬 6" },
-        new ExperiencePerformanceItem { Title = "Giant Painting", Subtitle = "Created by Daniel", Uses = 6, Response = "💬 5" }
-    }.AsQueryable();
+@using EnjoyEveryday.Application.Services
+@inject HarvestService HarvestService
+@inject FeedbackService FeedbackService
 
-    private List<FeedbackItem> _feedbackItems = new List<FeedbackItem>
+@using EnjoyEveryday.Domain.Repositories
+@code {
+    private HarvestMetricsDto _metrics = new HarvestMetricsDto();
+    private IQueryable<ExperiencePerformanceItem> _performanceItems = new List<ExperiencePerformanceItem>().AsQueryable();
+
+    private List<FeedbackItem> _feedbackItems = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        new FeedbackItem { Id = Guid.NewGuid(), Notes = "The children loved jumping but lost interest after five minutes.", Author = "Priya • Bluebirds" },
-        new FeedbackItem { Id = Guid.NewGuid(), Notes = "Adding animals completely changed the experience.", Author = "Sarah • Butterflies" }
-    };
+        _metrics = await HarvestService.GetMonthlyMetricsAsync();
+        
+        var dtos = await HarvestService.GetPerformanceItemsAsync();
+        _performanceItems = dtos.Select(d => new ExperiencePerformanceItem 
+        { 
+            Title = d.Title, 
+            Subtitle = d.Subtitle, 
+            Uses = d.Uses, 
+            Response = d.Response 
+        }).AsQueryable();
+        
+        var feedbacks = await FeedbackService.GetAllFeedbackAsync();
+        _feedbackItems = feedbacks.Select(f => new FeedbackItem { 
+            Id = f.Id, 
+            Notes = f.Notes ?? "", 
+            Author = "Teacher"
+        }).ToList();
+    }
 
     private List<FlywheelStep> _flywheelSteps = new()
     {
