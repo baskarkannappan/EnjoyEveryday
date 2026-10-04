@@ -1,0 +1,961 @@
+# LittleSprouts — Add Child & Enrollment
+
+## Objective
+
+Implement a complete **Add Child / Child Enrollment** feature for LittleSprouts.
+
+The feature must collect the information required to safely and effectively manage a child in a daycare, while keeping the data model normalized and extensible.
+
+Do NOT create one large `Children` table containing every field.
+
+Separate child identity, guardians, safety/medical information, enrollment, documents/consents, and daily child experience into appropriate entities.
+
+---
+
+# 1. Add Child should use a multi-step wizard
+
+Do not show 100+ fields on one screen.
+
+Use the following wizard:
+
+1. Child Information
+2. Parent / Guardian
+3. Address
+4. Emergency Contacts
+5. Medical & Allergies
+6. Dietary & Routine
+7. Enrollment
+8. Authorized Pickup
+9. Documents & Consents
+10. Review & Complete
+
+The user must be able to:
+
+* Save and continue
+* Go back
+* Save as draft
+* Resume an incomplete enrollment
+* Cancel
+* Review all information before completing
+* Clearly see which steps are complete/incomplete
+
+Example:
+
+Child Enrollment
+
+✓ Child Information
+✓ Parent / Guardian
+✓ Address
+✓ Emergency Contacts
+● Medical & Allergies
+○ Dietary & Routine
+○ Enrollment
+○ Authorized Pickup
+○ Documents & Consents
+○ Review
+
+[Back] [Save & Continue]
+
+---
+
+# 2. Child Information
+
+Create a dedicated Child entity.
+
+Recommended fields:
+
+* ChildId
+* FirstName
+* MiddleName
+* LastName
+* PreferredName
+* DateOfBirth
+* Gender
+* PhotoUrl
+* PreferredLanguage
+* OtherLanguages
+* HomeLanguage
+* PlaceOfBirth
+* EnrollmentNumber
+* Status
+* GeneralNotes
+* CreatedAt
+* UpdatedAt
+
+PreferredName must be supported because teachers may use a name different from the legal first name.
+
+Do not store parent information directly in Child.
+
+---
+
+# 3. Parent / Guardian
+
+Create a reusable Person entity.
+
+A child may have multiple guardians.
+
+Person fields:
+
+* PersonId
+* FirstName
+* LastName
+* Relationship
+* Email
+* MobilePhone
+* AlternatePhone
+* Occupation
+* Employer
+* PreferredContactMethod
+* PreferredLanguage
+* HasPortalAccess
+* ReceivesDailyUpdates
+* ReceivesPhotos
+* CreatedAt
+* UpdatedAt
+
+Create a ChildGuardian relationship entity:
+
+* ChildId
+* PersonId
+* Relationship
+* IsPrimary
+* HasLegalCustody
+* CanPickup
+* CanReceiveInformation
+* CanAuthorizeMedicalCare
+
+Do NOT hard-code FatherName and MotherName into Child.
+
+---
+
+# 4. Address
+
+Create a separate Address entity.
+
+Fields:
+
+* AddressId
+* AddressType
+* AddressLine1
+* AddressLine2
+* City
+* Province
+* PostalCode
+* Country
+
+Create a relationship between Person and Address.
+
+Support:
+
+* Home
+* Mailing
+* Work
+
+The child's home address should normally be associated through the parent/guardian relationship rather than duplicating address information.
+
+---
+
+# 5. Emergency Contacts
+
+Create a separate EmergencyContact entity.
+
+Fields:
+
+* EmergencyContactId
+* ChildId
+* FirstName
+* LastName
+* Relationship
+* Phone
+* AlternatePhone
+* Email
+* Address
+* Priority
+* IsAuthorizedPickup
+* Notes
+
+Allow multiple emergency contacts.
+
+The UI should allow the daycare to define priority.
+
+Example:
+
+Priority 1 — Mother
+Priority 2 — Father
+Priority 3 — Grandparent
+
+---
+
+# 6. Authorized Pickup
+
+Authorized pickup must be separate from emergency contacts.
+
+Someone can be an emergency contact without automatically being authorized to pick up a child.
+
+Create AuthorizedPickup:
+
+* Id
+* ChildId
+* PersonId
+* Relationship
+* PickupCode
+* PhotoUrl
+* ValidFrom
+* ValidTo
+* IsActive
+* Notes
+
+Support pickup restrictions.
+
+Create ChildPersonRestriction:
+
+* ChildId
+* PersonId
+* RestrictionType
+* EffectiveFrom
+* EffectiveTo
+* Notes
+
+This information is safety-critical.
+
+---
+
+# 7. Medical Profile
+
+Create a separate ChildMedicalProfile.
+
+Fields:
+
+* ChildId
+* PrimaryPhysician
+* PhysicianPhone
+* ClinicName
+* ClinicPhone
+* HealthCardNumber
+* BloodType
+* MedicalNotes
+* SpecialMedicalNeeds
+* MedicalConsent
+
+Treat medical information as sensitive.
+
+Only authorized users should have access.
+
+Do not expose medical information on normal teacher screens unless required.
+
+---
+
+# 8. Allergies
+
+Do NOT store all allergies in one text field.
+
+Create ChildAllergy:
+
+* AllergyId
+* ChildId
+* Allergen
+* Reaction
+* Severity
+* Symptoms
+* Treatment
+* EmergencyAction
+* HasEpiPen
+* Notes
+
+The teacher UI must provide a highly visible allergy/safety warning where appropriate.
+
+Example:
+
+PEANUT
+Severity: Severe
+Reaction: Anaphylaxis
+Emergency Action: EpiPen + emergency procedure
+
+---
+
+# 9. Medications
+
+Create ChildMedication:
+
+* MedicationId
+* ChildId
+* MedicationName
+* Dosage
+* Route
+* Frequency
+* StartDate
+* EndDate
+* PrescribedBy
+* Instructions
+* ParentAuthorization
+* MedicationAuthorizationDocument
+* Status
+
+Create MedicationAdministration:
+
+* Id
+* MedicationId
+* ChildId
+* AdministeredAt
+* Dosage
+* AdministeredBy
+* Notes
+
+Medication administration must have an audit trail.
+
+---
+
+# 10. Dietary Information
+
+Create ChildDietaryProfile:
+
+* ChildId
+* DietType
+* FoodRestrictions
+* ReligiousRestrictions
+* TextureRestrictions
+* FeedingNotes
+* SelfFeeds
+* SpecialInstructions
+
+Create ChildFoodRestriction:
+
+* ChildId
+* Food
+* RestrictionType
+* Severity
+* Notes
+
+Support examples such as:
+
+* Allergy
+* Vegetarian
+* Dairy restriction
+* Gluten restriction
+* Texture restriction
+* Other dietary requirement
+
+---
+
+# 11. Feeding Profile
+
+Especially important for infants and younger children.
+
+Create ChildFeedingProfile:
+
+* ChildId
+* FeedingMethod
+* BottleType
+* BottleAmount
+* BottleSchedule
+* SolidFoodStage
+* FeedingAssistance
+* ChokingRisk
+* FeedingInstructions
+
+The system should allow age-appropriate fields rather than forcing every child to complete infant-specific fields.
+
+---
+
+# 12. Sleep / Nap Profile
+
+Create ChildSleepProfile:
+
+* ChildId
+* TypicalNapStart
+* TypicalNapDuration
+* ComfortItem
+* SleepRoutine
+* SleepInstructions
+* OtherNotes
+
+For infants, implement sleep-related safety fields according to applicable daycare policies and regulations.
+
+---
+
+# 13. Toileting Profile
+
+Create ChildToiletingProfile:
+
+* ChildId
+* ToiletTrainingStatus
+* DiaperRequired
+* DiaperSize
+* ChangingInstructions
+* BathroomAssistance
+* AccidentNotes
+
+These fields should be optional and age appropriate.
+
+---
+
+# 14. Communication Profile
+
+Create ChildCommunicationProfile:
+
+* ChildId
+* PrimaryLanguage
+* SecondaryLanguage
+* CommunicationMethod
+* SpeechNotes
+* CommunicationSupport
+* InterpreterRequired
+
+Do not make assumptions about the child's communication abilities.
+
+---
+
+# 15. Routine and Preferences
+
+Create ChildRoutine:
+
+* ChildId
+* MorningRoutine
+* ComfortStrategies
+* FavoriteActivities
+* FavoriteToys
+* FavoriteBooks
+* CalmingStrategies
+* CommunicationPreferences
+* TransitionStrategies
+* OtherNotes
+
+This information is important for the LittleSprouts philosophy of understanding the child, not simply recording attendance.
+
+---
+
+# 16. Support Profile
+
+Create ChildSupportProfile.
+
+Potential fields:
+
+* ChildId
+* SupportRequired
+* SupportDescription
+* LearningPreferences
+* AccessibilityNeeds
+* CommunicationSupport
+* SensoryConsiderations
+* BehaviorSupportPlan
+* ExternalSupportProvider
+* Notes
+
+Treat sensitive support information carefully.
+
+Do not introduce medical diagnoses unless explicitly required by the daycare's business requirements and appropriate privacy controls are implemented.
+
+---
+
+# 17. Enrollment
+
+Enrollment must be separate from Child.
+
+Create Enrollment:
+
+* EnrollmentId
+* ChildId
+* DaycareId
+* BranchId
+* ClassroomId
+* EnrollmentDate
+* StartDate
+* ExpectedEndDate
+* Program
+* EnrollmentStatus
+* ScheduleType
+* DaysPerWeek
+* ArrivalTime
+* DepartureTime
+* AssignedTeacher
+* CreatedAt
+* UpdatedAt
+
+This allows a child to move between classrooms without changing their identity record.
+
+---
+
+# 18. Child Schedule
+
+Create ChildSchedule:
+
+* ChildId
+* DayOfWeek
+* ExpectedArrival
+* ExpectedDeparture
+
+Example:
+
+Monday: 08:00–17:00
+Tuesday: 08:00–17:00
+Wednesday: 08:00–17:00
+Thursday: 08:00–17:00
+Friday: 08:00–17:00
+
+---
+
+# 19. Documents
+
+Create ChildDocument:
+
+* DocumentId
+* ChildId
+* DocumentType
+* FileName
+* StorageUrl
+* UploadedBy
+* UploadedAt
+* ExpirationDate
+* Status
+
+Support document types such as:
+
+* Enrollment agreement
+* Medical form
+* Immunization record
+* Emergency authorization
+* Consent form
+* Medication authorization
+* Custody documentation
+* Other daycare-required documents
+
+Do not store binary documents directly in normal relational tables unless there is a specific reason.
+
+Use object/blob storage and store metadata plus the storage reference.
+
+---
+
+# 20. Consents
+
+Create ChildConsent:
+
+* ConsentId
+* ChildId
+* ConsentType
+* Granted
+* GrantedBy
+* GrantedAt
+* ExpiresAt
+* DocumentId
+* Version
+
+Support separate consent types:
+
+* Photo sharing
+* Video
+* Parent portal
+* Marketing
+* Social media
+* Field trips
+* Transportation
+* Emergency medical treatment
+* AI-generated parent summaries
+
+Do NOT combine these into one generic consent.
+
+Parent portal sharing and marketing/social-media consent must remain separate.
+
+---
+
+# 21. Media Consent
+
+Because LittleSprouts has the "Little Moments" feature, explicitly support:
+
+* PhotoAllowed
+* VideoAllowed
+* ParentPortalAllowed
+* MarketingAllowed
+* SocialMediaAllowed
+* ClassroomDisplayAllowed
+* EffectiveDate
+* ExpirationDate
+
+The application must check the relevant consent before allowing a photo or video to be shared outside the permitted audience.
+
+---
+
+# 22. Legal / Custody Information
+
+Create ChildLegalProfile:
+
+* ChildId
+* HasCustodyRestrictions
+* LegalNotes
+* CourtOrderDocumentId
+
+Do not put custody restrictions into a general Notes field.
+
+This information must be access controlled.
+
+---
+
+# 23. Transportation
+
+If daycare transportation is supported, create ChildTransportation:
+
+* ChildId
+* TransportationRequired
+* PickupLocation
+* DropoffLocation
+* Route
+* Vehicle
+* AuthorizedAdult
+* SpecialInstructions
+
+Make this optional.
+
+---
+
+# 24. Child Relationships
+
+Support relationships between children.
+
+Create ChildRelationship:
+
+* ChildId
+* RelatedChildId
+* RelationshipType
+* Notes
+
+Examples:
+
+* Sibling
+* Twin
+* Cousin
+* Other family relationship
+
+---
+
+# 25. Enrollment History
+
+Never overwrite classroom history.
+
+Create ChildEnrollmentHistory:
+
+* Id
+* ChildId
+* ClassroomId
+* StartDate
+* EndDate
+* Reason
+
+Example:
+
+2025 → Butterflies
+2026 → Sunflowers
+
+The history must remain available.
+
+---
+
+# 26. Database Architecture
+
+Organize the child domain conceptually into these areas:
+
+## Identity
+
+* Child
+* Person
+* ChildGuardian
+* Address
+* EmergencyContact
+* AuthorizedPickup
+
+## Safety & Enrollment
+
+* ChildMedicalProfile
+* ChildAllergy
+* ChildMedication
+* MedicationAdministration
+* ChildDietaryProfile
+* ChildFoodRestriction
+* ChildFeedingProfile
+* ChildSleepProfile
+* ChildToiletingProfile
+* ChildSupportProfile
+* ChildCommunicationProfile
+* Enrollment
+* ChildSchedule
+* ChildDocument
+* ChildConsent
+* ChildLegalProfile
+* ChildTransportation
+
+## Daily Experience
+
+* Attendance
+* Activity
+* Meal
+* Nap
+* Mood
+* Observation
+* LittleMoment
+* Incident
+* ChildStory
+
+---
+
+# 27. Important design principle
+
+The Child record should represent:
+
+"Who is this child?"
+
+The Enrollment record should represent:
+
+"Where and when does this child attend?"
+
+The Safety records should represent:
+
+"What do staff need to know to safely care for this child?"
+
+The Daily Experience records should represent:
+
+"What happened today?"
+
+The Story records should represent:
+
+"What should we remember about this child's journey?"
+
+Do not mix these responsibilities.
+
+---
+
+# 28. Required vs Optional
+
+Do not make every field mandatory.
+
+At minimum, require:
+
+Child:
+
+* First name
+* Last name
+* Date of birth
+
+Guardian:
+
+* At least one primary guardian
+* Guardian name
+* At least one reliable contact method
+
+Emergency:
+
+* Emergency contact according to daycare policy
+
+Enrollment:
+
+* Daycare
+* Branch
+* Classroom
+* Start date
+* Enrollment status
+
+Other information should be collected progressively.
+
+The system should clearly identify incomplete information without preventing the child from being saved as a draft.
+
+---
+
+# 29. Draft Enrollment
+
+Support an EnrollmentDraft or equivalent draft state.
+
+The user should be able to:
+
+1. Start adding a child
+2. Enter partial information
+3. Save
+4. Leave the screen
+5. Return later
+6. Continue from the last completed step
+7. Complete enrollment
+
+Do not lose partially entered information.
+
+---
+
+# 30. Audit and Security
+
+Child information is sensitive.
+
+Implement:
+
+* CreatedBy
+* CreatedAt
+* UpdatedBy
+* UpdatedAt
+* Soft delete where appropriate
+* Audit logging for sensitive changes
+* Role-based access
+* Tenant isolation
+* Encryption for highly sensitive data where appropriate
+* Access control for medical/legal information
+* Secure document storage
+* No sensitive information in application logs
+
+Never log:
+
+* Medical details
+* Health card numbers
+* Medication details
+* Legal/custody information
+* Private parent information
+* Authentication credentials
+
+---
+
+# 31. Multi-Tenant Requirement
+
+LittleSprouts is a SaaS application.
+
+Every child-related record must be safely associated with the correct daycare/tenant.
+
+Use the existing tenant/organization architecture.
+
+A user from Daycare A must never be able to access Child records belonging to Daycare B.
+
+Do not rely only on the UI for tenant isolation.
+
+Enforce tenant isolation in the application/service/data access layer.
+
+---
+
+# 32. UI Requirement
+
+The Add Child experience must feel simple even though the underlying data model is comprehensive.
+
+Use:
+
+* Stepper/wizard
+* Progress indicator
+* Sections
+* Clear labels
+* Required/optional indicators
+* Inline validation
+* Save Draft
+* Save & Continue
+* Back
+* Cancel
+* Review
+* Complete Enrollment
+
+Avoid presenting a huge form.
+
+The teacher/director should be able to create the basic child record quickly and complete additional information later.
+
+---
+
+# 33. Final Review Screen
+
+Before completing enrollment, display a summary:
+
+Child
+
+* Name
+* Date of birth
+* Preferred name
+
+Guardian
+
+* Primary guardian
+* Contact information
+
+Emergency
+
+* Emergency contacts
+
+Medical
+
+* Allergies
+* Medical alerts
+* Medications
+
+Enrollment
+
+* Classroom
+* Program
+* Start date
+* Schedule
+
+Permissions
+
+* Parent portal
+* Photos
+* Videos
+* Marketing/social media
+* Other consents
+
+Documents
+
+* Uploaded
+* Missing
+* Expiring
+
+Show warnings for missing safety-critical information.
+
+Example:
+
+WARNING:
+"Emergency contact has not been added."
+
+WARNING:
+"Medical information has not been reviewed."
+
+Do not silently complete enrollment when required safety information is missing.
+
+---
+
+# 34. Implementation rule
+
+Before writing code:
+
+1. Inspect the existing project architecture.
+2. Reuse existing tenant, user, branch, classroom and authentication entities.
+3. Do not create duplicate entities.
+4. Inspect existing database conventions.
+5. Follow existing naming conventions.
+6. Follow existing repository/service patterns.
+7. Follow existing validation patterns.
+8. Follow existing UI/component patterns.
+9. Create a database migration.
+10. Add domain/service/API/UI layers according to the existing architecture.
+11. Add validation.
+12. Add authorization.
+13. Add tests.
+
+Do not rewrite unrelated parts of the application.
+
+---
+
+# 35. Acceptance Criteria
+
+The feature is complete only when:
+
+* A new child can be created.
+* A child can be saved as a draft.
+* A draft can be resumed.
+* Multiple guardians can be associated.
+* Multiple emergency contacts can be added.
+* Authorized pickup people can be maintained separately.
+* Medical information can be recorded securely.
+* Multiple allergies can be recorded.
+* Medications can be recorded.
+* Dietary restrictions can be recorded.
+* Enrollment can be associated with a classroom.
+* Weekly attendance schedule can be recorded.
+* Documents can be uploaded/referenced.
+* Consents can be recorded individually.
+* Photo/media permissions are respected.
+* Custody/legal restrictions can be recorded.
+* Enrollment history is preserved.
+* Tenant isolation is enforced.
+* Sensitive information is protected.
+* Audit information is recorded.
+* The UI is usable as a multi-step wizard.
+* Validation works on both client and server.
+* No existing LittleSprouts functionality is broken.
+
+Most importantly:
+
+**Build the database model for the complete child lifecycle, but keep the teacher experience extremely simple.**

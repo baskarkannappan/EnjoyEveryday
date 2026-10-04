@@ -4,6 +4,7 @@
 @using EnjoyEveryday.Domain.Entities
 
 @inject ChildService ChildService
+@inject NavigationManager NavigationManager
 
 <PageHero Eyebrow="PEOPLE"
           Title="Children"
@@ -25,10 +26,11 @@
         {
             <div @onclick="() => OpenEditChildModal(child)" style="cursor: pointer;">
                 <PersonCard AvatarInitials="@GetInitials(child.FirstName)"
+                            PhotoUrl="@child.PhotoUrl"
                             Name="@child.FullName"
-                            Subtitle="Age 3-4 · Bluebirds"
-                            HighlightTitle="Recent interest"
-                            HighlightText="Animals" />
+                            Subtitle="@(child.DateOfBirth.HasValue ? $"Born {child.DateOfBirth.Value:MMM yyyy}" : "Unknown Age")"
+                            Progress="@child.ProfileCompletionPercentage"
+                            Status="@child.EnrollmentStatus" />
             </div>
         }
     }
@@ -41,6 +43,7 @@
 
 <ChildFormModal IsOpen="_isModalOpen"
                 IsEditing="_isEditing"
+                PhotoUrl="@_currentChild.PhotoUrl"
                 @bind-FirstName="_currentChild.FirstName"
                 @bind-LastName="_currentChild.LastName"
                 @bind-DateOfBirth="_currentChild.DateOfBirth"
@@ -80,26 +83,12 @@
 
     private void OpenAddChildModal()
     {
-        _currentChild = new Child { DateOfBirth = DateTime.Today.AddYears(-3) };
-        _isEditing = false;
-        _isModalOpen = true;
+        NavigationManager.NavigateTo("/children/add");
     }
 
     private void OpenEditChildModal(Child child)
     {
-        // clone to avoid modifying list directly before save
-        _currentChild = new Child
-        {
-            Id = child.Id,
-            TenantId = child.TenantId,
-            FirstName = child.FirstName,
-            LastName = child.LastName,
-            DateOfBirth = child.DateOfBirth,
-            ClassroomId = child.ClassroomId,
-            IsActive = child.IsActive
-        };
-        _isEditing = true;
-        _isModalOpen = true;
+        NavigationManager.NavigateTo($"/children/edit/{child.Id}");
     }
 
     private void CloseDialog()

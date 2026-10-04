@@ -1,0 +1,507 @@
+@page "/children/add"
+@page "/children/edit/{Id:guid}"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject ChildService ChildService
+@inject NavigationManager NavigationManager
+
+<div class="enrollment-container">
+    <div class="enrollment-header">
+        <div class="eyebrow">ENROLLMENT</div>
+        <h1>Add Child</h1>
+        <p>Complete the steps below to enroll a new child.</p>
+    </div>
+
+    <div class="wizard">
+        <WizardSidebar Steps="wizardSteps"
+                       CurrentStep="currentStep"
+                       MaxAllowedStep="maxAllowedStep"
+                       OnStepClicked="NavigateToStep" />
+
+        <div class="wizard-content">
+            @if (currentStep == 1)
+            {
+                <h3>Child Information</h3>
+                <div class="field">
+                    <label>Child Photo</label>
+                    <div class="photo-upload">
+                        @if (!string.IsNullOrEmpty(childPhotoPreview))
+                        {
+                            <img src="@childPhotoPreview" class="photo-preview" />
+                        }
+                        else
+                        {
+                            <div class="photo-placeholder">👤</div>
+                        }
+                        <InputFile OnChange="HandleChildPhotoSelected" accept="image/*" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>First Name</label>
+                    <input type="text" @bind="childFirstName" placeholder="e.g. Maya" />
+                </div>
+                <div class="field">
+                    <label>Last Name</label>
+                    <input type="text" @bind="childLastName" placeholder="e.g. Johnson" />
+                </div>
+                <div class="field">
+                    <label>Date of Birth</label>
+                    <input type="date" @bind="childDob" />
+                </div>
+                <div class="field">
+                    <label>Preferred Name (Optional)</label>
+                    <input type="text" @bind="childPreferredName" />
+                </div>
+            }
+            else if (currentStep == 2)
+            {
+                <h3>Parent / Guardian</h3>
+                <div class="field">
+                    <label>Parent Photo</label>
+                    <div class="photo-upload">
+                        @if (!string.IsNullOrEmpty(parentPhotoPreview))
+                        {
+                            <img src="@parentPhotoPreview" class="photo-preview" />
+                        }
+                        else
+                        {
+                            <div class="photo-placeholder">🧑</div>
+                        }
+                        <InputFile OnChange="HandleParentPhotoSelected" accept="image/*" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Parent Full Name</label>
+                    <input type="text" @bind="parentName" placeholder="e.g. Sarah Johnson" />
+                </div>
+                <div class="field">
+                    <label>Relationship</label>
+                    <select @bind="parentRelationship">
+                        <option value="Mother">Mother</option>
+                        <option value="Father">Father</option>
+                        <option value="Guardian">Guardian</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Email</label>
+                    <input type="email" @bind="parentEmail" placeholder="e.g. sarah@example.com" />
+                </div>
+                <div class="field">
+                    <label>Phone Number</label>
+                    <input type="text" @bind="parentPhone" placeholder="e.g. (555) 123-4567" />
+                </div>
+            }
+            else if (currentStep == 3)
+            {
+                <h3>Address</h3>
+                <div class="field">
+                    <label>Address Line 1</label>
+                    <input type="text" @bind="addressLine1" placeholder="123 Main St" />
+                </div>
+                <div class="field">
+                    <label>City</label>
+                    <input type="text" @bind="addressCity" />
+                </div>
+                <div class="field">
+                    <label>Province / State</label>
+                    <input type="text" @bind="addressProvince" />
+                </div>
+                <div class="field">
+                    <label>Postal Code</label>
+                    <input type="text" @bind="addressPostalCode" />
+                </div>
+            }
+            else if (currentStep == 4)
+            {
+                <h3>Emergency Contacts</h3>
+                <p style="font-size: 13px; color: #7c877f; margin-bottom: 20px;">Please provide at least one emergency contact other than the primary guardian.</p>
+                <div class="field">
+                    <label>Contact Full Name</label>
+                    <input type="text" @bind="emergencyName" placeholder="e.g. Robert Smith" />
+                </div>
+                <div class="field">
+                    <label>Relationship</label>
+                    <input type="text" @bind="emergencyRelationship" placeholder="e.g. Grandfather" />
+                </div>
+                <div class="field">
+                    <label>Phone Number</label>
+                    <input type="text" @bind="emergencyPhone" />
+                </div>
+            }
+            else if (currentStep == 5)
+            {
+                <h3>Medical & Allergies</h3>
+                <div class="field">
+                    <label>Primary Physician</label>
+                    <input type="text" @bind="physicianName" />
+                </div>
+                <div class="field">
+                    <label>Physician Phone</label>
+                    <input type="text" @bind="physicianPhone" />
+                </div>
+                <div class="field" style="margin-top: 30px;">
+                    <label>Known Allergies</label>
+                    <input type="text" @bind="allergies" placeholder="e.g. Peanuts, Penicillin" />
+                </div>
+                <div class="field">
+                    <label>Requires EpiPen?</label>
+                    <select @bind="hasEpiPen">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Current Medications</label>
+                    <textarea @bind="medications" rows="3" style="width: 100%; max-width: 400px; border-radius: 11px; padding: 12px; border: 1px solid #e4e7df;"></textarea>
+                </div>
+            }
+            else if (currentStep == 6)
+            {
+                <h3>Dietary & Routine</h3>
+                <div class="field">
+                    <label>Dietary Restrictions</label>
+                    <input type="text" @bind="dietaryRestrictions" placeholder="e.g. Vegetarian, Gluten-Free" />
+                </div>
+                <div class="field">
+                    <label>Nap Routine / Instructions</label>
+                    <textarea @bind="napRoutine" rows="3" style="width: 100%; max-width: 400px; border-radius: 11px; padding: 12px; border: 1px solid #e4e7df;"></textarea>
+                </div>
+                <div class="field">
+                    <label>Toilet Training Status</label>
+                    <select @bind="toiletTraining">
+                        <option value="Not Started">Not Started</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Fully Trained">Fully Trained</option>
+                    </select>
+                </div>
+            }
+            else if (currentStep == 7)
+            {
+                <h3>Enrollment details</h3>
+                <div class="field">
+                    <label>Enrollment Start Date</label>
+                    <input type="date" @bind="enrollmentStartDate" />
+                </div>
+                <div class="field">
+                    <label>Schedule Type</label>
+                    <select @bind="scheduleType">
+                        <option value="Full Time">Full Time (5 days)</option>
+                        <option value="Part Time">Part Time</option>
+                        <option value="Drop In">Drop In</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Assigned Program</label>
+                    <select @bind="assignedProgram">
+                        <option value="Infants">Infants</option>
+                        <option value="Toddlers">Toddlers</option>
+                        <option value="Preschool">Preschool</option>
+                    </select>
+                </div>
+            }
+            else if (currentStep == 8)
+            {
+                <h3>Authorized Pickup</h3>
+                <p style="font-size: 13px; color: #7c877f; margin-bottom: 20px;">Who is authorized to pick up the child? (Guardians are automatically authorized).</p>
+                <div class="field">
+                    <label>Pickup Person Name</label>
+                    <input type="text" @bind="pickupName" />
+                </div>
+                <div class="field">
+                    <label>Relationship</label>
+                    <input type="text" @bind="pickupRelationship" />
+                </div>
+                <div class="field">
+                    <label>Pickup Code (Optional Security Pin)</label>
+                    <input type="text" @bind="pickupCode" />
+                </div>
+            }
+            else if (currentStep == 9)
+            {
+                <h3>Documents & Consents</h3>
+                <div class="field">
+                    <label style="display: flex; gap: 10px; align-items: center; text-transform: none; font-size: 14px; color: #26332d; font-weight: 500;">
+                        <input type="checkbox" @bind="consentPhoto" style="width: 20px; height: 20px;" /> I consent to photos being taken and shared in the Parent Portal.
+                    </label>
+                </div>
+                <div class="field">
+                    <label style="display: flex; gap: 10px; align-items: center; text-transform: none; font-size: 14px; color: #26332d; font-weight: 500;">
+                        <input type="checkbox" @bind="consentMedical" style="width: 20px; height: 20px;" /> I authorize emergency medical treatment if required.
+                    </label>
+                </div>
+                <div class="field">
+                    <label style="display: flex; gap: 10px; align-items: center; text-transform: none; font-size: 14px; color: #26332d; font-weight: 500;">
+                        <input type="checkbox" @bind="consentMarketing" style="width: 20px; height: 20px;" /> I consent to photos being used for daycare marketing / social media.
+                    </label>
+                </div>
+            }
+            else if (currentStep == 10)
+            {
+                <h3>Review & Complete</h3>
+                <div class="review-section" style="flex-wrap: wrap;">
+                    <div class="review-block" style="min-width: 45%;">
+                        <h4>Child Identity</h4>
+                        <p><strong>Name:</strong> @childFirstName @childLastName</p>
+                        <p><strong>DOB:</strong> @childDob?.ToString("yyyy-MM-dd")</p>
+                    </div>
+                    <div class="review-block" style="min-width: 45%;">
+                        <h4>Guardian</h4>
+                        <p><strong>Name:</strong> @parentName (@parentRelationship)</p>
+                        <p><strong>Contact:</strong> @parentPhone</p>
+                    </div>
+                    <div class="review-block" style="min-width: 45%;">
+                        <h4>Medical & Safety</h4>
+                        <p><strong>Allergies:</strong> @(string.IsNullOrEmpty(allergies) ? "None" : allergies)</p>
+                        <p><strong>EpiPen:</strong> @(hasEpiPen == "true" ? "Yes" : "No")</p>
+                    </div>
+                    <div class="review-block" style="min-width: 45%;">
+                        <h4>Enrollment</h4>
+                        <p><strong>Start Date:</strong> @enrollmentStartDate?.ToString("yyyy-MM-dd")</p>
+                        <p><strong>Program:</strong> @assignedProgram</p>
+                    </div>
+                </div>
+            }
+
+            <div class="wizard-actions">
+                <div style="display: flex; gap: 10px;">
+                    <button class="secondary" @onclick="Cancel">Cancel</button>
+                    @if (currentStep > 1)
+                    {
+                        <button class="secondary" @onclick="PreviousStep">Back</button>
+                    }
+                </div>
+
+                @if (currentStep < 10)
+                {
+                    <button class="primary" @onclick="NextStep">Save & Continue</button>
+                }
+                else
+                {
+                    <button class="primary" @onclick="CompleteEnrollment">Complete Enrollment</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private int currentStep = 1;
+    private int maxAllowedStep = 1;
+    private Child? _draftChild;
+    
+    private List<string> wizardSteps = new() 
+    {
+        "Child Information", "Parent / Guardian", "Address", "Emergency Contacts",
+        "Medical & Allergies", "Dietary & Routine", "Enrollment", "Authorized Pickup",
+        "Consents", "Review"
+    };
+
+    private void NavigateToStep(int step)
+    {
+        currentStep = step;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            _draftChild = await ChildService.GetChildByIdAsync(Id.Value);
+            if (_draftChild != null)
+            {
+                childFirstName = _draftChild.FirstName;
+                childLastName = _draftChild.LastName;
+                childDob = _draftChild.DateOfBirth;
+                childPhotoPreview = _draftChild.PhotoUrl ?? "";
+                
+                if (!string.IsNullOrEmpty(_draftChild.DraftData))
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(_draftChild.DraftData);
+                        var root = doc.RootElement;
+                        
+                        if (root.TryGetProperty("parentName", out var pName)) parentName = pName.GetString() ?? "";
+                        if (root.TryGetProperty("parentRelationship", out var pRel)) parentRelationship = pRel.GetString() ?? "";
+                        if (root.TryGetProperty("parentEmail", out var pEmail)) parentEmail = pEmail.GetString() ?? "";
+                        if (root.TryGetProperty("parentPhone", out var pPhone)) parentPhone = pPhone.GetString() ?? "";
+                        if (root.TryGetProperty("parentPhotoPreview", out var pPhoto)) parentPhotoPreview = pPhoto.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("addressLine1", out var sAddr)) addressLine1 = sAddr.GetString() ?? "";
+                        if (root.TryGetProperty("addressCity", out var cty)) addressCity = cty.GetString() ?? "";
+                        if (root.TryGetProperty("addressProvince", out var st)) addressProvince = st.GetString() ?? "";
+                        if (root.TryGetProperty("addressPostalCode", out var zp)) addressPostalCode = zp.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("emergencyName", out var eName)) emergencyName = eName.GetString() ?? "";
+                        if (root.TryGetProperty("emergencyPhone", out var ePhone)) emergencyPhone = ePhone.GetString() ?? "";
+                        if (root.TryGetProperty("emergencyRelationship", out var eRel)) emergencyRelationship = eRel.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("physicianName", out var pedName)) physicianName = pedName.GetString() ?? "";
+                        if (root.TryGetProperty("physicianPhone", out var pedPhone)) physicianPhone = pedPhone.GetString() ?? "";
+                        if (root.TryGetProperty("allergies", out var algs)) allergies = algs.GetString() ?? "";
+                        if (root.TryGetProperty("medications", out var meds)) medications = meds.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("dietaryRestrictions", out var diet)) dietaryRestrictions = diet.GetString() ?? "";
+                        if (root.TryGetProperty("napRoutine", out var nap)) napRoutine = nap.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("enrollmentStartDate", out var eStart) && eStart.ValueKind != System.Text.Json.JsonValueKind.Null) 
+                            enrollmentStartDate = eStart.GetDateTime();
+                            
+                        if (root.TryGetProperty("scheduleType", out var sched)) scheduleType = sched.GetString() ?? "";
+                        if (root.TryGetProperty("assignedProgram", out var prog)) assignedProgram = prog.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("pickupName", out var pkName)) pickupName = pkName.GetString() ?? "";
+                        if (root.TryGetProperty("pickupRelationship", out var pkRel)) pickupRelationship = pkRel.GetString() ?? "";
+                        if (root.TryGetProperty("pickupCode", out var pkCode)) pickupCode = pkCode.GetString() ?? "";
+                        
+                        if (root.TryGetProperty("consentPhoto", out var cPhoto)) consentPhoto = cPhoto.GetBoolean();
+                        if (root.TryGetProperty("consentMedical", out var cMed)) consentMedical = cMed.GetBoolean();
+                        if (root.TryGetProperty("consentMarketing", out var cMkt)) consentMarketing = cMkt.GetBoolean();
+                    }
+                    catch { /* ignore parsing errors on corrupted drafts */ }
+                }
+
+                // Navigate to the step they left off on (up to max 10)
+                int calculatedStep = (_draftChild.ProfileCompletionPercentage / 10) + 1;
+                currentStep = Math.Min(calculatedStep, 10);
+                maxAllowedStep = currentStep;
+            }
+        }
+    }
+
+    // 1
+    private string childFirstName = "";
+    private string childLastName = "";
+    private string childPreferredName = "";
+    private DateTime? childDob = DateTime.Today.AddYears(-3);
+    private string childPhotoPreview = "";
+
+    // 2
+    private string parentName = "";
+    private string parentRelationship = "Mother";
+    private string parentEmail = "";
+    private string parentPhone = "";
+    private string parentPhotoPreview = "";
+
+    // 3
+    private string addressLine1 = "";
+    private string addressCity = "";
+    private string addressProvince = "";
+    private string addressPostalCode = "";
+
+    // 4
+    private string emergencyName = "";
+    private string emergencyRelationship = "";
+    private string emergencyPhone = "";
+
+    // 5
+    private string physicianName = "";
+    private string physicianPhone = "";
+    private string allergies = "";
+    private string hasEpiPen = "false";
+    private string medications = "";
+
+    // 6
+    private string dietaryRestrictions = "";
+    private string napRoutine = "";
+    private string toiletTraining = "Not Started";
+
+    // 7
+    private DateTime? enrollmentStartDate = DateTime.Today.AddDays(7);
+    private string scheduleType = "Full Time";
+    private string assignedProgram = "Preschool";
+
+    // 8
+    private string pickupName = "";
+    private string pickupRelationship = "";
+    private string pickupCode = "";
+
+    // 9
+    private bool consentPhoto = false;
+    private bool consentMedical = false;
+    private bool consentMarketing = false;
+    
+    private async Task NextStep()
+    {
+        if (currentStep == 1 && _draftChild == null)
+        {
+            _draftChild = await ChildService.CreateChildAsync(childFirstName, childLastName, childDob, null, childPhotoPreview);
+            _draftChild.EnrollmentStatus = "Draft";
+        }
+        
+        if (_draftChild != null)
+        {
+            _draftChild.FirstName = childFirstName;
+            _draftChild.LastName = childLastName;
+            _draftChild.DateOfBirth = childDob;
+            _draftChild.PhotoUrl = childPhotoPreview;
+            _draftChild.ProfileCompletionPercentage = currentStep * 10;
+            if (currentStep == 10) _draftChild.EnrollmentStatus = "Enrolled";
+            
+            var draftState = new
+            {
+                parentName, parentRelationship, parentEmail, parentPhone, parentPhotoPreview,
+                addressLine1, addressCity, addressProvince, addressPostalCode,
+                emergencyName, emergencyPhone, emergencyRelationship,
+                physicianName, physicianPhone, allergies, medications,
+                dietaryRestrictions, napRoutine,
+                enrollmentStartDate, scheduleType, assignedProgram,
+                pickupName, pickupRelationship, pickupCode,
+                consentPhoto, consentMedical, consentMarketing
+            };
+            
+            _draftChild.DraftData = System.Text.Json.JsonSerializer.Serialize(draftState);
+            
+            await ChildService.UpdateChildAsync(_draftChild);
+        }
+
+        if (currentStep < 10) 
+        {
+            currentStep++;
+            if (currentStep > maxAllowedStep) maxAllowedStep = currentStep;
+        }
+    }
+
+    private void PreviousStep()
+    {
+        if (currentStep > 1) currentStep--;
+    }
+
+    private void Cancel()
+    {
+        NavigationManager.NavigateTo("/children");
+    }
+
+    private async Task HandleChildPhotoSelected(InputFileChangeEventArgs e)
+    {
+        var format = "image/avif";
+        var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
+        var buffer = new byte[resizedImage.Size];
+        await resizedImage.OpenReadStream().ReadAsync(buffer);
+        childPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+    }
+
+    private async Task HandleParentPhotoSelected(InputFileChangeEventArgs e)
+    {
+        var format = "image/avif";
+        var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
+        var buffer = new byte[resizedImage.Size];
+        await resizedImage.OpenReadStream().ReadAsync(buffer);
+        parentPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+    }
+
+    private async Task CompleteEnrollment()
+    {
+        // The draft child was already finalized in NextStep when transitioning to step 10.
+        // Or if they click Complete Enrollment on step 10:
+        if (_draftChild != null)
+        {
+            _draftChild.ProfileCompletionPercentage = 100;
+            _draftChild.EnrollmentStatus = "Enrolled";
+            await ChildService.UpdateChildAsync(_draftChild);
+        }
+        
+        NavigationManager.NavigateTo("/children");
+    }
+}

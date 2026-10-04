@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Data;
@@ -17,7 +17,7 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT id, tenant_id, email, first_name, last_name, display_name, is_active, created_at, updated_at
+            SELECT id as Id, tenant_id as TenantId, email as Email, first_name as FirstName, last_name as LastName, display_name as DisplayName, is_active as IsActive, created_at as CreatedAt, updated_at as UpdatedAt
             FROM users
             WHERE id = @Id AND tenant_id = @TenantId";
 
@@ -82,12 +82,24 @@ public class UserRepository : IUserRepository
             SET first_name = @FirstName,
                 last_name = @LastName,
                 display_name = @DisplayName,
+                email = @Email,
+                normalized_email = @NormalizedEmail,
                 is_active = @IsActive,
                 updated_at = @UpdatedAt
             WHERE id = @Id AND tenant_id = @TenantId";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(sql, user);
+        await connection.ExecuteAsync(sql, new { 
+            user.FirstName, 
+            user.LastName, 
+            user.DisplayName, 
+            user.Email, 
+            NormalizedEmail = user.Email.ToUpperInvariant(), 
+            user.IsActive, 
+            user.UpdatedAt, 
+            user.Id, 
+            user.TenantId 
+        });
     }
 
     public async Task AssignRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default)

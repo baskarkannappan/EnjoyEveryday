@@ -1,4 +1,4 @@
-﻿using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Audit;
 using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Infrastructure.Repositories;
@@ -43,6 +43,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IExperienceScheduleRepository, ExperienceScheduleRepository>();
         services.AddScoped<IExperienceFeedbackRepository, ExperienceFeedbackRepository>();
         services.AddScoped<IChildStoryRepository, ChildStoryRepository>();
+        services.AddScoped<ITeacherRepository, TeacherRepository>();
 
         return services;
     }

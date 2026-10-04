@@ -33,7 +33,7 @@ public class ChildService
         return await _childRepository.GetByIdAsync(tenantId, id, cancellationToken);
     }
 
-    public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, CancellationToken cancellationToken = default)
+    public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, string? photoUrl = null, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
         var child = new Child
@@ -44,6 +44,7 @@ public class ChildService
             LastName = lastName,
             DateOfBirth = dateOfBirth,
             ClassroomId = classroomId,
+            PhotoUrl = photoUrl,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow

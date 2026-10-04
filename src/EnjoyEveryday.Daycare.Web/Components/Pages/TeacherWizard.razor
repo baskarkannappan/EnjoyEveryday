@@ -1,0 +1,158 @@
+@page "/teachers/new"
+@page "/teachers/edit/{Id:guid}"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+
+@inject UserService UserService
+@inject ITeacherService TeacherService
+@inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+
+<div style="max-width: 900px; margin: 0 auto; padding: 30px 40px;">
+    <PageHero 
+        Eyebrow="PEOPLE" 
+        Title="@(Id.HasValue ? "Edit Teacher" : "Add Teacher")" 
+        Subtitle="@(Id.HasValue ? "Update the teacher's profile using the wizard." : "Create a new teacher profile using the wizard.")">
+    </PageHero>
+
+    <TeacherCreationWizard 
+        Model="@_model" 
+        OnCancel="HandleCancel" 
+        OnSaveDraft="HandleSaveDraft" 
+        OnActivate="HandleActivate" />
+</div>
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private TeacherCreationWizard.TeacherWizardModel _model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            var user = await UserService.GetUserByIdAsync(Id.Value);
+            if (user != null)
+            {
+                var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId);
+                var teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
+                
+                if (teacher != null && !string.IsNullOrWhiteSpace(teacher.DraftData))
+                {
+                    try
+                    {
+                        _model = System.Text.Json.JsonSerializer.Deserialize<TeacherCreationWizard.TeacherWizardModel>(teacher.DraftData) ?? new();
+                    }
+                    catch
+                    {
+                        // Fallback if deserialization fails
+                        _model.FirstName = user.FirstName ?? "";
+                        _model.LastName = user.LastName ?? "";
+                        _model.Email = user.Email ?? "";
+                        _model.PreferredName = teacher.PreferredName ?? "";
+                    }
+                }
+                else
+                {
+                    _model.FirstName = user.FirstName ?? "";
+                    _model.LastName = user.LastName ?? "";
+                    _model.Email = user.Email ?? "";
+                    
+                    if (teacher != null)
+                    {
+                        _model.PreferredName = teacher.PreferredName ?? "";
+                    }
+                }
+            }
+        }
+    }
+
+    private void HandleCancel()
+    {
+        NavigationManager.NavigateTo("/teachers");
+    }
+
+    private async Task HandleSaveDraft(TeacherCreationWizard.TeacherWizardModel model)
+    {
+        await SaveTeacherAsync(model, "Draft");
+        NavigationManager.NavigateTo("/teachers");
+    }
+
+    private async Task HandleActivate(TeacherCreationWizard.TeacherWizardModel model)
+    {
+        await SaveTeacherAsync(model, "Active");
+        NavigationManager.NavigateTo("/teachers");
+    }
+
+    private async Task SaveTeacherAsync(TeacherCreationWizard.TeacherWizardModel model, string status)
+    {
+        if (Id.HasValue)
+        {
+            // Edit existing
+            var user = await UserService.GetUserByIdAsync(Id.Value);
+            if (user != null)
+            {
+                user.FirstName = model.FirstName;
+                user.LastName = model.LastName;
+                await UserService.UpdateUserAsync(user);
+
+                var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId);
+                var teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
+                if (teacher != null)
+                {
+                    teacher.FirstName = model.FirstName;
+                    teacher.LastName = model.LastName;
+                    teacher.PreferredName = model.PreferredName;
+                    teacher.Status = status;
+                    teacher.DraftData = System.Text.Json.JsonSerializer.Serialize(model);
+                    await TeacherService.UpdateTeacherAsync(teacher);
+                }
+                else
+                {
+                    // Teacher doesn't exist yet, create it
+                    teacher = new Teacher
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = TenantContext.TenantId,
+                        UserId = user.Id,
+                        FirstName = string.IsNullOrWhiteSpace(model.FirstName) ? "Draft" : model.FirstName,
+                        LastName = string.IsNullOrWhiteSpace(model.LastName) ? "Teacher" : model.LastName,
+                        DisplayName = user.DisplayName ?? "",
+                        PreferredName = model.PreferredName,
+                        Status = status,
+                        DraftData = System.Text.Json.JsonSerializer.Serialize(model)
+                    };
+                    await TeacherService.CreateTeacherAsync(teacher);
+                }
+            }
+        }
+        else
+        {
+            // 1. Create User
+            // If they are just saving a draft on the first step, these might be empty
+            var safeEmail = string.IsNullOrWhiteSpace(model.Email) ? $"draft_{Guid.NewGuid()}@draft.com" : model.Email;
+            var safeFirstName = string.IsNullOrWhiteSpace(model.FirstName) ? "Draft" : model.FirstName;
+            var safeLastName = string.IsNullOrWhiteSpace(model.LastName) ? "Teacher" : model.LastName;
+
+            var user = await UserService.CreateUserAsync(safeEmail, safeFirstName, safeLastName, "TEMP_HASH", "Teacher");
+            
+            // 2. Create Teacher
+            var teacher = new Teacher
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantContext.TenantId,
+                UserId = user.Id,
+                FirstName = safeFirstName,
+                LastName = safeLastName,
+                DisplayName = user.DisplayName ?? "",
+                PreferredName = model.PreferredName,
+                Status = status,
+                DraftData = System.Text.Json.JsonSerializer.Serialize(model)
+            };
+            
+            await TeacherService.CreateTeacherAsync(teacher);
+        }
+    }
+}

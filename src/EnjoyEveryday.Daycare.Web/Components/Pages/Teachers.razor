@@ -4,13 +4,15 @@
 @using EnjoyEveryday.Domain.Entities
 
 @inject UserService UserService
+@inject ITeacherService TeacherService
+@inject NavigationManager NavigationManager
 
 <PageHero 
     Eyebrow="PEOPLE" 
     Title="Teachers" 
     Subtitle="Less typing. More teaching.">
     <RightContent>
-        <button id="addTeacherButton" class="primary" @onclick="OpenAddTeacherModal">
+        <button id="addTeacherButton" class="primary" @onclick='() => NavigationManager.NavigateTo("/teachers/new")'>
             + Add teacher
         </button>
     </RightContent>
@@ -21,7 +23,7 @@
     {
         @foreach (var teacher in _teachers)
         {
-            <div @onclick="() => OpenEditTeacherModal(teacher)" style="cursor: pointer;">
+            <div @onclick='() => NavigationManager.NavigateTo($"/teachers/edit/{teacher.Id}")' style="cursor: pointer;">
                 <PersonCard AvatarInitials="@(teacher.FirstName?.FirstOrDefault().ToString() ?? "?")" 
                             Name="@teacher.DisplayName" 
                             Subtitle="Experience Facilitator" 
@@ -36,20 +38,8 @@
     }
 </div>
 
-<TeacherFormModal IsOpen="_isModalOpen"
-                  IsEditing="_isEditing"
-                  @bind-FirstName="_currentTeacher.FirstName"
-                  @bind-LastName="_currentTeacher.LastName"
-                  @bind-Email="_currentTeacher.Email"
-                  OnClose="CloseDialog"
-                  OnSave="SaveTeacherAsync"
-                  OnDelete="DeleteTeacherAsync" />
-
 @code {
     private IEnumerable<User>? _teachers;
-    private User _currentTeacher = new();
-    private bool _isModalOpen = false;
-    private bool _isEditing = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -71,68 +61,6 @@
         await UserService.CreateUserAsync("jane.doe@example.com", "Jane", "Doe", "TEMP_HASH", "Teacher");
         await UserService.CreateUserAsync("john.smith@example.com", "John", "Smith", "TEMP_HASH", "Teacher");
         await LoadTeachersAsync();
-    }
-
-    private void OpenAddTeacherModal()
-    {
-        _currentTeacher = new User();
-        _isEditing = false;
-        _isModalOpen = true;
-    }
-
-    private void OpenEditTeacherModal(User teacher)
-    {
-        _currentTeacher = new User
-        {
-            Id = teacher.Id,
-            TenantId = teacher.TenantId,
-            FirstName = teacher.FirstName,
-            LastName = teacher.LastName,
-            Email = teacher.Email,
-            DisplayName = teacher.DisplayName,
-            IsActive = teacher.IsActive
-        };
-        _isEditing = true;
-        _isModalOpen = true;
-    }
-
-    private void CloseDialog()
-    {
-        _isModalOpen = false;
-    }
-
-    private async Task SaveTeacherAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_currentTeacher.FirstName) || string.IsNullOrWhiteSpace(_currentTeacher.LastName) || string.IsNullOrWhiteSpace(_currentTeacher.Email))
-        {
-            return;
-        }
-
-        if (_isEditing)
-        {
-            await UserService.UpdateUserAsync(_currentTeacher);
-        }
-        else
-        {
-            await UserService.CreateUserAsync(
-                _currentTeacher.Email,
-                _currentTeacher.FirstName,
-                _currentTeacher.LastName,
-                "TEMP_HASH", "Teacher");
-        }
-
-        await LoadTeachersAsync();
-        CloseDialog();
-    }
-
-    private async Task DeleteTeacherAsync()
-    {
-        if (_currentTeacher.Id != Guid.Empty)
-        {
-            await UserService.DeleteUserAsync(_currentTeacher.Id);
-            await LoadTeachersAsync();
-            CloseDialog();
-        }
     }
 }
 

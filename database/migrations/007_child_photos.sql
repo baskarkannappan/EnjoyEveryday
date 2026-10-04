@@ -1,0 +1,1 @@
+ALTER TABLE children ADD COLUMN photo_url VARCHAR(1024);

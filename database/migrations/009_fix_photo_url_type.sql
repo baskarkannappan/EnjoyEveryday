@@ -1,0 +1,1 @@
+ALTER TABLE children ALTER COLUMN photo_url TYPE TEXT;

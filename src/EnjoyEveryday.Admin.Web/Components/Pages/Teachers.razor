@@ -4,6 +4,7 @@
 @using EnjoyEveryday.Domain.Entities
 
 @inject UserService UserService
+@inject ITeacherService TeacherService
 
 <PageHero 
     Eyebrow="PEOPLE" 
@@ -111,14 +112,35 @@
         if (_isEditing)
         {
             await UserService.UpdateUserAsync(_currentTeacher);
+            
+            var allTeachers = await TeacherService.GetAllTeachersAsync(_currentTeacher.TenantId);
+            var teacherProfile = allTeachers.FirstOrDefault(t => t.UserId == _currentTeacher.Id);
+            if (teacherProfile != null)
+            {
+                teacherProfile.FirstName = _currentTeacher.FirstName;
+                teacherProfile.LastName = _currentTeacher.LastName;
+                teacherProfile.DisplayName = _currentTeacher.DisplayName;
+                await TeacherService.UpdateTeacherAsync(teacherProfile);
+            }
         }
         else
         {
-            await UserService.CreateUserAsync(
+            var user = await UserService.CreateUserAsync(
                 _currentTeacher.Email,
                 _currentTeacher.FirstName,
                 _currentTeacher.LastName,
                 "TEMP_HASH", "Teacher");
+                
+            var teacher = new Teacher
+            {
+                TenantId = user.TenantId,
+                UserId = user.Id,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                DisplayName = user.DisplayName,
+                Status = "Active"
+            };
+            await TeacherService.CreateTeacherAsync(teacher);
         }
 
         await LoadTeachersAsync();
@@ -129,6 +151,13 @@
     {
         if (_currentTeacher.Id != Guid.Empty)
         {
+            var allTeachers = await TeacherService.GetAllTeachersAsync(_currentTeacher.TenantId);
+            var teacherProfile = allTeachers.FirstOrDefault(t => t.UserId == _currentTeacher.Id);
+            if (teacherProfile != null)
+            {
+                await TeacherService.DeleteTeacherAsync(teacherProfile.TenantId, teacherProfile.Id);
+            }
+            
             await UserService.DeleteUserAsync(_currentTeacher.Id);
             await LoadTeachersAsync();
             CloseDialog();

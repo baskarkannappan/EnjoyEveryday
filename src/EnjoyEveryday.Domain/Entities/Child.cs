@@ -8,6 +8,10 @@ public class Child
     public string LastName { get; set; } = string.Empty;
     public DateTime? DateOfBirth { get; set; }
     public Guid? ClassroomId { get; set; }
+    public string? PhotoUrl { get; set; }
+    public int ProfileCompletionPercentage { get; set; }
+    public string EnrollmentStatus { get; set; } = "Draft";
+    public string? DraftData { get; set; }
     public bool IsActive { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

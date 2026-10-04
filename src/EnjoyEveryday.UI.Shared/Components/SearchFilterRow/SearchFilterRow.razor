@@ -1,7 +1,7 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
 <div class="search-row">
-    <input class="search" placeholder="@SearchPlaceholder" @bind="SearchQuery" @bind:event="oninput" />
+    <input class="search" placeholder="@SearchPlaceholder" value="@SearchQuery" @oninput="OnSearchInput" />
     @if (Filters != null)
     {
         @Filters
@@ -11,21 +11,19 @@
 @code {
     [Parameter] public string SearchPlaceholder { get; set; } = "Search...";
     
-    private string _searchQuery = "";
-    [Parameter] public string SearchQuery
-    {
-        get => _searchQuery;
-        set
-        {
-            if (_searchQuery != value)
-            {
-                _searchQuery = value;
-                SearchQueryChanged.InvokeAsync(value);
-            }
-        }
-    }
+    [Parameter] public string SearchQuery { get; set; } = "";
     
     [Parameter] public EventCallback<string> SearchQueryChanged { get; set; }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        if (SearchQuery != value)
+        {
+            SearchQuery = value;
+            await SearchQueryChanged.InvokeAsync(value);
+        }
+    }
     
     [Parameter] public RenderFragment? Filters { get; set; }
 }
