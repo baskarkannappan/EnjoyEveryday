@@ -1,25 +1,73 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
-<div class="dna-card @(IsFull ? "full" : "")">
-    <div class="dna-label">
-        @Label
-        <button class="dna-add">+</button>
+@if (_isEditing)
+{
+    <div class="dna-card @(IsFull ? "full" : "")">
+        <div class="dna-label">@Label</div>
+        <textarea style="width: 100%; border: 1px solid #e1e6e0; border-radius: 6px; padding: 10px; font-family: inherit; font-size: 14px; margin-top: 10px; resize: vertical; min-height: 80px;" @bind="_editValue" placeholder="@Placeholder"></textarea>
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button class="btn primary" @onclick="Save" style="background: #456a55; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">Save</button>
+            <button class="btn" @onclick="Cancel" style="background: #f4f6f4; color: #47534c; border: 1px solid #e1e6e0; padding: 6px 12px; border-radius: 6px; cursor: pointer;">Cancel</button>
+        </div>
     </div>
-    <div class="dna-content">
-        @if (Content == null)
-        {
-            <span class="dna-empty">@Placeholder</span>
-        }
-        else
-        {
+}
+else
+{
+    <div class="dna-card @(IsFull ? "full" : "")" @onclick="() => { if(!ReadOnly) BeginEdit(); }" style="@(ReadOnly ? "" : "cursor: pointer;")">
+        <div class="dna-label">
+            @Label
+            @if (!ReadOnly)
+            {
+                <button class="dna-add" @onclick:stopPropagation="true" @onclick="BeginEdit">+</button>
+            }
+        </div>
+        <div class="dna-content">
+            @if (string.IsNullOrWhiteSpace(TextContent))
+            {
+                <span class="dna-empty">@Placeholder</span>
+            }
+            else
+            {
+                <span style="white-space: pre-wrap;">@TextContent</span>
+            }
             @Content
-        }
+        </div>
     </div>
-</div>
+}
 
 @code {
     [Parameter] public string Label { get; set; } = string.Empty;
     [Parameter] public RenderFragment? Content { get; set; }
+    [Parameter] public string TextContent { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> TextContentChanged { get; set; }
     [Parameter] public string Placeholder { get; set; } = "Add content...";
     [Parameter] public bool IsFull { get; set; } = false;
+    [Parameter] public bool ReadOnly { get; set; } = false;
+    
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    private bool _isEditing = false;
+    private string _editValue = string.Empty;
+
+    private void BeginEdit()
+    {
+        _editValue = TextContent;
+        _isEditing = true;
+    }
+
+    private async Task Save()
+    {
+        TextContent = _editValue;
+        _isEditing = false;
+        await TextContentChanged.InvokeAsync(TextContent);
+        if (OnSave.HasDelegate)
+        {
+            await OnSave.InvokeAsync();
+        }
+    }
+
+    private void Cancel()
+    {
+        _isEditing = false;
+    }
 }

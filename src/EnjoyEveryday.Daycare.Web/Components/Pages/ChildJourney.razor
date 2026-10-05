@@ -9,6 +9,7 @@
 @using EnjoyEveryday.Application.Services
 
 @inject IChildJourneyService JourneyService
+@inject ExperienceService ExperienceService
 
 <PageTopbar Breadcrumb="EnjoyEveryday · Little Stars · Bluebirds" Title="Aarav's Journey">
     <RightContent>
@@ -53,7 +54,15 @@
                 <button class="filter-btn @(_currentFilter == "Discovery" ? "active" : "")" @onclick='() => SetFilter("Discovery")'>Discover</button>
                 <button class="filter-btn @(_currentFilter == "Create" ? "active" : "")" @onclick='() => SetFilter("Create")'>Create</button>
                 <button class="filter-btn @(_currentFilter == "Connection" ? "active" : "")" @onclick='() => SetFilter("Connection")'>Connect</button>
-                <button class="filter-btn" style="margin-left: auto;">+ Filter</button>
+                
+                <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 14px; color: #666; font-weight: 500;">Date:</span>
+                    <input type="date" @bind="_selectedDate" @bind:after="ApplyFilter" style="padding: 6px 12px; border: 1px solid #e4e7df; border-radius: 6px; outline: none; font-family: inherit; color: #26332d;" />
+                    @if (_selectedDate.HasValue)
+                    {
+                        <button style="background: none; border: none; cursor: pointer; color: #666; font-size: 14px;" @onclick="ClearDateFilter">✕</button>
+                    }
+                </div>
             </div>
 
             <div class="timeline">
@@ -66,7 +75,7 @@
                         <JourneyTimelineCard 
                             DateString="@entry.ObservationDate.ToString("MMM dd")" 
                             Type="@entry.JourneyType" 
-                            Title="@(string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title)" 
+                            Title="@(entry.ExperienceId.HasValue ? ("Experience: " + (!string.IsNullOrEmpty(entry.Title) ? entry.Title : (_experienceTitles.ContainsKey(entry.ExperienceId.Value) ? _experienceTitles[entry.ExperienceId.Value] : "Teacher Observation"))) : (string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title))" 
                             Time="@entry.ObservationDate.ToString("t")"
                             Description="@entry.Observation"
                             Quote="@entry.ChildVoice" 
@@ -152,11 +161,13 @@
     private List<ChildJourneyEntry>? _allEntries;
     private List<ChildJourneyEntry>? _entries;
     private Dictionary<Guid, List<DevelopmentArea>> _entryAreas = new();
+    private Dictionary<Guid, string> _experienceTitles = new();
     
     private string _currentFilter = "all";
     private bool _isModalOpen = false;
     private string _modalTitle = "";
     private string _modalText = "";
+    private DateTime? _selectedDate;
 
     protected override async Task OnInitializedAsync()
     {
@@ -179,6 +190,9 @@
             _entryAreas[entry.Id] = areas;
         }
         
+        var allExperiences = await ExperienceService.GetExperiencesAsync();
+        _experienceTitles = allExperiences.ToDictionary(e => e.Id, e => e.Title);
+        
         ApplyFilter();
     }
 
@@ -197,32 +211,38 @@
         ApplyFilter();
     }
     
+    private void ClearDateFilter()
+    {
+        _selectedDate = null;
+        ApplyFilter();
+    }
+
     private void ApplyFilter()
     {
         if (_allEntries == null) return;
         
-        if (_currentFilter == "all")
+        var filtered = _allEntries.AsEnumerable();
+        
+        if (_selectedDate.HasValue)
         {
-            _entries = _allEntries;
+            filtered = filtered.Where(e => e.ObservationDate.Date == _selectedDate.Value.Date);
         }
-        else if (_currentFilter == "Discovery")
+
+        if (_currentFilter == "Discovery")
         {
-            // For MVP: Example filter by JourneyType or something related
-            _entries = _allEntries.Where(e => e.JourneyType == "Discovery" || (string.IsNullOrEmpty(e.JourneyType) == false && e.JourneyType.Contains("Discover"))).ToList();
+            filtered = filtered.Where(e => e.JourneyType == "Discovery" || (string.IsNullOrEmpty(e.JourneyType) == false && e.JourneyType.Contains("Discover")));
         }
         else if (_currentFilter == "Create")
         {
-            // Example filter for Create
-            _entries = _allEntries.Where(e => e.JourneyType == "Create" || GetTagsForEntry(e.Id).Any(t => t.Contains("Creat"))).ToList();
+            filtered = filtered.Where(e => e.JourneyType == "Create" || GetTagsForEntry(e.Id).Any(t => t.Contains("Creat")));
         }
         else if (_currentFilter == "Connection")
         {
-            _entries = _allEntries.Where(e => e.JourneyType == "Connection" || GetTagsForEntry(e.Id).Any(t => t.Contains("Social") || t.Contains("Emot"))).ToList();
+            filtered = filtered.Where(e => e.JourneyType == "Connection" || GetTagsForEntry(e.Id).Any(t => t.Contains("Social") || t.Contains("Emot")));
         }
-        else
-        {
-            _entries = _allEntries;
-        }
+        
+        // Ensure they are ordered by most recent first
+        _entries = filtered.OrderByDescending(e => e.ObservationDate).ToList();
     }
 
     private void OpenModal(string type)

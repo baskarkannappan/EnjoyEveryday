@@ -22,6 +22,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<FeedbackService>();
         services.AddScoped<ITeacherService, TeacherService>();
         services.AddScoped<IChildJourneyService, ChildJourneyService>();
+        services.AddScoped<IAesEncryptionService, AesEncryptionService>();
+        services.AddScoped<TenantSettingsService>();
         services.AddHttpClient<IAiIdeaService, AiIdeaService>();
 
         // Register a default mock TenantContext for now until auth is built

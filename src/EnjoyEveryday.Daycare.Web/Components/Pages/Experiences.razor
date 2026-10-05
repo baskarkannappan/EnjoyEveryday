@@ -8,6 +8,8 @@
 @inject PlannerService PlannerService
 @inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
 @using Dapper
+@using System.Text.Json
+@inject NavigationManager NavigationManager
 
 <PageTopbar Breadcrumb="Little Stars Daycare / Experiences" Title="Experiences">
     <RightContent>
@@ -104,13 +106,13 @@
     IsOpen="@_isViewModalOpen"
     Title="@(_currentExperience?.Title ?? "Experience")"
     Mission="@(_currentExperience?.Description ?? "No description available.")"
-    Discover="What does our city need?"
-    Challenge="Can we build a bridge?"
-    JoyMoment="The whole city comes together."
+    Discover="@(_parsedDna?.Create ?? "")"
+    Challenge="@(_parsedDna?.Challenge ?? "")"
+    JoyMoment="@(_parsedDna?.MagicMoment ?? "")"
     OnClose="CloseViewDialog"
     OnSchedule="ScheduleExperience"
     OnDuplicate="DuplicateExperience"
-    OnImprove="() => {}" />
+    OnImprove="ImproveExperience" />
 
 <ExperienceScheduleModal 
     IsOpen="@_isScheduleModalOpen"
@@ -152,6 +154,7 @@
     }
 
     private Experience _currentExperience = new();
+    private ExperienceDna _parsedDna = new();
     
     private bool _isModalOpen = false;
     private bool _isViewModalOpen = false;
@@ -159,6 +162,15 @@
     private void OpenViewExperienceModal(Experience exp)
     {
         _currentExperience = exp;
+        _parsedDna = new ExperienceDna();
+        if (!string.IsNullOrEmpty(exp.DnaPayload))
+        {
+            try
+            {
+                _parsedDna = JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ExperienceDna();
+            }
+            catch { }
+        }
         _isViewModalOpen = true;
     }
 
@@ -221,6 +233,12 @@
     private void CloseViewDialog()
     {
         _isViewModalOpen = false;
+    }
+
+    private void ImproveExperience()
+    {
+        CloseViewDialog();
+        NavigationManager.NavigateTo($"/studio/{_currentExperience.Id}");
     }
 
     private bool _isEditing = false;

@@ -43,6 +43,7 @@ public class HarvestRepository : IHarvestRepository
 
         var sql = @"
             SELECT 
+                e.id as ExperienceId,
                 e.title as Title,
                 'Created by ' || (SELECT first_name FROM users WHERE id = e.created_by_user_id) as Subtitle,
                 (SELECT COUNT(1) FROM experience_sessions WHERE experience_id = e.id AND status = 'Completed') as Uses,

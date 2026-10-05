@@ -89,4 +89,10 @@ public class ExecutionService
 
         await CompleteExperienceAsync(scheduleId, teacherId, rating, notes, cancellationToken);
     }
+
+    public async Task<IEnumerable<ExperienceSession>> GetClassroomExperienceHistoryAsync(Guid classroomId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _sessionRepository.GetSessionsForClassroomAsync(tenantId, classroomId, cancellationToken);
+    }
 }

@@ -2,6 +2,12 @@
 @rendermode InteractiveServer
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.Planning
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+
+@inject PlannerService PlannerService
+@inject ClassroomService ClassroomService
+@inject ExperienceService ExperienceService
 
 <PageTopbar Breadcrumb="Little Stars · Bluebirds · Age 3-4" Title="Experience Planning">
     <RightContent>
@@ -28,12 +34,18 @@
                 without turning childhood into a rigid schedule.
             </div>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <select @bind="SelectedClassroomId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 12px; cursor: pointer; height: 38px;">
+                @foreach (var cls in _allClassrooms)
+                {
+                    <option value="@cls.Id">@cls.Name</option>
+                }
+            </select>
             <button class="btn" style="border: 1px solid var(--line, #e1e6e0); background: #fff; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #47534c;">
                 Preview plan
             </button>
-            <button class="btn primary" style="background: #456a55; border: 1px solid #456a55; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #fff;">
-                Publish plan
+            <button class="btn primary" @onclick="OpenPlanWizard" style="background: #456a55; border: 1px solid #456a55; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #fff;">
+                + Plan Experience
             </button>
         </div>
     </div>
@@ -43,38 +55,51 @@
         Text="This plan gives teachers direction — not instructions. Children can change what happens next." />
 
     <PlanningControlBar 
-        PeriodTitle="Sep 14 – Sep 18"
+        PeriodTitle="@_currentDate.ToString("MMMM yyyy")"
         Filters="@_filters"
         ActiveFilter="@_activeFilter"
-        OnFilterSelected="FilterSelected" />
+        OnFilterSelected="FilterSelected" 
+        OnPreviousClick="PreviousMonth"
+        OnNextClick="NextMonth" />
 
     <div class="planning-layout">
         
-        <PlanningCalendar Days="_days">
-            <MorningTemplate>
-                @if (context.Name == "Mon")
+        <div class="calendar" style="flex: 1;">
+            <div class="week">
+                <div>MON</div>
+                <div>TUE</div>
+                <div>WED</div>
+                <div>THU</div>
+                <div>FRI</div>
+            </div>
+            <div id="calendarGrid" class="calendar-grid">
+                @for (int day = 1; day <= DateTime.DaysInMonth(_currentDate.Year, _currentDate.Month); day++)
                 {
-                    <PlanningExperienceCard Title="Bug Detectives" Type="Management" Tags="@(new List<string> { "20 min", "Outdoor" })" Status="Planned" />
-                    <PlanningExperienceCard Title="Little Garden" Type="Teacher" Tags="@(new List<string> { "25 min", "Create" })" Status="Adapted" />
+                    var iterDay = day;
+                    var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
+                    var dailySchedules = _schedules.Where(s => s.ScheduledDate == currentDate).OrderBy(s => s.TimeOfDay).ToList();
+                    <div class="day">
+                        <div class="day-number @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "today" : "")">
+                            @iterDay
+                            <button class="add-plan-btn" @onclick='() => OpenPlanWizardForDate(currentDate)'>+</button>
+                        </div>
+                        @foreach (var schedule in dailySchedules)
+                        {
+                            var experience = _experiences.ContainsKey(schedule.ExperienceId) ? _experiences[schedule.ExperienceId] : null;
+                            if (experience != null)
+                            {
+                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "")" style="cursor: pointer;" @onclick="() => EditSchedule(schedule)">
+                                    <strong>@experience.Title</strong>
+                                    <span>
+                                        @GetExperienceType(experience) &middot; @schedule.TimeOfDay
+                                    </span>
+                                </div>
+                            }
+                        }
+                    </div>
                 }
-                else if (context.Name == "Tue")
-                {
-                    <PlanningExperienceCard Title="Our Little City" Type="Management" Tags="@(new List<string> { "30 min", "Together" })" Status="Planned" />
-                }
-            </MorningTemplate>
-            <MidDayTemplate>
-                @if (context.Name == "Wed")
-                {
-                    <PlanningExperienceCard Title="Shadow Puppets" Type="AI" Tags="@(new List<string> { "20 min", "Explore" })" Status="Suggested" />
-                }
-            </MidDayTemplate>
-            <AfternoonTemplate>
-                @if (context.Name == "Thu" || context.Name == "Fri")
-                {
-                    <PlanningExperienceCard Title="Free Exploration" Type="Free" Tags="@(new List<string> { "45 min", "Flexible" })" Status="Routine" />
-                }
-            </AfternoonTemplate>
-        </PlanningCalendar>
+            </div>
+        </div>
 
         <div class="side-column">
             
@@ -113,8 +138,16 @@
 
 </section>
 
+<PlanExperienceDialog IsOpen="@_isPlanWizardOpen" DefaultClassroomId="@(_classroom?.Id)" DefaultDate="@_wizardDefaultDate" ScheduleId="@_wizardScheduleId" OnClose="ClosePlanWizard" OnPlanCreated="OnPlanCreatedFromWizard" />
+
 @code {
     private string _activeFilter = "all";
+    private bool _isPlanWizardOpen = false;
+    private Guid? _wizardScheduleId;
+    private Classroom? _classroom;
+    private List<ExperienceSchedule> _schedules = new();
+    private Dictionary<Guid, Experience> _experiences = new();
+
     private List<PlanningControlBar.FilterItem> _filters = new()
     {
         new PlanningControlBar.FilterItem { Text = "All", Value = "all" },
@@ -129,12 +162,150 @@
         _activeFilter = filter;
     }
 
-    private List<PlanningCalendar.CalendarDay> _days = new()
+    private DateTime _currentDate;
+    private DateOnly? _wizardDefaultDate;
+    private List<Classroom> _allClassrooms = new();
+
+    private Guid? _selectedClassroomId;
+    private Guid? SelectedClassroomId
     {
-        new PlanningCalendar.CalendarDay { Name = "Mon", DateString = "14 Sep" },
-        new PlanningCalendar.CalendarDay { Name = "Tue", DateString = "15 Sep" },
-        new PlanningCalendar.CalendarDay { Name = "Wed", DateString = "16 Sep" },
-        new PlanningCalendar.CalendarDay { Name = "Thu", DateString = "17 Sep" },
-        new PlanningCalendar.CalendarDay { Name = "Fri", DateString = "18 Sep" }
-    };
+        get => _selectedClassroomId;
+        set
+        {
+            if (_selectedClassroomId != value)
+            {
+                _selectedClassroomId = value;
+                _classroom = _allClassrooms.FirstOrDefault(c => c.Id == value);
+                _ = RefreshSchedules();
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateTime.Today;
+        _currentDate = new DateTime(today.Year, today.Month, 1);
+
+        _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        _classroom = _allClassrooms.FirstOrDefault();
+        _selectedClassroomId = _classroom?.Id;
+
+        // No fallback needed - rely on TenantContext
+
+        var exps = await ExperienceService.GetExperiencesAsync();
+        _experiences = exps.ToDictionary(e => e.Id);
+
+        await LoadSchedules();
+    }
+
+    private async Task PreviousMonth()
+    {
+        _currentDate = _currentDate.AddMonths(-1);
+        await LoadSchedules();
+    }
+
+    private async Task NextMonth()
+    {
+        _currentDate = _currentDate.AddMonths(1);
+        await LoadSchedules();
+    }
+
+    private async Task LoadSchedules()
+    {
+        if (_classroom != null)
+        {
+            var schedules = await PlannerService.GetMonthlyScheduleAsync(_classroom.Id, _currentDate.Year, _currentDate.Month);
+            _schedules = schedules.ToList();
+        }
+    }
+
+    private async Task RefreshSchedules()
+    {
+        await LoadSchedules();
+        StateHasChanged();
+    }
+
+    private async Task OnPlanCreatedFromWizard(Guid classroomId)
+    {
+        if (SelectedClassroomId != classroomId)
+        {
+            SelectedClassroomId = classroomId; // This setter already calls RefreshSchedules
+        }
+        else
+        {
+            await RefreshSchedules();
+        }
+    }
+
+    private void OpenPlanWizard()
+    {
+        _wizardDefaultDate = GetDefaultPlanDate();
+        _wizardScheduleId = null;
+        _isPlanWizardOpen = true;
+    }
+
+    private void OpenPlanWizardForDate(DateOnly date)
+    {
+        _wizardDefaultDate = date;
+        _wizardScheduleId = null;
+        _isPlanWizardOpen = true;
+    }
+
+    private void EditSchedule(ExperienceSchedule schedule)
+    {
+        _wizardDefaultDate = schedule.ScheduledDate;
+        _wizardScheduleId = schedule.Id;
+        _isPlanWizardOpen = true;
+    }
+
+    private DateOnly GetDefaultPlanDate()
+    {
+        var today = DateTime.Today;
+        if (today.Year == _currentDate.Year && today.Month == _currentDate.Month)
+        {
+            return DateOnly.FromDateTime(today);
+        }
+        return new DateOnly(_currentDate.Year, _currentDate.Month, 1);
+    }
+
+    private void ClosePlanWizard()
+    {
+        _isPlanWizardOpen = false;
+        _wizardScheduleId = null;
+    }
+
+    private IEnumerable<ExperienceSchedule> GetSchedulesForDayAndPeriod(DateTime date, string period)
+    {
+        return _schedules.Where(s => s.ScheduledDate == DateOnly.FromDateTime(date) && s.TimeOfDay == period);
+    }
+
+    private string GetExperienceTitle(Guid expId)
+    {
+        return _experiences.ContainsKey(expId) ? _experiences[expId].Title : "Unknown";
+    }
+
+    private string GetExperienceType(Experience experience)
+    {
+        if (string.IsNullOrEmpty(experience.DnaPayload)) return "Experience";
+        try 
+        {
+            var json = System.Text.Json.JsonDocument.Parse(experience.DnaPayload);
+            if (json.RootElement.TryGetProperty("type", out var typeElement))
+            {
+                return typeElement.GetString() ?? "Experience";
+            }
+        }
+        catch { }
+        return "Experience";
+    }
+
+    private async Task CancelSchedule(Guid scheduleId)
+    {
+        var schedule = _schedules.FirstOrDefault(s => s.Id == scheduleId);
+        if (schedule != null && schedule.Status != "Cancelled")
+        {
+            await PlannerService.CancelScheduleAsync(scheduleId);
+            await RefreshSchedules();
+        }
+    }
 }

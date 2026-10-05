@@ -5,6 +5,7 @@
 
 @inject IChildJourneyService JourneyService
 @inject ChildService ChildService
+@inject ExperienceService ExperienceService
 
 @if (!_hideDialog)
 {
@@ -15,20 +16,39 @@
     {
         <h3 style="margin-top: 0; color: #26332d;">What did you notice?</h3>
         
+        @if (ExperienceId == null)
+        {
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 8px;">Which experience? (Optional)</label>
+                <select @bind="_selectedDropdownExperienceId" style="width: 100%; padding: 12px; border: 1px solid #e4e7df; border-radius: 8px; font-family: inherit;">
+                    <option value="">-- No specific experience --</option>
+                    @if (_allExperiences != null)
+                    {
+                        @foreach (var exp in _allExperiences)
+                        {
+                            <option value="@exp.Id">@exp.Title</option>
+                        }
+                    }
+                </select>
+            </div>
+        }
+
         @if (ChildId == null)
         {
             <div style="margin-bottom: 20px;">
-                <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 8px;">Which child?</label>
-                <select @bind="_selectedChildId" style="width: 100%; padding: 12px; border: 1px solid #e4e7df; border-radius: 8px; font-family: inherit;">
-                    <option value="">-- Select a child --</option>
+                <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 8px;">Which children?</label>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; padding: 8px; border: 1px solid #e4e7df; border-radius: 8px;">
                     @if (_allChildren != null)
                     {
                         @foreach (var child in _allChildren)
                         {
-                            <option value="@child.Id">@child.FirstName @child.LastName</option>
+                            <label style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid @(_selectedChildIds.Contains(child.Id) ? "#52745e" : "#e4e7df"); border-radius: 16px; cursor: pointer; background: @(_selectedChildIds.Contains(child.Id) ? "#eaf2ec" : "white"); font-size: 13px;">
+                                <input type="checkbox" checked="@_selectedChildIds.Contains(child.Id)" @onchange="@(e => ToggleChild(child.Id, (bool)(e.Value ?? false)))" style="display:none;" />
+                                <span>@child.FirstName @child.LastName</span>
+                            </label>
                         }
                     }
-                </select>
+                </div>
             </div>
         }
 
@@ -88,7 +108,7 @@
         
         @if (_step == 1)
         {
-            <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || (ChildId == null && _selectedChildId == null))">Next</button>
+            <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || (ChildId == null && !_selectedChildIds.Any()))">Next</button>
         }
         else
         {
@@ -114,6 +134,9 @@
     public Guid? ExperienceId { get; set; }
 
     [Parameter]
+    public string? ExperienceTitle { get; set; }
+
+    [Parameter]
     public Guid? ExperienceSessionId { get; set; }
 
     [Parameter]
@@ -134,7 +157,9 @@
     private HashSet<Guid> _selectedAreas = new();
 
     private List<Child>? _allChildren;
-    private Guid? _selectedChildId;
+    private HashSet<Guid> _selectedChildIds = new();
+    private List<Experience>? _allExperiences;
+    private Guid? _selectedDropdownExperienceId;
 
     private readonly string[] _quickObservations = new[]
     {
@@ -156,7 +181,8 @@
         _photoUrl = "";
         _isParentVisible = false;
         _selectedAreas.Clear();
-        _selectedChildId = null;
+        _selectedChildIds.Clear();
+        _selectedDropdownExperienceId = null;
         
         _allAreas ??= (await JourneyService.GetDevelopmentAreasAsync()).ToList();
         
@@ -165,8 +191,20 @@
             _allChildren ??= (await ChildService.GetChildrenAsync()).ToList();
         }
         
+        if (ExperienceId == null)
+        {
+            _allExperiences ??= (await ExperienceService.GetExperiencesAsync()).ToList();
+        }
+        
         _hideDialog = false;
         StateHasChanged();
+    }
+
+    public async Task OpenForExperienceAsync(Guid experienceId, string title)
+    {
+        ExperienceId = experienceId;
+        ExperienceTitle = title;
+        await OpenAsync();
     }
 
     private void CloseDialog()
@@ -186,7 +224,7 @@
     private void GoToNextStep()
     {
         // Don't proceed if child is missing in activity integration mode
-        if (ChildId == null && _selectedChildId == null) return;
+        if (ChildId == null && !_selectedChildIds.Any()) return;
         _step = 2;
     }
 
@@ -196,40 +234,57 @@
         else _selectedAreas.Remove(areaId);
     }
 
+    private void ToggleChild(Guid childId, bool isSelected)
+    {
+        if (isSelected) _selectedChildIds.Add(childId);
+        else _selectedChildIds.Remove(childId);
+    }
+
     private async Task SaveJourneyMoment()
     {
         _isSaving = true;
         try
         {
-            var targetChildId = ChildId ?? _selectedChildId!.Value;
+            var targetChildIds = ChildId.HasValue ? new[] { ChildId.Value } : _selectedChildIds.ToArray();
+            var targetExperienceId = ExperienceId ?? _selectedDropdownExperienceId;
+            var targetExperienceTitle = ExperienceTitle;
             
-            var entry = new ChildJourneyEntry
+            if (ExperienceId == null && _selectedDropdownExperienceId != null && _allExperiences != null)
             {
-                ChildId = targetChildId,
-                TeacherId = TeacherId,
-                ClassroomId = ClassroomId,
-                ExperienceId = ExperienceId,
-                ExperienceSessionId = ExperienceSessionId,
-                ExperienceParticipationId = ExperienceParticipationId,
-                JourneyType = "Observation",
-                Observation = _observation,
-                ObservationDate = DateTimeOffset.UtcNow,
-                IsParentVisible = _isParentVisible,
-                ParentVisibilityStatus = _isParentVisible ? "Approved" : "Draft"
-            };
-
-            await JourneyService.CreateJourneyEntryAsync(entry, _selectedAreas);
+                targetExperienceTitle = _allExperiences.FirstOrDefault(e => e.Id == _selectedDropdownExperienceId)?.Title;
+            }
             
-            if (!string.IsNullOrEmpty(_photoUrl))
+            foreach (var targetChildId in targetChildIds)
             {
-                // To keep it simple, we use the Evidence mechanism to store the photo URL
-                var evidence = new ChildJourneyEvidence
+                var entry = new ChildJourneyEntry
                 {
-                    JourneyEntryId = entry.Id,
-                    EvidenceType = "Photo",
-                    TextContent = _photoUrl // Storing AVIF Base64 or URL in TextContent for simplicity
+                    ChildId = targetChildId,
+                    TeacherId = TeacherId,
+                    ClassroomId = ClassroomId,
+                    ExperienceId = targetExperienceId,
+                    Title = targetExperienceTitle, // Storing the experience title to resolve the missing context
+                    ExperienceSessionId = ExperienceSessionId,
+                    ExperienceParticipationId = ExperienceParticipationId,
+                    JourneyType = "Observation",
+                    Observation = _observation,
+                    ObservationDate = DateTimeOffset.UtcNow,
+                    IsParentVisible = _isParentVisible,
+                    ParentVisibilityStatus = _isParentVisible ? "Approved" : "Draft"
                 };
-                await JourneyService.CreateJourneyEvidenceAsync(evidence);
+
+                await JourneyService.CreateJourneyEntryAsync(entry, _selectedAreas);
+                
+                if (!string.IsNullOrEmpty(_photoUrl))
+                {
+                    // To keep it simple, we use the Evidence mechanism to store the photo URL
+                    var evidence = new ChildJourneyEvidence
+                    {
+                        JourneyEntryId = entry.Id,
+                        EvidenceType = "Photo",
+                        TextContent = _photoUrl // Storing AVIF Base64 or URL in TextContent for simplicity
+                    };
+                    await JourneyService.CreateJourneyEvidenceAsync(evidence);
+                }
             }
 
             _hideDialog = true;

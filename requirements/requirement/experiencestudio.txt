@@ -1,0 +1,2062 @@
+# EXPERIENCE STUDIO — FULL FUNCTIONAL IMPLEMENTATION
+
+## 1. OBJECTIVE
+
+The Experience Studio page already has the desired UI/UX design.
+
+DO NOT redesign the page.
+
+DO NOT change the visual language, layout, spacing, cards, colors, typography, navigation, or overall structure unless required to fix a functional issue.
+
+The goal is to make the existing Experience Studio fully functional and connected to the existing EnjoyEveryday application architecture.
+
+The page should become a real Experience authoring workspace.
+
+The user should be able to:
+
+1. Create an Experience
+2. Edit an Experience
+3. Save as Draft
+4. Add/edit Experience sections
+5. Add materials
+6. Add teacher guidance
+7. Add challenge
+8. Add collaboration instructions
+9. Add child choice
+10. Add creation activity
+11. Add magic moment
+12. Add accomplishment
+13. Add reflection
+14. See Experience context
+15. Get AI suggestions
+16. Apply AI suggestions
+17. Preview the Experience
+18. Save a new version
+19. View previous versions
+20. Publish the Experience
+21. Send the published Experience to Experience Library
+22. Plan the Experience through Experience Planning
+23. Preserve audit/history
+24. Prevent accidental data loss
+
+The Experience Studio is an authoring tool.
+
+Experience Planning is responsible for scheduling the Experience.
+
+Experience Session is responsible for the actual execution.
+
+Do not mix these responsibilities.
+
+
+# 2. FIRST STEP — INSPECT THE EXISTING APPLICATION
+
+Before writing or changing code, inspect the existing solution.
+
+Find and understand:
+
+- Experience Studio
+- Experience Library
+- Experience entity/model
+- Experience services
+- Experience repositories
+- Experience API endpoints
+- Experience database tables
+- Experience Planning
+- Experience Session
+- Classroom
+- Teacher
+- Child
+- Enrollment
+- Child Journey
+- Harvest & Insights
+- Intelligence
+- Memories
+- Authentication
+- Authorization
+- Tenant/Branch handling
+- Audit framework
+- Version/concurrency framework
+- Existing AI/Google ADK integration
+
+Create an internal implementation map:
+
+| Area | Existing Implementation | Required Change |
+|------|--------------------------|-----------------|
+| Experience | ... | ... |
+| Studio UI | ... | ... |
+| Persistence | ... | ... |
+| AI | ... | ... |
+| Versioning | ... | ... |
+| Library | ... | ... |
+| Planning | ... | ... |
+
+IMPORTANT:
+
+Reuse existing entities, services, repositories, patterns and components whenever they already exist.
+
+DO NOT create duplicate Experience entities.
+
+DO NOT create duplicate Teacher/Classroom/Child entities.
+
+DO NOT introduce another architecture.
+
+Follow the existing project architecture.
+
+
+# 3. EXPERIENCE STUDIO RESPONSIBILITY
+
+Experience Studio is where management/teachers DESIGN an Experience.
+
+Concept:
+
+Experience = reusable definition of something children can do.
+
+Example:
+
+Rain Detectives
+
+The Experience contains:
+
+- Challenge
+- Together
+- Create
+- Child Choice
+- Magic Moment
+- Accomplishment
+- Reflection
+- Teacher Guidance
+- Materials
+- Age range
+- Group size
+- Environment
+- Description
+- Learning intentions/context
+
+The Experience is reusable.
+
+It can later be:
+
+Experience Library
+        ↓
+Experience Planning
+        ↓
+Experience Plan
+        ↓
+Experience Session
+        ↓
+Child Participation
+        ↓
+Child Journey
+        ↓
+Harvest & Insights
+
+
+# 4. EXISTING UI MUST REMAIN
+
+The current Experience Studio page contains:
+
+LEFT NAVIGATION
+
+- Today
+- Experience Studio
+- Experience Library
+- Experience Planning
+- Harvest & Insights
+- Children
+- Classrooms
+- Teachers
+- Intelligence
+- Child Journey
+- Memories
+- Organization
+
+Keep this navigation.
+
+CENTER/MAIN AREA:
+
+Experience Studio
+
+"Help me explore"
+
+Possible directions
+
+Experience context
+
+Experience definition cards:
+
+- Challenge
+- Together
+- Create
+- Child Choice
+- Magic Moment
+- Accomplishment
+- Reflection
+- Teacher Guidance
+
+RIGHT AREA:
+
+Experience details
+
+- Age
+- Group Size
+- Environment
+- Materials
+
+Improve with AI
+
+- Make it more playful
+- Add more child choice
+- Improve this experience
+
+Versions
+
+Do not redesign these areas.
+
+Make them functional.
+
+
+# 5. EXPERIENCE EDITING
+
+Every editable section must support:
+
+- View
+- Edit
+- Save
+- Cancel
+- Validation
+
+For example:
+
+Challenge
+
+Can we build something that keeps a toy dry?
+
+The user should be able to click the card and edit the content.
+
+The same applies to:
+
+- Together
+- Create
+- Child Choice
+- Magic Moment
+- Accomplishment
+- Reflection
+- Teacher Guidance
+
+Do not require a separate large administration form.
+
+Keep editing close to the existing card-based UI.
+
+
+# 6. EXPERIENCE DATA MODEL
+
+Reuse the existing Experience model if available.
+
+If the model does not support the current Studio design, extend it rather than creating a second Experience model.
+
+At minimum the Experience must support:
+
+ExperienceId
+TenantId
+BranchId
+Title
+Description
+Status
+AgeMin
+AgeMax
+GroupSizeMin
+GroupSizeMax
+Environment
+Challenge
+Together
+Create
+ChildChoice
+MagicMoment
+Accomplishment
+Reflection
+TeacherGuidance
+PlanningNotes
+CreatedBy
+CreatedAt
+UpdatedBy
+UpdatedAt
+Version
+
+Materials should be represented as structured data if the existing architecture supports it.
+
+Example:
+
+ExperienceMaterial
+
+- ExperienceMaterialId
+- ExperienceId
+- Name
+- Quantity
+- Optional
+- Notes
+
+Reuse existing material models if available.
+
+
+# 7. EXPERIENCE STATUS
+
+Use a clear lifecycle.
+
+Recommended:
+
+Draft
+    ↓
+Ready
+    ↓
+Published
+    ↓
+Archived
+
+Do not allow an invalid state transition.
+
+Draft:
+- Editable
+- Not normally available for planning
+
+Ready:
+- Completed enough to be reviewed
+- Can be previewed
+
+Published:
+- Available in Experience Library
+- Can be selected for Experience Planning
+
+Archived:
+- Cannot be newly planned
+- Existing historical sessions remain intact
+
+If the current system already has a status model, reuse it.
+
+
+# 8. SAVE DRAFT
+
+The user must be able to save changes without publishing.
+
+Implement:
+
+[Save Draft]
+
+Behavior:
+
+1. Validate only required fields.
+2. Save current state.
+3. Preserve all other data.
+4. Update UpdatedAt/UpdatedBy.
+5. Maintain Version.
+6. Show a small success message.
+
+Example:
+
+"Draft saved"
+
+Do not navigate away from Studio after saving.
+
+
+# 9. AUTO-SAVE
+
+If the existing application architecture supports auto-save, it may be implemented.
+
+However:
+
+Do NOT make auto-save mandatory if it conflicts with the existing architecture.
+
+If auto-save is implemented:
+
+- Save after meaningful changes.
+- Avoid excessive API/database calls.
+- Show:
+
+"Saving..."
+"Saved just now"
+
+Never silently lose changes.
+
+
+# 10. REQUIRED FIELD VALIDATION
+
+At minimum validate:
+
+Title
+Age range
+Group size
+Environment
+
+Before publishing, validate that the Experience has enough content to be meaningful.
+
+Suggested publishing validation:
+
+- Title exists
+- Description exists
+- Challenge exists
+- At least one activity/action exists
+- Teacher Guidance exists
+- Age range exists
+- Group size exists
+- Environment exists
+- Materials are valid where applicable
+
+Do not force every optional section to be populated.
+
+The Experience should remain flexible.
+
+
+# 11. MATERIALS
+
+The right-side Materials section must be functional.
+
+Example:
+
+Blocks
+Paper
+Cups
+Water tray
+
+The user should be able to:
+
+- Add material
+- Remove material
+- Edit material
+- Mark material optional
+- Save materials
+
+Do not create duplicate materials when the same material already exists.
+
+Use the existing material implementation if one exists.
+
+
+# 12. EXPERIENCE CONTEXT
+
+The "Experience context" section must use real context.
+
+It may show:
+
+Children
+Age
+Classroom
+Branch
+
+However:
+
+Experience itself should NOT permanently belong to a specific classroom unless the existing domain model explicitly requires it.
+
+The Experience is reusable.
+
+Classroom-specific information belongs to Experience Planning.
+
+
+# 13. POSSIBLE DIRECTIONS
+
+The "Possible directions" section is important.
+
+It should display:
+
+- Existing related Experiences
+- AI-generated suggestions
+- Recently created Experiences
+- Similar Experiences
+
+Do not hard-code these cards.
+
+Retrieve them from the application.
+
+For example:
+
+Rain Detectives
+Build a Water World
+Rainbow Makers
+Who Lives in the Rain?
+
+Each item should be selectable.
+
+When selected:
+
+Open that Experience in Studio.
+
+Do not create duplicate Experience records.
+
+
+# 14. "HELP ME EXPLORE"
+
+The button:
+
+[Help me explore]
+
+must be functional.
+
+When clicked:
+
+Open an exploration experience using the existing AI/Intelligence architecture if available.
+
+The teacher/administrator can provide something like:
+
+"I want an activity about rain for 3-year-olds."
+
+The AI should return suggestions such as:
+
+- Experience title
+- Challenge
+- Possible activity
+- Materials
+- Child choice
+- Teacher guidance
+- Possible magic moment
+
+IMPORTANT:
+
+AI suggestions must NOT automatically overwrite the Experience.
+
+The user must explicitly choose:
+
+[Use suggestion]
+
+or
+
+[Apply]
+
+Teacher remains in control.
+
+
+# 15. AI — IMPROVE WITH AI
+
+The existing right-side section:
+
+Improve with AI
+
+must become functional.
+
+Existing suggestions:
+
+- Make it more playful
+- Add more child choice
+
+Each suggestion should be actionable.
+
+Example:
+
+User clicks:
+
+"Make it more playful"
+
+AI receives:
+
+- Current Experience
+- Age range
+- Group size
+- Environment
+- Existing sections
+- Existing materials
+
+AI returns a proposed improvement.
+
+Show:
+
+CURRENT
+
+Can we build something that keeps a toy dry?
+
+SUGGESTED
+
+"Can you build a tiny rain shelter to keep your favorite toy completely dry?"
+
+Then:
+
+[Apply]
+[Dismiss]
+
+Do NOT silently overwrite content.
+
+
+# 16. AI SAFETY / TRUST
+
+AI must follow these rules:
+
+AI can:
+
+- Suggest
+- Rewrite
+- Expand
+- Simplify
+- Make playful
+- Add child-choice ideas
+- Suggest materials
+- Suggest teacher questions
+- Suggest alternative approaches
+
+AI cannot:
+
+- Invent child observations
+- Invent child behavior
+- Modify Child Journey automatically
+- Create fake participation
+- Diagnose children
+- Automatically publish an Experience
+- Automatically schedule an Experience
+- Override teacher decisions
+
+Every AI-generated change must be explicitly accepted.
+
+
+# 17. AI SUGGESTION EVIDENCE
+
+When useful, AI should explain why it made a suggestion.
+
+Example:
+
+"Children in this age group often benefit from simple choices. This suggestion gives children two possible ways to solve the same challenge."
+
+Keep explanations short.
+
+Do not create a complicated AI screen.
+
+
+# 18. EXPERIENCE PREVIEW
+
+Add/use a Preview action if the existing UI has an appropriate location.
+
+Preview should show the Experience as a teacher would see it.
+
+Example:
+
+RAIN DETECTIVES
+
+Age:
+3–4 years
+
+Group:
+6–18 children
+
+Environment:
+Indoor / Outdoor
+
+CHALLENGE
+Can we build something that keeps a toy dry?
+
+TOGETHER
+Build one shelter with a friend.
+
+CREATE
+Design your own rain shelter.
+
+CHILD CHOICE
+Children choose what they want to protect.
+
+MAGIC MOMENT
+...
+
+TEACHER GUIDANCE
+...
+
+Preview must not modify data.
+
+
+# 19. VERSIONING
+
+The Versions panel on the right must be functional.
+
+Every meaningful published change should create a new version.
+
+Example:
+
+v1
+Created today
+
+v2
+Updated today
+
+v3
+Updated tomorrow
+
+A version should contain:
+
+VersionNumber
+ExperienceId
+Snapshot
+CreatedBy
+CreatedAt
+ChangeSummary
+
+IMPORTANT:
+
+Published versions should be immutable.
+
+Never modify historical versions.
+
+If an Experience is changed after publication:
+
+Create a new draft/version.
+
+Do not change the historical published version.
+
+
+# 20. VERSION HISTORY
+
+When the user clicks:
+
+History
+
+show previous versions.
+
+User should be able to:
+
+- View version
+- Compare versions if existing architecture supports it
+- Restore as a new draft
+
+Do NOT overwrite historical versions.
+
+"Restore" means:
+
+Create new Draft from historical version.
+
+It does NOT mean modifying history.
+
+
+# 21. PUBLISH
+
+Implement:
+
+[Publish]
+
+Before publishing:
+
+1. Validate Experience.
+2. Show validation errors.
+3. If valid, create immutable published version.
+4. Update Experience status.
+5. Record audit event.
+6. Make it available in Experience Library.
+
+Show:
+
+"Experience published"
+
+After publishing, it should appear in:
+
+Experience Library
+
+
+# 22. EXPERIENCE LIBRARY INTEGRATION
+
+Published Experience Studio content must automatically become available in Experience Library.
+
+Do NOT duplicate the Experience.
+
+Library should reference the same Experience.
+
+Example:
+
+Experience Studio
+      ↓
+Experience
+      ↓
+Published Version
+      ↓
+Experience Library
+
+
+# 23. PLAN EXPERIENCE
+
+After an Experience is published, provide a clear action:
+
+[Plan Experience]
+
+This should navigate to:
+
+Experience Planning
+
+and pass:
+
+ExperienceId
+
+The Planning screen should open with this Experience preselected.
+
+Do not create the Experience Plan inside Studio.
+
+Studio designs the Experience.
+
+Planning schedules it.
+
+
+# 24. EXPERIENCE PLANNING INTEGRATION
+
+The final flow must be:
+
+Experience Studio
+        ↓
+Publish
+        ↓
+Experience Library
+        ↓
+Plan Experience
+        ↓
+Experience Planning
+        ↓
+Experience Plan
+        ↓
+Start Experience
+        ↓
+Experience Session
+
+
+# 25. EXPERIENCE SESSION
+
+Studio must NOT create an Experience Session.
+
+Session is created only when the planned Experience is actually started.
+
+Relationship:
+
+Experience
+   ↓
+ExperiencePlan
+   ↓
+ExperienceSession
+
+Do not bypass Experience Planning unless the existing application explicitly supports a direct execution flow.
+
+
+# 26. SECURITY / TENANT ISOLATION
+
+Every Studio operation must enforce:
+
+TenantId
+
+and where applicable:
+
+BranchId
+
+Never trust TenantId supplied by the browser/client.
+
+Get tenant identity from the authenticated user/context.
+
+A user from Tenant A must never be able to:
+
+- View Tenant B Experiences
+- Edit Tenant B Experiences
+- Publish Tenant B Experiences
+- View Tenant B versions
+- Use Tenant B AI context
+
+
+# 27. AUTHORIZATION
+
+Reuse existing authorization.
+
+Suggested behavior:
+
+Admin/Director:
+- Create
+- Edit
+- Publish
+- Version
+- Archive
+- Plan
+
+Lead Teacher:
+- Create
+- Edit assigned/allowed Experiences
+- Save
+- Submit/Publish according to existing permissions
+
+Teacher:
+- View published Experiences
+- Use/plan where permitted
+
+Do not create a new authorization framework.
+
+
+# 28. CONCURRENCY
+
+Use the existing concurrency mechanism.
+
+If another user modifies the Experience while the current user is editing:
+
+Do not silently overwrite their changes.
+
+Show a friendly message:
+
+"This Experience was updated by someone else. Please review the latest version before saving."
+
+Reuse the existing Version/concurrency implementation.
+
+
+# 29. AUDIT
+
+Use the existing audit framework.
+
+Audit at minimum:
+
+ExperienceCreated
+ExperienceUpdated
+ExperienceDraftSaved
+ExperiencePublished
+ExperienceArchived
+ExperienceVersionCreated
+ExperienceRestored
+ExperienceAIImprovementApplied
+
+For AI:
+
+Record that AI generated a suggestion and whether the user accepted it.
+
+Do not store unnecessary sensitive child information in AI logs.
+
+
+# 30. ERROR HANDLING
+
+Every API/database operation must handle:
+
+- Network failure
+- Validation error
+- Authorization error
+- Not found
+- Concurrency conflict
+- AI failure
+- Database failure
+
+Use the application's existing error-handling pattern.
+
+Never show raw exception details to the user.
+
+Example:
+
+"Something went wrong while saving the Experience. Please try again."
+
+
+# 31. LOADING STATES
+
+Do not leave the UI appearing frozen.
+
+For operations:
+
+Save
+Publish
+AI improvement
+Load versions
+Load possible directions
+
+show appropriate loading states.
+
+Examples:
+
+Saving...
+Publishing...
+Thinking...
+Loading versions...
+
+
+# 32. NO FAKE DATA
+
+Remove hard-coded demo data from the functional path.
+
+For example:
+
+Rain Detectives
+Build a Water World
+Rainbow Makers
+Who Lives in the Rain?
+
+may remain as seed/demo data if the application intentionally has seed data.
+
+But the UI must retrieve them through the real application data layer.
+
+Do not use static arrays as the final implementation.
+
+
+# 33. API / APPLICATION OPERATIONS
+
+Reuse existing application patterns.
+
+If these operations do not exist, implement equivalents:
+
+GetExperience
+CreateExperience
+UpdateExperience
+SaveExperienceDraft
+GetExperienceVersions
+GetExperienceVersion
+CreateExperienceVersion
+PublishExperience
+ArchiveExperience
+RestoreExperienceAsDraft
+GetRelatedExperiences
+GetExperienceSuggestions
+GenerateExperienceImprovement
+ApplyExperienceImprovement
+
+Do not create duplicate APIs if equivalent APIs already exist.
+
+
+# 34. IMPORTANT — AI ARCHITECTURE
+
+Do not put large AI business logic directly inside the Razor/UI component.
+
+Use the existing AI/Intelligence architecture.
+
+Preferred flow:
+
+Experience Studio
+      ↓
+Application Service
+      ↓
+Intelligence/AI Service
+      ↓
+Google ADK Agent
+      ↓
+Context
+      ↓
+AI Suggestion
+      ↓
+Application Service
+      ↓
+Studio UI
+
+The UI should not directly implement agent reasoning.
+
+
+# 35. AI CONTEXT
+
+When asking AI to improve an Experience, provide only relevant context:
+
+Experience title
+Description
+Age range
+Group size
+Environment
+Challenge
+Together
+Create
+Child Choice
+Magic Moment
+Accomplishment
+Reflection
+Teacher Guidance
+Materials
+
+If available, AI may also use:
+
+Experience Library
+Previous Experience versions
+Relevant Experience patterns
+
+Do not provide unrelated tenant or child personal information.
+
+
+# 36. FUTURE MEMORY / INTELLIGENCE COMPATIBILITY
+
+Design Studio so that it can later consume:
+
+Memory
+Intelligence
+Experience history
+Classroom patterns
+Teacher preferences
+Experience outcomes
+
+But DO NOT implement the full Memory/Intelligence system inside Experience Studio now.
+
+Studio should expose clean inputs/outputs for future intelligence.
+
+Future flow:
+
+Experience History
+      ↓
+Memory
+      ↓
+Intelligence
+      ↓
+Recommendations
+      ↓
+Experience Studio / Planning
+
+
+# 37. UI INTERACTION RULES
+
+Keep the current design.
+
+When a card has a "+" button:
+
+Clicking "+" should open the appropriate add/edit interaction.
+
+Examples:
+
++ on Challenge
+→ Add/Edit Challenge
+
++ on Together
+→ Add/Edit Together
+
++ on Create
+→ Add/Edit Create
+
++ on Child Choice
+→ Add/Edit Child Choice
+
++ on Magic Moment
+→ Add/Edit Magic Moment
+
++ on Accomplishment
+→ Add/Edit Accomplishment
+
++ on Reflection
+→ Add/Edit Reflection
+
++ on Teacher Guidance
+→ Add/Edit Teacher Guidance
+
+Do not redesign these cards.
+
+
+# 38. EMPTY STATES
+
+If a section has no content, show a friendly empty state.
+
+Example:
+
+CHILD CHOICE
+
+No child-choice idea yet.
+
+[+ Add child choice]
+
+Avoid technical messages.
+
+
+# 39. UNSAVED CHANGES
+
+If the user has unsaved changes and attempts to leave:
+
+Show:
+
+"You have unsaved changes."
+
+Options:
+
+[Save Draft]
+[Leave Without Saving]
+[Cancel]
+
+Do not lose work silently.
+
+
+# 40. NAVIGATION
+
+The existing navigation must work.
+
+Experience Studio
+→ current page
+
+Experience Library
+→ Library
+
+Experience Planning
+→ Planning
+
+Harvest & Insights
+→ Harvest
+
+Children
+→ Children
+
+Classrooms
+→ Classrooms
+
+Teachers
+→ Teachers
+
+Intelligence
+→ Intelligence
+
+Child Journey
+→ Child Journey
+
+Memories
+→ Memories
+
+Do not create duplicate pages.
+
+
+# 41. PERFORMANCE
+
+The Studio should load quickly.
+
+Do not load the entire Experience Library unnecessarily.
+
+Do not load all tenant data.
+
+Load:
+
+1. Current Experience
+2. Required context
+3. Required versions
+4. Related Experiences
+5. AI suggestions when requested
+
+AI calls must happen only when requested.
+
+Do not call AI automatically on every page load.
+
+
+# 42. DATABASE
+
+Before creating database changes:
+
+Inspect existing schema.
+
+If Experience tables already exist:
+
+ALTER/extend appropriately.
+
+Do NOT create duplicate tables such as:
+
+Experiences2
+ExperienceStudio
+StudioExperience
+
+unless the existing architecture explicitly requires a separate table.
+
+Preferred structure:
+
+Experience
+ExperienceVersion
+ExperienceMaterial
+
+or the equivalent existing structure.
+
+
+# 43. TESTING
+
+Test the complete Studio workflow.
+
+TEST 1 — CREATE
+
+Create:
+
+Rain Detectives
+
+Save Draft.
+
+Verify it persists.
+
+TEST 2 — EDIT
+
+Edit Challenge.
+
+Refresh page.
+
+Verify change remains.
+
+TEST 3 — MATERIALS
+
+Add:
+
+Blocks
+Paper
+Cups
+Water tray
+
+Verify persistence.
+
+TEST 4 — AI
+
+Click:
+
+Make it more playful
+
+Verify AI suggestion appears.
+
+Click:
+
+Apply
+
+Verify only the selected content changes.
+
+TEST 5 — VERSION
+
+Publish v1.
+
+Edit Experience.
+
+Publish v2.
+
+Verify v1 remains unchanged.
+
+TEST 6 — LIBRARY
+
+Verify published Experience appears in Experience Library.
+
+TEST 7 — PLANNING
+
+Click:
+
+Plan Experience
+
+Verify Experience Planning opens with Experience selected.
+
+TEST 8 — SECURITY
+
+Verify Tenant A cannot access Tenant B Experience.
+
+TEST 9 — CONCURRENCY
+
+Simulate two users editing the same Experience.
+
+Verify conflict is detected.
+
+TEST 10 — REFRESH
+
+Make changes.
+
+Save.
+
+Refresh browser.
+
+Verify all saved data remains.
+
+
+# 44. DEFINITION OF DONE
+
+Experience Studio is considered fully functional only when:
+
+[ ] Existing UI remains visually unchanged
+[ ] Experience loads from database
+[ ] Experience can be created
+[ ] Experience can be edited
+[ ] Experience can be saved as Draft
+[ ] Challenge works
+[ ] Together works
+[ ] Create works
+[ ] Child Choice works
+[ ] Magic Moment works
+[ ] Accomplishment works
+[ ] Reflection works
+[ ] Teacher Guidance works
+[ ] Materials work
+[ ] Experience details work
+[ ] Possible Directions use real data
+[ ] Help Me Explore works
+[ ] Improve With AI works
+[ ] AI suggestions require user approval
+[ ] Preview works
+[ ] Versions work
+[ ] Version history works
+[ ] Published versions are immutable
+[ ] Restore creates a new Draft
+[ ] Publish works
+[ ] Published Experience appears in Library
+[ ] Plan Experience opens Experience Planning
+[ ] Experience Planning receives ExperienceId
+[ ] Tenant isolation works
+[ ] Authorization works
+[ ] Audit works
+[ ] Concurrency works
+[ ] Error handling works
+[ ] Loading states work
+[ ] Unsaved-change protection works
+[ ] No fake/static data in the production flow
+[ ] No duplicate Experience entities
+[ ] No duplicate Experience APIs
+[ ] No duplicate architecture
+[ ] Existing project patterns are reused
+
+
+# 45. IMPLEMENTATION APPROACH
+
+Do NOT immediately start coding.
+
+First:
+
+STEP 1
+Inspect the existing solution.
+
+STEP 2
+Identify what already exists.
+
+STEP 3
+Create the implementation map.
+
+STEP 4
+Identify missing functionality.
+
+STEP 5
+Implement database/domain changes only where required.
+
+STEP 6
+Implement application/service layer.
+
+STEP 7
+Implement API operations.
+
+STEP 8
+Connect the existing Studio UI.
+
+STEP 9
+Connect AI through the existing Intelligence/ADK architecture.
+
+STEP 10
+Connect Library.
+
+STEP 11
+Connect Planning.
+
+STEP 12
+Implement versioning/audit/concurrency.
+
+STEP 13
+Run tests.
+
+STEP 14
+Fix errors.
+
+STEP 15
+Verify the complete end-to-end flow.
+
+IMPORTANT:
+
+Do not stop after making the buttons clickable.
+
+Every button must perform a real operation.
+
+Every saved value must persist.
+
+Every published Experience must be reusable.
+
+Every AI suggestion must go through the real AI/application architecture.
+
+The final result must be production-ready, not a visual prototype.
+
+
+# 46. ACTUAL AI / GOOGLE ADK INTEGRATION — MANDATORY
+
+The AI functionality in Experience Studio MUST use the actual AI/agent implementation already configured in this application.
+
+DO NOT implement fake AI.
+
+DO NOT return hard-coded AI responses.
+
+DO NOT simulate AI with static strings.
+
+DO NOT create placeholder methods such as:
+
+GetFakeSuggestion()
+MockAiResponse()
+SampleSuggestion()
+
+The following UI actions must call the REAL AI capability:
+
+1. Help me explore
+2. Make it more playful
+3. Add more child choice
+4. Improve this experience
+5. Any future AI-powered Experience Studio action
+
+
+# 47. FIRST INSPECT THE EXISTING AI IMPLEMENTATION
+
+Before implementing the Studio AI integration, inspect the solution for:
+
+- Google ADK
+- ADK Agent
+- Agent Runner
+- Agent service
+- Agent configuration
+- Model configuration
+- Gemini/Ollama/LLM configuration
+- AI tools
+- MCP tools
+- AI prompt/instruction files
+- Agent registration
+- Dependency injection
+- AI endpoints
+- Existing Intelligence service
+- Existing AI service
+- Existing agent invocation code
+- Existing session handling
+- Existing AI response models
+
+Find the actual code path currently used to invoke an AI agent.
+
+Example:
+
+Experience Studio
+       ↓
+Application Service
+       ↓
+Intelligence Service
+       ↓
+Google ADK Agent
+       ↓
+LLM
+       ↓
+Agent Response
+       ↓
+Studio
+
+
+IMPORTANT:
+
+Do not create a second AI architecture if one already exists.
+
+Reuse the existing ADK configuration and agent infrastructure.
+
+
+# 48. REAL ADK AGENT INVOCATION
+
+The Studio AI actions must invoke the configured Google ADK agent through the application's existing service layer.
+
+The UI must NOT directly call the LLM.
+
+Preferred architecture:
+
+Studio UI
+    ↓
+ExperienceStudioService
+    ↓
+IntelligenceService
+    ↓
+ExperienceAgent / ADK Agent
+    ↓
+Google ADK
+    ↓
+Configured Model
+    ↓
+Response
+    ↓
+Structured AI Result
+    ↓
+Studio UI
+
+
+# 49. EXPERIENCE STUDIO AI AGENT
+
+If an appropriate existing agent does not exist, create a dedicated Experience Studio capability using the existing ADK architecture.
+
+Conceptual agent responsibility:
+
+Experience Design Assistant
+
+Its responsibility is:
+
+"Help teachers and daycare managers design meaningful, age-appropriate experiences for children while keeping the teacher in control."
+
+The agent should be able to:
+
+- Generate Experience ideas
+- Improve an existing Experience
+- Make an Experience more playful
+- Add meaningful child choice
+- Suggest materials
+- Suggest teacher guidance
+- Suggest reflection questions
+- Suggest possible magic moments
+- Suggest alternative approaches
+
+
+# 50. DO NOT CREATE A GENERIC CHATBOT
+
+The Experience Studio AI should NOT simply be:
+
+User → ChatGPT → text response
+
+It must understand the Experience Studio context.
+
+The agent should receive structured Experience context.
+
+Example input:
+
+{
+  "title": "Rain Detectives",
+  "ageMin": 3,
+  "ageMax": 4,
+  "groupSizeMin": 6,
+  "groupSizeMax": 18,
+  "environment": "Indoor / Outdoor",
+  "challenge": "Can we build something that keeps a toy dry?",
+  "together": "Build one shelter with a friend.",
+  "create": "Design your own rain shelter.",
+  "childChoice": "Children choose what they want to protect.",
+  "magicMoment": "...",
+  "accomplishment": "...",
+  "reflection": "...",
+  "teacherGuidance": "...",
+  "materials": [
+    "Blocks",
+    "Paper",
+    "Cups",
+    "Water tray"
+  ]
+}
+
+The actual DTO should follow the application's existing architecture.
+
+
+# 51. AI ACTION — "MAKE IT MORE PLAYFUL"
+
+When the teacher clicks:
+
+Make it more playful
+
+the application must:
+
+1. Read the current Experience.
+2. Build structured AI context.
+3. Invoke the REAL ADK agent.
+4. Ask the agent to improve the Experience.
+5. Receive a structured response.
+6. Display the proposed change.
+7. DO NOT automatically save it.
+
+Example:
+
+Current:
+
+"Can we build something that keeps a toy dry?"
+
+AI suggestion:
+
+"Can you build a tiny rain shelter that keeps your favorite toy completely dry?"
+
+Show:
+
+AI suggestion
+
+[Apply]
+[Dismiss]
+
+
+# 52. AI ACTION — "ADD MORE CHILD CHOICE"
+
+When the teacher clicks:
+
+Add more child choice
+
+invoke the REAL ADK agent.
+
+The agent should consider:
+
+- Age
+- Group size
+- Environment
+- Current Experience
+- Existing child-choice content
+
+Return a proposed improvement.
+
+Example:
+
+Current:
+
+"Children choose what they want to protect."
+
+Suggested:
+
+"Children choose what they want to protect and decide which materials they want to test first."
+
+The user must explicitly click:
+
+[Apply]
+
+
+# 53. AI ACTION — "HELP ME EXPLORE"
+
+When the teacher clicks:
+
+Help me explore
+
+open the existing AI interaction experience.
+
+The teacher can provide a natural-language idea.
+
+Example:
+
+"I want an activity about rain for 3-year-olds."
+
+The REAL ADK agent should generate structured suggestions.
+
+Expected response:
+
+{
+  "suggestions": [
+    {
+      "title": "Rain Detectives",
+      "description": "...",
+      "challenge": "...",
+      "together": "...",
+      "create": "...",
+      "childChoice": "...",
+      "magicMoment": "...",
+      "teacherGuidance": "...",
+      "materials": []
+    }
+  ]
+}
+
+Display the suggestions in the existing Studio design.
+
+The teacher selects:
+
+[Use this idea]
+
+Only then should the Experience be changed.
+
+
+# 54. STRUCTURED AI OUTPUT
+
+Do not depend on free-form AI text if the result is intended to update Experience fields.
+
+Use a structured response contract.
+
+Example:
+
+ExperienceImprovementResult
+
+- Action
+- TargetSection
+- CurrentContent
+- SuggestedContent
+- Reason
+- Confidence
+- RequiresApproval
+
+For example:
+
+{
+  "action": "Improve",
+  "targetSection": "ChildChoice",
+  "currentContent": "Children choose what they want to protect.",
+  "suggestedContent": "Children choose what to protect and which material to test first.",
+  "reason": "Adds meaningful choice without making the activity complicated.",
+  "confidence": 0.91,
+  "requiresApproval": true
+}
+
+The exact schema should follow the existing application conventions.
+
+
+# 55. AI MUST USE THE REAL CONFIGURED MODEL
+
+Do not hard-code a model inside the Studio UI.
+
+Use the application's existing model configuration.
+
+For example, if the application currently uses:
+
+Google ADK
++
+configured Gemini model
+
+use that.
+
+If the application currently uses:
+
+Google ADK
++
+Ollama
+
+use that.
+
+If the application has a model provider abstraction:
+
+use the configured provider.
+
+The Studio must not contain:
+
+model names
+API keys
+provider secrets
+LLM credentials
+
+
+# 56. AI TOOL / AGENT REGISTRATION
+
+If the existing application uses dynamic agents/tools, register the Experience Studio AI capability using that existing mechanism.
+
+Do not hard-code agent creation inside the Razor component.
+
+The agent should be discoverable through the existing agent/tool registry if such a registry exists.
+
+Conceptually:
+
+Agent Registry
+    ↓
+Experience Design Agent
+    ↓
+Experience Studio
+
+
+# 57. REAL TOOL EXECUTION
+
+If the Experience Studio agent has access to tools, the agent must use the actual registered tools.
+
+Examples of potentially useful tools:
+
+- Search Experience Library
+- Get Experience
+- Get Experience Version
+- Search similar Experiences
+- Get age guidance
+- Get available materials
+- Get classroom context
+
+Do not create fake tool results.
+
+If a tool does not exist, do not pretend that it exists.
+
+First inspect the existing tool registry.
+
+Reuse existing tools where possible.
+
+
+# 58. AI SHOULD RETRIEVE EXISTING EXPERIENCES
+
+For:
+
+Help me explore
+
+the agent should preferably be able to search existing Experiences before generating a completely new idea.
+
+Example:
+
+User:
+
+"I want something about rain."
+
+Agent:
+
+1. Search Experience Library.
+2. Find related Experiences.
+3. Use those as context.
+4. Generate new directions.
+5. Avoid unnecessary duplicates.
+
+Flow:
+
+User Request
+    ↓
+Experience Agent
+    ↓
+Search Experience Library Tool
+    ↓
+Relevant Experiences
+    ↓
+Agent Reasoning
+    ↓
+Suggestions
+
+
+# 59. AI RESPONSE MUST SHOW SOURCE / CONTEXT WHEN APPLICABLE
+
+If an AI recommendation is based on an existing Experience, show a simple explanation.
+
+Example:
+
+"Based on 3 similar Experiences in your library..."
+
+Do not expose internal agent reasoning or chain-of-thought.
+
+Only show a concise user-facing explanation.
+
+
+# 60. AI FAILURE MUST NOT BREAK STUDIO
+
+If the ADK agent is unavailable:
+
+Show:
+
+"AI is temporarily unavailable. You can continue designing the Experience manually."
+
+The existing Studio must continue working.
+
+AI is an assistant, not a required dependency for basic Experience authoring.
+
+
+# 61. AI TIMEOUT
+
+Implement reasonable timeout/cancellation handling.
+
+If AI takes too long:
+
+Stop the request gracefully.
+
+Show:
+
+"AI is taking longer than expected. Please try again."
+
+Do not leave the UI permanently loading.
+
+
+# 62. AI AUDIT
+
+Record:
+
+- AI action requested
+- ExperienceId
+- User
+- Timestamp
+- Agent/capability used
+- Result accepted/rejected
+
+Do not store unnecessary sensitive information.
+
+Example:
+
+ExperienceAIAction
+
+Action:
+MakeMorePlayful
+
+Target:
+Challenge
+
+Result:
+Accepted
+
+User:
+...
+
+Timestamp:
+...
+
+
+# 63. AI ACCEPTANCE FLOW
+
+VERY IMPORTANT:
+
+AI proposal:
+
+        ↓
+
+Teacher reviews
+
+        ↓
+
+[Apply]
+
+        ↓
+
+Experience changes
+
+        ↓
+
+Teacher saves
+
+        ↓
+
+New version when published
+
+
+Never:
+
+AI
+ ↓
+Automatically modify database
+
+
+# 64. AI TESTING
+
+The following tests MUST invoke the actual AI integration.
+
+TEST 1
+
+Click:
+
+Make it more playful
+
+Verify:
+
+- Real ADK agent invoked
+- AI response received
+- Suggestion displayed
+- Experience not automatically changed
+
+
+TEST 2
+
+Click:
+
+Add more child choice
+
+Verify:
+
+- Real agent invoked
+- Structured suggestion returned
+- Apply changes only after user approval
+
+
+TEST 3
+
+Click:
+
+Help me explore
+
+Enter:
+
+"I want an activity about rain for 3-year-olds."
+
+Verify:
+
+- Real agent invoked
+- Suggestions generated
+- Suggestions appear in Studio
+- User can select one
+
+
+TEST 4
+
+Disable/unavailable AI service.
+
+Verify:
+
+Studio still works normally.
+
+TEST 5
+
+Verify AI does not modify Child Journey.
+
+TEST 6
+
+Verify AI does not create Experience Plans.
+
+TEST 7
+
+Verify AI does not publish automatically.
+
+
+# 65. ACCEPTANCE CRITERIA FOR AI
+
+AI integration is NOT complete if:
+
+- It returns hard-coded suggestions.
+- It uses mock services.
+- It uses static JSON.
+- It only displays sample text.
+- The button only opens a dialog.
+- The UI directly calls an LLM.
+- The AI response is not connected to the actual agent.
+- The user cannot apply the suggestion.
+- The suggestion automatically changes the database.
+
+AI integration IS complete only when:
+
+UI
+ ↓
+Existing application AI service
+ ↓
+Real Google ADK agent
+ ↓
+Configured model/tools
+ ↓
+Real response
+ ↓
+Structured result
+ ↓
+Teacher approval
+ ↓
+Experience update
+ ↓
+Save/version

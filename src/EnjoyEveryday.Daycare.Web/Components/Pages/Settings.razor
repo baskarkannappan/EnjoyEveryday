@@ -3,6 +3,8 @@
 @using EnjoyEveryday.Domain.Entities
 @inject OrganizationService OrgService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject TenantSettingsService TenantSettingsService
+
 <PageHero 
     Eyebrow="CONFIGURATION" 
     Title="Settings" 
@@ -24,14 +26,59 @@
         Description="Review and approval settings" 
         ButtonText="Configure" 
     />
+    
+    <div style="background: white; border: 1px solid #e1e6e0; border-radius: 12px; padding: 24px; margin-top: 16px;">
+        <h3 style="margin-top: 0;">Integrations</h3>
+        <p style="color: #666; font-size: 14px; margin-bottom: 16px;">Configure third-party services and API keys for your daycare.</p>
+        
+        <div>
+            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Google Gemini API Key</label>
+            <div style="display: flex; gap: 8px;">
+                <input type="password" @bind="_aiApiKey" placeholder="Enter your Gemini API Key" style="flex: 1; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                <button class="btn primary" @onclick="SaveApiKeyAsync" style="background: #456a55; color: white; border: none; padding: 0 16px; border-radius: 6px; cursor: pointer;">Save Key</button>
+            </div>
+            @if (_saveMessage != null)
+            {
+                <div style="margin-top: 8px; color: #456a55; font-size: 13px; font-weight: 600;">@_saveMessage</div>
+            }
+        </div>
+    </div>
 </div>
 @code {
     private Organization? _org;
+    private string? _aiApiKey;
+    private string? _saveMessage;
+
     protected override async Task OnInitializedAsync()
     {
         var orgs = await OrgService.GetOrganizationsAsync();
         _org = orgs.FirstOrDefault();
+        
+        // Load the existing key if it exists
+        var existingKey = await TenantSettingsService.GetAiApiKeyAsync(TenantContext.TenantId);
+        if (!string.IsNullOrEmpty(existingKey))
+        {
+            _aiApiKey = existingKey;
+        }
     }
+    
+    private async Task SaveApiKeyAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_aiApiKey))
+        {
+            await TenantSettingsService.SetAiApiKeyAsync(TenantContext.TenantId, _aiApiKey);
+            _saveMessage = "API Key saved successfully.";
+            
+            // Clear message after 3 seconds
+            _ = Task.Run(async () => 
+            {
+                await Task.Delay(3000);
+                _saveMessage = null;
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+    }
+
     private async Task SaveSettingsAsync()
     {
         if (_org != null)

@@ -9,6 +9,7 @@ public class HarvestMetricsDto
 
 public class HarvestPerformanceItemDto
 {
+    public Guid ExperienceId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Subtitle { get; set; } = string.Empty;
     public int Uses { get; set; }

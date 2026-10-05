@@ -26,6 +26,8 @@ public class ExperienceScheduleRepository : IExperienceScheduleRepository
         var sql = @"
             SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
                    scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
+                   primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
+                   planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
                    created_at as CreatedAt, updated_at as UpdatedAt
             FROM experience_schedules
             WHERE tenant_id = @TenantId AND classroom_id = @ClassroomId AND scheduled_date >= @StartDate AND scheduled_date <= @EndDate
@@ -34,12 +36,30 @@ public class ExperienceScheduleRepository : IExperienceScheduleRepository
         return await connection.QueryAsync<ExperienceSchedule>(sql, new { TenantId = _tenantContext.TenantId, ClassroomId = classroomId, StartDate = startDate, EndDate = endDate });
     }
 
+    public async Task<IEnumerable<ExperienceSchedule>> GetByDateAsync(DateOnly date)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync();
+        var sql = @"
+            SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
+                   scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
+                   primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
+                   planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
+                   created_at as CreatedAt, updated_at as UpdatedAt
+            FROM experience_schedules
+            WHERE tenant_id = @TenantId AND scheduled_date = @Date
+            ORDER BY planned_start_time ASC, time_of_day ASC";
+
+        return await connection.QueryAsync<ExperienceSchedule>(sql, new { TenantId = _tenantContext.TenantId, Date = date });
+    }
+
     public async Task<ExperienceSchedule?> GetByIdAsync(Guid id)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
         var sql = @"
             SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
                    scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
+                   primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
+                   planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
                    created_at as CreatedAt, updated_at as UpdatedAt
             FROM experience_schedules
             WHERE id = @Id AND tenant_id = @TenantId";
@@ -53,10 +73,12 @@ public class ExperienceScheduleRepository : IExperienceScheduleRepository
         schedule.TenantId = _tenantContext.TenantId;
         
         var sql = @"
-            INSERT INTO experience_schedules (id, tenant_id, experience_id, classroom_id, scheduled_date, time_of_day, status, created_at, updated_at)
-            VALUES (@Id, @TenantId, @ExperienceId, @ClassroomId, @ScheduledDate, @TimeOfDay, @Status, @CreatedAt, @UpdatedAt)
+            INSERT INTO experience_schedules (id, tenant_id, experience_id, classroom_id, scheduled_date, time_of_day, status, primary_teacher_id, planned_start_time, planned_end_time, preparation_notes, created_at, updated_at)
+            VALUES (@Id, @TenantId, @ExperienceId, @ClassroomId, @ScheduledDate, @TimeOfDay, @Status, @PrimaryTeacherId, @PlannedStartTime, @PlannedEndTime, @PreparationNotes, @CreatedAt, @UpdatedAt)
             RETURNING id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
                       scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
+                      primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
+                      planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
                       created_at as CreatedAt, updated_at as UpdatedAt";
 
         return await connection.QuerySingleAsync<ExperienceSchedule>(sql, schedule);
@@ -72,6 +94,10 @@ public class ExperienceScheduleRepository : IExperienceScheduleRepository
             SET scheduled_date = @ScheduledDate,
                 time_of_day = @TimeOfDay,
                 status = @Status,
+                primary_teacher_id = @PrimaryTeacherId,
+                planned_start_time = @PlannedStartTime,
+                planned_end_time = @PlannedEndTime,
+                preparation_notes = @PreparationNotes,
                 updated_at = @UpdatedAt
             WHERE id = @Id AND tenant_id = @TenantId";
 

@@ -10,7 +10,11 @@ public class ExperienceSchedule
     public Guid ClassroomId { get; set; }
     public DateOnly ScheduledDate { get; set; }
     public string TimeOfDay { get; set; } = string.Empty; // Morning, Afternoon, etc.
-    public string Status { get; set; } = "Scheduled"; // Scheduled, Started, Completed, Cancelled
+    public string Status { get; set; } = "Scheduled"; // Draft, Planned, Confirmed, Started, Completed, Cancelled
+    public Guid? PrimaryTeacherId { get; set; }
+    public TimeSpan? PlannedStartTime { get; set; }
+    public TimeSpan? PlannedEndTime { get; set; }
+    public string? PreparationNotes { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

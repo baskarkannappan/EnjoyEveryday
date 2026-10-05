@@ -1,0 +1,275 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+
+@inject ExperienceService ExperienceService
+@inject ClassroomService ClassroomService
+@inject ITeacherService TeacherService
+@inject PlannerService PlannerService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+
+@if (IsOpen)
+{
+    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; width: 600px; max-width: 90vw; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <h2 style="margin: 0; font-size: 1.5rem; color: #26332d;">Plan Experience</h2>
+                <button @onclick="Close" style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="background: #fff0f0; color: #d32f2f; padding: 12px; border-radius: 6px; margin-bottom: 16px; border: 1px solid #ffcdd2;">
+                    @_errorMessage
+                </div>
+            }
+
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                
+                <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Experience</label>
+                    <select @bind="_experienceId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                        <option value="">Select an Experience...</option>
+                        @foreach (var exp in _experiences)
+                        {
+                            <option value="@exp.Id">@exp.Title</option>
+                        }
+                    </select>
+                </div>
+
+                <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Classroom</label>
+                    <select @bind="_classroomId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                        <option value="">Select a Classroom...</option>
+                        @foreach (var c in _classrooms)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Primary Teacher</label>
+                    <select @bind="_teacherId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                        <option value="">Select a Teacher...</option>
+                        @foreach (var t in _teachers)
+                        {
+                            <option value="@t.Id">@t.FullName</option>
+                        }
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Date</label>
+                        <input type="date" @bind="_date" @bind:format="yyyy-MM-dd" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Time of Day Category</label>
+                        <select @bind="_timeOfDay" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                            <option value="Morning">Morning</option>
+                            <option value="Mid-Day">Mid-Day</option>
+                            <option value="Afternoon">Afternoon</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Start Time (Optional)</label>
+                        <input type="time" @bind="_startTime" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">End Time (Optional)</label>
+                        <input type="time" @bind="_endTime" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                    </div>
+                </div>
+
+                <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Preparation Notes</label>
+                    <textarea @bind="_notes" rows="3" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px; resize: vertical;"></textarea>
+                </div>
+
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e6e0;">
+                @if (ScheduleId.HasValue)
+                {
+                    <button class="secondary" @onclick="Delete" style="padding: 10px 20px; border: 1px solid #ffcdd2; background: #fff0f0; color: #d32f2f; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: auto;">Delete Plan</button>
+                }
+                <button class="secondary" @onclick="Close" style="padding: 10px 20px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Cancel</button>
+                <button class="primary" @onclick="Save" disabled="@_isSaving" style="padding: 10px 20px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
+                </button>
+            </div>
+            
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid? DefaultClassroomId { get; set; }
+    [Parameter] public DateOnly? DefaultDate { get; set; }
+    [Parameter] public Guid? ScheduleId { get; set; }
+    [Parameter] public EventCallback<Guid> OnPlanCreated { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private List<Experience> _experiences = new();
+    private List<Classroom> _classrooms = new();
+    private List<Teacher> _teachers = new();
+
+    private Guid? _experienceId;
+    private Guid? _classroomId;
+    private Guid? _teacherId;
+    private DateTime _date = DateTime.Today;
+    private string _timeOfDay = "Morning";
+    private DateTime? _startTime;
+    private DateTime? _endTime;
+    private string _notes = "";
+
+    private string _errorMessage = "";
+    private bool _isSaving = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        _teachers = (await TeacherService.GetAllTeachersAsync(TenantContext.TenantId)).ToList();
+    }
+
+    public async Task Open()
+    {
+        _errorMessage = "";
+        
+        if (ScheduleId.HasValue)
+        {
+            var s = await PlannerService.GetScheduleAsync(ScheduleId.Value);
+            if (s != null)
+            {
+                _experienceId = s.ExperienceId;
+                _classroomId = s.ClassroomId;
+                _teacherId = s.PrimaryTeacherId;
+                _date = s.ScheduledDate.ToDateTime(TimeOnly.MinValue);
+                _timeOfDay = s.TimeOfDay;
+                _startTime = s.PlannedStartTime.HasValue ? DateTime.Today.Add(s.PlannedStartTime.Value) : null;
+                _endTime = s.PlannedEndTime.HasValue ? DateTime.Today.Add(s.PlannedEndTime.Value) : null;
+                _notes = s.PreparationNotes ?? "";
+            }
+        }
+        else
+        {
+            _experienceId = null;
+            _classroomId = DefaultClassroomId;
+            _teacherId = null;
+            _date = DefaultDate.HasValue ? DefaultDate.Value.ToDateTime(TimeOnly.MinValue) : DateTime.Today;
+            _timeOfDay = "Morning";
+            _startTime = null;
+            _endTime = null;
+            _notes = "";
+        }
+        
+        IsOpen = true;
+        StateHasChanged();
+    }
+
+    private bool _wasOpen = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && !_wasOpen)
+        {
+            await Open();
+        }
+        _wasOpen = IsOpen;
+    }
+
+    private async Task Close()
+    {
+        IsOpen = false;
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task Save()
+    {
+        _errorMessage = "";
+
+        if (!_experienceId.HasValue)
+        {
+            _errorMessage = "Please select an Experience.";
+            return;
+        }
+        if (!_classroomId.HasValue)
+        {
+            _errorMessage = "Please select a Classroom.";
+            return;
+        }
+
+        _isSaving = true;
+
+        try
+        {
+            TimeSpan? startTs = _startTime.HasValue ? _startTime.Value.TimeOfDay : null;
+            TimeSpan? endTs = _endTime.HasValue ? _endTime.Value.TimeOfDay : null;
+
+            if (ScheduleId.HasValue)
+            {
+                var s = await PlannerService.GetScheduleAsync(ScheduleId.Value);
+                if (s != null)
+                {
+                    s.ExperienceId = _experienceId.Value;
+                    s.ClassroomId = _classroomId.Value;
+                    s.ScheduledDate = DateOnly.FromDateTime(_date);
+                    s.TimeOfDay = _timeOfDay;
+                    s.PrimaryTeacherId = _teacherId;
+                    s.PlannedStartTime = startTs;
+                    s.PlannedEndTime = endTs;
+                    s.PreparationNotes = _notes;
+                    await PlannerService.UpdateScheduleAsync(s);
+                }
+            }
+            else
+            {
+                await PlannerService.ScheduleExperienceAsync(
+                    _experienceId.Value, 
+                    _classroomId.Value, 
+                    DateOnly.FromDateTime(_date), 
+                    _timeOfDay, 
+                    _teacherId, 
+                    startTs, 
+                    endTs, 
+                    _notes);
+            }
+            
+            await Close();
+            if (OnPlanCreated.HasDelegate)
+            {
+                await OnPlanCreated.InvokeAsync(_classroomId.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task Delete()
+    {
+        if (ScheduleId.HasValue)
+        {
+            await PlannerService.DeleteScheduleAsync(ScheduleId.Value);
+            await Close();
+            if (OnPlanCreated.HasDelegate)
+            {
+                await OnPlanCreated.InvokeAsync(_classroomId ?? Guid.Empty);
+            }
+        }
+    }
+}

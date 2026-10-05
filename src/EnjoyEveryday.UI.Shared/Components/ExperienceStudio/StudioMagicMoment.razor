@@ -1,23 +1,68 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
-<div class="dna-card full magic-card">
-    <div class="dna-label">
-        ✦ MAGIC MOMENT
-        <button class="dna-add">+</button>
+@if (_isEditing)
+{
+    <div class="dna-card full magic-card">
+        <div class="dna-label">✦ MAGIC MOMENT</div>
+        <textarea style="width: 100%; border: 1px solid #e1e6e0; border-radius: 6px; padding: 10px; font-family: inherit; font-size: 14px; margin-top: 10px; resize: vertical; min-height: 80px;" @bind="_editValue" placeholder="@Placeholder"></textarea>
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button class="btn primary" @onclick="Save" style="background: #456a55; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">Save</button>
+            <button class="btn" @onclick="Cancel" style="background: #f4f6f4; color: #47534c; border: 1px solid #e1e6e0; padding: 6px 12px; border-radius: 6px; cursor: pointer;">Cancel</button>
+        </div>
     </div>
-    <div class="dna-content">
-        @if (string.IsNullOrWhiteSpace(Content))
-        {
-            <span class="dna-empty">@Placeholder</span>
-        }
-        else
-        {
-            @Content
-        }
+}
+else
+{
+    <div class="dna-card full magic-card" @onclick="() => { if(!ReadOnly) BeginEdit(); }" style="@(ReadOnly ? "" : "cursor: pointer;")">
+        <div class="dna-label">
+            ✦ MAGIC MOMENT
+            @if (!ReadOnly)
+            {
+                <button class="dna-add" @onclick:stopPropagation="true" @onclick="BeginEdit">+</button>
+            }
+        </div>
+        <div class="dna-content">
+            @if (string.IsNullOrWhiteSpace(Content))
+            {
+                <span class="dna-empty">@Placeholder</span>
+            }
+            else
+            {
+                <span style="white-space: pre-wrap;">@Content</span>
+            }
+        </div>
     </div>
-</div>
+}
 
 @code {
     [Parameter] public string Content { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ContentChanged { get; set; }
     [Parameter] public string Placeholder { get; set; } = "What makes this magic?";
+    [Parameter] public bool ReadOnly { get; set; } = false;
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    private bool _isEditing = false;
+    private string _editValue = string.Empty;
+
+    private void BeginEdit()
+    {
+        _editValue = Content;
+        _isEditing = true;
+    }
+
+    private async Task Save()
+    {
+        Content = _editValue;
+        _isEditing = false;
+        await ContentChanged.InvokeAsync(Content);
+        if (OnSave.HasDelegate)
+        {
+            await OnSave.InvokeAsync();
+        }
+    }
+
+    private void Cancel()
+    {
+        _isEditing = false;
+    }
 }

@@ -1,0 +1,1553 @@
+# Experience Planning — End-to-End Integration
+
+## EnjoyEveryday
+
+## 1. Objective
+
+Experience Planning is the bridge between the reusable Experience and the actual everyday classroom execution.
+
+The existing system already has:
+
+* Experience Library
+* Experience Studio
+* Experience Planning
+* Class
+* Teacher
+* Child
+* Child Journey
+* Harvest & Insight
+
+Child Journey and Harvest are already implemented.
+
+The next implementation step is to connect **Experience Planning with the complete existing flow**.
+
+Do not redesign existing modules.
+
+Do not recreate Child Journey or Harvest.
+
+The goal is to make Experience Planning orchestrate the actual classroom experience.
+
+---
+
+# 2. Target Flow
+
+The final flow should be:
+
+```text
+Experience Library
+        ↓
+Experience
+        ↓
+Experience Planning
+        ↓
+Planned Experience
+        ↓
+Classroom
+        ↓
+Teacher
+        ↓
+Children
+        ↓
+Today's Experience
+        ↓
+Start Experience
+        ↓
+Execute
+        ↓
+Complete Experience
+        ↓
+Child Journey
+        ↓
+Harvest & Insight
+```
+
+The key principle is:
+
+> Experience Planning decides what the classroom is going to experience and prepares the context required for execution.
+
+---
+
+# 3. Important Distinction
+
+Do not treat Experience Planning as another copy of Experience.
+
+### Experience
+
+Reusable definition.
+
+Example:
+
+```text
+Rainbow Builders
+```
+
+### Experience Plan
+
+A scheduled intention.
+
+Example:
+
+```text
+Rainbow Builders
+Bluebirds
+October 4
+10:00 AM
+Teacher: Priya
+```
+
+### Experience Session
+
+The actual classroom occurrence.
+
+Example:
+
+```text
+Rainbow Builders
+Bluebirds
+October 4
+10:07 AM – 10:42 AM
+Actually conducted by Priya
+```
+
+Therefore:
+
+```text
+Experience
+    ↓
+Experience Plan
+    ↓
+Experience Session
+```
+
+---
+
+# 4. Experience Planning Responsibilities
+
+Experience Planning should answer:
+
+* What Experience are we doing?
+* When are we doing it?
+* Which classroom?
+* Which teacher?
+* Which children?
+* What preparation is required?
+* What is the expected duration?
+* Is the plan confirmed?
+* Has it started?
+* Has it been completed?
+* What actually happened?
+
+Experience Planning should NOT store:
+
+* Child master information
+* Teacher master information
+* Classroom master information
+* Child Journey information
+* Harvest information
+
+Those domains remain the source of truth.
+
+---
+
+# 5. Experience Plan
+
+Use the existing Experience Plan entity if it already exists.
+
+If it does not exist, implement:
+
+```text
+ExperiencePlan
+```
+
+Recommended fields:
+
+```text
+ExperiencePlanId
+TenantId
+BranchId
+ExperienceId
+ClassroomId
+PrimaryTeacherId
+
+PlannedDate
+PlannedStartTime
+PlannedEndTime
+
+Status
+
+PlanningNotes
+PreparationNotes
+
+CreatedAt
+CreatedBy
+UpdatedAt
+UpdatedBy
+Version
+```
+
+---
+
+# 6. Planning Status
+
+Use a simple lifecycle:
+
+```text
+Draft
+   ↓
+Planned
+   ↓
+Confirmed
+   ↓
+Started
+   ↓
+Completed
+```
+
+Alternative paths:
+
+```text
+Planned → Cancelled
+Confirmed → Cancelled
+```
+
+Do not allow arbitrary status changes.
+
+The application layer must enforce valid transitions.
+
+---
+
+# 7. Experience Selection
+
+Experience Planning must allow the user to select an Experience from the existing Experience Library.
+
+Example:
+
+```text
+Experience Library
+
+Rainbow Builders
+Creative
+3–5 years
+30 minutes
+
+[Plan Experience]
+```
+
+Selecting:
+
+```text
+Plan Experience
+```
+
+opens the existing Experience Planning flow.
+
+Do not create a new Experience.
+
+The Plan must reference:
+
+```text
+ExperienceId
+```
+
+---
+
+# 8. Classroom Selection
+
+The user selects the Classroom.
+
+Example:
+
+```text
+Classroom
+
+Bluebirds
+Age 3–4
+Capacity 20
+Current children 16
+```
+
+Only classrooms available to the current tenant should appear.
+
+Validate:
+
+* Tenant ownership
+* Branch
+* Classroom status
+* Classroom availability
+
+The Classroom remains the source of truth.
+
+---
+
+# 9. Teacher Selection
+
+The planner selects the teacher.
+
+Example:
+
+```text
+Teacher
+
+Priya
+Lead Teacher
+Bluebirds
+
+Arun
+Supporting Teacher
+```
+
+The primary teacher should be stored on the plan.
+
+If the existing system supports multiple teachers, create/use:
+
+```text
+ExperiencePlanTeacher
+```
+
+with:
+
+```text
+ExperiencePlanId
+TeacherId
+Role
+```
+
+Possible roles:
+
+```text
+LeadTeacher
+SupportingTeacher
+Observer
+Assistant
+```
+
+Do not duplicate teacher information.
+
+---
+
+# 10. Children
+
+The plan should automatically identify the children currently enrolled in the selected Classroom.
+
+Example:
+
+```text
+Bluebirds
+
+16 children
+
+✓ Maya
+✓ Arjun
+✓ Sara
+✓ Liam
+...
+```
+
+The planner should NOT manually recreate child records.
+
+Use the existing:
+
+```text
+Enrollment
+```
+
+and Classroom relationship.
+
+At planning time, the system should show the expected participating children.
+
+---
+
+# 11. Planned Children vs Actual Participation
+
+This distinction is important.
+
+Planning answers:
+
+> Who do we expect?
+
+Execution answers:
+
+> Who actually participated?
+
+Therefore do not permanently treat all planned children as participants.
+
+Example:
+
+```text
+Plan
+
+Expected:
+16 children
+```
+
+Actual session:
+
+```text
+Participated:
+14
+Partially participated:
+1
+Absent:
+1
+```
+
+Actual participation belongs to the Experience Session.
+
+---
+
+# 12. Planning Calendar
+
+Experience Planning should provide a simple calendar/list view.
+
+Example:
+
+```text
+MONDAY
+
+10:00
+Rainbow Builders
+Bluebirds
+Priya
+
+11:30
+Water Discovery
+Butterflies
+Arun
+```
+
+The planner should be able to filter by:
+
+```text
+Date
+Branch
+Classroom
+Teacher
+Experience
+Status
+```
+
+Reuse the existing UI patterns.
+
+---
+
+# 13. Daily Plan
+
+The most important output of Experience Planning is:
+
+```text
+Today's Experiences
+```
+
+Example:
+
+```text
+TODAY
+
+Bluebirds
+
+10:00 AM
+Rainbow Builders
+Priya
+30 minutes
+
+[Start Experience]
+
+
+11:30 AM
+Water Discovery
+Priya
+30 minutes
+
+[Start Experience]
+```
+
+This should become the teacher's execution entry point.
+
+---
+
+# 14. Start Experience
+
+When the teacher clicks:
+
+```text
+Start Experience
+```
+
+the system must create or activate an:
+
+```text
+ExperienceSession
+```
+
+The Session should inherit the plan context:
+
+```text
+ExperienceId
+ExperiencePlanId
+TenantId
+BranchId
+ClassroomId
+PrimaryTeacherId
+```
+
+The actual session should record:
+
+```text
+ActualStartTime
+```
+
+Do not overwrite:
+
+```text
+PlannedStartTime
+```
+
+---
+
+# 15. Session Context
+
+When the teacher starts the Experience, the screen should already know:
+
+```text
+Experience
+Classroom
+Teacher
+Children
+Planned duration
+Materials
+Instructions
+Safety notes
+```
+
+The teacher should not have to select these again.
+
+Example:
+
+```text
+Rainbow Builders
+
+Bluebirds
+10:00 AM
+
+Teacher:
+Priya
+
+Children:
+16
+
+Duration:
+30 minutes
+
+Materials:
+Blocks
+Colored cards
+
+[Start]
+```
+
+---
+
+# 16. During the Experience
+
+The teacher should be able to:
+
+* See participating children
+* Mark participation
+* Capture a Little Moment
+* Capture a Child Journey observation
+* Add photo/video where permitted
+* Add notes
+* Mark children as partially participating
+* Mark absent children
+* Complete the Experience
+
+Do not turn this into a long form.
+
+The teacher experience should be fast.
+
+---
+
+# 17. Child Participation
+
+During execution, create/update:
+
+```text
+ExperienceParticipation
+```
+
+Example:
+
+```text
+Maya       Participated
+Arjun      Participated
+Sara       PartiallyParticipated
+Liam       Absent
+```
+
+Participation must reference:
+
+```text
+ExperienceSessionId
+ChildId
+EnrollmentId
+```
+
+---
+
+# 18. Child Journey Integration
+
+Child Journey already exists.
+
+Do not recreate it.
+
+The Experience Session should provide the context needed to create a Journey Entry.
+
+When a teacher captures an observation:
+
+```text
+Experience Session
+        ↓
+Child
+        ↓
+Capture Observation
+        ↓
+Existing Child Journey creation
+```
+
+The Journey Entry should reference:
+
+```text
+ExperienceSessionId
+ExperienceParticipationId
+ChildId
+TeacherId
+ClassroomId
+```
+
+The teacher should not need to manually enter these.
+
+---
+
+# 19. Quick Journey Capture
+
+Provide a quick action:
+
+```text
+Observe Child
+```
+
+Example:
+
+```text
+Maya
+
+What did you notice?
+
+[Maya helped Liam build the bridge.]
+
+Development
+
+☐ Communication
+☑ Collaboration
+☑ Creativity
+☐ Independence
+
+[Save to Journey]
+```
+
+After Save:
+
+```text
+Child Journey
+        ↓
+Journey Entry
+        ↓
+Harvest
+```
+
+Use the existing Child Journey implementation.
+
+---
+
+# 20. Little Moment
+
+During the session:
+
+```text
+Capture Little Moment
+```
+
+Example:
+
+```text
+Maya and Liam built the tallest bridge together.
+
+[Save]
+```
+
+The Little Moment should automatically know:
+
+```text
+ExperienceSessionId
+ClassroomId
+TeacherId
+```
+
+If associated with a child:
+
+```text
+ChildId
+ExperienceParticipationId
+```
+
+---
+
+# 21. Complete Experience
+
+When the teacher finishes:
+
+```text
+[Complete Experience]
+```
+
+the system should:
+
+1. Validate the session.
+2. Record ActualEndTime.
+3. Update session status to Completed.
+4. Finalize participation.
+5. Preserve Journey entries.
+6. Preserve Little Moments.
+7. Preserve evidence.
+8. Make the completed session available to Harvest.
+
+Do not automatically create Journey entries for children without observations.
+
+---
+
+# 22. What Happens After Completion
+
+The completed Experience Session becomes historical evidence.
+
+```text
+Completed Session
+       │
+       ├── Participation
+       │
+       ├── Child Journey
+       │
+       ├── Little Moments
+       │
+       ├── Media/Evidence
+       │
+       └── Harvest
+```
+
+Harvest should use the existing implementation.
+
+Experience Planning should not duplicate Harvest logic.
+
+---
+
+# 23. Planning → Child Journey → Harvest
+
+The complete chain should be:
+
+```text
+Experience Library
+       ↓
+Experience
+       ↓
+Experience Plan
+       ↓
+Experience Session
+       ↓
+Experience Participation
+       ↓
+Child Journey Entry
+       ↓
+Harvest
+       ↓
+Insight
+```
+
+This chain must be traceable.
+
+For a Journey Entry, the system should be able to answer:
+
+```text
+Which Experience?
+Which Plan?
+Which Session?
+Which Classroom?
+Which Teacher?
+Which Child?
+When?
+```
+
+---
+
+# 24. Experience History
+
+When viewing an Experience:
+
+```text
+Rainbow Builders
+```
+
+show:
+
+```text
+Experience History
+
+Oct 4
+Bluebirds
+16 children
+Completed
+14 observations
+
+Oct 2
+Butterflies
+12 children
+Completed
+9 observations
+
+Sep 29
+Bluebirds
+15 children
+Completed
+11 observations
+```
+
+This should come from actual Sessions.
+
+Do not calculate historical execution from the Plan alone.
+
+---
+
+# 25. Classroom Experience History
+
+When viewing a Classroom:
+
+```text
+Bluebirds
+
+Experience History
+
+Today
+Rainbow Builders
+
+Yesterday
+Story Circle
+
+Sep 30
+Nature Discovery
+```
+
+This allows the classroom to become a living record of what children experienced.
+
+---
+
+# 26. Teacher Experience History
+
+When viewing a Teacher:
+
+```text
+Priya
+
+Experiences
+
+Today
+3
+
+This Week
+14
+
+This Month
+46
+```
+
+Examples:
+
+```text
+Rainbow Builders
+Water Discovery
+Story Circle
+Nature Walk
+```
+
+Use actual Sessions.
+
+Do not create duplicate teacher activity tables if the information can be derived from existing Sessions.
+
+---
+
+# 27. Child Experience History
+
+When viewing a Child:
+
+```text
+Maya
+
+Experiences
+
+Today
+Rainbow Builders
+
+Yesterday
+Story Circle
+
+Sep 30
+Nature Discovery
+```
+
+Clicking an Experience should show:
+
+```text
+Experience
+Session
+Teacher
+Classroom
+Participation
+Journey observations
+Little Moments
+Evidence
+```
+
+This becomes an important entry point into Child Journey.
+
+---
+
+# 28. Planning Validation
+
+Before confirming a plan, validate:
+
+### Experience
+
+* Experience exists.
+* Experience belongs to Tenant.
+* Experience is Published.
+
+### Classroom
+
+* Classroom exists.
+* Classroom belongs to Tenant.
+* Classroom is active.
+
+### Teacher
+
+* Teacher belongs to Tenant.
+* Teacher is active.
+* Teacher is assigned/eligible for the Classroom according to existing rules.
+
+### Date/Time
+
+* Valid date.
+* Valid start/end time.
+* End time is after start time.
+
+### Conflicts
+
+Check for:
+
+* Teacher already scheduled.
+* Classroom already scheduled.
+* Existing conflicting Experience Plan.
+
+Use the existing scheduling rules if available.
+
+---
+
+# 29. Rescheduling
+
+Allow a planned Experience to be rescheduled before execution.
+
+Example:
+
+```text
+Oct 4
+10:00 AM
+       ↓
+Oct 5
+11:00 AM
+```
+
+Keep an audit record of the change.
+
+Do not modify a completed Session when rescheduling a future plan.
+
+---
+
+# 30. Cancellation
+
+A planned Experience can be cancelled.
+
+Example:
+
+```text
+Status:
+Cancelled
+
+Reason:
+Outdoor area unavailable
+```
+
+A cancelled plan must not create a completed Experience Session.
+
+If a Session has already started, cancellation should follow separate existing operational rules.
+
+---
+
+# 31. Missed Experience
+
+If an Experience was planned but never started:
+
+```text
+Planned
+   ↓
+Missed
+```
+
+or use the existing cancellation/closure approach.
+
+Do not create false execution records.
+
+This is important for accurate Harvest and Insight.
+
+---
+
+# 32. Repeating Experiences
+
+If the existing Experience Planning supports recurring planning, keep the reusable Experience separate from each occurrence.
+
+Example:
+
+```text
+Experience:
+Story Circle
+
+Plans:
+
+Oct 1
+Oct 2
+Oct 3
+Oct 4
+Oct 5
+```
+
+Each actual execution must have its own Session.
+
+Never create one Session covering multiple days.
+
+---
+
+# 33. Versioning
+
+If an Experience changes after planning:
+
+```text
+Experience v1
+        ↓
+Existing Plan
+```
+
+do not silently change the historical meaning.
+
+At execution time, preserve the Experience version used.
+
+Example:
+
+```text
+Rainbow Builders v1
+Plan created
+        ↓
+Rainbow Builders v2 published
+        ↓
+Old Plan remains associated with v1
+```
+
+Use the existing versioning mechanism if already implemented.
+
+---
+
+# 34. Permissions
+
+Respect the existing authorization model.
+
+Typical permissions:
+
+### Admin/Director
+
+Can:
+
+* Create plans
+* Edit plans
+* Assign classrooms
+* Assign teachers
+* Reschedule
+* Cancel
+* View history
+
+### Lead Teacher
+
+Can:
+
+* Plan experiences for assigned classroom
+* Start experiences
+* Execute
+* Capture observations
+* Complete sessions
+
+### Teacher
+
+Can:
+
+* View assigned experiences
+* Start where permitted
+* Record participation
+* Capture observations
+* Complete where permitted
+
+### Parent
+
+Cannot modify planning or execution.
+
+Parent only sees approved/published information.
+
+---
+
+# 35. Tenant Isolation
+
+Every operation must validate TenantId.
+
+A user must never be able to:
+
+* Plan another tenant's Experience.
+* Assign another tenant's Classroom.
+* Assign another tenant's Teacher.
+* Access another tenant's Children.
+* Access another tenant's Sessions.
+* Access another tenant's Journey information.
+
+Never trust TenantId supplied by the client.
+
+Resolve tenant context from the authenticated user/session.
+
+---
+
+# 36. Audit
+
+Audit:
+
+```text
+Plan Created
+Plan Updated
+Teacher Assigned
+Classroom Assigned
+Plan Confirmed
+Plan Rescheduled
+Plan Cancelled
+Session Started
+Participation Updated
+Session Completed
+```
+
+Use the existing audit framework.
+
+Do not create a new audit system.
+
+---
+
+# 37. UI Integration
+
+Do not redesign existing screens.
+
+Connect the existing UI components.
+
+The desired navigation is:
+
+```text
+Experience Library
+       ↓
+Plan
+       ↓
+Experience Planning
+       ↓
+Today's Experiences
+       ↓
+Start
+       ↓
+Execute
+       ↓
+Complete
+       ↓
+Child Journey
+       ↓
+Harvest
+```
+
+The teacher should feel that these are one continuous experience, not separate applications.
+
+---
+
+# 38. Recommended Teacher Experience
+
+The teacher should primarily see:
+
+```text
+TODAY
+
+Good morning, Priya.
+
+Bluebirds
+
+────────────────────────
+
+10:00
+Rainbow Builders
+
+30 minutes
+16 children
+
+[Start Experience]
+
+────────────────────────
+
+11:30
+Water Discovery
+
+30 minutes
+16 children
+
+[Start Experience]
+```
+
+After starting:
+
+```text
+RAINBOW BUILDERS
+
+Bluebirds
+16 children
+
+Who's participating?
+
+✓ Maya
+✓ Arjun
+✓ Sara
+✓ Liam
+
+[Capture Moment]
+
+[Observe Child]
+
+[Add Photo]
+
+[Complete Experience]
+```
+
+Keep the interaction lightweight.
+
+---
+
+# 39. Application Services
+
+Follow the existing application architecture.
+
+Recommended operations:
+
+```text
+CreateExperiencePlan
+UpdateExperiencePlan
+ConfirmExperiencePlan
+RescheduleExperiencePlan
+CancelExperiencePlan
+
+GetTodaysExperiences
+GetUpcomingExperiences
+GetClassroomExperiencePlans
+GetTeacherExperiencePlans
+
+StartExperienceSession
+UpdateExperienceParticipation
+CompleteExperienceSession
+```
+
+Do not create a new architectural pattern if the application already has one.
+
+---
+
+# 40. Important Queries
+
+The application should support:
+
+```text
+GetTodaysExperiencesForTeacher
+GetTodaysExperiencesForClassroom
+GetUpcomingExperiencePlans
+GetExperiencePlan
+GetExperienceSession
+GetExperienceHistory
+GetChildExperienceHistory
+GetClassroomExperienceHistory
+GetTeacherExperienceHistory
+```
+
+---
+
+# 41. End-to-End Test Scenario
+
+Antigravity must implement and test this exact scenario.
+
+### Step 1
+
+Select:
+
+```text
+Rainbow Builders
+```
+
+from Experience Library.
+
+### Step 2
+
+Create Plan:
+
+```text
+Classroom:
+Bluebirds
+
+Teacher:
+Priya
+
+Date:
+October 4
+
+Time:
+10:00 AM
+```
+
+### Step 3
+
+Confirm Plan.
+
+### Step 4
+
+Teacher opens:
+
+```text
+Today's Experiences
+```
+
+and sees:
+
+```text
+Rainbow Builders
+10:00 AM
+Bluebirds
+```
+
+### Step 5
+
+Teacher clicks:
+
+```text
+Start Experience
+```
+
+### Step 6
+
+System creates:
+
+```text
+ExperienceSession
+```
+
+### Step 7
+
+Children are loaded from the Classroom enrollment.
+
+### Step 8
+
+Teacher records:
+
+```text
+Maya - Participated
+Arjun - Participated
+Sara - Partially Participated
+Liam - Absent
+```
+
+### Step 9
+
+Teacher captures:
+
+```text
+Maya helped Liam build the bridge.
+```
+
+This uses the existing Child Journey functionality.
+
+### Step 10
+
+Teacher captures a Little Moment.
+
+### Step 11
+
+Teacher completes the Experience.
+
+### Step 12
+
+The completed Session becomes available to Harvest.
+
+### Step 13
+
+Child Journey shows:
+
+```text
+Maya
+Rainbow Builders
+Oct 4
+Collaboration
+```
+
+### Step 14
+
+Harvest shows the Experience evidence.
+
+### Step 15
+
+Insight can use the existing harvested information.
+
+---
+
+# 42. Definition of Done
+
+Experience Planning integration is complete when:
+
+* An Experience can be selected from Experience Library.
+* An Experience can be planned.
+* A Classroom can be assigned.
+* A Teacher can be assigned.
+* Expected Children can be derived from Classroom enrollment.
+* Planning conflicts are detected.
+* A Plan can be confirmed.
+* Today's Experiences can be retrieved.
+* Teacher can start an Experience.
+* Starting creates an Experience Session.
+* Session retains the Plan relationship.
+* Session knows Classroom.
+* Session knows Teacher.
+* Session loads Children.
+* Participation can be recorded.
+* Existing Child Journey can be invoked from the Session.
+* Existing Little Moment functionality can be invoked from the Session.
+* Existing Media/Evidence functionality can be invoked from the Session.
+* Session can be completed.
+* Completed Session appears in Experience history.
+* Completed Session appears in Classroom history.
+* Completed Session appears in Teacher history.
+* Completed Session appears in Child experience history.
+* Existing Child Journey contains the Experience context.
+* Existing Harvest can consume the completed Session/evidence.
+* No duplicate Child Journey or Harvest implementation is created.
+* Tenant isolation is enforced.
+* Existing permissions are respected.
+* Existing audit/concurrency patterns are respected.
+* Existing UI design is preserved.
+
+---
+
+# 43. Antigravity Implementation Rule
+
+Before coding, inspect the existing implementation.
+
+Identify:
+
+```text
+Experience
+Experience Library
+Experience Studio
+Experience Planning
+Classroom
+Teacher
+Child
+Enrollment
+Child Journey
+Harvest
+Media
+Little Moments
+Authorization
+Audit
+```
+
+Then produce a short implementation map showing:
+
+```text
+Existing Entity
+Existing Service
+Existing Repository
+Existing API
+Existing UI
+Missing Relationship
+Required Change
+```
+
+Only after this inspection should implementation begin.
+
+Do not create duplicate entities or services.
+
+The implementation must integrate with the existing architecture.
+
+---
+
+# 44. Final Architecture
+
+The completed system should behave as one continuous loop:
+
+```text
+                 EXPERIENCE LIBRARY
+                         │
+                         ▼
+                    EXPERIENCE
+                         │
+                         ▼
+              EXPERIENCE PLANNING
+                         │
+             ┌───────────┼───────────┐
+             ▼           ▼           ▼
+          CLASS       TEACHER      CHILDREN
+             │           │           │
+             └───────────┼───────────┘
+                         ▼
+                TODAY'S EXPERIENCE
+                         │
+                         ▼
+                  EXPERIENCE SESSION
+                         │
+              ┌──────────┼───────────┐
+              ▼          ▼           ▼
+         PARTICIPATION  MOMENTS    EVIDENCE
+              │          │           │
+              └──────────┼───────────┘
+                         ▼
+                   CHILD JOURNEY
+                         │
+                         ▼
+                      HARVEST
+                         │
+                         ▼
+                      INSIGHT
+```
+
+## Product Principle
+
+The teacher should not feel:
+
+> "I am moving between Experience Planning, Child, Teacher, Journey and Harvest."
+
+The teacher should feel:
+
+> **"I planned today's experience, did it with my children, captured what mattered, and their journey grew."**
+
+That is the integration Experience Planning must provide.

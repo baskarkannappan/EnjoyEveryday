@@ -218,14 +218,14 @@
                                 <div class="timeline-item">
                                     <div class="timeline-dot"></div>
                                     <div class="timeline-time">
-                                        @sched.TimeOfDay
+                                        @(sched.PlannedStartTime.HasValue ? DateTime.Today.Add(sched.PlannedStartTime.Value).ToString("t") : sched.TimeOfDay)
                                     </div>
                                     <div class="timeline-title">
                                         @expTitle
                                     </div>
                                     <div class="timeline-sub">
                                         Status: @sched.Status
-                                        @if(sched.Status == "Scheduled")
+                                        @if(sched.Status == "Scheduled" || sched.Status == "Planned" || sched.Status == "Confirmed")
                                         {
                                             <button class="btn btn-sm btn-primary ml-3" @onclick="() => StartSession(sched.Id)" style="margin-left: 10px; padding: 2px 8px; border-radius: 4px; background-color: #263d32; color: white; border: none; cursor: pointer;">Start</button>
                                         }
@@ -812,7 +812,7 @@
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
         // Load all schedules for today
         var today = DateTime.UtcNow.Date;
-        var sql = "SELECT * FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
+        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
     }
 
@@ -826,7 +826,7 @@
         // Refresh schedules
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
         var today = DateTime.UtcNow.Date;
-        var sql = "SELECT * FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
+        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
         
         StateHasChanged();
@@ -844,7 +844,7 @@
     {
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
         var today = DateTime.UtcNow.Date;
-        var sql = "SELECT * FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
+        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
         StateHasChanged();
     }

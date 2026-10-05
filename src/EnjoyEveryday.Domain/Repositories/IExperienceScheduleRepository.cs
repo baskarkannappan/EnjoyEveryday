@@ -8,6 +8,7 @@ namespace EnjoyEveryday.Domain.Repositories;
 public interface IExperienceScheduleRepository
 {
     Task<IEnumerable<ExperienceSchedule>> GetByClassroomAndDateRangeAsync(Guid classroomId, DateOnly startDate, DateOnly endDate);
+    Task<IEnumerable<ExperienceSchedule>> GetByDateAsync(DateOnly date);
     Task<ExperienceSchedule?> GetByIdAsync(Guid id);
     Task<ExperienceSchedule> CreateAsync(ExperienceSchedule schedule);
     Task UpdateAsync(ExperienceSchedule schedule);
