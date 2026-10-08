@@ -39,25 +39,25 @@
                     <div class="pulse-label">Daycare today</div>
                     <div class="pulse-number">A day full of possibility.</div>
                     <div class="pulse-text">
-                        42 children • 3 classrooms • 8 experiences
+                        @_totalChildren children • @_totalClassrooms classrooms • @_totalExperiences experiences scheduled
                     </div>
                 </div>
 
                 <div class="pulse-card">
                     <div class="stat-label">Children here</div>
-                    <div class="stat-number">42</div>
-                    <div class="stat-note">of 47 expected today</div>
+                    <div class="stat-number">@_totalChildren</div>
+                    <div class="stat-note">of @_totalChildren expected today</div>
                 </div>
 
                 <div class="pulse-card">
                     <div class="stat-label">Experiences</div>
-                    <div class="stat-number">8</div>
-                    <div class="stat-note">3 happening now</div>
+                    <div class="stat-number">@_totalExperiences</div>
+                    <div class="stat-note">@_activeExperiences happening now</div>
                 </div>
 
                 <div class="pulse-card">
                     <div class="stat-label">Teachers</div>
-                    <div class="stat-number">7</div>
+                    <div class="stat-number">@_totalTeachers</div>
                     <div class="stat-note">All classrooms covered</div>
                 </div>
 
@@ -79,124 +79,39 @@
                             <span>Live classroom view</span>
                         </div>
 
-                        <div class="classroom">
-
-                            <div class="classroom-top">
-
-                                <div class="classroom-name">
-                                    <div class="classroom-dot"></div>
-
-                                    <div>
-                                        <strong>Bluebirds</strong>
-                                        <small>Age 3–4 • Priya</small>
+                        @foreach(var cr in _classrooms)
+                        {
+                            var activeSched = _todaySchedules.FirstOrDefault(s => s.ClassroomId == cr.Id && (s.Status == "Started" || s.Status == "Active"));
+                            var expName = activeSched != null ? _experiences.FirstOrDefault(e => e.Id == activeSched.ExperienceId)?.Title : "Free Play";
+                            
+                            <div class="classroom">
+                                <div class="classroom-top">
+                                    <div class="classroom-name">
+                                        <div class="classroom-dot" style="@(activeSched != null ? "background-color: var(--green);" : "")"></div>
+                                        <div>
+                                            <strong>@cr.Description</strong>
+                                            <small>Capacity: @cr.Capacity</small>
+                                        </div>
                                     </div>
+                                    <span class="status @(activeSched != null ? "active" : "")">
+                                        @(activeSched != null ? "Exploring" : "Free Play")
+                                    </span>
                                 </div>
-
-                                <span class="status active">
-                                    Exploring now
-                                </span>
-
-                            </div>
-
-                            <div class="classroom-bottom">
-
-                                <div class="mini-info">
-                                    Children
-                                    <strong>18 / 18</strong>
-                                </div>
-
-                                <div class="mini-info">
-                                    Experience
-                                    <strong>Our Little City</strong>
-                                </div>
-
-                                <button class="view-btn" onclick="showModal('Bluebirds')">
-                                    Open →
-                                </button>
-
-                            </div>
-
-                        </div>
-
-
-                        <div class="classroom">
-
-                            <div class="classroom-top">
-
-                                <div class="classroom-name">
-                                    <div class="classroom-dot"></div>
-
-                                    <div>
-                                        <strong>Sunflowers</strong>
-                                        <small>Age 4–5 • Meena</small>
+                                <div class="classroom-bottom">
+                                    <div class="mini-info">
+                                        Children
+                                        <strong>@cr.CurrentEnrollment / @cr.Capacity</strong>
                                     </div>
-                                </div>
-
-                                <span class="status">
-                                    Creating
-                                </span>
-
-                            </div>
-
-                            <div class="classroom-bottom">
-
-                                <div class="mini-info">
-                                    Children
-                                    <strong>14 / 16</strong>
-                                </div>
-
-                                <div class="mini-info">
-                                    Experience
-                                    <strong>Little Garden</strong>
-                                </div>
-
-                                <button class="view-btn" onclick="showModal('Sunflowers')">
-                                    Open →
-                                </button>
-
-                            </div>
-
-                        </div>
-
-
-                        <div class="classroom">
-
-                            <div class="classroom-top">
-
-                                <div class="classroom-name">
-                                    <div class="classroom-dot"></div>
-
-                                    <div>
-                                        <strong>Butterflies</strong>
-                                        <small>Age 2–3 • Anitha</small>
+                                    <div class="mini-info">
+                                        Experience
+                                        <strong>@(expName ?? "None")</strong>
                                     </div>
+                                    <a class="view-btn" href="/classrooms" style="text-decoration:none;">
+                                        Open →
+                                    </a>
                                 </div>
-
-                                <span class="status">
-                                    Moving
-                                </span>
-
                             </div>
-
-                            <div class="classroom-bottom">
-
-                                <div class="mini-info">
-                                    Children
-                                    <strong>10 / 13</strong>
-                                </div>
-
-                                <div class="mini-info">
-                                    Experience
-                                    <strong>Animal Movement</strong>
-                                </div>
-
-                                <button class="view-btn" onclick="showModal('Butterflies')">
-                                    Open →
-                                </button>
-
-                            </div>
-
-                        </div>
+                        }
 
                     </div>
 
@@ -805,15 +720,43 @@
     private List<Experience> _experiences = new();
     private Guid _teacherId = Guid.Parse("50000000-0000-0000-0000-000000000001"); // Mock teacher
 
+    private int _totalChildren = 0;
+    private int _totalClassrooms = 0;
+    private int _totalExperiences = 0;
+    private int _totalTeachers = 0;
+    private int _activeExperiences = 0;
+    private List<Classroom> _classrooms = new();
+
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
         
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        // Load all schedules for today
         var today = DateTime.UtcNow.Date;
         var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
+        
+        var statsSql = @"
+            SELECT 
+                (SELECT COUNT(1) FROM children) as TotalChildren,
+                (SELECT COUNT(1) FROM classrooms) as TotalClassrooms,
+                (SELECT COUNT(1) FROM users) as TotalTeachers
+        ";
+        var stats = await connection.QuerySingleAsync<dynamic>(statsSql);
+        _totalChildren = (int)stats.totalchildren;
+        _totalClassrooms = (int)stats.totalclassrooms;
+        _totalExperiences = _todaySchedules.Count;
+        _activeExperiences = _todaySchedules.Count(s => s.Status == "Started" || s.Status == "Active");
+        _totalTeachers = (int)stats.totalteachers;
+        
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null) {
+            var branch = (await BranchService.GetBranchesAsync(org.Id)).FirstOrDefault();
+            if (branch != null) {
+                _classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
+            }
+        }
     }
 
     private bool _isSessionModalOpen = false;

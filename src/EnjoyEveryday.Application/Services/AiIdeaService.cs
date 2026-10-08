@@ -21,10 +21,10 @@ public class AiIdeaService : IAiIdeaService
         _tenantContext = tenantContext;
     }
 
-    public async Task<IEnumerable<AiSuggestion>> GenerateIdeasAsync(string ideaInput)
+    public async Task<IEnumerable<ExperienceFullData>> GenerateIdeasAsync(string ideaInput)
     {
         var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
-        if (string.IsNullOrEmpty(apiKey)) return new List<AiSuggestion>();
+        if (string.IsNullOrEmpty(apiKey)) return new List<ExperienceFullData>();
 
         var request = new { idea = ideaInput };
         
@@ -38,10 +38,10 @@ public class AiIdeaService : IAiIdeaService
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
             var result = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(options);
-            return result?.Suggestions ?? new List<AiSuggestion>();
+            return result?.Suggestions ?? new List<ExperienceFullData>();
         }
 
-        return new List<AiSuggestion>();
+        return new List<ExperienceFullData>();
     }
     
     public async Task<ExperienceImprovementResult?> ImproveExperienceAsync(object experienceDna, string requestContext)
@@ -67,8 +67,36 @@ public class AiIdeaService : IAiIdeaService
         return null;
     }
 
+    public async Task<IEnumerable<string>> SuggestMaterialsAsync(object experienceDna)
+    {
+        var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
+        if (string.IsNullOrEmpty(apiKey)) return new List<string>();
+
+        var request = new { experienceDna };
+        
+        var message = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:8000/api/materials");
+        message.Headers.Add("X-Tenant-Api-Key", apiKey);
+        message.Content = JsonContent.Create(request);
+
+        var response = await _httpClient.SendAsync(message);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var result = await response.Content.ReadFromJsonAsync<AiMaterialsResponse>(options);
+            return result?.Materials ?? new List<string>();
+        }
+
+        return new List<string>();
+    }
+
+    private class AiMaterialsResponse
+    {
+        public List<string>? Materials { get; set; }
+    }
+
     private class AiIdeaResponse
     {
-        public List<AiSuggestion>? Suggestions { get; set; }
+        public List<ExperienceFullData>? Suggestions { get; set; }
     }
 }

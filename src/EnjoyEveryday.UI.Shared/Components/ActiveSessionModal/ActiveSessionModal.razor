@@ -25,31 +25,40 @@
 
                 <h3 style="font-size: 16px; margin-bottom: 16px; color: #26332d; border-bottom: 1px solid #e4e7df; padding-bottom: 8px;">Children Participation</h3>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
-                    @foreach (var child in _children)
-                    {
-                        var status = GetParticipationStatus(child.Id);
-                        
-                        <div style="border: 1px solid #e4e7df; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: @(status == "Participated" ? "#fcfdfc" : "#fff")">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <strong style="color: #26332d;">@child.FirstName @child.LastName</strong>
-                                
-                                <select value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #e4e7df; font-size: 13px;">
-                                    <option value="Participated">Participated</option>
-                                    <option value="Declined">Declined</option>
-                                    <option value="Absent">Absent</option>
-                                </select>
-                            </div>
+                @if (!_children.Any())
+                {
+                    <div style="padding: 16px; background: #fcfdfc; border: 1px dashed #e4e7df; border-radius: 8px; color: #666; font-size: 13px; margin-bottom: 32px; text-align: center;">
+                        No children are currently registered in this daycare. Add children first to track participation!
+                    </div>
+                }
+                else
+                {
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
+                        @foreach (var child in _children)
+                        {
+                            var status = GetParticipationStatus(child.Id);
                             
-                            @if (status == "Participated")
-                            {
-                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenMomentDialog(child.Id)" style="padding: 4px 12px; border-radius: 4px; border: 1px solid #52745e; color: #52745e; background: transparent; cursor: pointer; font-size: 13px; align-self: flex-start;">
-                                    + Log Moment
-                                </button>
-                            }
-                        </div>
-                    }
-                </div>
+                            <div style="border: 1px solid #e4e7df; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: @(status == "Participated" ? "#fcfdfc" : "#fff")">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <strong style="color: #26332d;">@child.FirstName @child.LastName</strong>
+                                    
+                                    <select value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #e4e7df; font-size: 13px;">
+                                        <option value="Participated">Participated</option>
+                                        <option value="Declined">Declined</option>
+                                        <option value="Absent">Absent</option>
+                                    </select>
+                                </div>
+                                
+                                @if (status == "Participated")
+                                {
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenMomentDialog(child.Id)" style="padding: 4px 12px; border-radius: 4px; border: 1px solid #52745e; color: #52745e; background: transparent; cursor: pointer; font-size: 13px; align-self: flex-start;">
+                                        + Log Moment
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
                 
                 <div style="border-top: 1px solid #e4e7df; padding-top: 16px; margin-bottom: 24px;">
                     <h3 style="font-size: 16px; margin-bottom: 12px; color: #26332d;">Session Feedback (Optional)</h3>
@@ -132,6 +141,11 @@
             _experienceTitle = exp?.Title ?? "Unknown";
             
             _children = (await ChildService.GetChildrenByClassroomAsync(_session.ClassroomId)).ToList();
+            if (!_children.Any())
+            {
+                // Fallback for demo: load all children if none are assigned to this specific classroom yet
+                _children = (await ChildService.GetChildrenAsync()).ToList();
+            }
             
             _participations.Clear();
             foreach (var child in _children)

@@ -22,7 +22,7 @@ public class AiIdeasController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<IEnumerable<AiSuggestion>>> GenerateIdeas([FromBody] IdeaRequest request)
+    public async Task<ActionResult<IEnumerable<ExperienceFullData>>> GenerateIdeas([FromBody] IdeaRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Idea))
             return BadRequest("Idea cannot be empty.");

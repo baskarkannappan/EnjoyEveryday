@@ -5,11 +5,14 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @using System.Text.Json
+@using Microsoft.FluentUI.AspNetCore.Components
 
 @inject ExperienceService ExperienceService
 @inject UserService UserService
 @inject NavigationManager NavigationManager
 @inject IAiIdeaService AiIdeaService
+@inject INotificationService ToastService
+@inject IJSRuntime JS
 
 <PageHero 
     Eyebrow="Little Stars" 
@@ -18,6 +21,9 @@
     <RightContent>
         @if (_experience.Status != "Published")
         {
+            <button class="btn" @onclick="OpenPreview" style="background: #e4e7df; border: 1px solid #c0ccc4; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #47534c; margin-right: 8px;">
+                Preview
+            </button>
             <button class="btn primary" @onclick="SaveDraftAsync" style="background: #456a55; border: 1px solid #456a55; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #fff; margin-right: 8px;">
                 Save Draft
             </button>
@@ -45,9 +51,19 @@ else
     <!-- LEFT PANEL -->
     <div>
         <div class="card idea-card" style="margin-bottom: 20px;">
-            <button class="idea-button" style="width: 100%;">
-                &#10022; Help me explore
-            </button>
+            <div class="idea-heading" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                <div class="idea-icon">&#10022;</div>
+                <div>
+                    <strong>Start with an idea</strong>
+                    <div style="font-size: 12px; color: #557c6c;">It doesn't need to be complete.</div>
+                </div>
+            </div>
+            <textarea @bind="_ideaInput" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc;" rows="5" placeholder="Example: The children are fascinated by rain..."></textarea>
+            <div class="idea-actions" style="margin-top: 10px;">
+                <button class="idea-button" style="width: 100%;" @onclick="GenerateIdeasAsync" disabled="@_isGeneratingIdeas">
+                    &#10022; @(_isGeneratingIdeas ? "Thinking..." : "Help me explore")
+                </button>
+            </div>
         </div>
 
         <div class="card">
@@ -56,27 +72,20 @@ else
                 <span>AI suggestions</span>
             </div>
             
-            <StudioIdeaCard Title="Rain Detectives" Icon="&#x2614;" Subtitle="Listen, look and investigate what changes when rain arrives." />
-            <StudioIdeaCard Title="Build a Water World" Icon="&#x1F4A7;" Subtitle="Create rivers, bridges and little worlds using simple materials." />
-            <StudioIdeaCard Title="Rainbow Makers" Icon="&#x1F308;" Subtitle="Explore light, colour and unexpected patterns." />
-            <StudioIdeaCard Title="Who Lives in the Rain?" Icon="&#x1F438;" Subtitle="Turn rain into an imaginary animal discovery adventure." />
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                <h2>Experience context</h2>
-                <span>Classroom</span>
-            </div>
-            
-            <div class="context-item">
-                <div class="context-label">Children</div>
-                <div class="context-value">Bluebirds &bull; 18 children</div>
-            </div>
-            
-            <div class="context-item">
-                <div class="context-label">Age</div>
-                <div class="context-value">3&ndash;4 years</div>
-            </div>
+            @if (_aiSuggestions.Any())
+            {
+                @foreach(var suggestion in _aiSuggestions)
+                {
+                    <div class="suggestion" style="cursor:pointer; background: #f9fbf9; border: 1px solid #e1e6e0; border-radius: 8px; padding: 12px; margin-bottom: 10px;" @onclick="() => ApplySuggestion(suggestion)">
+                        <div class="suggestion-title" style="font-weight: bold; color: #2d3b34; margin-bottom: 4px;">@suggestion.Title</div>
+                        <div class="suggestion-text" style="font-size: 13px; color: #536159;">@suggestion.Description</div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div style="padding: 10px; color: #888; font-size: 13px;">Tell me an idea above to get AI suggestions!</div>
+            }
         </div>
     </div>
 
@@ -85,7 +94,7 @@ else
         <div class="canvas">
             <div class="canvas-top">
                 <div class="canvas-title">
-                    <input id="experienceTitle" @bind="_experience.Title" placeholder="Experience Title" />
+                    <input id="experienceTitle" @bind="_experience.Title" @bind:after="SaveDraftAsync" placeholder="Experience Title" />
                     <div class="canvas-subtitle">
                         @_experience.Status &bull; Created @_experience.CreatedAt.ToString("MMMM dd, yyyy")
                         @if (_saveMessage != null)
@@ -116,6 +125,32 @@ else
                 
                 <StudioDnaCard IsFull="true" Label="Teacher Guidance" @bind-TextContent="_dna.TeacherGuidance" OnSave="SaveDraftAsync" />
             </div>
+
+            <div style="margin-top: 30px;">
+                <h3 style="font-size: 16px; color: #47534c; margin-bottom: 15px;">Activity Timeline (Execution Phases)</h3>
+                @foreach (var phase in _dna.ExecutionGuide.Phases)
+                {
+                    <div style="background: white; border: 1px solid #e1e6e0; border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; gap: 12px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <input type="text" @bind="phase.Name" @bind:after="SaveDraftAsync" placeholder="Phase Name (e.g. Introduction)" style="flex: 1; min-width: 150px; border: 1px solid #e1e6e0; padding: 10px 14px; border-radius: 8px; font-family: inherit; font-size: 14px; color: #2d3b34; background: #fcfdfc; outline: none;" />
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #7c877f; font-weight: 600;">
+                            <input type="number" @bind="phase.DurationMinutes" @bind:after="SaveDraftAsync" placeholder="Min" style="width: 80px; border: 1px solid #e1e6e0; padding: 10px 14px; border-radius: 8px; font-family: inherit; font-size: 14px; color: #2d3b34; background: #fcfdfc; outline: none; text-align: center;" /> min
+                        </div>
+                        <button class="btn" style="background: #fdf5f5; color: #c44; border: 1px solid #f9e5e5; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;" @onclick="() => RemovePhase(phase)" title="Remove Phase">✕</button>
+                        
+                        <div style="flex-basis: 100%; display: flex; gap: 16px; margin-top: 8px;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Teacher Does</div>
+                                <textarea @bind="phase.TeacherDoes" @bind:after="SaveDraftAsync" placeholder="Explain the activity..." style="width: 100%; border: 1px solid #e1e6e0; padding: 12px 14px; border-radius: 8px; min-height: 80px; font-family: inherit; font-size: 14px; color: #2d3b34; background: #fcfdfc; resize: vertical; outline: none;"></textarea>
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Children Do</div>
+                                <textarea @bind="phase.ChildrenDo" @bind:after="SaveDraftAsync" placeholder="Listen and respond..." style="width: 100%; border: 1px solid #e1e6e0; padding: 12px 14px; border-radius: 8px; min-height: 80px; font-family: inherit; font-size: 14px; color: #2d3b34; background: #fcfdfc; resize: vertical; outline: none;"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                }
+                <button class="btn" style="background: white; color: #52745e; border: 1px dashed #c0ccc4; padding: 12px 20px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; width: 100%; text-align: center; transition: 0.2s;" @onclick="AddPhase">+ Add another phase</button>
+            </div>
         </div>
     </div>
 
@@ -126,30 +161,64 @@ else
                 <h2>Experience details</h2>
             </div>
             
-            <div class="context-item">
-                <div class="context-label">Age</div>
-                <div class="context-value">@_dna.AgeMin&ndash;@_dna.AgeMax years</div>
-            </div>
-            
-            <div class="context-item">
-                <div class="context-label">Group size</div>
-                <div class="context-value">@_dna.GroupSizeMin&ndash;@_dna.GroupSizeMax children</div>
-            </div>
-            
-            <div class="context-item">
-                <div class="context-label">Environment</div>
-                <div class="context-value">@_dna.Environment</div>
-            </div>
-            
-            <div class="context-item">
-                <div class="context-label">Materials</div>
-                <div class="tags">
-                    @foreach (var material in _dna.Materials)
-                    {
-                        <span class="tag">@material</span>
-                    }
-                    <span class="tag" style="background: transparent; border: 1px dashed #c0ccc4; color: #789080; cursor: pointer;">+ Add</span>
+            <div class="context-item" style="margin-bottom: 16px;">
+                <div class="context-label" style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Age (Years)</div>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <input type="number" @bind="_dna.AgeMin" @bind:after="SaveDraftAsync" min="0" max="12" style="flex: 1; width: 100%; min-width: 0; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 14px; background: #fcfdfc; outline: none; text-align: center;" /> 
+                    <span style="font-size: 13px; color: #7c877f; font-weight: 600;">to</span> 
+                    <input type="number" @bind="_dna.AgeMax" @bind:after="SaveDraftAsync" min="0" max="12" style="flex: 1; width: 100%; min-width: 0; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 14px; background: #fcfdfc; outline: none; text-align: center;" />
                 </div>
+            </div>
+            
+            <div class="context-item" style="margin-bottom: 16px;">
+                <div class="context-label" style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Group size</div>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <input type="number" @bind="_dna.GroupSizeMin" @bind:after="SaveDraftAsync" min="1" style="flex: 1; width: 100%; min-width: 0; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 14px; background: #fcfdfc; outline: none; text-align: center;" /> 
+                    <span style="font-size: 13px; color: #7c877f; font-weight: 600;">to</span> 
+                    <input type="number" @bind="_dna.GroupSizeMax" @bind:after="SaveDraftAsync" min="1" style="flex: 1; width: 100%; min-width: 0; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 14px; background: #fcfdfc; outline: none; text-align: center;" />
+                </div>
+            </div>
+            
+            <div class="context-item" style="margin-bottom: 16px;">
+                <div class="context-label" style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Environment</div>
+                <select @bind="_dna.Environment" @bind:after="SaveDraftAsync" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 14px; color: #2d3b34; background: #fcfdfc; outline: none; cursor: pointer;">
+                    <option value="Indoor">Indoor</option>
+                    <option value="Outdoor">Outdoor</option>
+                    <option value="Indoor / Outdoor">Indoor / Outdoor</option>
+                </select>
+            </div>
+            
+            <div class="context-item" style="margin-bottom: 16px;">
+                <div class="context-label" style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Materials</div>
+                <div class="tags" style="margin-bottom: 8px;">
+                    @foreach (var material in _dna.Materials.ToList())
+                    {
+                        <span class="tag" style="cursor: pointer; display: inline-block; padding: 4px 10px; background: #f9fbf9; border: 1px solid #e1e6e0; border-radius: 12px; font-size: 12px; margin-right: 6px; margin-bottom: 6px;" @onclick="() => RemoveMaterial(material)" title="Click to remove">@material <span style="color: #c44; margin-left: 4px;">✕</span></span>
+                    }
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" @bind="_newMaterial" placeholder="New material" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 13px; background: #fcfdfc; outline: none;" />
+                    <button class="btn" style="background: #e4e7df; color: #47534c; font-weight: 650; padding: 10px 16px; border-radius: 8px; font-size: 13px; cursor:pointer; border: none;" @onclick="AddMaterial">Add</button>
+                    <button class="btn" style="background: white; border: 1px solid #e1e6e0; padding: 10px 14px; border-radius: 8px; font-size: 14px; cursor:pointer;" @onclick="SuggestMaterialsAsync" disabled="@_isSuggestingMaterials" title="AI Suggest Materials">✨</button>
+                </div>
+            </div>
+            
+            <div class="context-item" style="margin-bottom: 16px;">
+                <div class="context-label" style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #7c877f; margin-bottom: 8px;">Developmental Goals</div>
+                <div class="tags" style="margin-bottom: 8px;">
+                    @foreach (var goal in _dna.DevelopmentalGoals.ToList())
+                    {
+                        <span class="tag" style="cursor: pointer; display: inline-block; padding: 4px 10px; background: #eaf2ec; border: 1px solid #cce2d4; color: #52745e; border-radius: 12px; font-size: 12px; margin-right: 6px; margin-bottom: 6px;" @onclick="() => RemoveGoal(goal)" title="Click to remove">@goal <span style="margin-left: 4px; opacity: 0.6;">✕</span></span>
+                    }
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" @bind="_newGoal" placeholder="Add a goal (e.g. Fine Motor)" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 13px; background: #fcfdfc; outline: none;" />
+                    <button class="btn" style="background: #e4e7df; color: #47534c; font-weight: 650; padding: 10px 16px; border-radius: 8px; font-size: 13px; cursor:pointer; border: none;" @onclick="AddGoal">Add</button>
+                </div>
+            </div>
+            
+            <div style="margin-top: 15px; text-align: right;">
+                <button class="btn" style="background: #456a55; color: white; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor:pointer; border: none;" @onclick="SaveDraftAsync">Save Details</button>
             </div>
         </div>
 
@@ -171,6 +240,11 @@ else
                 <div class="suggestion-title" style="text-decoration: underline;">Add more child choice</div>
                 <div class="suggestion-text">Give children more agency in how the experience flows.</div>
             </button>
+
+            <div style="margin-top: 15px; display: flex; gap: 8px;">
+                <input type="text" @bind="_customImprovePrompt" placeholder="Custom request..." style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid #e1e6e0; font-family: inherit; font-size: 13px; background: #fcfdfc; outline: none;" />
+                <button class="btn" @onclick="() => ImproveAsync(_customImprovePrompt)" disabled="@(string.IsNullOrWhiteSpace(_customImprovePrompt) || _isImproving)" style="background: #e4e7df; color: #47534c; font-weight: 650; padding: 10px 16px; border-radius: 8px; font-size: 14px; cursor: pointer; border: none;" title="Apply Custom Improvement">✨</button>
+            </div>
 
             @if (_isImproving)
             {
@@ -206,23 +280,24 @@ else
 </div>
 }
 
+<ExperienceViewModal 
+    IsOpen="@_isPreviewOpen"
+    Title="@(_experience?.Title ?? "Experience")"
+    Mission="@(_experience?.Description ?? "No description available.")"
+    Discover="@(_dna?.Create ?? "")"
+    Challenge="@(_dna?.Challenge ?? "")"
+    JoyMoment="@(_dna?.MagicMoment ?? "")"
+    ExecutionGuide="@_dna?.ExecutionGuide"
+    OnClose="ClosePreview"
+    OnPrint="PrintExperience" />
+
 @if (_pendingImprovement != null)
 {
     <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
         <div style="background: #fff; padding: 24px; border-radius: 12px; width: 500px; max-width: 90%; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
             <h3 style="margin-top: 0;">Approve Improvement</h3>
-            <p><strong>Target Section:</strong> @_pendingImprovement.TargetSection</p>
             <p><strong>Reason:</strong> @_pendingImprovement.Reason</p>
-            
-            <div style="margin-top: 16px; background: #fdf5f5; padding: 12px; border-left: 3px solid #e0b0b0;">
-                <small style="color: #666; text-transform: uppercase;">Current</small>
-                <div style="white-space: pre-wrap;">@_pendingImprovement.CurrentContent</div>
-            </div>
-            
-            <div style="margin-top: 16px; background: #f4f8f5; padding: 12px; border-left: 3px solid #8fbc9f;">
-                <small style="color: #666; text-transform: uppercase;">Suggested</small>
-                <div style="white-space: pre-wrap;">@_pendingImprovement.SuggestedContent</div>
-            </div>
+            <p style="margin-top: 12px; font-size: 14px; color: #536159;">This will completely rewrite the experience, including title, sections, and materials. Are you sure you want to apply these changes?</p>
 
             <div style="margin-top: 24px; display: flex; gap: 8px; justify-content: flex-end;">
                 <button class="btn" @onclick="RejectImprovement" style="background: #f4f6f4; border: 1px solid #e1e6e0; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Reject</button>
@@ -245,6 +320,170 @@ else
     private string? _validationMessage;
     private bool _isImproving = false;
     private ExperienceImprovementResult? _pendingImprovement;
+    
+    private string _ideaInput = string.Empty;
+    private bool _isGeneratingIdeas = false;
+    private bool _isSuggestingMaterials = false;
+    private List<ExperienceFullData> _aiSuggestions = new();
+    private string _newMaterial = string.Empty;
+
+    private async Task GenerateIdeasAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_ideaInput)) return;
+        _isGeneratingIdeas = true;
+        StateHasChanged();
+        try
+        {
+            var suggestions = await AiIdeaService.GenerateIdeasAsync(_ideaInput);
+            _aiSuggestions = suggestions.ToList();
+        }
+        catch (Exception)
+        {
+            await ToastService.ShowErrorToastAsync("Failed to generate ideas.");
+        }
+        finally
+        {
+            _isGeneratingIdeas = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplySuggestion(ExperienceFullData suggestion)
+    {
+        _experience.Title = suggestion.Title;
+        _experience.Description = suggestion.Description;
+        _dna.Challenge = suggestion.Challenge;
+        _dna.Together = suggestion.Together;
+        _dna.Create = suggestion.Create;
+        _dna.ChildChoice = suggestion.ChildChoice;
+        _dna.MagicMoment = suggestion.MagicMoment;
+        _dna.Accomplishment = suggestion.Accomplishment;
+        _dna.Reflection = suggestion.Reflection;
+        _dna.TeacherGuidance = suggestion.TeacherGuidance;
+        _dna.Materials = suggestion.Materials ?? new List<string>();
+        if (suggestion.ExecutionGuide != null)
+        {
+            _dna.ExecutionGuide = suggestion.ExecutionGuide;
+        }
+        
+        _ = SaveDraftAsync();
+    }
+
+    private void AddMaterial()
+    {
+        if (!string.IsNullOrWhiteSpace(_newMaterial) && !_dna.Materials.Contains(_newMaterial))
+        {
+            _dna.Materials.Add(_newMaterial.Trim());
+            _newMaterial = string.Empty;
+            _ = SaveDraftAsync();
+        }
+    }
+
+    private void RemoveMaterial(string material)
+    {
+        _dna.Materials.Remove(material);
+        _ = SaveDraftAsync();
+    }
+
+    private async Task SuggestMaterialsAsync()
+    {
+        _isSuggestingMaterials = true;
+        StateHasChanged();
+        try
+        {
+            var payload = new
+            {
+                Challenge = _dna.Challenge,
+                Together = _dna.Together,
+                Create = _dna.Create,
+                ChildChoice = _dna.ChildChoice,
+                TeacherGuidance = _dna.TeacherGuidance,
+                ExecutionGuide = _dna.ExecutionGuide
+            };
+            var suggested = await AiIdeaService.SuggestMaterialsAsync(payload);
+            bool changed = false;
+            foreach (var item in suggested)
+            {
+                if (!_dna.Materials.Any(m => m.Equals(item, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _dna.Materials.Add(item);
+                    changed = true;
+                }
+            }
+            if (changed)
+            {
+                _ = SaveDraftAsync();
+            }
+        }
+        catch (Exception)
+        {
+            await ToastService.ShowErrorToastAsync("Failed to suggest materials.");
+        }
+        finally
+        {
+            _isSuggestingMaterials = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AddGoal()
+    {
+        if (!string.IsNullOrWhiteSpace(_newGoal) && !_dna.DevelopmentalGoals.Contains(_newGoal))
+        {
+            _dna.DevelopmentalGoals.Add(_newGoal.Trim());
+            _newGoal = string.Empty;
+            _ = SaveDraftAsync();
+        }
+    }
+
+    private void RemoveGoal(string goal)
+    {
+        _dna.DevelopmentalGoals.Remove(goal);
+        _ = SaveDraftAsync();
+    }
+
+    private void AddPhase()
+    {
+        _dna.ExecutionGuide.Phases.Add(new ExecutionPhase { Name = "New Phase", DurationMinutes = 5 });
+        _ = SaveDraftAsync();
+    }
+
+    private void RemovePhase(ExecutionPhase phase)
+    {
+        _dna.ExecutionGuide.Phases.Remove(phase);
+        _ = SaveDraftAsync();
+    }
+
+    private bool _isPreviewOpen = false;
+    private string _customImprovePrompt = string.Empty;
+    private string _newGoal = string.Empty;
+
+    private void OpenPreview()
+    {
+        _isPreviewOpen = true;
+    }
+
+    private void ClosePreview()
+    {
+        _isPreviewOpen = false;
+    }
+
+    private async Task PrintExperience()
+    {
+        var js = @"
+            var content = document.querySelector('.modal').innerHTML;
+            var printWindow = window.open('', '', 'height=800,width=800');
+            printWindow.document.write('<html><head><title>Print Experience</title>');
+            printWindow.document.write('<style>body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; line-height: 1.6; color: #333; } h2, h3 { color: #111; } .eyebrow { font-size: 12px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 10px; } .detail { margin-top: 20px; margin-bottom: 20px; } .detail label { font-weight: bold; font-size: 14px; color: #555; display: block; margin-bottom: 5px; } .modal-meta { font-weight: bold; color: #444; margin-bottom: 20px; } .modal-footer, .modal-close, button { display: none !important; } ul { padding-left: 20px; } hr { border: none; border-top: 1px dashed #ccc; margin: 30px 0; } </style>');
+            printWindow.document.write('</head><body>');
+            printWindow.document.write(content);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+        ";
+        await JS.InvokeVoidAsync("eval", js);
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -376,21 +615,34 @@ else
         
         try
         {
-            var result = await AiIdeaService.ImproveExperienceAsync(_dna, requestContext);
+            var payload = new
+            {
+                Title = _experience.Title,
+                Description = _experience.Description,
+                Challenge = _dna.Challenge,
+                Together = _dna.Together,
+                Create = _dna.Create,
+                ChildChoice = _dna.ChildChoice,
+                MagicMoment = _dna.MagicMoment,
+                Accomplishment = _dna.Accomplishment,
+                Reflection = _dna.Reflection,
+                TeacherGuidance = _dna.TeacherGuidance,
+                Materials = _dna.Materials,
+                ExecutionGuide = _dna.ExecutionGuide
+            };
+            var result = await AiIdeaService.ImproveExperienceAsync(payload, requestContext);
             if (result != null)
             {
-                // Inject current content for comparison if agent didn't provide it properly
-                var prop = typeof(ExperienceDna).GetProperty(result.TargetSection);
-                if (prop != null && string.IsNullOrEmpty(result.CurrentContent))
-                {
-                    result.CurrentContent = prop.GetValue(_dna)?.ToString() ?? "";
-                }
                 _pendingImprovement = result;
             }
+            else
+            {
+                await ToastService.ShowErrorToastAsync("Failed to get improvement suggestions. Please check your connection and API key.");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // Error handling ignored for brevity
+            await ToastService.ShowErrorToastAsync($"An error occurred while connecting to the AI: {ex.Message}");
         }
         finally
         {
@@ -408,12 +660,23 @@ else
     {
         if (_pendingImprovement != null)
         {
-            var prop = typeof(ExperienceDna).GetProperty(_pendingImprovement.TargetSection);
-            if (prop != null && prop.CanWrite)
+            _experience.Title = _pendingImprovement.UpdatedData.Title;
+            _experience.Description = _pendingImprovement.UpdatedData.Description;
+            _dna.Challenge = _pendingImprovement.UpdatedData.Challenge;
+            _dna.Together = _pendingImprovement.UpdatedData.Together;
+            _dna.Create = _pendingImprovement.UpdatedData.Create;
+            _dna.ChildChoice = _pendingImprovement.UpdatedData.ChildChoice;
+            _dna.MagicMoment = _pendingImprovement.UpdatedData.MagicMoment;
+            _dna.Accomplishment = _pendingImprovement.UpdatedData.Accomplishment;
+            _dna.Reflection = _pendingImprovement.UpdatedData.Reflection;
+            _dna.TeacherGuidance = _pendingImprovement.UpdatedData.TeacherGuidance;
+            _dna.Materials = _pendingImprovement.UpdatedData.Materials ?? new List<string>();
+            if (_pendingImprovement.UpdatedData.ExecutionGuide != null)
             {
-                prop.SetValue(_dna, _pendingImprovement.SuggestedContent);
-                await SaveDraftAsync();
+                _dna.ExecutionGuide = _pendingImprovement.UpdatedData.ExecutionGuide;
             }
+
+            await SaveDraftAsync();
             _pendingImprovement = null;
         }
     }

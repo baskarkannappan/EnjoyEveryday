@@ -103,34 +103,34 @@
 
         <div class="side-column">
             
-            <SidePanel Title="Management Direction" Subtitle="Focus areas for Bluebirds">
+            <SidePanel Title="Management Direction" Subtitle="Focus areas for this month">
                 <ManagementDirection 
                     Label="This month"
-                    Title="Building community"
-                    Text="Focus on experiences that require children to work together."
-                    Tags="@(new List<string> { "Collaboration", "Empathy", "Sharing" })" />
+                    Title="@_topGoal"
+                    Text="Focus on experiences that incorporate this goal based on your schedule."
+                    Tags="@_topGoalsList" />
             </SidePanel>
 
             <SidePanel Title="EnjoyEveryday Intelligence" Subtitle="Observations & AI suggestions">
                 <AiPlan 
                     Title="Build on recent interests"
-                    Text="Children showed high engagement with construction and nature this week."
-                    ListItems="@(new List<string> { "Add more natural materials to the block area", "Plan a collaborative outdoor building experience" })"
+                    Text="@($"Children have been engaging with {_commonMaterial} recently.")"
+                    ListItems="@_aiSuggestionsList"
                     ButtonText="Draft a plan around this" />
             </SidePanel>
 
-            <SidePanel Title="Rhythm Balance" Subtitle="Current weekly mix">
-                <RhythmRow Icon="🌿" Name="Explore" Count="8" Percentage="32" />
-                <RhythmRow Icon="🎨" Name="Create" Count="6" Percentage="24" />
-                <RhythmRow Icon="🤝" Name="Together" Count="5" Percentage="20" />
-                <RhythmRow Icon="🏃" Name="Move" Count="6" Percentage="24" />
+            <SidePanel Title="Rhythm Balance" Subtitle="Current monthly mix">
+                <RhythmRow Icon="🌿" Name="Explore" Count="@_exploreCount" Percentage="@((_exploreCount * 100) / Math.Max(1, _totalRhythmCount))" />
+                <RhythmRow Icon="🎨" Name="Create" Count="@_createCount" Percentage="@((_createCount * 100) / Math.Max(1, _totalRhythmCount))" />
+                <RhythmRow Icon="🤝" Name="Together" Count="@_togetherCount" Percentage="@((_togetherCount * 100) / Math.Max(1, _totalRhythmCount))" />
+                <RhythmRow Icon="🏃" Name="Move" Count="@_moveCount" Percentage="@((_moveCount * 100) / Math.Max(1, _totalRhythmCount))" />
             </SidePanel>
 
             <SidePanel Title="Flexibility Guide" Subtitle="For when things change">
                 <FlexibilityCard 
                     Title="Quick adaptations"
-                    Text="If children are restless or the weather changes:"
-                    ListItems="@(new List<string> { "Indoor obstacle course (Move)", "Storytime with props (Together)", "Sensory bins with water/sand (Explore)" })" />
+                    Text="Adaptations from your scheduled experiences:"
+                    ListItems="@_adaptationsList" />
             </SidePanel>
             
         </div>
@@ -216,6 +216,89 @@
         {
             var schedules = await PlannerService.GetMonthlyScheduleAsync(_classroom.Id, _currentDate.Year, _currentDate.Month);
             _schedules = schedules.ToList();
+            CalculateDynamicCards();
+        }
+    }
+
+    private int _exploreCount = 0;
+    private int _createCount = 0;
+    private int _togetherCount = 0;
+    private int _moveCount = 0;
+    private int _totalRhythmCount = 1;
+
+    private string _topGoal = "Community Building";
+    private List<string> _topGoalsList = new() { "Collaboration", "Empathy" };
+    
+    private string _commonMaterial = "natural materials";
+    private List<string> _aiSuggestionsList = new() { "Add more materials to the block area", "Plan a collaborative outdoor experience" };
+
+    private List<string> _adaptationsList = new() { "Indoor obstacle course (Move)", "Storytime with props (Together)" };
+
+    private void CalculateDynamicCards()
+    {
+        _exploreCount = 0; _createCount = 0; _togetherCount = 0; _moveCount = 0;
+        var allGoals = new List<string>();
+        var allMaterials = new List<string>();
+        var allAdaptations = new List<string>();
+
+        foreach (var s in _schedules)
+        {
+            if (_experiences.TryGetValue(s.ExperienceId, out var exp))
+            {
+                if (!string.IsNullOrWhiteSpace(exp.DnaPayload))
+                {
+                    try 
+                    {
+                        var dna = System.Text.Json.JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload);
+                        if (dna != null)
+                        {
+                            if (!string.IsNullOrWhiteSpace(dna.Challenge)) _exploreCount++;
+                            if (!string.IsNullOrWhiteSpace(dna.Create)) _createCount++;
+                            if (!string.IsNullOrWhiteSpace(dna.Together)) _togetherCount++;
+                            if (dna.Environment != null && dna.Environment.Contains("Outdoor", StringComparison.OrdinalIgnoreCase)) _moveCount++;
+
+                            if (dna.DevelopmentalGoals != null) allGoals.AddRange(dna.DevelopmentalGoals);
+                            if (dna.Materials != null) allMaterials.AddRange(dna.Materials);
+                            if (dna.ExecutionGuide?.Adaptations != null) allAdaptations.AddRange(dna.ExecutionGuide.Adaptations);
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        _totalRhythmCount = _exploreCount + _createCount + _togetherCount + _moveCount;
+        if (_totalRhythmCount == 0) _totalRhythmCount = 1;
+
+        if (allGoals.Any())
+        {
+            var top = allGoals.GroupBy(x => x).OrderByDescending(g => g.Count()).Take(3).Select(g => g.Key).ToList();
+            _topGoal = top.First();
+            _topGoalsList = top;
+        }
+        else
+        {
+            _topGoal = "Community Building";
+            _topGoalsList = new List<string> { "Collaboration", "Exploration" };
+        }
+
+        if (allMaterials.Any())
+        {
+            _commonMaterial = allMaterials.GroupBy(x => x).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key ?? "natural materials";
+            _aiSuggestionsList = new List<string> 
+            { 
+                $"Plan an activity centered around {_commonMaterial}", 
+                "Combine this with a new environment to spark curiosity" 
+            };
+        }
+
+        if (allAdaptations.Any())
+        {
+            _adaptationsList = allAdaptations.Distinct().Take(3).ToList();
+        }
+        else
+        {
+            _adaptationsList = new List<string> { "Indoor obstacle course (Move)", "Storytime with props (Together)", "Sensory bins with water/sand (Explore)" };
         }
     }
 

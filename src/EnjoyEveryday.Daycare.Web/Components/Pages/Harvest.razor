@@ -73,12 +73,13 @@
     private List<Experience> _experiences = new();
     private List<ExperienceSchedule> _schedules = new();
     private List<ExperienceFeedback> _feedbacks = new();
-    
+    private Dictionary<Guid, string> _userNames = new();
+
     private IEnumerable<FeedbackItem> _feedbackItems => 
         _feedbacks.Select(f => new FeedbackItem { 
             Id = f.Id, 
             Notes = f.Notes ?? "", 
-            Author = "Priya • Bluebirds"
+            Author = _userNames.TryGetValue(f.TeacherId, out var name) ? $"{name} • Teacher" : "Teacher"
         });
 
     private string _feedbackText = string.Empty;
@@ -91,6 +92,9 @@
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        
+        var users = await UserService.GetUsersAsync();
+        _userNames = users.ToDictionary(u => u.Id, u => string.IsNullOrWhiteSpace(u.FirstName) ? "User" : u.FirstName);
         
         _metrics = await HarvestService.GetMonthlyMetricsAsync();
         var dtos = await HarvestService.GetPerformanceItemsAsync();

@@ -19,8 +19,8 @@ public class HarvestRepository : IHarvestRepository
 
         var sqlExp = @"
             SELECT COUNT(1) 
-            FROM experience_sessions 
-            WHERE tenant_id = @TenantId AND status = 'Completed' AND extract(month from session_date) = extract(month from current_date) AND extract(year from session_date) = extract(year from current_date)";
+            FROM experience_schedules 
+            WHERE tenant_id = @TenantId AND extract(month from scheduled_date) = extract(month from current_date) AND extract(year from scheduled_date) = extract(year from current_date)";
         var totalExp = await connection.QuerySingleAsync<int>(sqlExp, new { TenantId = tenantId });
 
         var sqlFeedback = @"
@@ -46,7 +46,7 @@ public class HarvestRepository : IHarvestRepository
                 e.id as ExperienceId,
                 e.title as Title,
                 'Created by ' || (SELECT first_name FROM users WHERE id = e.created_by_user_id) as Subtitle,
-                (SELECT COUNT(1) FROM experience_sessions WHERE experience_id = e.id AND status = 'Completed') as Uses,
+                (SELECT COUNT(1) FROM experience_schedules WHERE experience_id = e.id) as Uses,
                 '💬 ' || (SELECT COUNT(1) FROM experience_feedback f JOIN experience_schedules s ON f.experience_schedule_id = s.id WHERE s.experience_id = e.id) as Response
             FROM experiences e
             WHERE e.tenant_id = @TenantId

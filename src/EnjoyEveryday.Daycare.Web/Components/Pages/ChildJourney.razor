@@ -41,10 +41,10 @@
     </div>
         
     <div class="journey-summary">
-        <JourneySummaryCard Label="Experiences" Value="124" Text="Total guided and free play moments captured." />
-        <JourneySummaryCard Label="Current Focus" Value="Connection" Text="Showing strong growth in social empathy." IsFeatured="true" />
-        <JourneySummaryCard Label="AI Highlights" Value="12" Text="Insights generated from recent observations." />
-        <JourneySummaryCard Label="Milestones" Value="3" Text="Developmental markers observed this month." />
+        <JourneySummaryCard Label="Total Moments" Value="@_totalMoments.ToString()" Text="Total guided and free play moments captured." />
+        <JourneySummaryCard Label="Current Focus" Value="@_currentFocus" Text="Most frequent area of development observed recently." IsFeatured="true" />
+        <JourneySummaryCard Label="Recent Activity" Value="@_recentActivity.ToString()" Text="Observations logged in the last 7 days." />
+        <JourneySummaryCard Label="Unique Areas" Value="@_uniqueAreas.ToString()" Text="Different developmental areas touched upon." />
     </div>
 
     <div class="main-grid">
@@ -93,37 +93,41 @@
         </div>
 
         <div>
-            <SidePanel Title="Growing Interests" Subtitle="Based on last 30 days">
-                <InterestBar Name="Building & Blocks" Value="85" Note="Consistently engages with spatial activities." />
-                <InterestBar Name="Color Mixing" Value="60" Note="Recent spike after art class." />
-                <InterestBar Name="Animal Stories" Value="45" />
-                <InterestBar Name="Music & Rhythm" Value="20" />
+            <SidePanel Title="Growing Interests" Subtitle="Based on recorded observations">
+                @foreach (var interest in _growingInterests)
+                {
+                    <InterestBar Name="@interest.Name" Value="@interest.Score" Note="@interest.Note" />
+                }
             </SidePanel>
             
             <div class="card ai-card">
                 <div class="ai-heading">
                     <div class="ai-icon">🧠</div>
                     <div>
-                        <strong>Spatial to Social</strong>
+                        <strong>@($"Build on {_currentFocus}")</strong>
                         <small>AI Analysis</small>
                     </div>
                 </div>
                 <div class="ai-text">
-                    Aarav loves building alone. Try introducing a 'City Planning' experience where he has to negotiate space with 2 other children to build a shared town.
+                    @($"Aarav shows great interest in {_currentFocus}. Try introducing new materials to extend this learning experience further.")
                 </div>
                 <div class="ai-suggestion">
-                    Experience: Cooperative City Building
+                    Experience: @($"{_currentFocus} Exploration")
                 </div>
                 <button class="ai-button" @onclick='() => OpenModal("idea")'>Create this experience</button>
             </div>
 
-            <SidePanel Title="Accomplishments">
-                <AccomplishmentRow Icon="🌟" Title="Empathy in Action" Description="Comforted a crying friend." />
-                <AccomplishmentRow Icon="🧩" Title="Complex Sorting" Description="Sorted toys by shape and color." />
-                <AccomplishmentRow Icon="🎨" Title="Color Theory" Description="Discovered how to mix green." />
+            <SidePanel Title="Recent Accomplishments">
+                @foreach (var acc in _recentAccomplishments)
+                {
+                    <AccomplishmentRow Icon="🌟" Title="@acc.Title" Description="@acc.Description" />
+                }
             </SidePanel>
 
-            <JourneyMemoryCard Title="First self-portrait" Text="Used the new chalk pastels to draw his family." />
+            @if (_notableMemory != null)
+            {
+                <JourneyMemoryCard Title="Memorable Moment" Text="@_notableMemory" />
+            }
         </div>
     </div>
     
@@ -193,7 +197,75 @@
         var allExperiences = await ExperienceService.GetExperiencesAsync();
         _experienceTitles = allExperiences.ToDictionary(e => e.Id, e => e.Title);
         
+        CalculateDynamicCards();
         ApplyFilter();
+    }
+
+    private int _totalMoments = 0;
+    private string _currentFocus = "Exploration";
+    private int _recentActivity = 0;
+    private int _uniqueAreas = 0;
+    private List<(string Name, int Score, string Note)> _growingInterests = new();
+    private List<(string Title, string Description)> _recentAccomplishments = new();
+    private string? _notableMemory = null;
+
+    private void CalculateDynamicCards()
+    {
+        if (_allEntries == null || !_allEntries.Any())
+        {
+            _totalMoments = 0;
+            _currentFocus = "Discovery";
+            _recentActivity = 0;
+            _uniqueAreas = 0;
+            _growingInterests.Clear();
+            _recentAccomplishments.Clear();
+            _notableMemory = null;
+            return;
+        }
+
+        _totalMoments = _allEntries.Count;
+        _recentActivity = _allEntries.Count(e => e.ObservationDate >= DateTime.Now.AddDays(-7));
+        
+        var allTags = _entryAreas.SelectMany(x => x.Value).Select(a => a.Name).ToList();
+        _uniqueAreas = allTags.Distinct().Count();
+
+        if (allTags.Any())
+        {
+            var topTags = allTags.GroupBy(t => t).OrderByDescending(g => g.Count()).ToList();
+            _currentFocus = topTags.First().Key;
+
+            _growingInterests.Clear();
+            int maxCount = topTags.First().Count();
+            foreach (var tagGroup in topTags.Take(4))
+            {
+                int score = (int)Math.Round((double)tagGroup.Count() / maxCount * 100);
+                string note = score > 80 ? "Consistently engages in this area." : (score > 50 ? "Showing increasing interest." : "");
+                _growingInterests.Add((tagGroup.Key, score, note));
+            }
+        }
+
+        _recentAccomplishments.Clear();
+        var recentWithTags = _allEntries.OrderByDescending(e => e.ObservationDate).Take(3).ToList();
+        foreach (var entry in recentWithTags)
+        {
+            string title = entry.JourneyType ?? "Milestone";
+            string desc = entry.Observation?.Length > 40 ? entry.Observation.Substring(0, 37) + "..." : (entry.Observation ?? "Notable activity.");
+            _recentAccomplishments.Add((title, desc));
+        }
+
+        var voiceEntry = _allEntries.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.ChildVoice));
+        if (voiceEntry != null)
+        {
+            _notableMemory = $"\"{voiceEntry.ChildVoice}\" - {voiceEntry.ObservationDate:MMM dd}";
+        }
+        else
+        {
+            var first = _allEntries.LastOrDefault(); // Oldest entry
+            if (first != null && !string.IsNullOrWhiteSpace(first.Observation))
+            {
+                _notableMemory = first.Observation.Length > 60 ? first.Observation.Substring(0, 57) + "..." : first.Observation;
+            }
+        }
     }
 
     private List<string> GetTagsForEntry(Guid entryId)

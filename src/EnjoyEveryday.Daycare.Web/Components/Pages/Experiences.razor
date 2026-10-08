@@ -10,6 +10,7 @@
 @using Dapper
 @using System.Text.Json
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 
 <PageTopbar Breadcrumb="Little Stars Daycare / Experiences" Title="Experiences">
     <RightContent>
@@ -80,6 +81,8 @@
                     Setting="Indoor" 
                     Uses="1" 
                     Version="v1" 
+                    CreatedBy="Teacher"
+                    CreatedDate="@exp.CreatedAt.ToString("MMM dd, yyyy")"
                     Id="@exp.Id.ToString()"
                     OnClick="() => OpenViewExperienceModal(exp)" />
             }
@@ -109,8 +112,9 @@
     Discover="@(_parsedDna?.Create ?? "")"
     Challenge="@(_parsedDna?.Challenge ?? "")"
     JoyMoment="@(_parsedDna?.MagicMoment ?? "")"
+    ExecutionGuide="@_parsedDna?.ExecutionGuide"
     OnClose="CloseViewDialog"
-    OnSchedule="ScheduleExperience"
+    OnPrint="PrintExperience"
     OnDuplicate="DuplicateExperience"
     OnImprove="ImproveExperience" />
 
@@ -192,12 +196,21 @@
     private DateTime _scheduleDate = DateTime.Today;
     private string _scheduleTimeOfDay = "Morning";
 
-    private void ScheduleExperience()
+    private async Task PrintExperience()
     {
-        CloseViewDialog();
-        _scheduleDate = DateTime.Today;
-        _scheduleTimeOfDay = "Morning";
-        _isScheduleModalOpen = true;
+        var js = @"
+            var content = document.querySelector('.modal').innerHTML;
+            var printWindow = window.open('', '', 'height=800,width=800');
+            printWindow.document.write('<html><head><title>Print Experience</title>');
+            printWindow.document.write('<style>body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; line-height: 1.6; color: #333; } h2, h3 { color: #111; } .eyebrow { font-size: 12px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 10px; } .detail { margin-top: 20px; margin-bottom: 20px; } .detail label { font-weight: bold; font-size: 14px; color: #555; display: block; margin-bottom: 5px; } .modal-meta { font-weight: bold; color: #444; margin-bottom: 20px; } .modal-footer, .modal-close, button { display: none !important; } ul { padding-left: 20px; } hr { border: none; border-top: 1px dashed #ccc; margin: 30px 0; } </style>');
+            printWindow.document.write('</head><body>');
+            printWindow.document.write(content);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+        ";
+        await JS.InvokeVoidAsync("eval", js);
     }
 
     private void CloseScheduleModal()
