@@ -8,6 +8,8 @@
 @inject PlannerService PlannerService
 @inject ClassroomService ClassroomService
 @inject ExperienceService ExperienceService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
 
 <PageTopbar Breadcrumb="Little Stars · Bluebirds · Age 3-4" Title="Experience Planning">
     <RightContent>
@@ -35,8 +37,14 @@
             </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
-            <select @bind="SelectedClassroomId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 12px; cursor: pointer; height: 38px;">
-                @foreach (var cls in _allClassrooms)
+            <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 12px; cursor: pointer; height: 38px;">
+                @foreach (var branch in _allBranches)
+                {
+                    <option value="@branch.Id">@branch.Name</option>
+                }
+            </select>
+            <select @bind="SelectedClassroomId" disabled="@(SelectedBranchId == Guid.Empty)" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 12px; cursor: pointer; height: 38px;">
+                @foreach (var cls in _allClassrooms.Where(c => c.BranchId == SelectedBranchId))
                 {
                     <option value="@cls.Id">@cls.Name</option>
                 }
@@ -165,6 +173,22 @@
     private DateTime _currentDate;
     private DateOnly? _wizardDefaultDate;
     private List<Classroom> _allClassrooms = new();
+    private List<Branch> _allBranches = new();
+
+    private Guid _selectedBranchId;
+    private Guid SelectedBranchId
+    {
+        get => _selectedBranchId;
+        set
+        {
+            if (_selectedBranchId != value)
+            {
+                _selectedBranchId = value;
+                var cls = _allClassrooms.FirstOrDefault(c => c.BranchId == value);
+                SelectedClassroomId = cls?.Id;
+            }
+        }
+    }
 
     private Guid? _selectedClassroomId;
     private Guid? SelectedClassroomId
@@ -176,6 +200,10 @@
             {
                 _selectedClassroomId = value;
                 _classroom = _allClassrooms.FirstOrDefault(c => c.Id == value);
+                if (_classroom != null && _classroom.BranchId != _selectedBranchId)
+                {
+                    _selectedBranchId = _classroom.BranchId;
+                }
                 _ = RefreshSchedules();
             }
         }
@@ -186,11 +214,23 @@
         var today = DateTime.Today;
         _currentDate = new DateTime(today.Year, today.Month, 1);
 
-        _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
-        _classroom = _allClassrooms.FirstOrDefault();
-        _selectedClassroomId = _classroom?.Id;
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            _allBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+        }
 
-        // No fallback needed - rely on TenantContext
+        _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        
+        // Select first branch and its first classroom by default
+        var defaultBranch = _allBranches.FirstOrDefault();
+        if (defaultBranch != null)
+        {
+            _selectedBranchId = defaultBranch.Id;
+            _classroom = _allClassrooms.FirstOrDefault(c => c.BranchId == _selectedBranchId);
+            _selectedClassroomId = _classroom?.Id;
+        }
 
         var exps = await ExperienceService.GetExperiencesAsync();
         _experiences = exps.ToDictionary(e => e.Id);

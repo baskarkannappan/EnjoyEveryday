@@ -2,8 +2,12 @@
 @rendermode InteractiveServer
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.Organization
+@using EnjoyEveryday.Application.Services
+@inject DashboardService DashboardService
+@inject OrganizationService OrganizationService
+@inject NavigationManager NavigationManager
 
-<PageTopbar Breadcrumb="Organization · 4 branches" Title="Little Stars Daycare">
+<PageTopbar Breadcrumb="@($"Organization · {(OrgMetrics?.TotalBranches ?? 0)} branches")" Title="@(OrgMetrics?.OrganizationName ?? "Loading...")">
     <RightContent>
         <button class="icon-button" style="border: 1px solid var(--line, #e1e6e0); background: white; border-radius: 11px; width: 38px; height: 38px; color: var(--muted);">♢</button>
         <button class="icon-button" style="border: 1px solid var(--line, #e1e6e0); background: white; border-radius: 11px; width: 38px; height: 38px; color: var(--muted);">?</button>
@@ -25,74 +29,74 @@
             </p>
         </div>
         <div class="header-actions">
-            <button class="btn">＋ Add Branch</button>
+            <button class="btn" @onclick="GoToCreateBranch">＋ Add Branch</button>
             <button class="btn primary">View Organization Report</button>
         </div>
     </div>
 
-    <div class="summary-grid">
-        <OrgSummaryCard 
-            Label="Branches" 
-            Value="4" 
-            PositiveHighlight="All active" />
-        <OrgSummaryCard 
-            Label="Children experiencing today" 
-            Value="286" 
-            DetailText="Across 22 classrooms" />
-        <OrgSummaryCard 
-            Label="Experiences this week" 
-            Value="94" 
-            DetailText="81 completed · 13 upcoming" />
-        <OrgSummaryCard 
-            Label="Teacher-created experiences" 
-            Value="37" 
-            PositiveHighlight="+8" 
-            DetailText="this month" />
-    </div>
+    @if (OrgMetrics != null)
+    {
+        <div class="summary-grid">
+            <OrgSummaryCard 
+                Label="Branches" 
+                Value="@OrgMetrics.TotalBranches.ToString()" 
+                PositiveHighlight="@(OrgMetrics.TotalBranches == OrgMetrics.ActiveBranchCount ? "All active" : $"{OrgMetrics.ActiveBranchCount} active")" />
+            <OrgSummaryCard 
+                Label="Children experiencing today" 
+                Value="@OrgMetrics.ChildrenExperiencingToday.ToString()" 
+                DetailText="@($"Across {OrgMetrics.TotalClassrooms} classrooms")" />
+            <OrgSummaryCard 
+                Label="Experiences this week" 
+                Value="@OrgMetrics.ExperiencesThisWeek.ToString()" 
+                DetailText="@($"{OrgMetrics.ExperiencesThisWeekCompleted} completed · {OrgMetrics.ExperiencesThisWeekUpcoming} upcoming")" />
+            <OrgSummaryCard 
+                Label="Teacher-created experiences" 
+                Value="@OrgMetrics.TeacherCreatedExperiences.ToString()" 
+                PositiveHighlight="@($"+{OrgMetrics.TeacherCreatedExperiencesThisMonth}")" 
+                DetailText="this month" />
+        </div>
+    }
 
     <OrgPulse 
         Icon="🌱" 
         Title="The organization feels alive this week." 
-        Text="Children are exploring, creating and working together across all four branches. Teachers are adapting experiences frequently — a good sign that the weekly rhythm is supporting curiosity rather than becoming a rigid schedule." 
+        Text="Children are exploring, creating and working together across all branches. Teachers are adapting experiences frequently — a good sign that the weekly rhythm is supporting curiosity rather than becoming a rigid schedule." 
         ActionText="See what I'm noticing" />
 
     <div class="toolbar">
-        <FilterTabs Tabs="BranchFilters" ActiveTab="all" OnTabSelected="(val) => {}" />
-        <input class="search" type="text" placeholder="Search branches..." />
+        <FilterTabs Tabs="BranchFilters" ActiveTab="@ActiveTab" OnTabSelected="OnTabSelected" />
+        <input class="search" type="text" placeholder="Search branches..." @bind="SearchTerm" @bind:event="oninput" />
     </div>
 
     <div class="branch-grid">
-        <OrgBranchCard 
-            Icon="🌿" Name="Downtown" Location="72 King Street" 
-            StatusClass="good" StatusText="Healthy rhythm"
-            Children="84" Classrooms="7" Experiences="31" 
-            RhythmPercent="92" 
-            Note="Teachers are adapting experiences often. Building and outdoor exploration are especially popular this week."
-            TeacherInitials="@(new List<string> { "P", "M", "A" })" />
-
-        <OrgBranchCard 
-            Icon="🌳" Name="North" Location="18 Maple Avenue" 
-            StatusClass="good" StatusText="Healthy rhythm"
-            Children="76" Classrooms="6" Experiences="26" 
-            RhythmPercent="87" 
-            Note="Children have been especially interested in animals, stories and imaginative play."
-            TeacherInitials="@(new List<string> { "S", "J", "R" })" />
-
-        <OrgBranchCard 
-            Icon="☀️" Name="West" Location="104 Cedar Road" 
-            StatusClass="attention" StatusText="Needs support"
-            Children="68" Classrooms="5" Experiences="18" 
-            RhythmPercent="69" 
-            Note="Two classrooms have been replacing planned experiences frequently. The team may need more flexible ideas requiring little preparation."
-            TeacherInitials="@(new List<string> { "K", "N" })" />
-
-        <OrgBranchCard 
-            Icon="🌊" Name="Lakeside" Location="6 Willow Lane" 
-            StatusClass="quiet" StatusText="Quiet week"
-            Children="58" Classrooms="4" Experiences="19" 
-            RhythmPercent="73" 
-            Note="Outdoor experiences dropped this week because of weather. Indoor creative experiences are increasing."
-            TeacherInitials="@(new List<string> { "D", "L" })" />
+        @if (FilteredBranches != null)
+        {
+            @if (!FilteredBranches.Any())
+            {
+                <div class="empty-state">
+                    <p>No branches found.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var branch in FilteredBranches)
+                {
+                    <OrgBranchCard 
+                        Icon="🌿" 
+                        Name="@branch.BranchName" 
+                        Location="@branch.Location" 
+                        StatusClass="@(branch.AttentionStatus.Contains("support") ? "attention" : branch.AttentionStatus.Contains("Quiet") ? "quiet" : "good")" 
+                        StatusText="@branch.AttentionStatus"
+                        Children="@branch.Children" 
+                        Classrooms="@branch.Classrooms" 
+                        Experiences="@branch.Experiences" 
+                        RhythmPercent="@branch.ExperienceRhythm" 
+                        Note="@branch.RecentInsight"
+                        TeacherInitials="@(new List<string> { "P", "M", "A" })" 
+                        OnViewClick="@(() => GoToBranchDetail(branch.BranchId))" />
+                }
+            }
+        }
     </div>
 
     <div class="lower-grid">
@@ -113,10 +117,51 @@
 </section>
 
 @code {
+    private OrganizationMetrics? OrgMetrics;
+    private IEnumerable<BranchMetrics>? Branches;
+    
+    private string SearchTerm = "";
+    private string ActiveTab = "all";
+
+    private IEnumerable<BranchMetrics>? FilteredBranches =>
+        Branches?.Where(b => 
+            (ActiveTab == "all" || 
+            (ActiveTab == "attention" && b.AttentionStatus.Contains("support", StringComparison.OrdinalIgnoreCase)) ||
+            (ActiveTab == "quiet" && b.AttentionStatus.Contains("Quiet", StringComparison.OrdinalIgnoreCase))) &&
+            (string.IsNullOrWhiteSpace(SearchTerm) || b.BranchName.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) || b.Location.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase))
+        );
+
     private List<FilterTabs.TabItem> BranchFilters = new()
     {
         new FilterTabs.TabItem { Text = "All branches", Value = "all" },
         new FilterTabs.TabItem { Text = "Needs attention", Value = "attention" },
         new FilterTabs.TabItem { Text = "Quiet this week", Value = "quiet" }
     };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+
+        if (org != null)
+        {
+            OrgMetrics = await DashboardService.GetOrganizationMetricsAsync(org.Id);
+            Branches = await DashboardService.GetBranchMetricsAsync(org.Id);
+        }
+    }
+
+    private void OnTabSelected(string tab)
+    {
+        ActiveTab = tab;
+    }
+
+    private void GoToCreateBranch()
+    {
+        NavigationManager.NavigateTo("/management/branches/new");
+    }
+
+    private void GoToBranchDetail(Guid branchId)
+    {
+        NavigationManager.NavigateTo($"/management/branches/{branchId}");
+    }
 }

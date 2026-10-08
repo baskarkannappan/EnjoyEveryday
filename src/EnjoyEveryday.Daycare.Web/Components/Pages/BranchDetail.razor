@@ -1,0 +1,121 @@
+@page "/management/branches/{BranchId:guid}"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Organization
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject NavigationManager NavigationManager
+
+<PageTopbar Breadcrumb="@($"Organization · Branch Detail")" Title="@(Branch?.Name ?? "Loading...")">
+    <RightContent>
+        <button class="icon-button" @onclick="GoBack">←</button>
+    </RightContent>
+</PageTopbar>
+
+<section class="content" style="padding: 34px; max-width: 1600px; margin: auto;">
+
+    @if (Branch == null)
+    {
+        <p>Loading branch details...</p>
+    }
+    else
+    {
+        <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <div class="eyebrow">Branch View</div>
+                <h1>@Branch.Name</h1>
+                <p class="header-description">
+                    Location: @Branch.Location <br/>
+                    Status: @(Branch.IsActive ? "Active" : "Inactive")
+                </p>
+            </div>
+            <div class="header-actions">
+                <button class="btn" @onclick="GoToCreateClassroom">＋ Add Classroom</button>
+                <button class="btn">Edit Branch</button>
+                <button class="btn @(Branch.IsActive ? "" : "primary")" @onclick="ToggleActive">
+                    @(Branch.IsActive ? "Deactivate Branch" : "Activate Branch")
+                </button>
+            </div>
+        </div>
+
+        <div style="margin-top: 40px;">
+            <h2>Classrooms</h2>
+            
+            <div class="branch-grid" style="margin-top: 20px;">
+                @if (Classrooms == null)
+                {
+                    <p>Loading classrooms...</p>
+                }
+                else if (!Classrooms.Any())
+                {
+                    <div class="empty-state">
+                        <p>No classrooms yet.</p>
+                        <button class="btn" @onclick="GoToCreateClassroom">＋ Add Classroom</button>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var room in Classrooms)
+                    {
+                        <div style="background: white; border: 1px solid var(--line, #e1e6e0); border-radius: 12px; padding: 24px; cursor: pointer;" @onclick="() => GoToClassroomDetail(room.Id)">
+                            <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 8px;">@room.Name</div>
+                            <div style="color: var(--muted); font-size: 0.9rem; margin-bottom: 16px;">
+                                Age: @room.AgeGroup<br/>
+                                Capacity: @room.Capacity<br/>
+                                Status: @room.Status
+                            </div>
+                            <div style="display: flex; justify-content: space-between; color: var(--muted); font-size: 0.85rem;">
+                                <span>@room.CurrentEnrollment children</span>
+                                <span>Environment: @room.Environment</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+
+</section>
+
+@code {
+    [Parameter] public Guid BranchId { get; set; }
+
+    private Branch? Branch;
+    private IEnumerable<Classroom>? Classrooms;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Branch = await BranchService.GetBranchByIdAsync(BranchId);
+        if (Branch != null)
+        {
+            Classrooms = await ClassroomService.GetClassroomsAsync(BranchId);
+        }
+    }
+
+    private async Task ToggleActive()
+    {
+        if (Branch != null)
+        {
+            Branch.IsActive = !Branch.IsActive;
+            await BranchService.UpdateBranchAsync(Branch);
+            StateHasChanged();
+        }
+    }
+
+    private void GoToCreateClassroom()
+    {
+        NavigationManager.NavigateTo($"/management/branches/{BranchId}/classrooms/new");
+    }
+
+    private void GoToClassroomDetail(Guid classroomId)
+    {
+        NavigationManager.NavigateTo($"/classrooms/{classroomId}");
+    }
+
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo("/management");
+    }
+}

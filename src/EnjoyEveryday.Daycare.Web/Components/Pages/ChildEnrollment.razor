@@ -3,6 +3,9 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject ChildService ChildService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
 
 <div class="enrollment-container">
@@ -191,11 +194,23 @@
                     </select>
                 </div>
                 <div class="field">
-                    <label>Assigned Program</label>
-                    <select @bind="assignedProgram">
-                        <option value="Infants">Infants</option>
-                        <option value="Toddlers">Toddlers</option>
-                        <option value="Preschool">Preschool</option>
+                    <label>Assigned Branch</label>
+                    <select @bind="selectedBranchId">
+                        <option value="">-- Select Branch --</option>
+                        @foreach (var branch in _branches)
+                        {
+                            <option value="@branch.Id">@branch.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Assigned Classroom</label>
+                    <select @bind="selectedClassroomId" disabled="@(string.IsNullOrEmpty(selectedBranchId))">
+                        <option value="">-- Select Classroom --</option>
+                        @foreach (var classroom in _classrooms.Where(c => c.BranchId.ToString() == selectedBranchId))
+                        {
+                            <option value="@classroom.Id">@classroom.Name</option>
+                        }
                     </select>
                 </div>
             }
@@ -257,7 +272,7 @@
                     <div class="review-block" style="min-width: 45%;">
                         <h4>Enrollment</h4>
                         <p><strong>Start Date:</strong> @enrollmentStartDate?.ToString("yyyy-MM-dd")</p>
-                        <p><strong>Program:</strong> @assignedProgram</p>
+                        <p><strong>Classroom:</strong> @(_classrooms.FirstOrDefault(c => c.Id.ToString() == selectedClassroomId)?.Name ?? "None")</p>
                     </div>
                 </div>
             }
@@ -305,6 +320,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            foreach (var branch in _branches)
+            {
+                var classrooms = await ClassroomService.GetClassroomsAsync(branch.Id);
+                _classrooms.AddRange(classrooms);
+            }
+        }
+
         if (Id.HasValue)
         {
             _draftChild = await ChildService.GetChildByIdAsync(Id.Value);
@@ -314,6 +341,15 @@
                 childLastName = _draftChild.LastName;
                 childDob = _draftChild.DateOfBirth;
                 childPhotoPreview = _draftChild.PhotoUrl ?? "";
+                if (_draftChild.ClassroomId.HasValue)
+                {
+                    selectedClassroomId = _draftChild.ClassroomId.Value.ToString();
+                    var cls = _classrooms.FirstOrDefault(c => c.Id == _draftChild.ClassroomId.Value);
+                    if (cls != null)
+                    {
+                        selectedBranchId = cls.BranchId.ToString();
+                    }
+                }
                 
                 if (!string.IsNullOrEmpty(_draftChild.DraftData))
                 {
@@ -349,7 +385,8 @@
                             enrollmentStartDate = eStart.GetDateTime();
                             
                         if (root.TryGetProperty("scheduleType", out var sched)) scheduleType = sched.GetString() ?? "";
-                        if (root.TryGetProperty("assignedProgram", out var prog)) assignedProgram = prog.GetString() ?? "";
+                        if (root.TryGetProperty("selectedBranchId", out var brId)) selectedBranchId = brId.GetString() ?? "";
+                        if (root.TryGetProperty("selectedClassroomId", out var clId)) selectedClassroomId = clId.GetString() ?? "";
                         
                         if (root.TryGetProperty("pickupName", out var pkName)) pickupName = pkName.GetString() ?? "";
                         if (root.TryGetProperty("pickupRelationship", out var pkRel)) pickupRelationship = pkRel.GetString() ?? "";
@@ -364,6 +401,7 @@
 
                 // Navigate to the step they left off on (up to max 10)
                 int calculatedStep = (_draftChild.ProfileCompletionPercentage / 10) + 1;
+                if (calculatedStep <= 0) calculatedStep = 1;
                 currentStep = Math.Min(calculatedStep, 10);
                 maxAllowedStep = currentStep;
             }
@@ -410,7 +448,8 @@
     // 7
     private DateTime? enrollmentStartDate = DateTime.Today.AddDays(7);
     private string scheduleType = "Full Time";
-    private string assignedProgram = "Preschool";
+    private string selectedBranchId = "";
+    private string selectedClassroomId = "";
 
     // 8
     private string pickupName = "";
@@ -421,6 +460,9 @@
     private bool consentPhoto = false;
     private bool consentMedical = false;
     private bool consentMarketing = false;
+
+    private List<Branch> _branches = new();
+    private List<Classroom> _classrooms = new();
     
     private async Task NextStep()
     {
@@ -436,6 +478,10 @@
             _draftChild.LastName = childLastName;
             _draftChild.DateOfBirth = childDob;
             _draftChild.PhotoUrl = childPhotoPreview;
+            if (Guid.TryParse(selectedClassroomId, out var cid))
+            {
+                _draftChild.ClassroomId = cid;
+            }
             _draftChild.ProfileCompletionPercentage = currentStep * 10;
             if (currentStep == 10) _draftChild.EnrollmentStatus = "Enrolled";
             
@@ -446,7 +492,7 @@
                 emergencyName, emergencyPhone, emergencyRelationship,
                 physicianName, physicianPhone, allergies, medications,
                 dietaryRestrictions, napRoutine,
-                enrollmentStartDate, scheduleType, assignedProgram,
+                enrollmentStartDate, scheduleType, selectedBranchId, selectedClassroomId,
                 pickupName, pickupRelationship, pickupCode,
                 consentPhoto, consentMedical, consentMarketing
             };
