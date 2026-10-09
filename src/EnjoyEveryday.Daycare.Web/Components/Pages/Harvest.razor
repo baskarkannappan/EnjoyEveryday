@@ -14,45 +14,41 @@
 @rendermode InteractiveServer
 
 @inject HarvestService HarvestService
+<div class="content">
+    <PageHero Eyebrow="EXPERIENCE MEMORY"
+              Title="Harvest & Insights"
+              Subtitle="What happened matters more than simply completing the activity.">
+    </PageHero>
 
-<PageHero 
-    Eyebrow="EXPERIENCE MEMORY" 
-    Title="Harvest & Insights" 
-    Subtitle="What happened matters more than simply completing the activity.">
-</PageHero>
+    <div style="margin-top: 16px; margin-bottom: 16px; display: flex; gap: 12px;">
+        <button class="primary" @onclick="OpenFeedbackDialog">+ Log Feedback</button>
+        <button class="secondary" @onclick="OpenMomentDialog">Log Child Moment</button>
+    </div>
 
-<div style="margin-top: 16px; margin-bottom: 16px; display: flex; gap: 12px;">
-    <button class="primary" @onclick="OpenFeedbackDialog">+ Log Feedback</button>
-    <button class="secondary" @onclick="OpenMomentDialog">Log Child Moment</button>
+    <HarvestInsightCard Title="Your daycare is learning."
+                        Message="@($"{_metrics.TotalExperiences} experiences happened this month. {_metrics.TotalFeedbacks} received teacher feedback. {_metrics.PatternsDiscovered} patterns were discovered.")" />
+
+    <div class="harvest-layout">
+        <ExperiencePerformanceGrid Items="@_performanceItems" OnViewClick="OnViewClick" />
+
+        <TeacherFeedbackList Items="@_feedbackItems"
+                             OnItemClick="EditFeedback" />
+    </div>
+
+    <Flywheel Steps="@_flywheelSteps" />
+
+    <FeedbackFormModal IsOpen="@_isModalOpen"
+                       IsEditing="@_currentFeedbackId.HasValue"
+                       @bind-SelectedExperienceId="_selectedExperienceId"
+                       @bind-Rating="_rating"
+                       @bind-FeedbackText="_feedbackText"
+                       ExperienceOptions="@(_experiences.Select(e => new KeyValuePair<string, string>(e.Id.ToString(), e.Title)))"
+                       OnClose="CloseDialog"
+                       OnSave="ConfirmFeedback"
+                       OnDelete="DeleteFeedback" />
+
+    <AddJourneyMomentDialog @ref="_addMomentDialog" TeacherId="@(Guid.Parse("50000000-0000-0000-0000-000000000001"))" OnSaved="OnMomentSaved" />
 </div>
-
-<HarvestInsightCard 
-    Title="Your daycare is learning."
-    Message="@($"{_metrics.TotalExperiences} experiences happened this month. {_metrics.TotalFeedbacks} received teacher feedback. {_metrics.PatternsDiscovered} patterns were discovered.")" />
-
-<div class="harvest-layout">
-    <ExperiencePerformanceGrid Items="@_performanceItems" OnViewClick="OnViewClick" />
-
-    <TeacherFeedbackList 
-        Items="@_feedbackItems"
-        OnItemClick="EditFeedback" />
-</div>
-
-<Flywheel Steps="@_flywheelSteps" />
-
-<FeedbackFormModal
-    IsOpen="@_isModalOpen"
-    IsEditing="@_currentFeedbackId.HasValue"
-    @bind-SelectedExperienceId="_selectedExperienceId"
-    @bind-Rating="_rating"
-    @bind-FeedbackText="_feedbackText"
-    ExperienceOptions="@(_experiences.Select(e => new KeyValuePair<string, string>(e.Id.ToString(), e.Title)))"
-    OnClose="CloseDialog"
-    OnSave="ConfirmFeedback"
-    OnDelete="DeleteFeedback" />
-
-<AddJourneyMomentDialog @ref="_addMomentDialog" TeacherId="@(Guid.Parse("50000000-0000-0000-0000-000000000001"))" OnSaved="OnMomentSaved" />
-
 @using EnjoyEveryday.Domain.Repositories
 @code {
     private AddJourneyMomentDialog _addMomentDialog = default!;
@@ -75,38 +71,39 @@
     private List<ExperienceFeedback> _feedbacks = new();
     private Dictionary<Guid, string> _userNames = new();
 
-    private IEnumerable<FeedbackItem> _feedbackItems => 
-        _feedbacks.Select(f => new FeedbackItem { 
-            Id = f.Id, 
-            Notes = f.Notes ?? "", 
+    private IEnumerable<FeedbackItem> _feedbackItems =>
+        _feedbacks.Select(f => new FeedbackItem
+        {
+            Id = f.Id,
+            Notes = f.Notes ?? "",
             Author = _userNames.TryGetValue(f.TeacherId, out var name) ? $"{name} • Teacher" : "Teacher"
         });
 
     private string _feedbackText = string.Empty;
     private string _rating = "Good";
     private string? _selectedExperienceId;
-    
+
     private Guid? _currentFeedbackId;
     private bool _isModalOpen = false;
 
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-        
+
         var users = await UserService.GetUsersAsync();
         _userNames = users.ToDictionary(u => u.Id, u => string.IsNullOrWhiteSpace(u.FirstName) ? "User" : u.FirstName);
-        
+
         _metrics = await HarvestService.GetMonthlyMetricsAsync();
         var dtos = await HarvestService.GetPerformanceItemsAsync();
-        _performanceItems = dtos.Select(d => new ExperiencePerformanceItem 
-        { 
+        _performanceItems = dtos.Select(d => new ExperiencePerformanceItem
+        {
             ExperienceId = d.ExperienceId,
-            Title = d.Title, 
-            Subtitle = d.Subtitle, 
-            Uses = d.Uses, 
-            Response = d.Response 
+            Title = d.Title,
+            Subtitle = d.Subtitle,
+            Uses = d.Uses,
+            Response = d.Response
         }).AsQueryable();
-        
+
         await LoadFeedbacks();
     }
 
@@ -162,7 +159,7 @@
     private async Task ConfirmFeedback()
     {
         if (string.IsNullOrEmpty(_selectedExperienceId) || string.IsNullOrEmpty(_feedbackText)) return;
-        
+
         var users = await UserService.GetUsersAsync();
         var teacherId = users.FirstOrDefault()?.Id ?? Guid.Empty;
         var expId = Guid.Parse(_selectedExperienceId);
@@ -174,7 +171,7 @@
         if (branch == null) return;
         var classroom = (await ClassroomService.GetClassroomsAsync(branch.Id)).FirstOrDefault();
         if (classroom == null) return;
-        
+
         var schedule = await PlannerService.ScheduleExperienceAsync(expId, classroom.Id, DateOnly.FromDateTime(DateTime.Today), "Morning");
         var scheduleId = schedule.Id;
 
@@ -192,11 +189,11 @@
         {
             await FeedbackService.CreateFeedbackAsync(scheduleId, teacherId, _rating, _feedbackText);
         }
-        
+
         await LoadFeedbacks();
         CloseDialog();
     }
-    
+
     private async Task OnViewClick(ExperiencePerformanceItem item)
     {
         if (item.ExperienceId != Guid.Empty)

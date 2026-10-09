@@ -10,6 +10,7 @@
 @inject BranchService BranchService
 @inject OrganizationService OrgService
 @inject NavigationManager NavigationManager
+@inject SystemProvisioningService SystemProvisioning
 
 <PageHero 
     Eyebrow="ENVIRONMENT" 
@@ -18,7 +19,7 @@
 </PageHero>
 
 <div style="max-width: 900px; margin: 0 auto; padding: 30px 40px;">
-    <ClassroomCreationWizard Model="_wizardModel" OnSaveDraft="HandleSaveDraft" OnSubmit="HandleSubmit" />
+    <ClassroomCreationWizard Model="_wizardModel" OnSaveDraft="HandleSaveDraft" OnSubmit="HandleSubmit" AvailableBranches="_branches" />
 </div>
 
 @code {
@@ -29,24 +30,25 @@
     public Guid? BranchId { get; set; }
 
     private ClassroomWizardModel _wizardModel = new();
-    private Guid _defaultBranchId;
+    private List<Branch> _branches = new();
     private Classroom? _existingClassroom;
 
     protected override async Task OnInitializedAsync()
     {
+        var orgs = await OrgService.GetOrganizationsAsync();
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
+        {
+            _branches = (await BranchService.GetBranchesAsync(defaultOrg.Id)).ToList();
+        }
+
         if (BranchId.HasValue)
         {
-            _defaultBranchId = BranchId.Value;
+            _wizardModel.BranchId = BranchId.Value;
         }
         else
         {
-            var orgs = await OrgService.GetOrganizationsAsync();
-            var defaultOrg = orgs.FirstOrDefault();
-            if (defaultOrg != null)
-            {
-                var branches = await BranchService.GetBranchesAsync(defaultOrg.Id);
-                _defaultBranchId = branches.FirstOrDefault()?.Id ?? Guid.Empty;
-            }
+            _wizardModel.BranchId = await SystemProvisioning.EnsureDefaultBranchAsync();
         }
 
         if (Id.HasValue)
@@ -62,7 +64,6 @@
                     }
                     catch
                     {
-                        // Fallback if parsing fails
                         PopulateModelFromEntity(_existingClassroom);
                     }
                 }
@@ -70,12 +71,18 @@
                 {
                     PopulateModelFromEntity(_existingClassroom);
                 }
+                
+                if (_wizardModel.BranchId == null || _wizardModel.BranchId == Guid.Empty)
+                {
+                    _wizardModel.BranchId = _existingClassroom.BranchId;
+                }
             }
         }
     }
 
     private void PopulateModelFromEntity(Classroom classroom)
     {
+        _wizardModel.BranchId = classroom.BranchId;
         _wizardModel.Name = classroom.Name;
         _wizardModel.Code = classroom.Code;
         _wizardModel.Description = classroom.Description;
@@ -108,8 +115,11 @@
 
     private async Task SaveClassroom(ClassroomWizardModel model, string status)
     {
+        var branchIdToSave = model.BranchId ?? await SystemProvisioning.EnsureDefaultBranchAsync();
+
         if (_existingClassroom != null)
         {
+            _existingClassroom.BranchId = branchIdToSave;
             _existingClassroom.Name = model.Name;
             _existingClassroom.Code = model.Code;
             _existingClassroom.Description = model.Description;
@@ -130,7 +140,7 @@
         {
             var classroom = new Classroom
             {
-                BranchId = _defaultBranchId,
+                BranchId = branchIdToSave,
                 Name = model.Name,
                 Code = model.Code,
                 Description = model.Description,

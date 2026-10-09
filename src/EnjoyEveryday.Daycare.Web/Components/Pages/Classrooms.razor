@@ -8,56 +8,69 @@
 @inject OrganizationService OrgService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject NavigationManager NavigationManager
+<div class="content">
+    <PageHero Eyebrow="ENVIRONMENT"
+              Title="Classrooms"
+              Subtitle="Experiences begin with the environment.">
+        <RightContent>
+            <a id="addClassroomButton" href="/classrooms/new" class="button primary" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 4px; font-weight: 500; background-color: #52745e; color: white;">
+                + Add classroom
+            </a>
+        </RightContent>
+    </PageHero>
 
-<PageHero 
-    Eyebrow="ENVIRONMENT" 
-    Title="Classrooms" 
-    Subtitle="Experiences begin with the environment.">
-    <RightContent>
-        <a id="addClassroomButton" href="/classrooms/new" class="button primary" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: 4px; font-weight: 500; background-color: #52745e; color: white;">
-            + Add classroom
-        </a>
-    </RightContent>
-</PageHero>
+    <div style="margin-bottom: 24px;">
+        <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+            <option value="@Guid.Empty">All Branches</option>
+            @foreach (var branch in _branches.Values)
+            {
+                <option value="@branch.Id">@branch.Name</option>
+            }
+        </select>
+    </div>
 
-<div id="classroomGrid" class="people-grid">
-    @if (_classrooms != null && _classrooms.Any())
-    {
-        @foreach (var classroom in _classrooms)
+    <div id="classroomGrid" class="people-grid">
+        @if (_classrooms != null && _classrooms.Any())
         {
-            <div @onclick='() => NavigationManager.NavigateTo($"/classrooms/view/{classroom.Id}")' style="cursor: pointer;">
-                <PersonCard AvatarInitials="@(classroom.Name?.FirstOrDefault().ToString() ?? "C")" 
-                            PhotoUrl="@classroom.PhotoUrl"
-                            Name="@classroom.Name" 
-                            Subtitle="@($"{classroom.Capacity ?? 18} children · Ages {classroom.AgeGroup ?? "3–4"}")" 
-                            Status="@(classroom.Status)" 
-                            Progress="@classroom.ProfileCompletionPercentage"
-                            HighlightTitle="Environment" 
-                            HighlightText="@(classroom.Environment ?? "Indoor")" />
-            </div>
+            @foreach (var classroom in _classrooms)
+            {
+                var branchName = _branches.TryGetValue(classroom.BranchId, out var b) ? b.Name : "Unassigned Branch";
+                <div @onclick='() => NavigationManager.NavigateTo($"/classrooms/view/{classroom.Id}")' style="cursor: pointer;">
+                    <PersonCard AvatarInitials="@(classroom.Name?.FirstOrDefault().ToString() ?? "C")"
+                                PhotoUrl="@classroom.PhotoUrl"
+                                Name="@classroom.Name"
+                                Subtitle="@($"{branchName} • {classroom.Capacity ?? 18} children · Ages {classroom.AgeGroup ?? "3–4"}")"
+                                Status="@(classroom.Status)"
+                                Progress="@classroom.ProfileCompletionPercentage"
+                                HighlightTitle="Environment"
+                                HighlightText="@(classroom.Environment ?? "Indoor")" />
+                </div>
+            }
         }
-    }
-    else if (_classrooms != null && !_classrooms.Any())
-    {
-        <p>No classrooms found. Generating sample data...</p>
-    }
+        else if (_classrooms != null && !_classrooms.Any())
+        {
+            <p>No classrooms found.</p>
+        }
+    </div>
+
 </div>
-
-<ClassroomFormModal IsOpen="_isModalOpen"
-                    IsEditing="_isEditing"
-                    @bind-Name="_currentClassroom.Name"
-                    @bind-AgeGroup="_currentClassroom.AgeGroup"
-                    @bind-Capacity="_currentClassroom.Capacity"
-                    OnClose="CloseDialog"
-                    OnSave="SaveClassroomAsync"
-                    OnDelete="DeleteClassroomAsync" />
-
 @code {
     private IEnumerable<Classroom>? _classrooms;
-    private Classroom _currentClassroom = new();
-    private bool _isModalOpen = false;
-    private bool _isEditing = false;
-    private Guid _defaultBranchId;
+    private Dictionary<Guid, Branch> _branches = new();
+    
+    private Guid _selectedBranchId = Guid.Empty;
+    private Guid SelectedBranchId
+    {
+        get => _selectedBranchId;
+        set
+        {
+            if (_selectedBranchId != value)
+            {
+                _selectedBranchId = value;
+                _ = LoadClassroomsAsync();
+            }
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -65,94 +78,23 @@
         var defaultOrg = orgs.FirstOrDefault();
         if (defaultOrg != null)
         {
-            var branches = await BranchService.GetBranchesAsync(defaultOrg.Id);
-            _defaultBranchId = branches.FirstOrDefault()?.Id ?? Guid.Empty;
+            var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
+            _branches = branchesList.ToDictionary(b => b.Id);
         }
-        
-        await LoadClassroomsAsync();
 
-        if (_classrooms != null && !_classrooms.Any() && _defaultBranchId != Guid.Empty)
-        {
-            await InsertSampleDataAsync();
-        }
+        await LoadClassroomsAsync();
     }
 
     private async Task LoadClassroomsAsync()
     {
-        if (_defaultBranchId != Guid.Empty)
+        if (_selectedBranchId != Guid.Empty)
         {
-            _classrooms = await ClassroomService.GetClassroomsAsync(_defaultBranchId);
-        }
-    }
-
-    private async Task InsertSampleDataAsync()
-    {
-        await ClassroomService.CreateClassroomAsync(_defaultBranchId, "Bluebirds", "3–4", 18, "Indoor");
-        await ClassroomService.CreateClassroomAsync(_defaultBranchId, "Sunflowers", "4–5", 16, "Indoor");
-        await LoadClassroomsAsync();
-    }
-
-    private void OpenAddClassroomModal()
-    {
-        _currentClassroom = new Classroom { AgeGroup = "3-4", Capacity = 15, Environment = "Indoor" };
-        _isEditing = false;
-        _isModalOpen = true;
-    }
-
-    private void OpenEditClassroomModal(Classroom classroom)
-    {
-        _currentClassroom = new Classroom
-        {
-            Id = classroom.Id,
-            TenantId = classroom.TenantId,
-            BranchId = classroom.BranchId,
-            Name = classroom.Name,
-            AgeGroup = classroom.AgeGroup,
-            Capacity = classroom.Capacity,
-            Environment = classroom.Environment,
-            IsActive = classroom.IsActive
-        };
-        _isEditing = true;
-        _isModalOpen = true;
-    }
-
-    private void CloseDialog()
-    {
-        _isModalOpen = false;
-    }
-
-    private async Task SaveClassroomAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_currentClassroom.Name))
-        {
-            return;
-        }
-
-        if (_isEditing)
-        {
-            await ClassroomService.UpdateClassroomAsync(_currentClassroom);
+            _classrooms = await ClassroomService.GetClassroomsAsync(_selectedBranchId);
         }
         else
         {
-            await ClassroomService.CreateClassroomAsync(
-                _defaultBranchId,
-                _currentClassroom.Name,
-                _currentClassroom.AgeGroup,
-                _currentClassroom.Capacity,
-                _currentClassroom.Environment ?? "Indoor");
+            _classrooms = await ClassroomService.GetAllClassroomsAsync();
         }
-
-        await LoadClassroomsAsync();
-        CloseDialog();
-    }
-
-    private async Task DeleteClassroomAsync()
-    {
-        if (_currentClassroom.Id != Guid.Empty)
-        {
-            await ClassroomService.DeleteClassroomAsync(_currentClassroom.Id);
-            await LoadClassroomsAsync();
-            CloseDialog();
-        }
+        StateHasChanged();
     }
 }

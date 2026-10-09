@@ -180,12 +180,29 @@
         else if (_currentStep == 12) // Classroom Assignments
         {
             <div class="field" style="margin-bottom: 1.5rem;">
+                <label>Assign to Branch</label>
+                <select @bind="Model.AssignedBranch">
+                    @if (AvailableBranches == null || !AvailableBranches.Any())
+                    {
+                        <option value="">Default Branch</option>
+                    }
+                    else
+                    {
+                        <option value="">Select Branch...</option>
+                        @foreach(var b in AvailableBranches)
+                        {
+                            <option value="@b.Id">@b.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="field" style="margin-bottom: 1.5rem;">
                 <label>Assign to Classroom</label>
-                <select @bind="Model.AssignedClassroom">
+                <select @bind="Model.AssignedClassroom" disabled="@(string.IsNullOrWhiteSpace(Model.AssignedBranch) && AvailableBranches != null && AvailableBranches.Any())">
                     <option value="">Select Classroom...</option>
                     @if (AvailableClassrooms != null)
                     {
-                        @foreach(var c in AvailableClassrooms)
+                        @foreach(var c in AvailableClassrooms.Where(c => string.IsNullOrWhiteSpace(Model.AssignedBranch) || c.BranchId.ToString() == Model.AssignedBranch))
                         {
                             <option value="@c.Id">@c.Name</option>
                         }
@@ -430,6 +447,7 @@
     [Parameter] public EventCallback<TeacherWizardModel> OnSaveDraft { get; set; }
     [Parameter] public EventCallback<TeacherWizardModel> OnActivate { get; set; }
     [Parameter] public List<EnjoyEveryday.Domain.Entities.Classroom>? AvailableClassrooms { get; set; }
+    [Parameter] public List<EnjoyEveryday.Domain.Entities.Branch>? AvailableBranches { get; set; }
 
     protected override void OnParametersSet()
     {
@@ -515,6 +533,7 @@
         public bool HasSpecialtyMontessori { get; set; }
 
         // Classroom Assignments
+        public string AssignedBranch { get; set; } = "";
         public string AssignedClassroom { get; set; } = "";
         public bool IsPrimaryTeacher { get; set; }
 

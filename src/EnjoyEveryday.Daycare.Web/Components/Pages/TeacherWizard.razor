@@ -7,8 +7,11 @@
 @inject UserService UserService
 @inject ITeacherService TeacherService
 @inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject SystemProvisioningService SystemProvisioning
 
 <div style="max-width: 900px; margin: 0 auto; padding: 30px 40px;">
     <PageHero 
@@ -20,6 +23,7 @@
     <TeacherCreationWizard 
         Model="@_model" 
         AvailableClassrooms="@_classrooms"
+        AvailableBranches="@_branches"
         OnCancel="HandleCancel" 
         OnSaveDraft="HandleSaveDraft" 
         OnActivate="HandleActivate" />
@@ -31,10 +35,18 @@
 
     private TeacherCreationWizard.TeacherWizardModel _model = new();
     private List<Classroom> _classrooms = new();
+    private List<Branch> _branches = new();
 
     protected override async Task OnInitializedAsync()
     {
         _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+        }
 
         if (Id.HasValue)
         {
@@ -49,6 +61,17 @@
                     try
                     {
                         _model = System.Text.Json.JsonSerializer.Deserialize<TeacherCreationWizard.TeacherWizardModel>(teacher.DraftData) ?? new();
+                        if (string.IsNullOrWhiteSpace(_model.AssignedBranch) && !string.IsNullOrWhiteSpace(_model.AssignedClassroom))
+                        {
+                            if (Guid.TryParse(_model.AssignedClassroom, out var cid))
+                            {
+                                var cls = _classrooms.FirstOrDefault(c => c.Id == cid);
+                                if (cls != null)
+                                {
+                                    _model.AssignedBranch = cls.BranchId.ToString();
+                                }
+                            }
+                        }
                     }
                     catch
                     {
@@ -93,6 +116,12 @@
 
     private async Task SaveTeacherAsync(TeacherCreationWizard.TeacherWizardModel model, string status)
     {
+        if (string.IsNullOrWhiteSpace(model.AssignedClassroom))
+        {
+            var poolId = await SystemProvisioning.EnsureTeacherPoolAsync();
+            model.AssignedClassroom = poolId.ToString();
+        }
+
         if (Id.HasValue)
         {
             // Edit existing

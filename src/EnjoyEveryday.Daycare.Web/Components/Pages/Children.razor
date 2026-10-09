@@ -4,61 +4,160 @@
 @using EnjoyEveryday.Domain.Entities
 
 @inject ChildService ChildService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject OrganizationService OrgService
 @inject NavigationManager NavigationManager
+<div class="content">
+    <PageHero Eyebrow="PEOPLE"
+              Title="Children"
+              Subtitle="See the children behind the experiences.">
 
-<PageHero Eyebrow="PEOPLE"
-          Title="Children"
-          Subtitle="See the children behind the experiences.">
+        <RightContent>
+            <button id="addChildButton" class="primary" @onclick="OpenAddChildModal">
+                + Add child
+            </button>
+        </RightContent>
 
-    <RightContent>
-        <button id="addChildButton" class="primary" @onclick="OpenAddChildModal">
-            + Add child
-        </button>
-    </RightContent>
+    </PageHero>
 
-</PageHero>
+    <div style="margin-bottom: 24px; display: flex; gap: 12px;">
+        <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+            <option value="@Guid.Empty">All Branches</option>
+            @foreach (var branch in _branches.Values)
+            {
+                <option value="@branch.Id">@branch.Name</option>
+            }
+        </select>
+        
+        <select @bind="SelectedClassroomId" disabled="@(_selectedBranchId == Guid.Empty)" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+            <option value="@Guid.Empty">All Classrooms</option>
+            @foreach (var cls in _classrooms.Values.Where(c => c.BranchId == _selectedBranchId))
+            {
+                <option value="@cls.Id">@cls.Name</option>
+            }
+        </select>
+    </div>
 
-<div id="childrenGrid" class="people-grid">
+    <div id="childrenGrid" class="people-grid">
 
-    @if (_children != null && _children.Any())
-    {
-        @foreach (var child in _children)
+        @if (FilteredChildren != null && FilteredChildren.Any())
         {
-            <div @onclick="() => OpenEditChildModal(child)" style="cursor: pointer;">
-                <PersonCard AvatarInitials="@GetInitials(child.FirstName)"
-                            PhotoUrl="@child.PhotoUrl"
-                            Name="@child.FullName"
-                            Subtitle="@(child.DateOfBirth.HasValue ? $"Born {child.DateOfBirth.Value:MMM yyyy}" : "Unknown Age")"
-                            Progress="@child.ProfileCompletionPercentage"
-                            Status="@child.EnrollmentStatus" />
-            </div>
+            @foreach (var child in FilteredChildren)
+            {
+                var className = "Unassigned";
+                var branchName = "Unassigned";
+                
+                if (child.ClassroomId.HasValue && _classrooms.TryGetValue(child.ClassroomId.Value, out var cls))
+                {
+                    className = cls.Name;
+                    if (_branches.TryGetValue(cls.BranchId, out var br))
+                    {
+                        branchName = br.Name;
+                    }
+                }
+
+                <div @onclick="() => OpenEditChildModal(child)" style="cursor: pointer;">
+                    <PersonCard AvatarInitials="@GetInitials(child.FirstName)"
+                                PhotoUrl="@child.PhotoUrl"
+                                Name="@child.FullName"
+                                Subtitle="@($"{branchName} • {className}")"
+                                Progress="@child.ProfileCompletionPercentage"
+                                Status="@child.EnrollmentStatus" />
+                </div>
+            }
         }
-    }
-    else if (_children != null && !_children.Any())
-    {
-        <p>No children found. Generating sample data...</p>
-    }
+        else if (FilteredChildren != null && !FilteredChildren.Any())
+        {
+            <p>No children found matching the selected filters.</p>
+        }
 
+    </div>
+
+    <ChildFormModal IsOpen="_isModalOpen"
+                    IsEditing="_isEditing"
+                    PhotoUrl="@_currentChild.PhotoUrl"
+                    @bind-FirstName="_currentChild.FirstName"
+                    @bind-LastName="_currentChild.LastName"
+                    @bind-DateOfBirth="_currentChild.DateOfBirth"
+                    OnClose="CloseDialog"
+                    OnSave="SaveChildAsync"
+                    OnDelete="DeleteChildAsync" />
 </div>
-
-<ChildFormModal IsOpen="_isModalOpen"
-                IsEditing="_isEditing"
-                PhotoUrl="@_currentChild.PhotoUrl"
-                @bind-FirstName="_currentChild.FirstName"
-                @bind-LastName="_currentChild.LastName"
-                @bind-DateOfBirth="_currentChild.DateOfBirth"
-                OnClose="CloseDialog"
-                OnSave="SaveChildAsync"
-                OnDelete="DeleteChildAsync" />
 
 @code {
     private IEnumerable<Child>? _children;
+    private Dictionary<Guid, Branch> _branches = new();
+    private Dictionary<Guid, Classroom> _classrooms = new();
+    
     private Child _currentChild = new();
     private bool _isModalOpen = false;
     private bool _isEditing = false;
 
+    private Guid _selectedBranchId = Guid.Empty;
+    private Guid SelectedBranchId
+    {
+        get => _selectedBranchId;
+        set
+        {
+            if (_selectedBranchId != value)
+            {
+                _selectedBranchId = value;
+                SelectedClassroomId = Guid.Empty; // Reset classroom filter
+            }
+        }
+    }
+
+    private Guid _selectedClassroomId = Guid.Empty;
+    private Guid SelectedClassroomId
+    {
+        get => _selectedClassroomId;
+        set
+        {
+            if (_selectedClassroomId != value)
+            {
+                _selectedClassroomId = value;
+            }
+        }
+    }
+
+    private IEnumerable<Child>? FilteredChildren
+    {
+        get
+        {
+            if (_children == null) return null;
+            
+            var query = _children;
+            
+            if (_selectedBranchId != Guid.Empty)
+            {
+                // Find all classrooms belonging to the selected branch
+                var branchClassrooms = _classrooms.Values.Where(c => c.BranchId == _selectedBranchId).Select(c => c.Id).ToHashSet();
+                query = query.Where(c => c.ClassroomId.HasValue && branchClassrooms.Contains(c.ClassroomId.Value));
+            }
+            
+            if (_selectedClassroomId != Guid.Empty)
+            {
+                query = query.Where(c => c.ClassroomId == _selectedClassroomId);
+            }
+            
+            return query;
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
+        var orgs = await OrgService.GetOrganizationsAsync();
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
+        {
+            var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
+            _branches = branchesList.ToDictionary(b => b.Id);
+        }
+
+        var classList = await ClassroomService.GetAllClassroomsAsync();
+        _classrooms = classList.ToDictionary(c => c.Id);
+
         await LoadChildrenAsync();
 
         if (_children != null && !_children.Any())
@@ -77,7 +176,7 @@
         await ChildService.CreateChildAsync("Aarav", "Patel", new DateTime(2022, 5, 12), null);
         await ChildService.CreateChildAsync("Maya", "Johnson", new DateTime(2023, 2, 20), null);
         await ChildService.CreateChildAsync("Leo", "Smith", new DateTime(2022, 11, 5), null);
-        
+
         await LoadChildrenAsync();
     }
 

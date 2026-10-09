@@ -1,6 +1,7 @@
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
+using EnjoyEveryday.Shared.Audit;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -8,11 +9,13 @@ public class ChildService
 {
     private readonly IChildRepository _childRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IAuditService _auditService;
 
-    public ChildService(IChildRepository childRepository, ITenantContext tenantContext)
+    public ChildService(IChildRepository childRepository, ITenantContext tenantContext, IAuditService auditService)
     {
         _childRepository = childRepository;
         _tenantContext = tenantContext;
+        _auditService = auditService;
     }
 
     public async Task<IEnumerable<Child>> GetChildrenAsync(CancellationToken cancellationToken = default)
@@ -55,6 +58,25 @@ public class ChildService
 
     public async Task UpdateChildAsync(Child child, CancellationToken cancellationToken = default)
     {
+        var existingChild = await _childRepository.GetByIdAsync(_tenantContext.TenantId, child.Id, cancellationToken);
+        if (existingChild != null && existingChild.ClassroomId != child.ClassroomId)
+        {
+            await _auditService.LogAsync(new AuditEntry
+            {
+                TenantId = _tenantContext.TenantId,
+                Action = "ChildTransferred",
+                EntityType = "Child",
+                EntityId = child.Id,
+                Details = new 
+                { 
+                    PreviousClassroomId = existingChild.ClassroomId, 
+                    NewClassroomId = child.ClassroomId,
+                    TransferDate = DateTimeOffset.UtcNow,
+                    Reason = "Transferred via UI"
+                }
+            }, cancellationToken);
+        }
+
         child.UpdatedAt = DateTimeOffset.UtcNow;
         await _childRepository.UpdateAsync(child, cancellationToken);
     }

@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 public class ClassroomWizardModel
 {
     // Step 1: Basic Information
+    public Guid? BranchId { get; set; }
     [Required]
     public string Name { get; set; } = "";
     public string? Code { get; set; }

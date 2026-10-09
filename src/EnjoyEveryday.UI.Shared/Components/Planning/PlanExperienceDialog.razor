@@ -5,6 +5,8 @@
 @inject ClassroomService ClassroomService
 @inject ITeacherService TeacherService
 @inject PlannerService PlannerService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 
 @if (IsOpen)
@@ -38,10 +40,28 @@
                 </div>
 
                 <div>
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Branch</label>
+                    <select @bind="BranchId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                        @if (!_branches.Any())
+                        {
+                            <option value="">Default Branch</option>
+                        }
+                        else
+                        {
+                            <option value="">Select a Branch...</option>
+                            @foreach (var b in _branches)
+                            {
+                                <option value="@b.Id">@b.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Classroom</label>
-                    <select @bind="_classroomId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                    <select @bind="ClassroomId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_branchId == null && _branches.Any())">
                         <option value="">Select a Classroom...</option>
-                        @foreach (var c in _classrooms)
+                        @foreach (var c in _classrooms.Where(c => _branchId == null || c.BranchId == _branchId))
                         {
                             <option value="@c.Id">@c.Name</option>
                         }
@@ -50,9 +70,9 @@
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Primary Teacher</label>
-                    <select @bind="_teacherId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                    <select @bind="_teacherId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(!_classroomId.HasValue)">
                         <option value="">Select a Teacher...</option>
-                        @foreach (var t in _teachers)
+                        @foreach (var t in GetFilteredTeachers())
                         {
                             <option value="@t.Id">@t.FullName</option>
                         }
@@ -118,9 +138,24 @@
     private List<Experience> _experiences = new();
     private List<Classroom> _classrooms = new();
     private List<Teacher> _teachers = new();
+    private List<Branch> _branches = new();
 
     private Guid? _experienceId;
+    private Guid? _branchId;
     private Guid? _classroomId;
+    private Guid? ClassroomId
+    {
+        get => _classroomId;
+        set
+        {
+            if (_classroomId != value)
+            {
+                _classroomId = value;
+                _teacherId = null; // Reset teacher when classroom changes
+            }
+        }
+    }
+
     private Guid? _teacherId;
     private DateTime _date = DateTime.Today;
     private string _timeOfDay = "Morning";
@@ -131,11 +166,53 @@
     private string _errorMessage = "";
     private bool _isSaving = false;
 
+    private Guid? BranchId
+    {
+        get => _branchId;
+        set
+        {
+            if (_branchId != value)
+            {
+                _branchId = value;
+                ClassroomId = null; // Reset classroom when branch changes
+            }
+        }
+    }
+
+    private IEnumerable<Teacher> GetFilteredTeachers()
+    {
+        if (!_classroomId.HasValue) return Array.Empty<Teacher>();
+
+        return _teachers.Where(t =>
+        {
+            if (string.IsNullOrWhiteSpace(t.DraftData)) return false;
+            try
+            {
+                var doc = System.Text.Json.JsonDocument.Parse(t.DraftData);
+                if (doc.RootElement.TryGetProperty("AssignedClassroom", out var ac) || 
+                    doc.RootElement.TryGetProperty("assignedClassroom", out ac))
+                {
+                    var acStr = ac.GetString();
+                    return acStr != null && acStr.Equals(_classroomId.Value.ToString(), StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            catch { }
+            return false;
+        });
+    }
+
     protected override async Task OnInitializedAsync()
     {
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
         _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
         _teachers = (await TeacherService.GetAllTeachersAsync(TenantContext.TenantId)).ToList();
+        
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var orgId = orgs.FirstOrDefault()?.Id;
+        if (orgId.HasValue) 
+        {
+            _branches = (await BranchService.GetBranchesAsync(orgId.Value)).ToList();
+        }
     }
 
     public async Task Open()
@@ -149,6 +226,8 @@
             {
                 _experienceId = s.ExperienceId;
                 _classroomId = s.ClassroomId;
+                var cls = _classrooms.FirstOrDefault(c => c.Id == _classroomId);
+                _branchId = cls?.BranchId;
                 _teacherId = s.PrimaryTeacherId;
                 _date = s.ScheduledDate.ToDateTime(TimeOnly.MinValue);
                 _timeOfDay = s.TimeOfDay;
@@ -161,6 +240,8 @@
         {
             _experienceId = null;
             _classroomId = DefaultClassroomId;
+            var cls = _classrooms.FirstOrDefault(c => c.Id == _classroomId);
+            _branchId = cls?.BranchId ?? _branches.FirstOrDefault()?.Id;
             _teacherId = null;
             _date = DefaultDate.HasValue ? DefaultDate.Value.ToDateTime(TimeOnly.MinValue) : DateTime.Today;
             _timeOfDay = "Morning";

@@ -9,6 +9,7 @@ public static class ApplicationServiceRegistration
     {
         services.AddScoped<OrganizationService>();
         services.AddScoped<BranchService>();
+        services.AddScoped<SystemProvisioningService>();
         services.AddScoped<ClassroomService>();
         services.AddScoped<UserService>();
         services.AddScoped<ChildService>();

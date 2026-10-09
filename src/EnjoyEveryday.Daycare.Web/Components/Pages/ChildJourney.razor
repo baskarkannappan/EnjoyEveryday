@@ -10,8 +10,13 @@
 
 @inject IChildJourneyService JourneyService
 @inject ExperienceService ExperienceService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject ChildService ChildService
+@inject OrganizationService OrgService
+@inject NavigationManager NavigationManager
 
-<PageTopbar Breadcrumb="EnjoyEveryday · Little Stars · Bluebirds" Title="Aarav's Journey">
+@* <PageTopbar Breadcrumb="EnjoyEveryday · Little Stars · Bluebirds" Title="Aarav's Journey">
     <RightContent>
         <button class="circle-btn" style="width: 38px; height: 38px; border: 1px solid #e7ebe7; border-radius: 50%; background: white; margin-right: 8px;">🔔</button>
         <button class="circle-btn" style="width: 38px; height: 38px; border: 1px solid #e7ebe7; border-radius: 50%; background: white; margin-right: 8px;">?</button>
@@ -19,26 +24,63 @@
             BP
         </div>
     </RightContent>
-</PageTopbar>
+</PageTopbar> *@
 
 <section class="content" style="max-width: 1380px; margin: auto; padding: 34px;">
     
-    <div class="child-header">
-        <div class="child-identity">
-            <div class="child-avatar">A</div>
-            <div>
-                <div class="child-name">Aarav Patel</div>
-                <div class="child-meta">
-                    <span>Age 3 Years, 4 Months</span>
-                    <span>Bluebirds</span>
-                </div>
-            </div>
+    <div style="margin-bottom: 24px; display: flex; gap: 12px; background: #f9faf9; padding: 16px; border-radius: 12px; border: 1px solid #e1e6e0;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: #6e7973; text-transform: uppercase;">Branch</label>
+            <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer; min-width: 200px;">
+                <option value="@Guid.Empty">Select Branch</option>
+                @foreach (var branch in _branches.Values)
+                {
+                    <option value="@branch.Id">@branch.Name</option>
+                }
+            </select>
         </div>
-        <div class="header-actions">
-            <button class="secondary-btn" @onclick='() => OpenModal("share")'>Download PDF</button>
-            <button class="primary-btn" @onclick="OpenAddMomentDialog">Log Moment</button>
+        
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: #6e7973; text-transform: uppercase;">Classroom</label>
+            <select @bind="SelectedClassroomId" disabled="@(_selectedBranchId == Guid.Empty)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer; min-width: 200px;">
+                <option value="@Guid.Empty">Select Classroom</option>
+                @foreach (var cls in _classrooms.Values.Where(c => c.BranchId == _selectedBranchId))
+                {
+                    <option value="@cls.Id">@cls.Name</option>
+                }
+            </select>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: #6e7973; text-transform: uppercase;">Child</label>
+            <select @bind="SelectedChildId" disabled="@(_selectedClassroomId == Guid.Empty)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer; min-width: 200px;">
+                <option value="@Guid.Empty">Select Child</option>
+                @foreach (var child in _children.Where(c => c.ClassroomId == _selectedClassroomId))
+                {
+                    <option value="@child.Id">@child.FullName</option>
+                }
+            </select>
         </div>
     </div>
+
+    @if (_selectedChildId != Guid.Empty && _selectedChild != null)
+    {
+        <div class="child-header">
+            <div class="child-identity">
+                <div class="child-avatar">@(_selectedChild.FirstName?.FirstOrDefault().ToString() ?? "?")</div>
+                <div>
+                    <div class="child-name">@_selectedChild.FullName</div>
+                    <div class="child-meta">
+                        <span>@(GetAgeString(_selectedChild.DateOfBirth))</span>
+                        <span>@(_classrooms.TryGetValue(_selectedClassroomId, out var cls) ? cls.Name : "Unassigned")</span>
+                    </div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="secondary-btn" @onclick='() => OpenModal("share")'>Download PDF</button>
+                <button class="primary-btn" @onclick="OpenAddMomentDialog">Log Moment</button>
+            </div>
+        </div>
         
     <div class="journey-summary">
         <JourneySummaryCard Label="Total Moments" Value="@_totalMoments.ToString()" Text="Total guided and free play moments captured." />
@@ -134,6 +176,13 @@
     <div class="journey-note">
         Every child's journey is unique. <strong>EnjoyEveryday</strong> helps you see the patterns.
     </div>
+    }
+    else
+    {
+        <div style="padding: 48px; text-align: center; color: #6e7973; font-size: 16px; background: #f9faf9; border-radius: 12px; border: 1px dashed #e1e6e0;">
+            Please select a Branch, Classroom, and Child to view their journey.
+        </div>
+    }
 
 </section>
 
@@ -161,11 +210,59 @@
 
     private AddJourneyMomentDialog _addMomentDialog = default!;
     
-    private Guid _childId => ChildId ?? Guid.Parse("C0000000-0000-0000-0000-000000000001");
+    private Guid _childId => _selectedChildId != Guid.Empty ? _selectedChildId : (ChildId ?? Guid.Empty);
+    private Child? _selectedChild;
     private List<ChildJourneyEntry>? _allEntries;
     private List<ChildJourneyEntry>? _entries;
     private Dictionary<Guid, List<DevelopmentArea>> _entryAreas = new();
     private Dictionary<Guid, string> _experienceTitles = new();
+    
+    private Dictionary<Guid, Branch> _branches = new();
+    private Dictionary<Guid, Classroom> _classrooms = new();
+    private List<Child> _children = new();
+    
+    private Guid _selectedBranchId = Guid.Empty;
+    private Guid SelectedBranchId
+    {
+        get => _selectedBranchId;
+        set
+        {
+            if (_selectedBranchId != value)
+            {
+                _selectedBranchId = value;
+                SelectedClassroomId = Guid.Empty;
+            }
+        }
+    }
+
+    private Guid _selectedClassroomId = Guid.Empty;
+    private Guid SelectedClassroomId
+    {
+        get => _selectedClassroomId;
+        set
+        {
+            if (_selectedClassroomId != value)
+            {
+                _selectedClassroomId = value;
+                SelectedChildId = Guid.Empty;
+            }
+        }
+    }
+
+    private Guid _selectedChildId = Guid.Empty;
+    private Guid SelectedChildId
+    {
+        get => _selectedChildId;
+        set
+        {
+            if (_selectedChildId != value)
+            {
+                _selectedChildId = value;
+                _selectedChild = _children.FirstOrDefault(c => c.Id == _selectedChildId);
+                _ = LoadJourneyDataAsync();
+            }
+        }
+    }
     
     private string _currentFilter = "all";
     private bool _isModalOpen = false;
@@ -175,11 +272,39 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadDataAsync();
+        var orgs = await OrgService.GetOrganizationsAsync();
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
+        {
+            var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
+            _branches = branchesList.ToDictionary(b => b.Id);
+        }
+
+        var classList = await ClassroomService.GetAllClassroomsAsync();
+        _classrooms = classList.ToDictionary(c => c.Id);
+
+        var childrenList = await ChildService.GetChildrenAsync();
+        _children = childrenList.ToList();
+
+        if (ChildId.HasValue && ChildId.Value != Guid.Empty)
+        {
+            // Pre-select filters based on passed ChildId
+            var child = _children.FirstOrDefault(c => c.Id == ChildId.Value);
+            if (child != null && child.ClassroomId.HasValue)
+            {
+                if (_classrooms.TryGetValue(child.ClassroomId.Value, out var cls))
+                {
+                    _selectedBranchId = cls.BranchId;
+                    _selectedClassroomId = cls.Id;
+                }
+            }
+            SelectedChildId = ChildId.Value; // This triggers LoadJourneyDataAsync
+        }
     }
 
-    private async Task LoadDataAsync()
+    private async Task LoadJourneyDataAsync()
     {
+        if (_childId == Guid.Empty) return;
         var entries = await JourneyService.GetChildJourneyAsync(_childId);
         _allEntries = entries.ToList();
         
@@ -199,6 +324,21 @@
         
         CalculateDynamicCards();
         ApplyFilter();
+    }
+    
+    private string GetAgeString(DateTime? dob)
+    {
+        if (!dob.HasValue) return "Unknown Age";
+        var today = DateTime.Today;
+        var age = today.Year - dob.Value.Year;
+        var months = today.Month - dob.Value.Month;
+        if (today.Day < dob.Value.Day) months--;
+        if (months < 0)
+        {
+            age--;
+            months += 12;
+        }
+        return $"Age {age} Years, {months} Months";
     }
 
     private int _totalMoments = 0;
@@ -344,7 +484,7 @@
 
     private async Task OnMomentSaved()
     {
-        await LoadDataAsync();
+        await LoadJourneyDataAsync();
         StateHasChanged();
     }
 
@@ -355,8 +495,7 @@
     
     private async Task DeleteEntry(Guid entryId)
     {
-        // Simple confirm dialog would be better here, but for MVP we directly delete
         await JourneyService.DeleteJourneyEntryAsync(entryId);
-        await LoadDataAsync();
+        await LoadJourneyDataAsync();
     }
 }

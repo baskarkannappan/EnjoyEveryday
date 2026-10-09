@@ -2,46 +2,52 @@
 
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using System.Text.Json
 
 @inject UserService UserService
 @inject ITeacherService TeacherService
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
+<div class="content">
+    <PageHero Eyebrow="PEOPLE"
+              Title="Teachers"
+              Subtitle="Less typing. More teaching.">
+        <RightContent>
+            <button id="addTeacherButton" class="primary" @onclick='() => NavigationManager.NavigateTo("/teachers/new")'>
+                + Add teacher
+            </button>
+        </RightContent>
+    </PageHero>
 
-<PageHero 
-    Eyebrow="PEOPLE" 
-    Title="Teachers" 
-    Subtitle="Less typing. More teaching.">
-    <RightContent>
-        <button id="addTeacherButton" class="primary" @onclick='() => NavigationManager.NavigateTo("/teachers/new")'>
-            + Add teacher
-        </button>
-    </RightContent>
-</PageHero>
-
-<div id="teacherGrid" class="people-grid">
-    @if (_teachers != null && _teachers.Any())
-    {
-        @foreach (var teacher in _teachers)
+    <div id="teacherGrid" class="people-grid">
+        @if (_teachers != null && _teachers.Any())
         {
-            <div @onclick='() => NavigationManager.NavigateTo($"/teachers/view/{teacher.UserId}")' style="cursor: pointer;">
-                <PersonCard AvatarInitials="@(teacher.FirstName?.FirstOrDefault().ToString() ?? "?")" 
-                            PhotoUrl="@teacher.ProfilePhotoUrl"
-                            Name="@teacher.FullName" 
-                            Subtitle="@(string.IsNullOrWhiteSpace(teacher.Status) ? "Draft" : teacher.Status)" 
-                            Progress="@teacher.ProfileCompletionPercentage"
-                            HighlightTitle="Today's support" 
-                            HighlightText="4 experiences planned. Keep room for child-led exploration." />
-            </div>
+            @foreach (var teacher in _teachers)
+            {
+                <div @onclick='() => NavigationManager.NavigateTo($"/teachers/view/{teacher.UserId}")' style="cursor: pointer;">
+                    <PersonCard AvatarInitials="@(teacher.FirstName?.FirstOrDefault().ToString() ?? "?")"
+                                PhotoUrl="@teacher.ProfilePhotoUrl"
+                                Name="@teacher.FullName"
+                                Subtitle="@GetTeacherSubtitle(teacher)"
+                                Status="@teacher.Status"
+                                Progress="@teacher.ProfileCompletionPercentage"
+                                HighlightTitle="Today's support"
+                                HighlightText="4 experiences planned. Keep room for child-led exploration." />
+                </div>
+            }
         }
-    }
-    else if (_teachers != null && !_teachers.Any())
-    {
-        <p>No teachers found. Click "Add teacher" to get started.</p>
-    }
+        else if (_teachers != null && !_teachers.Any())
+        {
+            <p>No teachers found. Click "Add teacher" to get started.</p>
+        }
+    </div>
 </div>
-
 @code {
     private IEnumerable<Teacher>? _teachers;
+    private Dictionary<Guid, Classroom> _classrooms = new();
+    private Dictionary<Guid, Branch> _branches = new();
 
     [Inject]
     private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
@@ -49,11 +55,61 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadTeachersAsync();
+        
+        var classrooms = await ClassroomService.GetAllClassroomsAsync();
+        _classrooms = classrooms.ToDictionary(c => c.Id);
+
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org != null)
+        {
+            var branches = await BranchService.GetBranchesAsync(org.Id);
+            _branches = branches.ToDictionary(b => b.Id);
+        }
     }
 
     private async Task LoadTeachersAsync()
     {
         _teachers = await TeacherService.GetAllTeachersAsync(TenantContext.TenantId);
+    }
+
+    private string GetTeacherSubtitle(Teacher teacher)
+    {
+        string branchName = "Unassigned Branch";
+        string className = "Unassigned Class";
+
+        if (!string.IsNullOrWhiteSpace(teacher.DraftData))
+        {
+            try
+            {
+                var doc = JsonDocument.Parse(teacher.DraftData);
+                
+                if (doc.RootElement.TryGetProperty("AssignedBranch", out var bToken) || doc.RootElement.TryGetProperty("assignedBranch", out bToken))
+                {
+                    var bStr = bToken.GetString();
+                    if (Guid.TryParse(bStr, out var bId) && _branches.TryGetValue(bId, out var branch))
+                    {
+                        branchName = branch.Name;
+                    }
+                }
+
+                if (doc.RootElement.TryGetProperty("AssignedClassroom", out var cToken) || doc.RootElement.TryGetProperty("assignedClassroom", out cToken))
+                {
+                    var cStr = cToken.GetString();
+                    if (Guid.TryParse(cStr, out var cId) && _classrooms.TryGetValue(cId, out var cls))
+                    {
+                        className = cls.Name;
+                        if (branchName == "Unassigned Branch" && _branches.TryGetValue(cls.BranchId, out var clsBranch))
+                        {
+                            branchName = clsBranch.Name; // Fallback to classroom's branch
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        return $"{branchName} • {className}";
     }
 }
 
