@@ -53,7 +53,7 @@ public class ExecutionService
         return session.Id;
     }
 
-    public async Task CompleteExperienceAsync(Guid scheduleId, Guid teacherId, string rating, string? notes, CancellationToken cancellationToken = default)
+    public async Task CompleteExperienceAsync(Guid scheduleId, Guid teacherId, int stars, string rating, string? notes, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
@@ -69,6 +69,7 @@ public class ExecutionService
             TenantId = tenantId,
             ExperienceScheduleId = scheduleId,
             TeacherId = teacherId,
+            Stars = stars,
             Rating = rating,
             Notes = notes,
             CreatedAt = DateTimeOffset.UtcNow
@@ -76,7 +77,7 @@ public class ExecutionService
         await _feedbackRepository.AddAsync(feedback, cancellationToken);
     }
 
-    public async Task CompleteExperienceWithParticipationsAsync(Guid scheduleId, Guid teacherId, string rating, string? notes, IEnumerable<ExperienceParticipation> participations, CancellationToken cancellationToken = default)
+    public async Task CompleteExperienceWithParticipationsAsync(Guid scheduleId, Guid teacherId, int stars, string rating, string? notes, IEnumerable<ExperienceParticipation> participations, CancellationToken cancellationToken = default)
     {
         var session = await _sessionRepository.GetSessionByScheduleIdAsync(scheduleId, cancellationToken);
         if (session != null)
@@ -87,7 +88,7 @@ public class ExecutionService
             await _sessionRepository.SaveParticipationsAsync(session.Id, participations, cancellationToken);
         }
 
-        await CompleteExperienceAsync(scheduleId, teacherId, rating, notes, cancellationToken);
+        await CompleteExperienceAsync(scheduleId, teacherId, stars, rating, notes, cancellationToken);
     }
 
     public async Task<IEnumerable<ExperienceSession>> GetClassroomExperienceHistoryAsync(Guid classroomId, CancellationToken cancellationToken = default)

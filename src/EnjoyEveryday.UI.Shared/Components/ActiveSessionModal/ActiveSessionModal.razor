@@ -6,12 +6,14 @@
 @inject ChildService ChildService
 @inject ExecutionService ExecutionService
 @inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Domain.Repositories.IExperienceSessionRepository SessionRepository
+@inject ExperienceService ExperienceService
 
 @if (IsOpen)
 {
     <div class="modal-backdrop show" style="background-color: rgba(0,0,0,0.5); position: fixed; inset: 0; z-index: 1050; display: flex; align-items: center; justify-content: center;" @onclick="CloseDialog">
         <div class="modal" @onclick:stopPropagation="true" style="width: 800px; max-height: 90vh; overflow-y: auto; background: white; padding: 24px; border-radius: 12px; margin: auto; position: relative;">
-            <button class="modal-close" style="position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="CloseDialog">✕</button>
+            <button class="modal-close" style="position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="CloseDialog">ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢</button>
             
             <h2 style="margin-top: 0; margin-bottom: 8px; color: #26332d;">Active Session</h2>
             
@@ -63,6 +65,13 @@
                 <div style="border-top: 1px solid #e4e7df; padding-top: 16px; margin-bottom: 24px;">
                     <h3 style="font-size: 16px; margin-bottom: 12px; color: #26332d;">Session Feedback (Optional)</h3>
                     <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px;">Rating</label>
+                    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+                        @for (int i = 1; i <= 5; i++)
+                        {
+                            var starValue = i;
+                            <span @onclick="() => _stars = starValue" style="@GetStarStyle(starValue)">★</span>
+                        }
+                    </div>
                     <select @bind="_rating" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #e4e7df; margin-bottom: 12px;">
                         <option value="Great">Great - They loved it</option>
                         <option value="Good">Good - Went as expected</option>
@@ -89,11 +98,8 @@
                         ExperienceId="@_session?.ExperienceId"
                         ExperienceTitle="@_experienceTitle"
                         ExperienceSessionId="@_session?.Id"
-                        ExperienceParticipationId="@(_selectedChildId.HasValue && _participations.TryGetValue(_selectedChildId.Value, out var p) ? p.Id : null)"
+                        ExperienceParticipationId="@GetParticipationId(_selectedChildId)"
                         ChildId="@_selectedChildId" />
-
-@inject EnjoyEveryday.Domain.Repositories.IExperienceSessionRepository SessionRepository
-@inject ExperienceService ExperienceService
 
 @code {
     [Parameter]
@@ -116,8 +122,24 @@
     private List<Child> _children = new();
     private Dictionary<Guid, ExperienceParticipation> _participations = new();
     
+    private int _stars = 5;
     private string _rating = "Great";
     private string _notes = "";
+    
+    private string GetStarStyle(int starValue)
+    {
+        var color = _stars >= starValue ? "#f5a623" : "#e4e7df";
+        return $"cursor: pointer; font-size: 24px; color: {color};";
+    }
+
+    private Guid? GetParticipationId(Guid? childId)
+    {
+        if (childId.HasValue && _participations.TryGetValue(childId.Value, out var p))
+        {
+            return p.Id;
+        }
+        return null;
+    }
     
     private AddJourneyMomentDialog _momentDialog = default!;
     private Guid? _selectedChildId;
@@ -197,7 +219,7 @@
     {
         if (_session != null)
         {
-            await ExecutionService.CompleteExperienceWithParticipationsAsync(ScheduleId, TeacherId, _rating, _notes, _participations.Values);
+            await ExecutionService.CompleteExperienceWithParticipationsAsync(ScheduleId, TeacherId, _stars, _rating, _notes, _participations.Values);
             
             if (OnSessionEnded.HasDelegate)
             {
@@ -216,3 +238,7 @@
         }
     }
 }
+
+
+
+

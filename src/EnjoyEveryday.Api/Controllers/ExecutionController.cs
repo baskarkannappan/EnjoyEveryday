@@ -26,7 +26,7 @@ public class ExecutionController : ControllerBase
     [HttpPost("{scheduleId}/complete")]
     public async Task<IActionResult> CompleteExperience(Guid scheduleId, [FromBody] CompleteExperienceRequest request, CancellationToken cancellationToken)
     {
-        await _executionService.CompleteExperienceAsync(scheduleId, request.TeacherId, request.Rating, request.Notes, cancellationToken);
+        await _executionService.CompleteExperienceAsync(scheduleId, request.TeacherId, request.Stars, request.Rating, request.Notes, cancellationToken);
         return Ok();
     }
 }
@@ -34,6 +34,7 @@ public class ExecutionController : ControllerBase
 public class CompleteExperienceRequest
 {
     public Guid TeacherId { get; set; }
+    public int Stars { get; set; } = 5;
     public string Rating { get; set; } = string.Empty;
     public string? Notes { get; set; }
 }

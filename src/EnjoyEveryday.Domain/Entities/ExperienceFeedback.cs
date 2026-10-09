@@ -8,6 +8,7 @@ public class ExperienceFeedback
     public Guid TeacherId { get; set; }
     
     // Feedback data
+    public int Stars { get; set; } = 5;
     public string Rating { get; set; } = string.Empty; // e.g. "Loved it", "Good", "Difficult", "Didn't work"
     public string? Notes { get; set; }
     

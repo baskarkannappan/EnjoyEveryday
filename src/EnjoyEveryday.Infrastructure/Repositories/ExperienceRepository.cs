@@ -18,9 +18,13 @@ public class ExperienceRepository : IExperienceRepository
     public async Task<Experience?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT id, tenant_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at
-            FROM experiences
-            WHERE id = @Id AND tenant_id = @TenantId";
+            SELECT e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
+                   COALESCE(AVG(ef.stars), 0) AS AverageStars
+            FROM experiences e
+            LEFT JOIN experience_schedules es ON e.id = es.experience_id
+            LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
+            WHERE e.id = @Id AND e.tenant_id = @TenantId
+            GROUP BY e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         return await connection.QuerySingleOrDefaultAsync<Experience>(sql, new { Id = id, TenantId = tenantId });
@@ -29,10 +33,14 @@ public class ExperienceRepository : IExperienceRepository
     public async Task<IEnumerable<Experience>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT id, tenant_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at
-            FROM experiences
-            WHERE tenant_id = @TenantId
-            ORDER BY created_at DESC";
+            SELECT e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
+                   COALESCE(AVG(ef.stars), 0) AS AverageStars
+            FROM experiences e
+            LEFT JOIN experience_schedules es ON e.id = es.experience_id
+            LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
+            WHERE e.tenant_id = @TenantId
+            GROUP BY e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at
+            ORDER BY e.created_at DESC";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         return await connection.QueryAsync<Experience>(sql, new { TenantId = tenantId });

@@ -11,4 +11,6 @@ public class Experience
     public Guid CreatedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    
+    public double AverageStars { get; set; } = 0;
 }

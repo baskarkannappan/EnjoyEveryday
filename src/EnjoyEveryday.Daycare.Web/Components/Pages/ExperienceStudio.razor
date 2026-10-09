@@ -20,6 +20,9 @@
         <RightContent>
             @if (_experience.Status != "Published")
             {
+                <button class="studio-btn studio-btn-secondary" @onclick="OpenHistoryDialog" style="margin-right: 8px;">
+                    Compare Versions
+                </button>
                 <button class="studio-btn studio-btn-secondary" @onclick="OpenPreview" style="margin-right: 8px;">
                     Preview
                 </button>
@@ -129,7 +132,17 @@
                         <h3 style="font-size: 18px; color: #111827; margin-bottom: 16px;">Activity Timeline (Execution Phases)</h3>
                         @foreach (var phase in _dna.ExecutionGuide.Phases)
                         {
-                            <div class="phase-card">
+                            <div class="phase-card" draggable="true" 
+                                 @ondragstart="() => HandleDragStart(phase)"
+                                 @ondragenter="e => HandleDragEnter(e, phase)"
+                                 @ondragend="HandleDragEnd"
+                                 @ondragover:preventDefault="true"
+                                 style="cursor: grab;">
+                                <div style="display: flex; align-items: center; margin-right: 8px; cursor: grab; color: #9ca3af;">
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                        <path d="M4 6h2v2H4V6zm0 4h2v2H4v-2zm4-4h2v2H8V6zm0 4h2v2H8v-2zm4-4h2v2h-2V6zm0 4h2v2h-2v-2z" />
+                                    </svg>
+                                </div>
                                 <input type="text" @bind="phase.Name" @bind:after="SaveDraftAsync" placeholder="Phase Name (e.g. Introduction)" class="studio-input" style="flex: 1; min-width: 150px;" />
                                 <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; color: #374151; font-weight: 600;">
                                     <input type="number" @bind="phase.DurationMinutes" @bind:after="SaveDraftAsync" placeholder="Min" class="studio-input" style="width: 80px; text-align: center;" /> min
@@ -298,13 +311,168 @@
                 <p style="margin-top: 12px; font-size: 14px; color: #536159;">This will completely rewrite the experience, including title, sections, and materials. Are you sure you want to apply these changes?</p>
 
                 <div style="margin-top: 24px; display: flex; gap: 8px; justify-content: flex-end;">
+                    <button class="studio-btn studio-btn-secondary" @onclick="() => _showImprovementCompare = true" style="margin-right: auto;">Compare</button>
                     <button class="studio-btn studio-btn-outline" @onclick="RejectImprovement">Reject</button>
                     <button class="studio-btn studio-btn-primary" @onclick="AcceptImprovement">Accept</button>
                 </div>
             </div>
         </div>
     }
+
+    @if (_showImprovementCompare && _pendingImprovement != null)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1100;">
+            <div style="background: #fff; padding: 24px; border-radius: 12px; width: 900px; max-width: 90%; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 12px; margin-bottom: 16px;">
+                    <h3 style="margin: 0;">Compare Changes</h3>
+                    <button style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showImprovementCompare = false">✕</button>
+                </div>
+                
+                <div style="overflow-y: auto; flex-grow: 1; padding-right: 12px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; font-weight: bold; border-bottom: 2px solid #ddd; padding-bottom: 8px;">
+                        <div>Current Version</div>
+                        <div style="color: #217346;">AI Suggestion</div>
+                    </div>
+
+                    @if (_experience.Title != _pendingImprovement.UpdatedData.Title)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Title</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_experience.Title</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_pendingImprovement.UpdatedData.Title</div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_experience.Description != _pendingImprovement.UpdatedData.Description)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Description</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_experience.Description</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_pendingImprovement.UpdatedData.Description</div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_dna.Challenge != _pendingImprovement.UpdatedData.Challenge)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Challenge</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@(_dna.Challenge ?? "(Empty)")</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@(_pendingImprovement.UpdatedData.Challenge ?? "(Empty)")</div>
+                            </div>
+                        </div>
+                    }
+                    
+                    @if (_dna.Together != _pendingImprovement.UpdatedData.Together)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Together</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@(_dna.Together ?? "(Empty)")</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@(_pendingImprovement.UpdatedData.Together ?? "(Empty)")</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 </div>
+
+@if (!_hideHistoryDialog)
+{
+    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1100;">
+        <div style="background: #fff; padding: 24px; border-radius: 12px; width: 900px; max-width: 90%; height: 700px; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 12px; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 20px;">Version History & Compare</h3>
+                <button style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;" @onclick="CloseHistoryDialog">✕</button>
+            </div>
+            
+            @if (_versions == null)
+            {
+                <div style="text-align: center; padding: 20px;"><FluentSpinner /></div>
+            }
+            else
+            {
+                <div class="compare-grid" style="display: grid; grid-template-columns: 250px 1fr; gap: 20px; flex-grow: 1; overflow: hidden; max-height: 550px;">
+                    <!-- Sidebar -->
+                    <div class="version-list" style="border-right: 1px solid #e5e7eb; padding-right: 20px; overflow-y: auto;">
+                        @foreach (var v in _versions.OrderByDescending(x => x.VersionNumber))
+                        {
+                            <div class="version-item" style="padding: 12px; border: 1px solid @(_selectedVersion?.Id == v.Id ? "#10b981" : "#e5e7eb"); border-radius: 6px; margin-bottom: 10px; cursor: pointer; background: @(_selectedVersion?.Id == v.Id ? "#f0fdf4" : "transparent")" @onclick="() => SelectVersion(v)">
+                                <strong style="color: #111827;">Version @v.VersionNumber</strong>
+                                <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">@v.CreatedAt.ToString("MMM dd, yyyy h:mm tt")</div>
+                                <div style="font-size: 13px; margin-top: 6px; color: #374151;">@v.ChangeReason</div>
+                            </div>
+                        }
+                    </div>
+                    
+                    <!-- Compare View -->
+                    <div class="compare-view" style="overflow-y: auto; padding-right: 12px;">
+                        @if (_selectedVersion != null)
+                        {
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid var(--neutral-stroke-divider-rest); padding-bottom: 10px;">
+                                <div>Previous (v@(_selectedVersion.VersionNumber))</div>
+                                <div>Current</div>
+                            </div>
+                            
+                            @if (_selectedVersion.Title != _experience?.Title)
+                            {
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: var(--neutral-foreground-hint);">Title</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                        <div style="padding: 10px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_selectedVersion.Title</div>
+                                        <div style="padding: 10px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_experience?.Title</div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (_selectedVersion.Description != _experience?.Description)
+                            {
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: var(--neutral-foreground-hint);">Description</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                        <div style="padding: 10px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_selectedVersion.Description</div>
+                                        <div style="padding: 10px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_experience?.Description</div>
+                                    </div>
+                                </div>
+                            }
+
+                            @foreach (var key in GetAllDnaKeys(_selectedVersion.DnaPayload))
+                            {
+                                var oldVal = GetPayloadValue(_selectedVersion.DnaPayload, key);
+                                var newVal = _dna != null ? GetPayloadValue(JsonSerializer.Serialize(_dna), key) : "";
+                                
+                                if (oldVal != newVal)
+                                {
+                                    <div style="margin-bottom: 20px;">
+                                        <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: var(--neutral-foreground-hint);">@key</div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                            <div style="padding: 10px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@(string.IsNullOrWhiteSpace(oldVal) ? "(Empty)" : oldVal)</div>
+                                            <div style="padding: 10px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@(string.IsNullOrWhiteSpace(newVal) ? "(Empty)" : newVal)</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            
+                            @if (IsIdentical(_selectedVersion))
+                            {
+                                <div style="text-align: center; color: var(--neutral-foreground-hint); padding: 40px; font-style: italic;">
+                                    No differences between this version and the current draft.
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
 @code {
     [Parameter]
     public Guid? ExperienceId { get; set; }
@@ -318,6 +486,7 @@
     private string? _validationMessage;
     private bool _isImproving = false;
     private ExperienceImprovementResult? _pendingImprovement;
+    private bool _showImprovementCompare = false;
 
     private string _ideaInput = string.Empty;
     private bool _isGeneratingIdeas = false;
@@ -446,6 +615,33 @@
         _ = SaveDraftAsync();
     }
 
+    private ExecutionPhase? _draggedPhase;
+
+    private void HandleDragStart(ExecutionPhase phase)
+    {
+        _draggedPhase = phase;
+    }
+
+    private void HandleDragEnter(DragEventArgs e, ExecutionPhase targetPhase)
+    {
+        if (_draggedPhase == null || _draggedPhase == targetPhase)
+            return;
+
+        int oldIndex = _dna.ExecutionGuide.Phases.IndexOf(_draggedPhase);
+        int newIndex = _dna.ExecutionGuide.Phases.IndexOf(targetPhase);
+        if (oldIndex >= 0 && newIndex >= 0)
+        {
+            _dna.ExecutionGuide.Phases.RemoveAt(oldIndex);
+            _dna.ExecutionGuide.Phases.Insert(newIndex, _draggedPhase);
+        }
+    }
+
+    private async Task HandleDragEnd()
+    {
+        _draggedPhase = null;
+        await SaveDraftAsync();
+    }
+
     private void RemovePhase(ExecutionPhase phase)
     {
         _dna.ExecutionGuide.Phases.Remove(phase);
@@ -481,6 +677,77 @@
             setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
         ";
         await JS.InvokeVoidAsync("eval", js);
+    }
+
+    // History & Compare
+    private ExperienceVersion? _selectedVersion;
+    private bool _hideHistoryDialog = true;
+    private FluentDialog _historyDialog = default!;
+
+    private async Task OpenHistoryDialog()
+    {
+        var vlist = await ExperienceService.GetExperienceHistoryAsync(_experience!.Id);
+        _versions = vlist.ToList();
+        _selectedVersion = _versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
+        _hideHistoryDialog = false;
+    }
+
+    private void CloseHistoryDialog()
+    {
+        _hideHistoryDialog = true;
+    }
+
+    private void SelectVersion(ExperienceVersion version)
+    {
+        _selectedVersion = version;
+    }
+
+    private List<string> GetAllDnaKeys(string jsonPayload)
+    {
+        var keys = new HashSet<string>();
+        try
+        {
+            var oldDict = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (oldDict != null) foreach (var k in oldDict.Keys) keys.Add(k);
+        }
+        catch {}
+        
+        try
+        {
+            var newDict = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(_dna), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (newDict != null) foreach (var k in newDict.Keys) keys.Add(k);
+        }
+        catch {}
+        return keys.ToList();
+    }
+
+    private string GetPayloadValue(string jsonPayload, string key)
+    {
+        try
+        {
+            var oldDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (oldDict != null && oldDict.TryGetValue(key, out var val))
+            {
+                if (val.ValueKind == JsonValueKind.Array)
+                    return string.Join(", ", val.EnumerateArray().Select(x => x.GetString()));
+                return val.GetString() ?? "";
+            }
+        }
+        catch {}
+        return "";
+    }
+
+    private bool IsIdentical(ExperienceVersion v)
+    {
+        if (v.Title != _experience?.Title) return false;
+        if (v.Description != _experience?.Description) return false;
+        foreach (var key in GetAllDnaKeys(v.DnaPayload))
+        {
+            var oldVal = GetPayloadValue(v.DnaPayload, key);
+            var newVal = _dna != null ? GetPayloadValue(JsonSerializer.Serialize(_dna), key) : "";
+            if (oldVal != newVal) return false;
+        }
+        return true;
     }
 
     protected override async Task OnInitializedAsync()
@@ -652,6 +919,7 @@
     private void RejectImprovement()
     {
         _pendingImprovement = null;
+        _showImprovementCompare = false;
     }
 
     private async Task AcceptImprovement()
@@ -676,6 +944,7 @@
 
             await SaveDraftAsync();
             _pendingImprovement = null;
+            _showImprovementCompare = false;
         }
     }
 }

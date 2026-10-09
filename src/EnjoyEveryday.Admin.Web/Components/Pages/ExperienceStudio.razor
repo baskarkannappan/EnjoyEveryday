@@ -1,57 +1,84 @@
-﻿@page "/experiences/studio/{Id:guid}"
+@page "/studio"
+@page "/studio/{ExperienceId:guid}"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using System.Text.Json
+@using Microsoft.FluentUI.AspNetCore.Components
+
 @inject ExperienceService ExperienceService
-@inject IAiIdeaService AiIdeaService
+@inject UserService UserService
 @inject NavigationManager NavigationManager
-@rendermode InteractiveServer
-<PageTitle>Experience Studio — EnjoyEveryday</PageTitle>
-@if (_experience == null)
-{
-    <FluentSpinner />
-}
-else
-{
-    <PageHero Title="Experience Studio" Subtitle="Turn a small idea into something children can explore, experience and remember.">
+@inject IAiIdeaService AiIdeaService
+@inject INotificationService ToastService
+@inject IJSRuntime JS
+<div class="content">
+    <PageHero Eyebrow="Little Stars"
+              Title="Experience Studio"
+              Subtitle="">
         <RightContent>
-            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="SaveDraftAsync">Save Draft</FluentButton>
-            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="PublishAsync">Submit</FluentButton>
+            @if (_experience.Status != "Published")
+            {
+                <button class="studio-btn studio-btn-secondary" @onclick="OpenHistoryDialog" style="margin-right: 8px;">
+                    Compare Versions
+                </button>
+                <button class="studio-btn studio-btn-secondary" @onclick="OpenPreview" style="margin-right: 8px;">
+                    Preview
+                </button>
+                <button class="studio-btn studio-btn-primary" @onclick="SaveDraftAsync" style="margin-right: 8px;">
+                    Save Draft
+                </button>
+                <button class="studio-btn studio-btn-outline" @onclick="PublishAsync">
+                    Publish
+                </button>
+            }
+            else
+            {
+                <button class="studio-btn studio-btn-outline" @onclick="PlanExperience">
+                    Plan Experience
+                </button>
+            }
         </RightContent>
     </PageHero>
-    <div class="studio-grid">
-        <!-- LEFT: Idea Start & AI Suggestions -->
-        <div>
-            <section class="card idea-card">
-                <div class="idea-heading">
-                    <div class="idea-icon">?</div>
-                    <div>
-                        <strong>Start with an idea</strong>
-                        <small>It doesn't need to be complete.</small>
+
+    @if (_isLoading)
+    {
+        <div style="padding: 40px; text-align: center;">Loading Experience...</div>
+    }
+    else
+    {
+        <div class="studio-grid">
+
+            <!-- LEFT PANEL -->
+            <div>
+                <div class="card idea-card" style="margin-bottom: 20px;">
+                    <div class="idea-heading" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <div class="idea-icon">&#10022;</div>
+                        <div>
+                            <strong>Start with an idea</strong>
+                            <div style="font-size: 14px; color: #374151; margin-top: 4px;">It doesn't need to be complete.</div>
+                        </div>
+                    </div>
+                    <textarea @bind="_ideaInput" class="studio-input" style="margin-bottom: 12px; min-height: 120px; resize: vertical;" placeholder="Example: The children are fascinated by rain..."></textarea>
+                    <div class="idea-actions" style="margin-top: 10px;">
+                        <button class="studio-btn studio-btn-primary" style="width: 100%; padding: 12px;" @onclick="GenerateIdeasAsync" disabled="@_isGeneratingIdeas">
+                            &#10022; @(_isGeneratingIdeas ? "Thinking..." : "Help me explore")
+                        </button>
                     </div>
                 </div>
-                <FluentTextArea @bind-Value="_ideaInput" Style="width: 100%;" Rows="5" Placeholder="Example: The children are fascinated by rain..." />
-                <div class="idea-actions">
-                    <button class="idea-button" @onclick="GenerateIdeas">? Help me explore</button>
-                </div>
-            </section>
-            <section class="card">
-                <div class="card-header">
-                    <h2>Possible directions</h2>
-                    <span>AI suggestions</span>
-                </div>
-                <div>
-                    @if (_isGeneratingIdeas)
-                    {
-                        <div style="padding: 20px; text-align: center;">
-                            <FluentSpinner />
-                            <div style="margin-top: 10px; color: var(--neutral-foreground-hint);">Brainstorming...</div>
-                        </div>
-                    }
-                    else if (_aiSuggestions.Any())
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Possible directions</h2>
+                        <span>AI suggestions</span>
+                    </div>
+
+                    @if (_aiSuggestions.Any())
                     {
                         @foreach (var suggestion in _aiSuggestions)
                         {
-                            <div class="suggestion" @onclick="@(() => ApplySuggestion(suggestion.Title, suggestion.Description))">
+                            <div class="suggestion-card" @onclick="() => ApplySuggestion(suggestion)">
                                 <div class="suggestion-title">@suggestion.Title</div>
                                 <div class="suggestion-text">@suggestion.Description</div>
                             </div>
@@ -59,107 +86,415 @@ else
                     }
                     else
                     {
-                        <div style="padding: 20px; text-align: center; color: var(--neutral-foreground-hint);">
-                            Tell me your idea to explore possibilities.
+                        <div style="padding: 16px; color: #4b5563; font-size: 14px;">Tell me an idea above to get AI suggestions!</div>
+                    }
+                </div>
+            </div>
+
+            <!-- CENTER CANVAS -->
+            <div>
+                <div class="canvas">
+                    <div class="canvas-top">
+                        <div class="canvas-title">
+                            <input id="experienceTitle" @bind="_experience.Title" @bind:after="SaveDraftAsync" placeholder="Experience Title" />
+                            <div class="canvas-subtitle">
+                                @_experience.Status &bull; Created @_experience.CreatedAt.ToString("MMMM dd, yyyy")
+                                @if (_saveMessage != null)
+                                {
+                                    <span style="margin-left: 10px; color: #456a55; font-weight: bold;">@_saveMessage</span>
+                                }
+                                @if (_validationMessage != null)
+                                {
+                                    <span style="margin-left: 10px; color: #c44; font-weight: bold;">@_validationMessage</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="status-pill">
+                            @_experience.Status.ToUpper()
+                        </div>
+                    </div>
+
+                    <div class="dna-grid">
+                        <StudioDnaCard Label="Challenge" @bind-TextContent="_dna.Challenge" OnSave="SaveDraftAsync" />
+                        <StudioDnaCard Label="Together" @bind-TextContent="_dna.Together" OnSave="SaveDraftAsync" />
+                        <StudioDnaCard Label="Create" @bind-TextContent="_dna.Create" OnSave="SaveDraftAsync" />
+                        <StudioDnaCard Label="Child Choice" @bind-TextContent="_dna.ChildChoice" OnSave="SaveDraftAsync" />
+
+                        <StudioMagicMoment @bind-Content="_dna.MagicMoment" OnSave="SaveDraftAsync" />
+
+                        <StudioDnaCard Label="Accomplishment" @bind-TextContent="_dna.Accomplishment" OnSave="SaveDraftAsync" />
+                        <StudioDnaCard Label="Reflection" @bind-TextContent="_dna.Reflection" OnSave="SaveDraftAsync" />
+
+                        <StudioDnaCard IsFull="true" Label="Teacher Guidance" @bind-TextContent="_dna.TeacherGuidance" OnSave="SaveDraftAsync" />
+                    </div>
+
+                    <div style="margin-top: 30px;">
+                        <h3 style="font-size: 18px; color: #111827; margin-bottom: 16px;">Activity Timeline (Execution Phases)</h3>
+                        @foreach (var phase in _dna.ExecutionGuide.Phases)
+                        {
+                            <div class="phase-card" draggable="true" 
+                                 @ondragstart="() => HandleDragStart(phase)"
+                                 @ondragenter="e => HandleDragEnter(e, phase)"
+                                 @ondragend="HandleDragEnd"
+                                 @ondragover:preventDefault="true"
+                                 style="cursor: grab;">
+                                <div style="display: flex; align-items: center; margin-right: 8px; cursor: grab; color: #9ca3af;">
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                        <path d="M4 6h2v2H4V6zm0 4h2v2H4v-2zm4-4h2v2H8V6zm0 4h2v2H8v-2zm4-4h2v2h-2V6zm0 4h2v2h-2v-2z" />
+                                    </svg>
+                                </div>
+                                <input type="text" @bind="phase.Name" @bind:after="SaveDraftAsync" placeholder="Phase Name (e.g. Introduction)" class="studio-input" style="flex: 1; min-width: 150px;" />
+                                <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; color: #374151; font-weight: 600;">
+                                    <input type="number" @bind="phase.DurationMinutes" @bind:after="SaveDraftAsync" placeholder="Min" class="studio-input" style="width: 80px; text-align: center;" /> min
+                                </div>
+                                <button class="studio-btn studio-btn-danger" @onclick="() => RemovePhase(phase)" title="Remove Phase">✕</button>
+
+                                <div style="flex-basis: 100%; display: flex; gap: 16px; margin-top: 8px;">
+                                    <div style="flex: 1;">
+                                        <div class="context-label">Teacher Does</div>
+                                        <textarea @bind="phase.TeacherDoes" @bind:after="SaveDraftAsync" placeholder="Explain the activity..." class="studio-input" style="min-height: 80px; resize: vertical;"></textarea>
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <div class="context-label">Children Do</div>
+                                        <textarea @bind="phase.ChildrenDo" @bind:after="SaveDraftAsync" placeholder="Listen and respond..." class="studio-input" style="min-height: 80px; resize: vertical;"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        <button class="studio-btn studio-btn-ghost" style="width: 100%; padding: 12px; margin-top: 8px;" @onclick="AddPhase">+ Add another phase</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT PANEL -->
+            <aside class="right-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Experience details</h2>
+                    </div>
+
+                    <div class="context-item">
+                        <div class="context-label">Age (Years)</div>
+                        <div style="display:flex; gap:12px; align-items:center;">
+                            <input type="number" @bind="_dna.AgeMin" @bind:after="SaveDraftAsync" min="0" max="12" class="studio-input" style="text-align: center;" />
+                            <span style="font-size: 15px; color: #4b5563; font-weight: 600;">to</span>
+                            <input type="number" @bind="_dna.AgeMax" @bind:after="SaveDraftAsync" min="0" max="12" class="studio-input" style="text-align: center;" />
+                        </div>
+                    </div>
+
+                    <div class="context-item">
+                        <div class="context-label">Group size</div>
+                        <div style="display:flex; gap:12px; align-items:center;">
+                            <input type="number" @bind="_dna.GroupSizeMin" @bind:after="SaveDraftAsync" min="1" class="studio-input" style="text-align: center;" />
+                            <span style="font-size: 15px; color: #4b5563; font-weight: 600;">to</span>
+                            <input type="number" @bind="_dna.GroupSizeMax" @bind:after="SaveDraftAsync" min="1" class="studio-input" style="text-align: center;" />
+                        </div>
+                    </div>
+
+                    <div class="context-item">
+                        <div class="context-label">Environment</div>
+                        <select @bind="_dna.Environment" @bind:after="SaveDraftAsync" class="studio-input" style="cursor: pointer;">
+                            <option value="Indoor">Indoor</option>
+                            <option value="Outdoor">Outdoor</option>
+                            <option value="Indoor / Outdoor">Indoor / Outdoor</option>
+                        </select>
+                    </div>
+
+                    <div class="context-item">
+                        <div class="context-label">Materials</div>
+                        <div class="tags" style="margin-bottom: 12px;">
+                            @foreach (var material in _dna.Materials.ToList())
+                            {
+                                <span class="tag" @onclick="() => RemoveMaterial(material)" title="Click to remove">@material <span style="color: #ef4444; margin-left: 6px;">✕</span></span>
+                            }
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" @bind="_newMaterial" placeholder="New material" class="studio-input" />
+                            <button class="studio-btn studio-btn-secondary" @onclick="AddMaterial">Add</button>
+                            <button class="studio-btn studio-btn-outline" @onclick="SuggestMaterialsAsync" disabled="@_isSuggestingMaterials" title="AI Suggest Materials">✨</button>
+                        </div>
+                    </div>
+
+                    <div class="context-item">
+                        <div class="context-label">Developmental Goals</div>
+                        <div class="tags" style="margin-bottom: 12px;">
+                            @foreach (var goal in _dna.DevelopmentalGoals.ToList())
+                            {
+                                <span class="tag" @onclick="() => RemoveGoal(goal)" title="Click to remove">@goal <span style="color: #ef4444; margin-left: 6px; opacity: 0.8;">✕</span></span>
+                            }
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" @bind="_newGoal" placeholder="Add a goal (e.g. Fine Motor)" class="studio-input" />
+                            <button class="studio-btn studio-btn-secondary" @onclick="AddGoal">Add</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px; text-align: right;">
+                        <button class="studio-btn studio-btn-primary" @onclick="SaveDraftAsync">Save Details</button>
+                    </div>
+                </div>
+
+                <div class="card idea-card">
+                    <div class="idea-heading">
+                        <div class="idea-icon">&#10022;</div>
+                        <div>
+                            <strong>Improve with AI</strong>
+                            <small>Keep the teacher in control.</small>
+                        </div>
+                    </div>
+
+                    <button class="suggestion" @onclick="@(() => ImproveAsync("Make it more playful"))" disabled="@_isImproving" style="background: none; border: none; text-align: left; width: 100%; cursor: pointer; padding: 0;">
+                        <div class="suggestion-title" style="text-decoration: underline;">Make it more playful</div>
+                        <div class="suggestion-text">Add imaginary elements or game mechanics.</div>
+                    </button>
+
+                    <button class="suggestion" @onclick="@(() => ImproveAsync("Add more child choice"))" disabled="@_isImproving" style="background: none; border: none; text-align: left; width: 100%; cursor: pointer; padding: 0; margin-top: 10px;">
+                        <div class="suggestion-title" style="text-decoration: underline;">Add more child choice</div>
+                        <div class="suggestion-text">Give children more agency in how the experience flows.</div>
+                    </button>
+
+                    <div style="margin-top: 15px; display: flex; gap: 8px;">
+                        <input type="text" @bind="_customImprovePrompt" placeholder="Custom request..." class="studio-input" />
+                        <button class="studio-btn studio-btn-secondary" @onclick="() => ImproveAsync(_customImprovePrompt)" disabled="@(string.IsNullOrWhiteSpace(_customImprovePrompt) || _isImproving)" title="Apply Custom Improvement">✨</button>
+                    </div>
+
+                    @if (_isImproving)
+                    {
+                        <div style="margin-top: 10px; font-size: 13px; color: #456a55;">Thinking...</div>
+                    }
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Versions</h2>
+                        <span>History</span>
+                    </div>
+                    @if (_versions != null && _versions.Any())
+                    {
+                        @foreach (var v in _versions)
+                        {
+                            <div class="version">
+                                <strong>v@(v.VersionNumber)</strong>
+                                <span>@v.CreatedAt.ToString("MMM dd, yyyy h:mm tt")</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="version">
+                            <strong style="color:var(--muted)">No published versions</strong>
+                            <span>&mdash;</span>
                         </div>
                     }
                 </div>
-            </section>
+            </aside>
+
         </div>
-        <!-- CENTER: Experience Canvas -->
-        <div>
-            <section class="canvas">
-                <div class="canvas-top">
-                    <div class="canvas-title">
-                        <FluentTextInput @bind-Value="_experience.Title" Style="width: 100%; font-size: 24px; font-weight: bold; border: none; background: transparent;" />
-                        <div class="canvas-subtitle">
-                            @_experience.Status &bull; Last Updated @_experience.UpdatedAt.ToString("MMMM dd, yyyy")
-                        </div>
-                    </div>
-                    <div class="status-pill">@_experience.Status.ToUpper()</div>
+    }
+
+    <ExperienceViewModal IsOpen="@_isPreviewOpen"
+                         Title="@(_experience?.Title ?? "Experience")"
+                         Mission="@(_experience?.Description ?? "No description available.")"
+                         Discover="@(_dna?.Create ?? "")"
+                         Challenge="@(_dna?.Challenge ?? "")"
+                         JoyMoment="@(_dna?.MagicMoment ?? "")"
+                         ExecutionGuide="@_dna?.ExecutionGuide"
+                         OnClose="ClosePreview"
+                         OnPrint="PrintExperience" />
+
+    @if (_pendingImprovement != null)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+            <div style="background: #fff; padding: 24px; border-radius: 12px; width: 500px; max-width: 90%; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <h3 style="margin-top: 0;">Approve Improvement</h3>
+                <p><strong>Reason:</strong> @_pendingImprovement.Reason</p>
+                <p style="margin-top: 12px; font-size: 14px; color: #536159;">This will completely rewrite the experience, including title, sections, and materials. Are you sure you want to apply these changes?</p>
+
+                <div style="margin-top: 24px; display: flex; gap: 8px; justify-content: flex-end;">
+                    <button class="studio-btn studio-btn-secondary" @onclick="() => _showImprovementCompare = true" style="margin-right: auto;">Compare</button>
+                    <button class="studio-btn studio-btn-outline" @onclick="RejectImprovement">Reject</button>
+                    <button class="studio-btn studio-btn-primary" @onclick="AcceptImprovement">Accept</button>
                 </div>
-                <div class="dna-grid">
-                    <DnaCard Label="Mission" Content="@GetDnaValue("Mission")" OnClick="@(() => OpenEditDialog("Mission"))" />
-                    <DnaCard Label="Discovery" Content="@GetDnaValue("Discovery")" OnClick="@(() => OpenEditDialog("Discovery"))" />
-                    <DnaCard Label="Challenge" Content="@GetDnaValue("Challenge")" OnClick="@(() => OpenEditDialog("Challenge"))" />
-                    <DnaCard Label="Together" Content="@GetDnaValue("Together")" OnClick="@(() => OpenEditDialog("Together"))" />
-                    <DnaCard Label="? Magic Moment" Content="@GetDnaValue("MagicMoment")" CssClass="full magic-card" OnClick="@(() => OpenEditDialog("MagicMoment"))" />
-                </div>
-            </section>
-        </div>
-        <!-- RIGHT: Context Panel -->
-        <div class="right-panel">
-            <section class="card">
-                <div class="card-header">
-                    <h2>Experience context</h2>
-                    <span>Classroom</span>
-                </div>
-                <div class="context-item">
-                    <div class="context-label">Children</div>
-                    <div class="context-value">Bluebirds &bull; 18 children</div>
-                </div>
-                <div class="context-item">
-                    <div class="context-label">Age</div>
-                    <div class="context-value">3–4 years</div>
-                </div>
-                <div class="context-item">
-                    <div class="context-label">Recent interests</div>
-                    <div class="tags">
-                        <span class="tag">Bugs</span>
-                        <span class="tag">Building</span>
-                        <span class="tag">Rain</span>
-                    </div>
-                </div>
-            </section>
-        </div>
-    </div>
-    <!-- Edit DNA Element Dialog -->
-    <FluentDialog @ref="_editDialog" Modal="true" Hidden="@_hideEditDialog" OnDismiss="CloseEditDialog">
-        <div style="padding: 20px; width: 400px;">
-            <FluentText Size="TextSize.Size400" Weight="TextWeight.Bold" Style="margin-bottom: 15px; display: block;">Edit @_editingField</FluentText>
-            <FluentTextArea @bind-Value="_editingValue" Style="width: 100%;" Rows="5" />
-            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SaveDnaElement">Save</FluentButton>
-                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="CloseEditDialog">Cancel</FluentButton>
             </div>
         </div>
-    </FluentDialog>
+    }
+
+    @if (_showImprovementCompare && _pendingImprovement != null)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1100;">
+            <div style="background: #fff; padding: 24px; border-radius: 12px; width: 900px; max-width: 90%; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 12px; margin-bottom: 16px;">
+                    <h3 style="margin: 0;">Compare Changes</h3>
+                    <button style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showImprovementCompare = false">✕</button>
+                </div>
+                
+                <div style="overflow-y: auto; flex-grow: 1; padding-right: 12px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; font-weight: bold; border-bottom: 2px solid #ddd; padding-bottom: 8px;">
+                        <div>Current Version</div>
+                        <div style="color: #217346;">AI Suggestion</div>
+                    </div>
+
+                    @if (_experience.Title != _pendingImprovement.UpdatedData.Title)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Title</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_experience.Title</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_pendingImprovement.UpdatedData.Title</div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_experience.Description != _pendingImprovement.UpdatedData.Description)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Description</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_experience.Description</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_pendingImprovement.UpdatedData.Description</div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_dna.Challenge != _pendingImprovement.UpdatedData.Challenge)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Challenge</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@(_dna.Challenge ?? "(Empty)")</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@(_pendingImprovement.UpdatedData.Challenge ?? "(Empty)")</div>
+                            </div>
+                        </div>
+                    }
+                    
+                    @if (_dna.Together != _pendingImprovement.UpdatedData.Together)
+                    {
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; color: #666;">Together</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div style="padding: 8px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@(_dna.Together ?? "(Empty)")</div>
+                                <div style="padding: 8px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@(_pendingImprovement.UpdatedData.Together ?? "(Empty)")</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (!_hideHistoryDialog)
+{
+    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1100;">
+        <div style="background: #fff; padding: 24px; border-radius: 12px; width: 900px; max-width: 90%; height: 700px; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 12px; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 20px;">Version History & Compare</h3>
+                <button style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;" @onclick="CloseHistoryDialog">✕</button>
+            </div>
+            
+            @if (_versions == null)
+            {
+                <div style="text-align: center; padding: 20px;"><FluentSpinner /></div>
+            }
+            else
+            {
+                <div class="compare-grid" style="display: grid; grid-template-columns: 250px 1fr; gap: 20px; flex-grow: 1; overflow: hidden; max-height: 550px;">
+                    <!-- Sidebar -->
+                    <div class="version-list" style="border-right: 1px solid #e5e7eb; padding-right: 20px; overflow-y: auto;">
+                        @foreach (var v in _versions.OrderByDescending(x => x.VersionNumber))
+                        {
+                            <div class="version-item" style="padding: 12px; border: 1px solid @(_selectedVersion?.Id == v.Id ? "#10b981" : "#e5e7eb"); border-radius: 6px; margin-bottom: 10px; cursor: pointer; background: @(_selectedVersion?.Id == v.Id ? "#f0fdf4" : "transparent")" @onclick="() => SelectVersion(v)">
+                                <strong style="color: #111827;">Version @v.VersionNumber</strong>
+                                <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">@v.CreatedAt.ToString("MMM dd, yyyy h:mm tt")</div>
+                                <div style="font-size: 13px; margin-top: 6px; color: #374151;">@v.ChangeReason</div>
+                            </div>
+                        }
+                    </div>
+                    
+                    <!-- Compare View -->
+                    <div class="compare-view" style="overflow-y: auto; padding-right: 12px;">
+                        @if (_selectedVersion != null)
+                        {
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid var(--neutral-stroke-divider-rest); padding-bottom: 10px;">
+                                <div>Previous (v@(_selectedVersion.VersionNumber))</div>
+                                <div>Current</div>
+                            </div>
+                            
+                            @if (_selectedVersion.Title != _experience?.Title)
+                            {
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: var(--neutral-foreground-hint);">Title</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                        <div style="padding: 10px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_selectedVersion.Title</div>
+                                        <div style="padding: 10px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_experience?.Title</div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (_selectedVersion.Description != _experience?.Description)
+                            {
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: var(--neutral-foreground-hint);">Description</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                        <div style="padding: 10px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@_selectedVersion.Description</div>
+                                        <div style="padding: 10px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@_experience?.Description</div>
+                                    </div>
+                                </div>
+                            }
+
+                            @foreach (var key in GetAllDnaKeys(_selectedVersion.DnaPayload))
+                            {
+                                var oldVal = GetPayloadValue(_selectedVersion.DnaPayload, key);
+                                var newVal = _dna != null ? GetPayloadValue(JsonSerializer.Serialize(_dna), key) : "";
+                                
+                                if (oldVal != newVal)
+                                {
+                                    <div style="margin-bottom: 20px;">
+                                        <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; color: var(--neutral-foreground-hint);">@key</div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                            <div style="padding: 10px; background: #fff0f0; border: 1px solid #ffcccc; border-radius: 4px;">@(string.IsNullOrWhiteSpace(oldVal) ? "(Empty)" : oldVal)</div>
+                                            <div style="padding: 10px; background: #f0fff0; border: 1px solid #ccffcc; border-radius: 4px;">@(string.IsNullOrWhiteSpace(newVal) ? "(Empty)" : newVal)</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            
+                            @if (IsIdentical(_selectedVersion))
+                            {
+                                <div style="text-align: center; color: var(--neutral-foreground-hint); padding: 40px; font-style: italic;">
+                                    No differences between this version and the current draft.
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
 }
+
 @code {
     [Parameter]
-    public Guid Id { get; set; }
-    private Experience? _experience;
+    public Guid? ExperienceId { get; set; }
+
+    private bool _isLoading = true;
+    private Experience _experience = new();
+    private ExperienceDna _dna = new();
+    private List<ExperienceVersion> _versions = new();
+    private Guid _currentUserId;
+    private string? _saveMessage;
+    private string? _validationMessage;
+    private bool _isImproving = false;
+    private ExperienceImprovementResult? _pendingImprovement;
+    private bool _showImprovementCompare = false;
+
     private string _ideaInput = string.Empty;
-    private Dictionary<string, string> _dnaElements = new();
-    private List<ExperienceFullData> _aiSuggestions = new();
     private bool _isGeneratingIdeas = false;
-    // Dialog state
-    private bool _hideEditDialog = true;
-    private FluentDialog _editDialog = default!;
-    private string _editingField = string.Empty;
-    private string _editingValue = string.Empty;
-    protected override async Task OnInitializedAsync()
-    {
-        _experience = await ExperienceService.GetExperienceByIdAsync(Id);
-        if (_experience == null)
-        {
-            NavigationManager.NavigateTo("/experiences");
-            return;
-        }
-        try
-        {
-            _dnaElements = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(_experience.DnaPayload) ?? new();
-        }
-        catch
-        {
-            _dnaElements = new Dictionary<string, string>();
-        }
-    }
-    private string GetDnaValue(string key)
-    {
-        return _dnaElements.TryGetValue(key, out var val) && !string.IsNullOrWhiteSpace(val) ? val : "Click to add content...";
-    }
-    private async Task GenerateIdeas()
+    private bool _isSuggestingMaterials = false;
+    private List<ExperienceFullData> _aiSuggestions = new();
+    private string _newMaterial = string.Empty;
+
+    private async Task GenerateIdeasAsync()
     {
         if (string.IsNullOrWhiteSpace(_ideaInput)) return;
         _isGeneratingIdeas = true;
@@ -169,45 +504,447 @@ else
             var suggestions = await AiIdeaService.GenerateIdeasAsync(_ideaInput);
             _aiSuggestions = suggestions.ToList();
         }
+        catch (Exception)
+        {
+            await ToastService.ShowErrorToastAsync("Failed to generate ideas.");
+        }
         finally
         {
             _isGeneratingIdeas = false;
+            StateHasChanged();
         }
     }
-    private void ApplySuggestion(string title, string text)
+
+    private void ApplySuggestion(ExperienceFullData suggestion)
     {
-        if (_experience != null)
+        _experience.Title = suggestion.Title;
+        _experience.Description = suggestion.Description;
+        _dna.Challenge = suggestion.Challenge;
+        _dna.Together = suggestion.Together;
+        _dna.Create = suggestion.Create;
+        _dna.ChildChoice = suggestion.ChildChoice;
+        _dna.MagicMoment = suggestion.MagicMoment;
+        _dna.Accomplishment = suggestion.Accomplishment;
+        _dna.Reflection = suggestion.Reflection;
+        _dna.TeacherGuidance = suggestion.TeacherGuidance;
+        _dna.Materials = suggestion.Materials ?? new List<string>();
+        if (suggestion.ExecutionGuide != null)
         {
-            _experience.Title = title;
-            _experience.Description = text;
+            _dna.ExecutionGuide = suggestion.ExecutionGuide;
+        }
+
+        _ = SaveDraftAsync();
+    }
+
+    private void AddMaterial()
+    {
+        if (!string.IsNullOrWhiteSpace(_newMaterial) && !_dna.Materials.Contains(_newMaterial))
+        {
+            _dna.Materials.Add(_newMaterial.Trim());
+            _newMaterial = string.Empty;
+            _ = SaveDraftAsync();
         }
     }
-    private void OpenEditDialog(string field)
+
+    private void RemoveMaterial(string material)
     {
-        _editingField = field;
-        _editingValue = _dnaElements.TryGetValue(field, out var val) ? val : string.Empty;
-        _hideEditDialog = false;
+        _dna.Materials.Remove(material);
+        _ = SaveDraftAsync();
     }
-    private void CloseEditDialog()
+
+    private async Task SuggestMaterialsAsync()
     {
-        _hideEditDialog = true;
+        _isSuggestingMaterials = true;
+        StateHasChanged();
+        try
+        {
+            var payload = new
+            {
+                Challenge = _dna.Challenge,
+                Together = _dna.Together,
+                Create = _dna.Create,
+                ChildChoice = _dna.ChildChoice,
+                TeacherGuidance = _dna.TeacherGuidance,
+                ExecutionGuide = _dna.ExecutionGuide
+            };
+            var suggested = await AiIdeaService.SuggestMaterialsAsync(payload);
+            bool changed = false;
+            foreach (var item in suggested)
+            {
+                if (!_dna.Materials.Any(m => m.Equals(item, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _dna.Materials.Add(item);
+                    changed = true;
+                }
+            }
+            if (changed)
+            {
+                _ = SaveDraftAsync();
+            }
+        }
+        catch (Exception)
+        {
+            await ToastService.ShowErrorToastAsync("Failed to suggest materials.");
+        }
+        finally
+        {
+            _isSuggestingMaterials = false;
+            StateHasChanged();
+        }
     }
-    private void SaveDnaElement()
+
+    private void AddGoal()
     {
-        _dnaElements[_editingField] = _editingValue;
-        _hideEditDialog = true;
+        if (!string.IsNullOrWhiteSpace(_newGoal) && !_dna.DevelopmentalGoals.Contains(_newGoal))
+        {
+            _dna.DevelopmentalGoals.Add(_newGoal.Trim());
+            _newGoal = string.Empty;
+            _ = SaveDraftAsync();
+        }
     }
+
+    private void RemoveGoal(string goal)
+    {
+        _dna.DevelopmentalGoals.Remove(goal);
+        _ = SaveDraftAsync();
+    }
+
+    private void AddPhase()
+    {
+        _dna.ExecutionGuide.Phases.Add(new ExecutionPhase { Name = "New Phase", DurationMinutes = 5 });
+        _ = SaveDraftAsync();
+    }
+
+    private ExecutionPhase? _draggedPhase;
+
+    private void HandleDragStart(ExecutionPhase phase)
+    {
+        _draggedPhase = phase;
+    }
+
+    private void HandleDragEnter(DragEventArgs e, ExecutionPhase targetPhase)
+    {
+        if (_draggedPhase == null || _draggedPhase == targetPhase)
+            return;
+
+        int oldIndex = _dna.ExecutionGuide.Phases.IndexOf(_draggedPhase);
+        int newIndex = _dna.ExecutionGuide.Phases.IndexOf(targetPhase);
+        if (oldIndex >= 0 && newIndex >= 0)
+        {
+            _dna.ExecutionGuide.Phases.RemoveAt(oldIndex);
+            _dna.ExecutionGuide.Phases.Insert(newIndex, _draggedPhase);
+        }
+    }
+
+    private async Task HandleDragEnd()
+    {
+        _draggedPhase = null;
+        await SaveDraftAsync();
+    }
+
+    private void RemovePhase(ExecutionPhase phase)
+    {
+        _dna.ExecutionGuide.Phases.Remove(phase);
+        _ = SaveDraftAsync();
+    }
+
+    private bool _isPreviewOpen = false;
+    private string _customImprovePrompt = string.Empty;
+    private string _newGoal = string.Empty;
+
+    private void OpenPreview()
+    {
+        _isPreviewOpen = true;
+    }
+
+    private void ClosePreview()
+    {
+        _isPreviewOpen = false;
+    }
+
+    private async Task PrintExperience()
+    {
+        var js = @"
+            var content = document.querySelector('.modal').innerHTML;
+            var printWindow = window.open('', '', 'height=800,width=800');
+            printWindow.document.write('<html><head><title>Print Experience</title>');
+            printWindow.document.write('<style>body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; line-height: 1.6; color: #333; } h2, h3 { color: #111; } .eyebrow { font-size: 12px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 10px; } .detail { margin-top: 20px; margin-bottom: 20px; } .detail label { font-weight: bold; font-size: 14px; color: #555; display: block; margin-bottom: 5px; } .modal-meta { font-weight: bold; color: #444; margin-bottom: 20px; } .modal-footer, .modal-close, button { display: none !important; } ul { padding-left: 20px; } hr { border: none; border-top: 1px dashed #ccc; margin: 30px 0; } </style>');
+            printWindow.document.write('</head><body>');
+            printWindow.document.write(content);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+        ";
+        await JS.InvokeVoidAsync("eval", js);
+    }
+
+    // History & Compare
+    private ExperienceVersion? _selectedVersion;
+    private bool _hideHistoryDialog = true;
+    private FluentDialog _historyDialog = default!;
+
+    private async Task OpenHistoryDialog()
+    {
+        var vlist = await ExperienceService.GetExperienceHistoryAsync(_experience!.Id);
+        _versions = vlist.ToList();
+        _selectedVersion = _versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
+        _hideHistoryDialog = false;
+    }
+
+    private void CloseHistoryDialog()
+    {
+        _hideHistoryDialog = true;
+    }
+
+    private void SelectVersion(ExperienceVersion version)
+    {
+        _selectedVersion = version;
+    }
+
+    private List<string> GetAllDnaKeys(string jsonPayload)
+    {
+        var keys = new HashSet<string>();
+        try
+        {
+            var oldDict = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (oldDict != null) foreach (var k in oldDict.Keys) keys.Add(k);
+        }
+        catch {}
+        
+        try
+        {
+            var newDict = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(_dna), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (newDict != null) foreach (var k in newDict.Keys) keys.Add(k);
+        }
+        catch {}
+        return keys.ToList();
+    }
+
+    private string GetPayloadValue(string jsonPayload, string key)
+    {
+        try
+        {
+            var oldDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (oldDict != null && oldDict.TryGetValue(key, out var val))
+            {
+                if (val.ValueKind == JsonValueKind.Array)
+                    return string.Join(", ", val.EnumerateArray().Select(x => x.GetString()));
+                return val.GetString() ?? "";
+            }
+        }
+        catch {}
+        return "";
+    }
+
+    private bool IsIdentical(ExperienceVersion v)
+    {
+        if (v.Title != _experience?.Title) return false;
+        if (v.Description != _experience?.Description) return false;
+        foreach (var key in GetAllDnaKeys(v.DnaPayload))
+        {
+            var oldVal = GetPayloadValue(v.DnaPayload, key);
+            var newVal = _dna != null ? GetPayloadValue(JsonSerializer.Serialize(_dna), key) : "";
+            if (oldVal != newVal) return false;
+        }
+        return true;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var teachers = await UserService.GetTeachersAsync();
+        _currentUserId = teachers.FirstOrDefault()?.Id ?? Guid.Empty;
+
+        if (ExperienceId.HasValue)
+        {
+            var exp = await ExperienceService.GetExperienceByIdAsync(ExperienceId.Value);
+            if (exp != null)
+            {
+                _experience = exp;
+                if (!string.IsNullOrEmpty(_experience.DnaPayload) && _experience.DnaPayload != "{}")
+                {
+                    try
+                    {
+                        _dna = JsonSerializer.Deserialize<ExperienceDna>(_experience.DnaPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ExperienceDna();
+                    }
+                    catch
+                    {
+                        _dna = new ExperienceDna();
+                    }
+                }
+                var vlist = await ExperienceService.GetExperienceHistoryAsync(ExperienceId.Value);
+                _versions = vlist.OrderByDescending(v => v.VersionNumber).ToList();
+            }
+        }
+        else
+        {
+            _experience = new Experience
+            {
+                Title = "New Experience",
+                Status = "Draft",
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            _dna = new ExperienceDna
+            {
+                Materials = new List<string> { "Blocks", "Paper", "Cups", "Water tray" }
+            };
+        }
+
+        _isLoading = false;
+    }
+
     private async Task SaveDraftAsync()
     {
-        if (_experience == null) return;
-        var json = System.Text.Json.JsonSerializer.Serialize(_dnaElements);
-        await ExperienceService.UpdateExperienceAsync(_experience.Id, _experience.Title, _experience.Description, json, _experience.Status, "Studio Draft Save", Guid.Empty);
+        var dnaJson = JsonSerializer.Serialize(_dna);
+
+        if (_experience.Id == Guid.Empty)
+        {
+            _experience = await ExperienceService.CreateExperienceAsync(
+                _experience.Title,
+                _experience.Description,
+                dnaJson,
+                _currentUserId,
+                "Draft"
+            );
+            NavigationManager.NavigateTo($"/studio/{_experience.Id}", replace: true);
+        }
+        else
+        {
+            await ExperienceService.UpdateExperienceAsync(
+                _experience.Id,
+                _experience.Title,
+                _experience.Description,
+                dnaJson,
+                _experience.Status,
+                "Draft Saved",
+                _currentUserId
+            );
+        }
+
+        _saveMessage = "Draft saved";
+        _validationMessage = null;
+        StateHasChanged();
+
+        await Task.Delay(3000);
+        _saveMessage = null;
+        StateHasChanged();
     }
+
     private async Task PublishAsync()
     {
-        if (_experience == null) return;
-        var json = System.Text.Json.JsonSerializer.Serialize(_dnaElements);
-        await ExperienceService.UpdateExperienceAsync(_experience.Id, _experience.Title, _experience.Description, json, ExperienceStatus.Approved.ToString(), "Studio Submit", Guid.Empty);
-        NavigationManager.NavigateTo("/experiences");
+        _validationMessage = null;
+        if (string.IsNullOrWhiteSpace(_experience.Title) || _experience.Title == "New Experience")
+        {
+            _validationMessage = "Title is required to publish.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_dna.Challenge))
+        {
+            _validationMessage = "Challenge is required to publish.";
+            return;
+        }
+
+        _experience.Status = "Published";
+        var dnaJson = JsonSerializer.Serialize(_dna);
+
+        await ExperienceService.UpdateExperienceAsync(
+                    _experience.Id,
+                    _experience.Title,
+                    _experience.Description,
+                    dnaJson,
+                    _experience.Status,
+                    "Published Version",
+                    _currentUserId
+                );
+
+        var vlist = await ExperienceService.GetExperienceHistoryAsync(_experience.Id);
+        _versions = vlist.OrderByDescending(v => v.VersionNumber).ToList();
+
+        _saveMessage = "Experience published!";
+        StateHasChanged();
+
+        await Task.Delay(3000);
+        _saveMessage = null;
+        StateHasChanged();
+    }
+
+    private void PlanExperience()
+    {
+        NavigationManager.NavigateTo($"/planning");
+    }
+
+    private async Task ImproveAsync(string requestContext)
+    {
+        _isImproving = true;
+        StateHasChanged();
+
+        try
+        {
+            var payload = new
+            {
+                Title = _experience.Title,
+                Description = _experience.Description,
+                Challenge = _dna.Challenge,
+                Together = _dna.Together,
+                Create = _dna.Create,
+                ChildChoice = _dna.ChildChoice,
+                MagicMoment = _dna.MagicMoment,
+                Accomplishment = _dna.Accomplishment,
+                Reflection = _dna.Reflection,
+                TeacherGuidance = _dna.TeacherGuidance,
+                Materials = _dna.Materials,
+                ExecutionGuide = _dna.ExecutionGuide
+            };
+            var result = await AiIdeaService.ImproveExperienceAsync(payload, requestContext);
+            if (result != null)
+            {
+                _pendingImprovement = result;
+            }
+            else
+            {
+                await ToastService.ShowErrorToastAsync("Failed to get improvement suggestions. Please check your connection and API key.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorToastAsync($"An error occurred while connecting to the AI: {ex.Message}");
+        }
+        finally
+        {
+            _isImproving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RejectImprovement()
+    {
+        _pendingImprovement = null;
+        _showImprovementCompare = false;
+    }
+
+    private async Task AcceptImprovement()
+    {
+        if (_pendingImprovement != null)
+        {
+            _experience.Title = _pendingImprovement.UpdatedData.Title;
+            _experience.Description = _pendingImprovement.UpdatedData.Description;
+            _dna.Challenge = _pendingImprovement.UpdatedData.Challenge;
+            _dna.Together = _pendingImprovement.UpdatedData.Together;
+            _dna.Create = _pendingImprovement.UpdatedData.Create;
+            _dna.ChildChoice = _pendingImprovement.UpdatedData.ChildChoice;
+            _dna.MagicMoment = _pendingImprovement.UpdatedData.MagicMoment;
+            _dna.Accomplishment = _pendingImprovement.UpdatedData.Accomplishment;
+            _dna.Reflection = _pendingImprovement.UpdatedData.Reflection;
+            _dna.TeacherGuidance = _pendingImprovement.UpdatedData.TeacherGuidance;
+            _dna.Materials = _pendingImprovement.UpdatedData.Materials ?? new List<string>();
+            if (_pendingImprovement.UpdatedData.ExecutionGuide != null)
+            {
+                _dna.ExecutionGuide = _pendingImprovement.UpdatedData.ExecutionGuide;
+            }
+
+            await SaveDraftAsync();
+            _pendingImprovement = null;
+            _showImprovementCompare = false;
+        }
     }
 }
