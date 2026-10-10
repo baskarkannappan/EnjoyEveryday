@@ -39,7 +39,7 @@ public class ClassroomRepository : IClassroomRepository
         string sql = $@"
             SELECT {SelectFields}
             FROM classrooms
-            WHERE branch_id = @BranchId AND tenant_id = @TenantId
+            WHERE branch_id = @BranchId AND tenant_id = @TenantId AND is_active = true
             ORDER BY name";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
@@ -51,7 +51,7 @@ public class ClassroomRepository : IClassroomRepository
         string sql = $@"
             SELECT {SelectFields}
             FROM classrooms
-            WHERE tenant_id = @TenantId
+            WHERE tenant_id = @TenantId AND is_active = true
             ORDER BY name";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
@@ -112,7 +112,7 @@ public class ClassroomRepository : IClassroomRepository
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            DELETE FROM classrooms
+            UPDATE classrooms SET is_active = false
             WHERE id = @Id AND tenant_id = @TenantId";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

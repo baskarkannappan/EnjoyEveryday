@@ -1,4 +1,4 @@
-﻿using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
 
@@ -8,15 +8,18 @@ public class UserService
 {
     private readonly IUserRepository _userRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IUserContext _userContext;
 
-    public UserService(IUserRepository userRepository, ITenantContext tenantContext)
+    public UserService(IUserRepository userRepository, ITenantContext tenantContext, IUserContext userContext)
     {
         _userRepository = userRepository;
         _tenantContext = tenantContext;
+        _userContext = userContext;
     }
 
     public async Task<IEnumerable<User>> GetUsersAsync(CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("user.manage")) throw new UnauthorizedAccessException("Requires user.manage permission.");
         var tenantId = _tenantContext.TenantId;
         return await _userRepository.GetAllAsync(tenantId, cancellationToken);
     }
@@ -41,6 +44,7 @@ public class UserService
 
     public async Task<User> CreateUserAsync(string email, string firstName, string lastName, string passwordHash, string? roleName = null, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("user.manage")) throw new UnauthorizedAccessException("Requires user.manage permission.");
         var tenantId = _tenantContext.TenantId;
         var user = new User
         {
@@ -67,6 +71,7 @@ public class UserService
 
     public async Task UpdateUserAsync(User user, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("user.manage")) throw new UnauthorizedAccessException("Requires user.manage permission.");
         var tenantId = _tenantContext.TenantId;
         if (user.TenantId != tenantId) throw new UnauthorizedAccessException("Cross-tenant update attempted.");
         user.UpdatedAt = DateTimeOffset.UtcNow;
@@ -76,6 +81,7 @@ public class UserService
 
     public async Task DeleteUserAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("user.manage")) throw new UnauthorizedAccessException("Requires user.manage permission.");
         var tenantId = _tenantContext.TenantId;
         await _userRepository.DeleteAsync(tenantId, id, cancellationToken);
     }

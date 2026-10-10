@@ -3,16 +3,19 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
 
 public class PlannerService
 {
     private readonly IExperienceScheduleRepository _scheduleRepository;
+    private readonly IUserContext _userContext;
 
-    public PlannerService(IExperienceScheduleRepository scheduleRepository)
+    public PlannerService(IExperienceScheduleRepository scheduleRepository, IUserContext userContext)
     {
         _scheduleRepository = scheduleRepository;
+        _userContext = userContext;
     }
 
     public async Task<IEnumerable<ExperienceSchedule>> GetMonthlyScheduleAsync(Guid classroomId, int year, int month)
@@ -29,6 +32,8 @@ public class PlannerService
 
     public async Task<ExperienceSchedule> ScheduleExperienceAsync(Guid experienceId, Guid classroomId, DateOnly scheduledDate, string timeOfDay, Guid? primaryTeacherId = null, TimeSpan? startTime = null, TimeSpan? endTime = null, string? notes = null)
     {
+        if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");
+
         // Basic validation
         if (startTime.HasValue && endTime.HasValue && endTime <= startTime)
         {
@@ -76,6 +81,7 @@ public class PlannerService
 
         public async Task UpdateScheduleAsync(ExperienceSchedule schedule)
     {
+        if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");
         if (schedule.PlannedStartTime.HasValue && schedule.PlannedEndTime.HasValue && schedule.PlannedEndTime <= schedule.PlannedStartTime)
         {
             throw new ArgumentException("End time must be after start time.");
@@ -95,6 +101,7 @@ public class PlannerService
 
     public async Task CancelScheduleAsync(Guid scheduleId)
     {
+        if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
         if (schedule != null)
         {
@@ -105,6 +112,7 @@ public class PlannerService
 
     public async Task DeleteScheduleAsync(Guid id)
     {
+        if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");
         await _scheduleRepository.DeleteAsync(id);
     }
 }

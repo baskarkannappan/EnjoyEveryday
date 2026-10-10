@@ -1,0 +1,142 @@
+@page "/profile"
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+
+<PageTitle>User Profile</PageTitle>
+
+<div style="padding: 24px; max-width: 800px; margin: 0 auto;">
+    <h1 style="font-family: 'Inter', sans-serif; font-size: 28px; font-weight: 700; color: var(--neutral-foreground-rest); margin-bottom: 24px;">
+        My Profile
+    </h1>
+
+    @if (Claims != null)
+    {
+        <!-- Identity Summary -->
+        <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--elevation-shadow-16); margin-bottom: 24px; border: 1px solid var(--neutral-layer-3);">
+            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 24px;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--accent-fill-rest); color: white; display: grid; place-items: center; font-size: 24px; font-weight: bold;">
+                    @(UserContext.Email?.FirstOrDefault().ToString().ToUpper() ?? "?")
+                </div>
+                <div>
+                    <h2 style="margin: 0; font-size: 20px; font-weight: 600;">@UserContext.Email</h2>
+                    <p style="margin: 4px 0 0 0; color: var(--neutral-foreground-hint); font-size: 14px;">User ID: @UserContext.UserId</p>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div style="padding: 12px; background: var(--neutral-layer-1); border-radius: 8px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--neutral-foreground-hint); text-transform: uppercase;">Tenant ID</div>
+                    <div style="font-family: monospace; font-size: 13px; margin-top: 4px;">@(Claims?.FirstOrDefault(c => c.Type == "TenantId")?.Value ?? "None")</div>
+                </div>
+                <div style="padding: 12px; background: var(--neutral-layer-1); border-radius: 8px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--neutral-foreground-hint); text-transform: uppercase;">Active Organization ID</div>
+                    <div style="font-family: monospace; font-size: 13px; margin-top: 4px;">@(UserContext.OrganizationId?.ToString() ?? "None")</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Roles & Permissions -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
+                <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--neutral-foreground-rest);">Active Roles</h3>
+                @if (Roles.Any())
+                {
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        @foreach (var role in Roles)
+                        {
+                            <span style="background: #e6f4ea; color: #1e8e3e; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">
+                                @role
+                            </span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p style="color: var(--neutral-foreground-hint); font-size: 14px; margin: 0;">No active roles</p>
+                }
+            </div>
+
+            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
+                <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--neutral-foreground-rest);">Permissions</h3>
+                @if (Permissions.Any())
+                {
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        @foreach (var perm in Permissions)
+                        {
+                            <span style="background: #f1f3f4; color: #3c4043; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">
+                                @perm
+                            </span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p style="color: var(--neutral-foreground-hint); font-size: 14px; margin: 0;">No specific permissions granted</p>
+                }
+            </div>
+        </div>
+
+        <!-- Raw Claims (Advanced) -->
+        <details style="background: white; border-radius: 12px; padding: 16px 24px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
+            <summary style="font-weight: 600; cursor: pointer; color: var(--neutral-foreground-hint); user-select: none;">
+                View Raw Security Claims (Advanced)
+            </summary>
+            <div style="margin-top: 16px; overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--neutral-layer-3); text-align: left;">
+                            <th style="padding: 8px; font-weight: 600;">Type</th>
+                            <th style="padding: 8px; font-weight: 600;">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var claim in Claims)
+                        {
+                            <tr style="border-bottom: 1px solid var(--neutral-layer-3);">
+                                <td style="padding: 8px; font-family: monospace; color: var(--accent-fill-rest);">
+                                    @(claim.Type.Split('/').Last())
+                                </td>
+                                <td style="padding: 8px; font-family: monospace;">@claim.Value</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    }
+    else
+    {
+        <p>Loading profile...</p>
+    }
+</div>
+
+@code {
+    private IEnumerable<Claim>? Claims;
+    private List<string> Roles = new();
+    private List<string> Permissions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            Claims = user.Claims;
+            
+            Roles = user.Claims
+                .Where(c => c.Type == ClaimTypes.Role)
+                .Select(c => c.Value)
+                .OrderBy(r => r)
+                .ToList();
+
+            Permissions = user.Claims
+                .Where(c => c.Type == "Permission")
+                .Select(c => c.Value)
+                .OrderBy(p => p)
+                .ToList();
+        }
+    }
+}

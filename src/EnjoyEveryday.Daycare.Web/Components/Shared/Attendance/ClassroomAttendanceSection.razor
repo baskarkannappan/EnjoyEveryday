@@ -1,6 +1,7 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Application.Services
 @inject AttendanceService AttendanceService
+@inject ChildService ChildService
 
 <div class="section">
     <div>
@@ -66,6 +67,8 @@
     protected override async Task OnParametersSetAsync()
     {
         Summaries.Clear();
+        var allChildren = (await ChildService.GetChildrenAsync()).ToList();
+
         foreach (var branch in Branches)
         {
             var childAtt = (await AttendanceService.GetChildAttendanceAsync(branch.Id, SelectedDate)).ToList();
@@ -74,9 +77,14 @@
             var rooms = Classrooms.Where(c => c.BranchId == branch.Id);
             foreach (var room in rooms)
             {
-                var expectedC = childAtt.Count(x => x.ClassroomId == room.Id);
+                var roomChildrenCount = allChildren.Count(c => c.ClassroomId == room.Id);
+                var expectedC = Math.Max(roomChildrenCount, childAtt.Count(x => x.ClassroomId == room.Id));
+                
                 var presentC = childAtt.Count(x => x.ClassroomId == room.Id && (x.Status == "Present" || x.Status == "Late"));
-                var unmarkedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status == "Not marked");
+                var markedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status != "Not marked");
+                
+                var unmarkedC = expectedC - markedC;
+                if (unmarkedC < 0) unmarkedC = 0;
 
                 var expectedT = 2; // Teacher assignments to classrooms not available on TeacherAttendance entity
                 var presentT = 2;

@@ -8,11 +8,13 @@ public class OrganizationService
 {
     private readonly IOrganizationRepository _organizationRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IUserContext _userContext;
 
-    public OrganizationService(IOrganizationRepository organizationRepository, ITenantContext tenantContext)
+    public OrganizationService(IOrganizationRepository organizationRepository, ITenantContext tenantContext, IUserContext userContext)
     {
         _organizationRepository = organizationRepository;
         _tenantContext = tenantContext;
+        _userContext = userContext;
     }
 
     public async Task<IEnumerable<Organization>> GetOrganizationsAsync(CancellationToken cancellationToken = default)
@@ -29,6 +31,7 @@ public class OrganizationService
 
     public async Task<Organization> CreateOrganizationAsync(string name, string? location, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("organization.manage")) throw new UnauthorizedAccessException("Requires organization.manage permission.");
         var tenantId = _tenantContext.TenantId;
         var organization = new Organization
         {
@@ -46,6 +49,7 @@ public class OrganizationService
 
     public async Task UpdateOrganizationAsync(Organization organization, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("organization.manage")) throw new UnauthorizedAccessException("Requires organization.manage permission.");
         var tenantId = _tenantContext.TenantId;
         if (organization.TenantId != tenantId)
             throw new UnauthorizedAccessException("Cross-tenant update attempted.");

@@ -8,11 +8,13 @@ public class ClassroomService : IClassroomService
 {
     private readonly IClassroomRepository _classroomRepository;
     private readonly ITenantContext _tenantContext;
+    private readonly IUserContext _userContext;
 
-    public ClassroomService(IClassroomRepository classroomRepository, ITenantContext tenantContext)
+    public ClassroomService(IClassroomRepository classroomRepository, ITenantContext tenantContext, IUserContext userContext)
     {
         _classroomRepository = classroomRepository;
         _tenantContext = tenantContext;
+        _userContext = userContext;
     }
 
     public async Task<IEnumerable<Classroom>> GetAllClassroomsAsync(CancellationToken cancellationToken = default)
@@ -35,6 +37,7 @@ public class ClassroomService : IClassroomService
 
     public async Task<Classroom> CreateClassroomAsync(Guid branchId, string name, string? ageGroup, int? capacity, string environment, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
         var classroom = new Classroom
         {
@@ -55,6 +58,7 @@ public class ClassroomService : IClassroomService
 
     public async Task<Classroom> CreateClassroomAsync(Classroom classroom, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
         classroom.TenantId = tenantId;
         if (classroom.Id == Guid.Empty)
@@ -70,6 +74,7 @@ public class ClassroomService : IClassroomService
 
     public async Task UpdateClassroomAsync(Classroom classroom, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
         if (classroom.TenantId != tenantId)
             throw new UnauthorizedAccessException("Cross-tenant update attempted.");
@@ -80,6 +85,7 @@ public class ClassroomService : IClassroomService
 
     public async Task DeleteClassroomAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
         await _classroomRepository.DeleteAsync(tenantId, id, cancellationToken);
     }

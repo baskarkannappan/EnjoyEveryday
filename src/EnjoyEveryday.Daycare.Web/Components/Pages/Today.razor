@@ -9,6 +9,7 @@
 @inject ExecutionService ExecutionService
 @inject ExperienceService ExperienceService
 @inject ClassroomContextService ContextService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @rendermode InteractiveServer
 
  
@@ -39,14 +40,14 @@
                     <div class="pulse-label">Daycare today</div>
                     <div class="pulse-number">A day full of possibility.</div>
                     <div class="pulse-text">
-                        @_totalChildren children • @_totalClassrooms classrooms • @_totalExperiences experiences scheduled
+                        @_expectedChildren children • @_totalClassrooms classrooms • @_totalExperiences experiences scheduled
                     </div>
                 </div>
 
                 <div class="pulse-card">
                     <div class="stat-label">Children here</div>
-                    <div class="stat-number">@_totalChildren</div>
-                    <div class="stat-note">of @_totalChildren expected today</div>
+                    <div class="stat-number">@_childrenHere</div>
+                    <div class="stat-note">of @_expectedChildren expected today</div>
                 </div>
 
                 <div class="pulse-card">
@@ -722,7 +723,8 @@
     private List<Experience> _experiences = new();
     private Guid _teacherId = Guid.Parse("50000000-0000-0000-0000-000000000001"); // Mock teacher
 
-    private int _totalChildren = 0;
+    private int _childrenHere = 0;
+    private int _expectedChildren = 0;
     private int _totalClassrooms = 0;
     private int _totalExperiences = 0;
     private int _totalTeachers = 0;
@@ -735,17 +737,20 @@
         
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
         var today = DateTime.UtcNow.Date;
-        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
-        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
+        var tenantId = TenantContext.TenantId;
+        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date AND tenant_id = @TenantId ORDER BY time_of_day";
+        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId })).ToList();
         
         var statsSql = @"
             SELECT 
-                (SELECT COUNT(1) FROM children) as TotalChildren,
-                (SELECT COUNT(1) FROM classrooms) as TotalClassrooms,
-                (SELECT COUNT(1) FROM users) as TotalTeachers
+                (SELECT COUNT(1) FROM children WHERE tenant_id = @TenantId AND is_active = true) as ExpectedChildren,
+                (SELECT COUNT(1) FROM child_attendance WHERE tenant_id = @TenantId AND attendance_date = @Date AND status = 'Present') as ChildrenHere,
+                (SELECT COUNT(1) FROM classrooms WHERE tenant_id = @TenantId AND is_active = true) as TotalClassrooms,
+                (SELECT COUNT(1) FROM teachers WHERE tenant_id = @TenantId AND status != 'Inactive') as TotalTeachers
         ";
-        var stats = await connection.QuerySingleAsync<dynamic>(statsSql);
-        _totalChildren = (int)stats.totalchildren;
+        var stats = await connection.QuerySingleAsync<dynamic>(statsSql, new { Date = today, TenantId = tenantId });
+        _expectedChildren = (int)stats.expectedchildren;
+        _childrenHere = (int)stats.childrenhere;
         _totalClassrooms = (int)stats.totalclassrooms;
         _totalExperiences = _todaySchedules.Count;
         _activeExperiences = _todaySchedules.Count(s => s.Status == "Started" || s.Status == "Active");
@@ -773,7 +778,6 @@
             LIMIT 3
         ";
         try {
-            var tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001"); // using same mock tenant as others
             _recentMemories = (await connection.QueryAsync<dynamic>(momentsSql, new { TenantId = tenantId })).ToList();
         } catch { }
     }
@@ -790,8 +794,9 @@
         // Refresh schedules
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
         var today = DateTime.UtcNow.Date;
-        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
-        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
+        var tenantId = TenantContext.TenantId;
+        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date AND tenant_id = @TenantId ORDER BY time_of_day";
+        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId })).ToList();
         
         StateHasChanged();
         

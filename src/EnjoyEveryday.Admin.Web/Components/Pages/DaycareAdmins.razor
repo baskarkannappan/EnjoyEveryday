@@ -1,0 +1,113 @@
+@page "/daycare-admins"
+@using Microsoft.FluentUI.AspNetCore.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject UserService UserService
+
+<PageTitle>Manage Daycare Admins</PageTitle>
+
+<div style="padding: 24px; max-width: 1200px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+        <h1 style="font-family: 'Inter', sans-serif; font-size: 28px; font-weight: 700; color: var(--neutral-foreground-rest); margin: 0;">
+            Daycare Administrators
+        </h1>
+        <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.PersonAdd())" OnClick="@( (Microsoft.AspNetCore.Components.Web.MouseEventArgs e) => isDialogOpen = true )">
+            Invite Daycare Admin
+        </FluentButton>
+    </div>
+
+    <p style="color: var(--neutral-foreground-hint); margin-bottom: 32px;">
+        As a Platform Admin, use this page to invite top-level Organization Owners and Admins to manage their respective Daycares.
+    </p>
+
+    <FluentDataGrid Items="@Admins.AsQueryable()" TGridItem="User">
+        <PropertyColumn Property="@(p => p.FirstName + " " + p.LastName)" Title="Name" Sortable="true" />
+        <PropertyColumn Property="@(p => p.Email)" Title="Email" Sortable="true" />
+        <PropertyColumn Property="@(p => p.TenantId)" Title="Tenant/Company ID" />
+        <TemplateColumn Title="Status">
+            <span style="padding: 4px 12px; border-radius: 12px; background: @(context.IsActive ? "#e6f4ea" : "#fce8e6"); color: @(context.IsActive ? "#1e8e3e" : "#d93025"); font-size: 12px; font-weight: 600;">
+                @(context.IsActive ? "Active" : "Disabled")
+            </span>
+        </TemplateColumn>
+        <TemplateColumn Title="Actions">
+            <FluentButton IconStart="@(new Icons.Regular.Size16.Edit())" />
+            <FluentButton IconStart="@(new Icons.Regular.Size16.Delete())" />
+        </TemplateColumn>
+    </FluentDataGrid>
+</div>
+
+<FluentDialog Hidden="@(!isDialogOpen)" Modal="true" TrapFocus="true">
+    <div style="padding: 24px; min-width: 400px;">
+        <h2 style="margin-top: 0; font-size: 20px; font-weight: 600;">Invite Daycare Admin</h2>
+        
+        <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 24px;">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label>First Name</label>
+                <input type="text" @bind="newAdmin.FirstName" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;" />
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label>Last Name</label>
+                <input type="text" @bind="newAdmin.LastName" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;" />
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label>Email Address</label>
+                <input type="email" @bind="newAdmin.Email" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;" />
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label>Assign Role</label>
+                <select @bind="selectedRole" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;">
+                    <option value="OrganizationOwner">Organization Owner</option>
+                    <option value="OrganizationAdmin">Organization Admin</option>
+                </select>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label>Select Tenant/Company</label>
+                <select @bind="selectedTenantId" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;">
+                    <option value="">-- Select Tenant --</option>
+                    <option value="f0000000-0000-0000-0000-000000000001">Little Stars Daycare Inc.</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 32px;">
+            <FluentButton OnClick="@( (Microsoft.AspNetCore.Components.Web.MouseEventArgs e) => isDialogOpen = false )">Cancel</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="InviteAdminAsync">Send Invite</FluentButton>
+        </div>
+    </div>
+</FluentDialog>
+
+@code {
+    private List<User> Admins = new();
+    private bool isDialogOpen = false;
+    
+    private User newAdmin = new();
+    private string selectedRole = "OrganizationOwner";
+    private string selectedTenantId = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Mock data fetch for the grid
+        try {
+            var users = await UserService.GetUsersAsync();
+            Admins = users.ToList();
+        } 
+        catch (Exception) {
+            // Silently handle if permissions are restricted during mockup phase
+        }
+    }
+
+    private async Task InviteAdminAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newAdmin.Email)) return;
+        
+        // In a real implementation, we would switch the ITenantContext or pass TenantId explicitly
+        // await UserService.CreateUserAsync(newAdmin.Email, newAdmin.FirstName, newAdmin.LastName, "dummy-hash", selectedRole);
+        
+        isDialogOpen = false;
+        newAdmin = new();
+    }
+}

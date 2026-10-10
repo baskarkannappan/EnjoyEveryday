@@ -1,4 +1,5 @@
 using EnjoyEveryday.Application.Services;
+using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EnjoyEveryday.Application;
@@ -23,18 +24,16 @@ public static class ApplicationServiceRegistration
         services.AddScoped<FeedbackService>();
         services.AddScoped<ITeacherService, TeacherService>();
         services.AddScoped<IChildJourneyService, ChildJourneyService>();
+        services.AddScoped<IMemoryService, MemoryService>();
         services.AddScoped<IAesEncryptionService, AesEncryptionService>();
         services.AddScoped<TenantSettingsService>();
         services.AddScoped<AttendanceService>();
         services.AddHttpClient<IAiIdeaService, AiIdeaService>();
 
-        // Register a default mock TenantContext for now until auth is built
-        services.AddScoped<EnjoyEveryday.Shared.Tenancy.ITenantContext>(sp => 
-            new EnjoyEveryday.Shared.Tenancy.TenantContext 
-            { 
-                TenantId = Guid.Parse("10000000-0000-0000-0000-000000000001"), 
-                TenantName = "Little Stars Daycare" 
-            });
+        // Register the dynamic IdentityContext for both abstractions
+        services.AddScoped<AppIdentityContext>();
+        services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<AppIdentityContext>());
+        services.AddScoped<IUserContext>(sp => sp.GetRequiredService<AppIdentityContext>());
 
         return services;
     }

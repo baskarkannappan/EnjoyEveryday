@@ -30,7 +30,7 @@
                     <PersonCard AvatarInitials="@(teacher.FirstName?.FirstOrDefault().ToString() ?? "?")"
                                 PhotoUrl="@teacher.ProfilePhotoUrl"
                                 Name="@teacher.FullName"
-                                Subtitle="@GetTeacherSubtitle(teacher)"
+                                SubtitleTemplate="@GetTeacherSubtitleTemplate(teacher)"
                                 Status="@teacher.Status"
                                 Progress="@teacher.ProfileCompletionPercentage"
                                 HighlightTitle="Today's support"
@@ -73,13 +73,69 @@
         _teachers = await TeacherService.GetAllTeachersAsync(TenantContext.TenantId);
     }
 
-    private string GetTeacherSubtitle(Teacher teacher)
+    private RenderFragment GetTeacherSubtitleTemplate(Teacher teacher) => __builder =>
     {
-        string branchName = "Unassigned Branch";
-        string className = "Unassigned Class";
-
-        if (!string.IsNullOrWhiteSpace(teacher.DraftData))
+        var assignedClassrooms = GetAssignedClassrooms(teacher);
+        if (!assignedClassrooms.Any())
         {
+            <text>Unassigned Branch • Unassigned Class</text>
+        }
+        else
+        {
+            var first = assignedClassrooms.First();
+            <text>@($"{first.BranchName} • {first.ClassName}")</text>
+            if (assignedClassrooms.Count > 1)
+            {
+                var others = string.Join("\n", assignedClassrooms.Skip(1).Select(c => $"{c.BranchName} • {c.ClassName}"));
+                <span class="badge-more" title="@others" style="margin-left: 6px; background: #e5eee8; color: #52745e; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 700; cursor: help;">
+                    +@(assignedClassrooms.Count - 1) more
+                </span>
+            }
+        }
+    };
+
+    private List<(string BranchName, string ClassName)> GetAssignedClassrooms(Teacher teacher)
+    {
+        var list = new List<(string BranchName, string ClassName)>();
+        
+        foreach (var cls in _classrooms.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(cls.DraftData))
+            {
+                try
+                {
+                    var doc = JsonDocument.Parse(cls.DraftData);
+                    bool assigned = false;
+                    
+                    if (doc.RootElement.TryGetProperty("LeadTeacher", out var ltToken))
+                    {
+                        var ltStr = ltToken.GetString();
+                        if (ltStr == teacher.FullName) assigned = true;
+                    }
+                    if (!assigned && doc.RootElement.TryGetProperty("AssistantTeachers", out var atToken))
+                    {
+                        var atStr = atToken.GetString();
+                        if (!string.IsNullOrEmpty(atStr) && atStr.Split(',').Select(s => s.Trim()).Contains(teacher.FullName))
+                        {
+                            assigned = true;
+                        }
+                    }
+                    
+                    if (assigned)
+                    {
+                        string bName = _branches.TryGetValue(cls.BranchId, out var b) ? b.Name : "Unknown Branch";
+                        list.Add((bName, cls.Name));
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // Fallback to teacher's own DraftData if nothing found in classrooms (for backward compatibility)
+        if (!list.Any() && !string.IsNullOrWhiteSpace(teacher.DraftData))
+        {
+            string branchName = "Unassigned Branch";
+            string className = "Unassigned Class";
             try
             {
                 var doc = JsonDocument.Parse(teacher.DraftData);
@@ -105,11 +161,16 @@
                         }
                     }
                 }
+                
+                if (branchName != "Unassigned Branch" || className != "Unassigned Class")
+                {
+                    list.Add((branchName, className));
+                }
             }
             catch { }
         }
 
-        return $"{branchName} • {className}";
+        return list;
     }
 }
 

@@ -10,12 +10,14 @@ public class ChildService
     private readonly IChildRepository _childRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
+    private readonly IUserContext _userContext;
 
-    public ChildService(IChildRepository childRepository, ITenantContext tenantContext, IAuditService auditService)
+    public ChildService(IChildRepository childRepository, ITenantContext tenantContext, IAuditService auditService, IUserContext userContext)
     {
         _childRepository = childRepository;
         _tenantContext = tenantContext;
         _auditService = auditService;
+        _userContext = userContext;
     }
 
     public async Task<IEnumerable<Child>> GetChildrenAsync(CancellationToken cancellationToken = default)
@@ -38,6 +40,7 @@ public class ChildService
 
     public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, string? photoUrl = null, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
         var tenantId = _tenantContext.TenantId;
         var child = new Child
         {
@@ -58,6 +61,7 @@ public class ChildService
 
     public async Task UpdateChildAsync(Child child, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
         var existingChild = await _childRepository.GetByIdAsync(_tenantContext.TenantId, child.Id, cancellationToken);
         if (existingChild != null && existingChild.ClassroomId != child.ClassroomId)
         {
@@ -83,6 +87,7 @@ public class ChildService
 
     public async Task DeleteChildAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
         var tenantId = _tenantContext.TenantId;
         await _childRepository.DeleteAsync(tenantId, id, cancellationToken);
     }

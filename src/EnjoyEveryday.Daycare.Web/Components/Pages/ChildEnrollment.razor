@@ -8,6 +8,7 @@
 @inject OrganizationService OrganizationService
 @inject SystemProvisioningService SystemProvisioning
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
 
 <div class="enrollment-container">
     <div class="enrollment-header">
@@ -285,6 +286,10 @@
                     {
                         <button class="secondary" @onclick="PreviousStep">Back</button>
                     }
+                    @if (Id.HasValue)
+                    {
+                        <button class="secondary" style="color: #dc3545; border-color: #dc3545;" @onclick="DeleteChild">Delete</button>
+                    }
                 </div>
 
                 @if (currentStep < 10)
@@ -554,5 +559,18 @@
         }
         
         NavigationManager.NavigateTo("/children");
+    }
+
+    private async Task DeleteChild()
+    {
+        if (Id.HasValue)
+        {
+            bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this child? This action cannot be undone.");
+            if (confirmed)
+            {
+                await ChildService.DeleteChildAsync(Id.Value);
+                NavigationManager.NavigateTo("/children");
+            }
+        }
     }
 }

@@ -1,0 +1,74 @@
+@page "/select-organization"
+@using Dapper
+@using EnjoyEveryday.Shared.Data
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject IDbConnectionFactory DbFactory
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavManager
+
+<PageTitle>Select Organization</PageTitle>
+
+<FluentCard Width="400px" Style="margin: 50px auto; padding: 20px;">
+    <h3>Select Organization</h3>
+    <p>You have access to multiple organizations. Please select one to continue.</p>
+
+    @if (options == null)
+    {
+        <FluentSpinner />
+    }
+    else if (options.Count == 0)
+    {
+        <p>You do not have access to any organizations.</p>
+    }
+    else
+    {
+        <form method="post" action="/auth/set-organization">
+            <AntiforgeryToken />
+            <FluentSelect Items="@options" 
+                          OptionValue="@(o => o.Id?.ToString() ?? "")" 
+                          OptionText="@(o => o.Name)" 
+                          Name="organizationId"
+                          Required="true" />
+            
+            <div style="margin-top: 20px;">
+                <FluentButton Type="ButtonType.Submit" Appearance="ButtonAppearance.Primary">Continue</FluentButton>
+            </div>
+        </form>
+    }
+</FluentCard>
+
+@code {
+    private List<OrganizationOption>? options;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            NavManager.NavigateTo("/auth/login");
+            return;
+        }
+
+        var userIdStr = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdStr, out var userId)) return;
+
+        using var conn = await DbFactory.CreateConnectionAsync();
+        var orgs = (await conn.QueryAsync<OrganizationOption>(
+            @"SELECT o.id as Id, o.name as Name 
+              FROM organization_memberships om 
+              JOIN organizations o ON om.organization_id = o.id 
+              WHERE om.user_id = @UserId AND om.status = 'Active'",
+            new { UserId = userId })).ToList();
+
+        options = orgs;
+    }
+
+    private class OrganizationOption
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+}

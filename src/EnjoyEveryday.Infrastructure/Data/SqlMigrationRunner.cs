@@ -33,9 +33,14 @@ public class SqlMigrationRunner
             )
             """);
 
-        var appliedMigrations = (await connection.QueryAsync<string>(
-            "SELECT filename FROM _migrations ORDER BY id"
-        )).ToHashSet();
+        // Acquire an advisory lock to prevent concurrent app startups from racing
+        await connection.ExecuteAsync("SELECT pg_advisory_lock(hashtext('enjoyeveryday_migrations'))");
+
+        try
+        {
+            var appliedMigrations = (await connection.QueryAsync<string>(
+                "SELECT filename FROM _migrations ORDER BY id"
+            )).ToHashSet();
 
         if (!Directory.Exists(migrationsPath))
         {
@@ -77,6 +82,11 @@ public class SqlMigrationRunner
                 _logger.LogError(ex, "Migration failed: {Filename}", filename);
                 throw;
             }
+        }
+        }
+        finally
+        {
+            await connection.ExecuteAsync("SELECT pg_advisory_unlock(hashtext('enjoyeveryday_migrations'))");
         }
     }
 }

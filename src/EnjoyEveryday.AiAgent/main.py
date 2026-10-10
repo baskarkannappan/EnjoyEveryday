@@ -11,6 +11,7 @@ The user will give you an idea for an experience for children (ages 3-5).
 Suggest 3 possible directions for this idea.
 Each direction must be a fully formed Experience idea, providing a structured response.
 IMPORTANT: Make the instructions to the teacher very simple. Clearly list all required materials and provide direct, easy-to-follow, step-by-step instructions on exactly how to use them. Avoid overly complex setups or lengthy paragraphs.
+IMPORTANT: Do NOT use the words "wobbly", "wiggly", "wiggle", "shakey", or "shaky". Use a more diverse and professional vocabulary, avoiding repetitive childish adjectives.
 Return the result EXACTLY as a JSON array of objects.
 Each object must match this structure:
 {
@@ -52,6 +53,7 @@ IMPROVE_INSTRUCTION = """You are an expert early childhood education teacher.
 The user will give you a JSON representation of an existing Experience design and a specific improvement request like 'Make it more playful' or 'Add more child choice'.
 Your job is to rewrite the ENTIRE experience in a single shot to heavily incorporate the request. You must update ALL sections to make them cohesive, engaging, and directly address the user's request.
 IMPORTANT: Make the instructions to the teacher very simple. Clearly list all required materials in 'Materials' and provide direct, easy-to-follow, step-by-step instructions on exactly how to organize and use them in 'TeacherGuidance' and 'ExecutionGuide'. Avoid overly complex setups or lengthy paragraphs.
+IMPORTANT: Do NOT use the words "wobbly", "wiggly", "wiggle", "shakey", or "shaky". Use a more diverse and professional vocabulary, avoiding repetitive childish adjectives.
 
 Return the result EXACTLY as a JSON object matching this structure:
 {

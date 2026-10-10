@@ -1,19 +1,51 @@
 @namespace EnjoyEveryday.UI.Shared.Components.ClassroomWizard.Steps
 @using EnjoyEveryday.UI.Shared.Components.ClassroomWizard
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@inject ITeacherService TeacherService
+@inject ITenantContext TenantContext
 
 <div class="field" style="margin-bottom: 1.5rem;">
     <label>Lead Teacher</label>
     <p style="color: #666; font-size: 0.9rem; margin-top: 0;">Select the primary educator responsible for this classroom.</p>
-    <input @bind="Model.LeadTeacher" placeholder="e.g. Jane Doe" />
+    <select @bind="Model.LeadTeacher">
+        <option value="">-- Select a Lead Teacher --</option>
+        @foreach (var teacher in _teachers)
+        {
+            <option value="@teacher.FullName">@teacher.FullName</option>
+        }
+    </select>
 </div>
 
 <div class="field" style="margin-bottom: 1.5rem;">
     <label>Assistant Teachers</label>
-    <p style="color: #666; font-size: 0.9rem; margin-top: 0;">Comma-separated list of supporting educators.</p>
-    <input @bind="Model.AssistantTeachers" placeholder="e.g. John Smith, Mary Johnson" />
+    <p style="color: #666; font-size: 0.9rem; margin-top: 0;">Select supporting educators (Hold Ctrl/Cmd to select multiple).</p>
+    <select multiple @bind="SelectedAssistants" style="height: 120px;">
+        @foreach (var teacher in _teachers)
+        {
+            <option value="@teacher.FullName">@teacher.FullName</option>
+        }
+    </select>
 </div>
 
 @code {
     [Parameter]
     public ClassroomWizardModel Model { get; set; } = default!;
+
+    private List<Teacher> _teachers = new();
+
+    private string[] SelectedAssistants
+    {
+        get => string.IsNullOrWhiteSpace(Model.AssistantTeachers) 
+            ? Array.Empty<string>() 
+            : Model.AssistantTeachers.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        set => Model.AssistantTeachers = string.Join(", ", value ?? Array.Empty<string>());
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tenantId = TenantContext.TenantId;
+        _teachers = (await TeacherService.GetAllTeachersAsync(tenantId)).ToList();
+    }
 }

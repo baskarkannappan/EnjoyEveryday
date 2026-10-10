@@ -11,6 +11,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Application.Services.ExecutionService ExecutionService
 @inject EnjoyEveryday.Application.Services.ExperienceService ExperienceService
+@inject IJSRuntime JSRuntime
 
 <PageHero 
     Eyebrow="PEOPLE" 
@@ -19,6 +20,9 @@
     <RightContent>
         <button class="secondary" @onclick='() => NavigationManager.NavigateTo("/teachers")'>
             Back to List
+        </button>
+        <button class="secondary" style="color: #dc3545; border-color: #dc3545;" @onclick="DeleteTeacher">
+            Delete
         </button>
         <button class="primary" @onclick='() => NavigationManager.NavigateTo($"/teachers/edit/{Id}")'>
             Edit Profile
@@ -213,6 +217,19 @@
                 // Wait, I am modifying TeacherProfile without the ExecutionService method. I'll just skip it for now and add it later if asked.
             }
             _isLoading = false;
+        }
+    }
+
+    private async Task DeleteTeacher()
+    {
+        if (_teacher != null)
+        {
+            bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this teacher? This action cannot be undone.");
+            if (confirmed)
+            {
+                await TeacherService.DeleteTeacherAsync(_teacher.TenantId, _teacher.Id);
+                NavigationManager.NavigateTo("/teachers");
+            }
         }
     }
 }

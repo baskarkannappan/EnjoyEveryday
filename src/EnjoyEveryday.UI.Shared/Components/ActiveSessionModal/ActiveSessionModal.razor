@@ -37,6 +37,13 @@
                 }
                 else
                 {
+                    @if (!_presentChildIds.Any())
+                    {
+                        <div style="padding: 12px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; color: #856404; font-size: 13px; margin-bottom: 16px;">
+                            <strong>Warning:</strong> No children are marked present today for this classroom. Please verify attendance, but you may proceed with the session if needed.
+                        </div>
+                    }
+
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
                         @foreach (var child in _children)
                         {
@@ -91,9 +98,13 @@
                     <textarea @bind="_notes" rows="3" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #e4e7df; resize: none;"></textarea>
                 </div>
 
-                <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                <div style="display: flex; justify-content: flex-end; gap: 12px; align-items: center;">
+                    @if (_showParticipationWarning)
+                    {
+                        <span style="color: #dc3545; font-size: 13px; font-weight: 500;">No participation recorded. Click again to confirm completion.</span>
+                    }
                     <button class="secondary" @onclick="CloseDialog" style="padding: 8px 16px; border: 1px solid #e4e7df; background: white; border-radius: 6px; cursor: pointer;">Close (Keep Active)</button>
-                    <button class="primary" @onclick="EndSession" style="padding: 8px 16px; border: none; background: #263d32; color: white; border-radius: 6px; cursor: pointer;">End Session & Save</button>
+                    <button class="primary" @onclick="TryEndSession" style="padding: 8px 16px; border: none; background: #263d32; color: white; border-radius: 6px; cursor: pointer;">End Session & Save</button>
                 </div>
             }
         </div>
@@ -254,6 +265,20 @@
     {
         _selectedChildId = childId;
         await _momentDialog.OpenAsync();
+    }
+
+    private bool _showParticipationWarning = false;
+
+    private async Task TryEndSession()
+    {
+        bool hasParticipants = _participations.Values.Any(p => p.ParticipationStatus == "Participated");
+        if (!hasParticipants && !_showParticipationWarning && _children.Any())
+        {
+            _showParticipationWarning = true;
+            return;
+        }
+
+        await EndSession();
     }
 
     private async Task EndSession()

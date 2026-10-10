@@ -1,0 +1,229 @@
+ENJOYEVERYDAY — ANTIGRAVITY AGENT INSTRUCTIONS
+Next Milestone: Experience Execution, Session Lifecycle, and Participation
+
+PURPOSE
+The Experience Library, Experience Studio, Experience Planning, Branch/Classroom setup, Child Journey, Harvest & Insight, and attendance portions have been reported as completed. The next recommended milestone is to connect planned experiences to what teachers actually do in the classroom.
+
+IMPORTANT: Do not assume the existing implementation is complete or missing based only on this document. Inspect the current solution first. Extend what already exists. Do not create duplicate modules, entities, services, pages, or workflows.
+
+PART 1 — QUESTIONS THE AGENT MUST ANSWER BEFORE CODING
+
+Inspect the existing codebase and answer these questions with file paths and concise evidence:
+
+1. Does an Experience Session entity/model already exist? If yes, where is it defined and how is it persisted?
+2. Is there already a session lifecycle (planned, started, completed, cancelled, or equivalent)? Show the current statuses and allowed transitions.
+3. Can a teacher open a “Today” or “Today’s Experiences” view and start a planned experience?
+4. Does starting a planned experience create or activate a session linked to the original Experience Plan?
+5. Does a session retain references to the Experience, Experience Plan, Tenant, Branch, Classroom, and Teacher?
+6. How are children for a session determined? Are they derived from current classroom enrollment and/or today's attendance?
+7. Is actual child participation recorded separately from the list of expected children?
+8. Can a teacher record a short observation or “Little Moment” for a child during or after an experience?
+9. Does the existing Child Journey record link to the actual session and participation record, where applicable?
+10. Can completed sessions flow into the existing Harvest & Insight module without duplicate data entry?
+11. Are session start, completion, cancellation, and important edits audited using the existing audit pattern?
+12. Are tenant isolation, branch/classroom access, role permissions, and concurrency handled using existing application patterns?
+13. Which UI pages, API endpoints, services, repositories, database tables, and tests already support this flow?
+14. What are the real gaps between the current implementation and the requirements below?
+15. Which existing components should be reused, modified, or extended? What, if anything, is genuinely missing?
+
+DELIVERABLE BEFORE IMPLEMENTATION
+Create a short implementation assessment containing:
+- Component / file path
+- Current behavior
+- Gap
+- Proposed change
+- Existing code to reuse
+- Tests needed
+
+Do not begin implementation until this assessment is complete. If the entire workflow already exists, do not rebuild it; identify only the remaining gaps and propose focused improvements.
+
+PART 2 — TARGET WORKFLOW
+
+The intended workflow is:
+
+Experience Library
+    → Experience Planning
+    → Today's Experiences
+    → Start Experience
+    → Experience Session
+    → Record Participation and Little Moments
+    → Complete Experience
+    → Existing Child Journey and Harvest & Insight
+
+Core meaning:
+- Experience = reusable definition of an activity.
+- Experience Plan = what is intended to happen, and when/where/who will lead it.
+- Experience Session = what actually happened in the classroom.
+- Participation = which children actually took part and, where useful, their level/type of involvement.
+- Child Journey = the child's ongoing story, informed by evidence from real experiences.
+- Harvest & Insight = the existing process for reviewing and interpreting experience outcomes.
+
+Keep these concepts separate. Do not treat planned children as proof that they participated. Do not create duplicate Child Journey or Harvest systems.
+
+PART 3 — TEACHER EXPERIENCE
+
+A. Today's Experiences
+- Provide or improve a teacher-friendly “Today” view using existing UI patterns.
+- Show the teacher's planned experiences for the current day, grouped by classroom or time if appropriate.
+- Each item should clearly show the experience title, classroom, planned time, and status.
+- Make the primary action obvious: Start Experience.
+- Teachers should not need to search through the full planning calendar to find today's work.
+- Respect the current teacher's assigned classrooms, branch, and permissions.
+
+B. Start Experience
+When a teacher starts a planned experience:
+- Validate that the plan exists and is in a startable state.
+- Validate access to the relevant tenant, branch, classroom, and teacher assignment.
+- Prevent accidental duplicate active sessions for the same plan unless the existing domain rules explicitly allow them.
+- Create or activate the Experience Session using the project's existing patterns.
+- Keep the original planned date/time unchanged; record actual start time separately.
+- Link the session to the original Experience Plan and Experience.
+- Capture the actual classroom, teacher, tenant, and branch context.
+- Load the expected child list from the authoritative current classroom enrollment and today's attendance, following the existing attendance rules.
+- Make it clear that the expected list is not the same as actual participation.
+- Use idempotency/concurrency patterns already present in the application.
+
+C. During the Experience
+- Keep the teacher's workflow simple and usable while supervising children.
+- Show the activity instructions, materials, and safety notes from the existing Experience definition.
+- Allow the teacher to record which children participated.
+- Allow a short, optional “Little Moment” or observation to be recorded for a child.
+- Reuse existing Child Journey and observation components/services where possible.
+- Avoid forcing a lengthy assessment form while the teacher is running an activity.
+- Do not add points, leaderboards, or distracting gamification.
+
+D. Complete Experience
+- Allow the teacher to finish the session and record actual end time.
+- If useful, allow a short session summary and notes about changes from the plan.
+- Validate the lifecycle transition and prevent invalid status changes.
+- Make completed sessions available to the existing Harvest & Insight flow.
+- Preserve the difference between planned information and actual results.
+- Support correction through the project's existing correction/audit approach rather than silently rewriting history.
+
+PART 4 — DOMAIN AND DATA RULES
+
+Inspect the current schema before changing it. Reuse existing models and tables whenever possible.
+
+The intended relationships are:
+Experience → Experience Plan → Experience Session
+Experience Session → Participation records
+Experience Session + Participation → optional evidence linked to Child Journey
+Completed Experience Session → existing Harvest & Insight
+
+If equivalent entities already exist, use them rather than creating alternatives.
+
+If missing, a session should normally retain appropriate references such as:
+- SessionId
+- TenantId
+- BranchId
+- ExperiencePlanId
+- ExperienceId
+- ClassroomId
+- TeacherId
+- PlannedStartTime/PlannedEndTime only if needed as a snapshot
+- ActualStartTime
+- ActualEndTime
+- Status
+- SessionSummary/Notes if supported by the domain
+- CreatedAt/By and UpdatedAt/By
+- Version or the existing concurrency token
+
+Participation should be represented separately if no equivalent already exists. Reuse the existing child, enrollment, attendance, and journey identifiers. Store only fields justified by the current domain, such as:
+- ParticipationId
+- SessionId
+- ChildId
+- ParticipationStatus or ParticipationType
+- Optional teacher observation/reference
+- RecordedAt/By
+- Audit/concurrency fields where the existing patterns require them
+
+Do not permanently copy child profiles into a plan or session. Use stable IDs and authoritative relationships. Avoid storing duplicate personal data.
+
+PART 5 — CHILD JOURNEY AND HARVEST INTEGRATION
+
+- Do not rebuild Child Journey; it already exists.
+- Do not rebuild Harvest & Insight; it already exists.
+- Where supported by the current schema, link child journey evidence to the real Experience Session and Participation record.
+- A teacher must remain able to distinguish a planned activity from an activity that actually occurred.
+- A child's journey entry must not be fabricated merely because the child was scheduled or marked as expected.
+- Completed sessions should become available to Harvest using existing workflows and permissions.
+- Avoid duplicate journey entries or duplicate harvest records when requests are retried.
+
+PART 6 — SECURITY, RELIABILITY, AND AUDIT
+
+Follow the existing application's conventions. At minimum:
+- Enforce tenant isolation on the server; do not trust a client-supplied TenantId.
+- Enforce branch, classroom, and role-based access using the existing authorization system.
+- Validate all state transitions on the server.
+- Use existing transaction, idempotency, optimistic concurrency, and audit patterns where applicable.
+- Record important actions such as session started, completed, cancelled, or corrected.
+- Avoid exposing children or family data to unauthorized users.
+- Do not introduce a new architecture or technology stack for this milestone.
+
+PART 7 — TESTS AND ACCEPTANCE CRITERIA
+
+Add or update tests using the project's existing test framework and conventions.
+
+Verify:
+1. A teacher can see the planned experiences they are authorized to access for today.
+2. A teacher can start an eligible planned experience.
+3. Starting a session preserves planned times and records actual start time.
+4. Starting the same plan repeatedly does not create duplicate active sessions.
+5. Unauthorized tenant/branch/classroom access is rejected.
+6. The session links to the correct plan, experience, classroom, teacher, tenant, and branch.
+7. Expected children are sourced using the existing enrollment/attendance rules.
+8. Expected children are not automatically treated as participants.
+9. Participation can be recorded and updated according to allowed rules.
+10. A Little Moment can be recorded using the existing observation/Child Journey flow.
+11. Journey evidence is linked to actual session/participation where the model supports it.
+12. A session can be completed only through a valid lifecycle transition.
+13. Completion records actual end time and makes the session available to Harvest & Insight.
+14. Retried operations do not create duplicate participation, journey, or harvest records.
+15. Audit, authorization, and concurrency tests follow existing patterns.
+16. Existing attendance, Experience Planning, Child Journey, and Harvest & Insight functionality continues to work.
+
+PART 8 — IMPLEMENTATION APPROACH
+
+Follow this order:
+1. Inspect the repository and identify the actual current state.
+2. Produce the implementation assessment described in Part 1.
+3. Propose the smallest safe set of changes and list affected files.
+4. Implement the domain/API/service/data changes only where required.
+5. Implement or improve the teacher-facing Today and session workflow using the existing design system.
+6. Integrate existing Child Journey and Harvest & Insight.
+7. Add automated tests.
+8. Run the relevant tests/build and report actual results. Do not claim success for checks that were not run.
+9. Summarize changed files, behavior added, gaps left, and any manual verification needed.
+
+Do not redesign completed modules. Do not replace the current UI style. Do not create a second source of truth. Do not implement Memory or Intelligence as part of this milestone unless the current requirements already include them; first make the real operational history reliable.
+
+PART 9 — QUESTIONS FOR THE AGENT TO ASK THE PROJECT OWNER
+
+After inspecting the code, ask only questions that cannot be answered from the repository and that materially affect implementation. For example:
+- Should a session be startable only by the assigned teacher, or also by authorized branch/classroom managers?
+- Can a session start if no children are marked present, or should the system warn/block?
+- Can more than one teacher lead or support the same session?
+- What is the required policy for ending a session when participation has not been recorded?
+- Are any existing Little Moments/observation fields mandatory for completion?
+
+Do not ask questions whose answers can be determined by inspecting existing code or established project conventions. If a policy is unclear, state the assumption and wait for confirmation before implementing a consequential behavior.
+
+FINAL OUTPUT REQUIRED FROM THE AGENT
+
+Return:
+1. Current-state assessment with evidence and file paths.
+2. Questions that genuinely require owner input.
+3. Proposed minimal implementation plan.
+4. Files/components to create or modify.
+5. Data model changes, if any.
+6. API/service changes, if any.
+7. UI changes, if any.
+8. Tests to add/update.
+9. Risks and assumptions.
+10. Build/test results after implementation.
+
+PRODUCT PRINCIPLE
+The teacher should feel:
+“I planned something meaningful for my children, did it with them, captured what mattered, and their story continued.”
+
+Keep EnjoyEveryday warm, simple, trustworthy, and child-centered. The system should support teachers, not create more paperwork.
