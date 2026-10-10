@@ -49,7 +49,7 @@ public class HarvestRepository : IHarvestRepository
                 (SELECT COUNT(1) FROM experience_schedules WHERE experience_id = e.id) as Uses,
                 '💬 ' || (SELECT COUNT(1) FROM experience_feedback f JOIN experience_schedules s ON f.experience_schedule_id = s.id WHERE s.experience_id = e.id) as Response
             FROM experiences e
-            WHERE e.tenant_id = @TenantId
+            WHERE e.tenant_id = @TenantId AND e.status NOT IN ('Idea', 'Draft', 'Archived')
             ORDER BY Uses DESC
             LIMIT 10";
 

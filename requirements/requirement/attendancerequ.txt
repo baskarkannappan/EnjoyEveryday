@@ -1,0 +1,353 @@
+# Google Antigravity Requirement: EnjoyEveryday Unified Attendance Management
+
+## Objective
+
+Implement a fully functional Attendance Management module in the existing EnjoyEveryday application.
+
+The module must manage both child attendance and teacher attendance and provide a consolidated management view across the following hierarchy:
+
+Organization → Branch → Classroom → Teachers and Children.
+
+## 1. Inspect Before Implementing
+
+First inspect the existing codebase, database schema, routes, services, APIs, authentication, authorization and UI components.
+
+Reuse existing Organization, Branch, Classroom, Child, Teacher, Enrollment and User entities.
+
+Check whether attendance functionality already exists before creating new entities or services.
+
+Do not duplicate existing functionality, change the established application architecture or redesign unrelated pages.
+
+Preserve the current EnjoyEveryday UI design and coding conventions.
+
+## 2. Attendance Navigation
+
+Add an Attendance navigation item under Management.
+
+Use the existing routing conventions. The main page should provide:
+
+- Organization Attendance Overview
+- Branch Attendance
+- Classroom Attendance
+- Child Attendance
+- Teacher Attendance
+- Attendance History
+
+Allow management users to navigate from organization to branch, branch to classroom, and classroom to individual children and teachers.
+
+## 3. Organization Attendance Overview
+
+Create a real-time management summary for a selected date, defaulting to today.
+
+Display:
+
+- Total children expected
+- Children present
+- Children absent
+- Children late
+- Children not yet marked
+- Children currently checked in
+- Children missing checkout
+- Total teachers expected
+- Teachers present
+- Teachers absent
+- Teachers late
+- Teachers not yet marked
+- Classrooms with incomplete attendance
+- Classrooms requiring staffing attention
+
+Display a summary for every branch with its expected children, present children, absent children, expected teachers, present teachers and attendance completion status.
+
+Provide filters for date, branch, classroom, person and attendance status.
+
+All figures must be calculated from persisted database records. Never use hard-coded dashboard values in production.
+
+When no attendance has been recorded, show "Not marked yet" instead of presenting the classroom as having zero attendance.
+
+## 4. Branch Attendance
+
+When management selects a branch, display its classrooms and their attendance summaries.
+
+Each classroom must show:
+
+- Classroom name
+- Expected children
+- Present children
+- Absent children
+- Late children
+- Unmarked children
+- Assigned teachers
+- Teachers present
+- Attendance completion status
+- Staffing exceptions
+
+Allow authorized users to open a classroom and view its individual attendance records.
+
+## 5. Classroom Attendance
+
+Create a simple, fast classroom attendance interface for busy daycare staff.
+
+Provide separate Children and Teachers sections.
+
+For each child, show:
+
+- Child name
+- Attendance status
+- Arrival time
+- Departure time
+- Notes or exception indicator
+
+For each teacher, show:
+
+- Teacher name
+- Attendance status
+- Clock-in time
+- Clock-out time
+- Notes or exception indicator
+
+Provide quick actions to mark attendance, record arrival or departure, and correct a record when authorized.
+
+Support bulk attendance marking with a review and confirmation step.
+
+Never mark everyone present automatically.
+
+Use the classroom's active enrollment records to determine expected children for the selected date. Use the existing teacher assignment and scheduling data to determine expected teachers.
+
+## 6. Child Attendance
+
+Support these statuses, reusing existing equivalents if they already exist:
+
+- NotMarked
+- Present
+- Late
+- Absent
+- Excused
+- EarlyDeparture
+
+Support recording arrival and departure times.
+
+Prevent duplicate active check-ins and invalid departure times.
+
+If an absent child subsequently arrives, allow an authorized status correction while preserving the audit history.
+
+Display children who have checked in but have not checked out.
+
+Never fabricate missing arrival or departure times.
+
+Keep historical attendance associated with the classroom in which it was recorded, even when a child subsequently transfers.
+
+## 7. Teacher Attendance
+
+Support:
+
+- NotMarked
+- Present
+- Late
+- Absent
+- Excused
+- EarlyDeparture
+
+Provide Clock In, Clock Out, Mark Present, Mark Late, Mark Absent and authorized correction actions.
+
+Use existing Teacher and User identity relationships.
+
+Prevent duplicate daily attendance records unless the application already supports multiple shifts. If shifts exist, record attendance against the appropriate work period.
+
+A teacher assignment does not mean the teacher is present.
+
+Where scheduling data is available, use it to determine expected teachers. If no schedule exists, document and implement a clear minimum rule based on active assignments and configured working days.
+
+Flag classrooms where expected teacher coverage needs review.
+
+Do not silently reassign an absent teacher.
+
+Do not implement payroll calculations in this module.
+
+## 8. Data Model and Database
+
+Inspect the existing schema before making changes.
+
+If attendance entities already exist, extend them.
+
+Otherwise, implement appropriate ChildAttendance and TeacherAttendance entities with fields such as:
+
+- AttendanceId
+- TenantId
+- BranchId
+- ClassroomId, where applicable
+- ChildId or TeacherId
+- AttendanceDate
+- Status
+- ArrivalTime or ClockInTime
+- DepartureTime or ClockOutTime
+- RecordedByUserId
+- LastModifiedByUserId
+- Notes
+- CreatedAt
+- UpdatedAt
+- Version
+
+Adapt the schema to existing conventions rather than blindly adding duplicate fields.
+
+Use foreign keys, suitable indexes, uniqueness constraints and transactions to protect data integrity.
+
+Use the existing database access pattern, including Dapper where appropriate.
+
+Do not store dashboard totals as the source of truth.
+
+## 9. Organization Roll-Up
+
+Implement server-side queries or equivalent existing operations for:
+
+- GetOrganizationAttendance(date)
+- GetBranchAttendance(branchId, date)
+- GetClassroomAttendance(classroomId, date)
+- GetChildAttendanceHistory(childId, fromDate, toDate)
+- GetTeacherAttendanceHistory(teacherId, fromDate, toDate)
+- GetAttendanceExceptions(date, branchId)
+
+Use the existing naming and service conventions.
+
+Calculate organization totals from authorized branch data, branch totals from classroom data, and classroom totals from individual records.
+
+Prevent double-counting.
+
+Define the denominator and numerator for each attendance percentage.
+
+Do not count unmarked people as absent. Do not count excused absences as present.
+
+Apply filtering and authorization in the server-side query, not only in the UI.
+
+## 10. Attendance History and Audit
+
+Provide attendance history with date-range, branch, classroom, person and status filters.
+
+Record who marked or corrected attendance and when.
+
+Preserve correction history and require a reason where appropriate.
+
+Reuse existing audit and concurrency mechanisms.
+
+Do not silently delete historical attendance or overwrite records without an authorized correction process.
+
+## 11. Authorization and Tenant Isolation
+
+Reuse existing authentication and authorization.
+
+Organization administrators may access authorized organization-wide data.
+
+Branch managers may access their assigned branches.
+
+Classroom leads and authorized teachers may record attendance for permitted classrooms.
+
+Never trust TenantId, BranchId, ClassroomId or user identity received from the browser.
+
+Derive tenant and user identity from the authenticated server-side context and validate every requested resource.
+
+Prevent users from reading or modifying another tenant's attendance.
+
+## 12. Experience Planning Integration
+
+Connect attendance to the existing Experience Planning workflow.
+
+When a teacher starts an Experience Session, show the current attendance context for the selected classroom.
+
+Distinguish:
+
+- Children enrolled in the classroom
+- Children expected for the selected date
+- Children currently present
+- Children who actually participated in the Experience Session
+
+Do not create participation records simply because a child is present.
+
+Do not modify attendance when a child participates in an experience.
+
+If the planned teacher is absent, flag the situation for authorized review.
+
+Do not automatically create, cancel or complete an Experience Session because of attendance changes.
+
+## 13. Child Journey and Harvest Integration
+
+Reuse the existing Child Journey and Harvest modules.
+
+Attendance alone is not a developmental observation.
+
+Do not automatically create Child Journey entries for attendance, absence or lateness.
+
+Use actual Experience Sessions, participation and observations for learning records.
+
+## 14. UI Requirements
+
+Follow the existing EnjoyEveryday visual design and Fluent UI conventions.
+
+Keep the interface calm, friendly, clear and responsive.
+
+Make classroom attendance quick to record.
+
+Provide clear status labels, accessible controls, empty states, loading states, save confirmation, validation messages and error recovery.
+
+Refresh relevant summaries after successful changes.
+
+Do not use color alone to communicate attendance status.
+
+## 15. Required End-to-End Tests
+
+Verify that:
+
+1. Expected children are loaded from active enrollments.
+2. Expected teachers are determined from valid assignments or schedules.
+3. Marking a child present updates classroom, branch and organization totals.
+4. Recording arrival and departure updates the child's attendance correctly.
+5. Marking a child absent does not count the child as present.
+6. Unmarked attendance remains distinct from absence.
+7. Teacher clock-in and clock-out update the correct summaries.
+8. Branch and organization totals match their underlying records.
+9. Historical attendance remains correct after a child changes classrooms.
+10. Duplicate check-ins and invalid time sequences are rejected.
+11. Corrections preserve the audit history.
+12. Unauthorized cross-tenant access is rejected.
+13. Missing teacher coverage is visible to authorized management.
+14. Experience Planning reads attendance without confusing it with enrollment or participation.
+15. Dashboard figures come from the database rather than hard-coded values.
+
+## 16. Implementation Procedure
+
+Implement in this order:
+
+1. Inspect existing entities, schema, APIs, services, authorization and UI.
+2. Produce a brief implementation map showing existing components, missing functionality and required changes.
+3. Implement or extend attendance persistence and database constraints.
+4. Implement child attendance operations.
+5. Implement teacher attendance operations.
+6. Implement the classroom attendance interface.
+7. Implement branch roll-ups.
+8. Implement the organization overview.
+9. Implement history, corrections, auditing and authorization.
+10. Connect attendance to Experience Planning.
+11. Run database, integration, authorization and end-to-end tests.
+12. Report the files changed, migrations created, tests executed and any remaining gaps.
+
+Do not stop after creating the UI. Attendance must work end-to-end with actual database records.
+
+Do not claim that functionality is complete unless the relevant tests pass.
+
+## Definition of Done
+
+Management can open one Attendance page and understand attendance across the organization.
+
+Management can drill down from organization to branch, classroom, teacher and child.
+
+Authorized staff can accurately record and correct child and teacher attendance.
+
+Every roll-up reflects the underlying database records.
+
+Historical records, tenant isolation, permissions and audit history are protected.
+
+The existing EnjoyEveryday architecture and design remain intact.
+
+## Product Principle
+
+Organization management sees the whole picture. Branch management sees its classrooms. Teachers can record attendance quickly. Every level uses the same reliable attendance records.
+
+Attendance becomes the operational foundation for safe classrooms and the future Experience Planning workflow.

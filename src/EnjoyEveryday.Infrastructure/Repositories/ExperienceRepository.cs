@@ -38,7 +38,7 @@ public class ExperienceRepository : IExperienceRepository
             FROM experiences e
             LEFT JOIN experience_schedules es ON e.id = es.experience_id
             LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
-            WHERE e.tenant_id = @TenantId
+            WHERE e.tenant_id = @TenantId AND e.status != 'Archived'
             GROUP BY e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at
             ORDER BY e.created_at DESC";
 
@@ -119,18 +119,12 @@ public class ExperienceRepository : IExperienceRepository
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
 
-        // Remove from scheduler to ensure a clean deletion
-        await connection.ExecuteAsync("DELETE FROM experience_schedules WHERE experience_id = @Id", new { Id = id });
-
-        // Remove version history
-        await connection.ExecuteAsync("DELETE FROM experience_versions WHERE experience_id = @Id", new { Id = id });
-
-        // Remove the experience itself
         const string sql = @"
-            DELETE FROM experiences
+            UPDATE experiences
+            SET status = @Status, updated_at = @UpdatedAt
             WHERE id = @Id AND tenant_id = @TenantId";
             
-        await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
+        await connection.ExecuteAsync(sql, new { Status = ExperienceStatus.Archived.ToString(), UpdatedAt = DateTimeOffset.UtcNow, Id = id, TenantId = tenantId });
     }
     
     public async Task<IEnumerable<ExperienceVersion>> GetVersionsAsync(Guid experienceId, CancellationToken cancellationToken = default)

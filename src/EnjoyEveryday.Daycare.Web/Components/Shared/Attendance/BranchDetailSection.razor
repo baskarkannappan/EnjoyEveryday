@@ -1,0 +1,218 @@
+﻿@inject NavigationManager Nav
+
+<section id="detail">
+    <div class="detailhead">
+        <button class="back" @onclick="BackToOverview">←</button>
+        <div>
+            <div class="crumb">Attendance / @BranchName @(IsRoomView ? " / Classroom" : "")</div>
+            <h1 style="font-size:27px;margin:3px 0">@(IsRoomView ? ClassroomName : BranchName + " Branch")</h1>
+            <div class="sub">@(IsRoomView ? $"Classroom attendance · {ClassroomName}" : "Attendance across classrooms, children and teachers · 2026-10-09")</div>
+        </div>
+    </div>
+    <div class="filters">
+        <input class="control" type="date" value="2026-10-09">
+        <select class="control" @bind="typeFilter" @bind:event="oninput">
+            <option value="both">Children &amp; teachers</option>
+            <option value="children">Children only</option>
+            <option value="teachers">Teachers only</option>
+        </select>
+        <input class="control search" @bind="personSearch" @bind:event="oninput" placeholder="Search people...">
+    </div>
+    <div class="stats">
+        <div class="stat"><div class="mlabel">Children present</div><div class="statnum">@Totals[0]</div><span class="pill green">Attendance</span></div>
+        <div class="stat"><div class="mlabel">Teachers present</div><div class="statnum">@Totals[1]</div><span class="pill blue">Staff</span></div>
+        <div class="stat"><div class="mlabel">Not marked</div><div class="statnum">4</div><span class="pill amber">Action needed</span></div>
+        <div class="stat"><div class="mlabel">Missing check-out</div><div class="statnum">2</div><span class="pill red">Review</span></div>
+    </div>
+    <div class="card">
+        <div class="tabs">
+            <button class="tab @(currentTab == "classrooms" ? "active" : "")" @onclick="@(() => currentTab = "classrooms")">Classrooms</button>
+            <button class="tab @(currentTab == "children" ? "active" : "")" @onclick="@(() => currentTab = "children")">Children</button>
+            <button class="tab @(currentTab == "teachers" ? "active" : "")" @onclick="@(() => currentTab = "teachers")">Teachers</button>
+        </div>
+        
+        @if (currentTab == "classrooms")
+        {
+            <div id="classPanel">
+                <div class="tablewrap">
+                    <table>
+                        <thead><tr><th>Classroom</th><th>Children present</th><th>Teachers present</th><th>Pending</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach(var c in GetClassrooms())
+                            {
+                                <tr>
+                                    <td><b>@c.Name</b></td>
+                                    <td>@c.Children</td>
+                                    <td>@c.Teachers</td>
+                                    <td>@c.Pending</td>
+                                    <td><span class="pill @(c.Status == "Marked" ? "green" : c.Status == "Staffing attention" ? "red" : "amber")">@c.Status</span></td>
+                                    <td><button class="link" @onclick="@(() => OpenClass(c.Name))">Open →</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div id="peoplePanel">
+                <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px">
+                    <select class="control" @bind="statusFilter" @bind:event="oninput">
+                        <option value="all">All statuses</option>
+                        <option>Present</option>
+                        <option>Late</option>
+                        <option>Absent</option>
+                        <option>Not marked</option>
+                    </select>
+                    <button class="btn primary" @onclick="() => ShowToast() ">Mark selected present</button>
+                    <button class="btn" @onclick="() => ShowToast() ">Save changes</button>
+                </div>
+                <div class="tablewrap">
+                    <table>
+                        <thead><tr><th><input type="checkbox" aria-label="Select all"></th><th>Person</th><th>Classroom / Role</th><th>Status</th><th>Arrival / Clock-in</th><th>Departure / Clock-out</th></tr></thead>
+                        <tbody>
+                            @foreach(var p in GetPeople())
+                            {
+                                <tr>
+                                    <td><input type="checkbox" aria-label="Select @p.Name"></td>
+                                    <td><div class="person"><span class="personicon">@p.Initials</span>@p.Name</div></td>
+                                    <td>@p.Room</td>
+                                    <td>
+                                        <select class="statusselect" @bind="p.Status" @bind:event="oninput">
+                                            <option value="Present">Present</option>
+                                            <option value="Late">Late</option>
+                                            <option value="Absent">Absent</option>
+                                            <option value="Excused">Excused</option>
+                                            <option value="Not marked">Not marked</option>
+                                        </select>
+                                    </td>
+                                    <td>@p.In</td>
+                                    <td>@p.Out</td>
+                                </tr>
+                            }
+                            @if (!GetPeople().Any())
+                            {
+                                <tr><td colspan="6">No matching records</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="note" style="margin-top:12px">Prototype only: status changes are not saved to a database.</div>
+            </div>
+        }
+    </div>
+</section>
+
+@if (showToast)
+{
+    <div id="toast" style="display:block;">Saved — prototype only.</div>
+}
+
+@code {
+    [Parameter] public string BranchName { get; set; } = "Downtown";
+    [Parameter] public string ClassroomName { get; set; } = "";
+
+    private bool IsRoomView => !string.IsNullOrEmpty(ClassroomName);
+    private string currentTab = "classrooms";
+    private string personSearch = "";
+    private string statusFilter = "all";
+    private string typeFilter = "both";
+    private bool showToast = false;
+
+    private void BackToOverview() => Nav.NavigateTo("/management/attendance");
+    private void OpenClass(string room) => Nav.NavigateTo($"/management/attendance/classrooms/{Uri.EscapeDataString(room)}?branch={Uri.EscapeDataString(BranchName)}");
+
+    protected override void OnParametersSet()
+    {
+        if (IsRoomView && currentTab == "classrooms") currentTab = "children";
+        if (string.IsNullOrEmpty(BranchName)) BranchName = "Downtown";
+    }
+
+    private async Task ShowToast()
+    {
+        showToast = true;
+        await Task.Delay(2400);
+        showToast = false;
+        StateHasChanged();
+    }
+
+    private string[] Totals => BranchName switch {
+        "Downtown" => new[] { "74 / 84", "12 / 13" },
+        "North" => new[] { "68 / 76", "11 / 12" },
+        "West" => new[] { "58 / 68", "9 / 10" },
+        "South" => new[] { "48 / 58", "10 / 11" },
+        _ => new[] { "0", "0" }
+    };
+
+    private IEnumerable<ClassRow> GetClassrooms()
+    {
+        var data = new Dictionary<string, List<ClassRow>> {
+            { "Downtown", new List<ClassRow> {
+                new() { Name="Bluebirds", Children="18 / 20", Teachers="2 / 2", Pending="0", Status="Marked" },
+                new() { Name="Butterflies", Children="14 / 18", Teachers="1 / 2", Pending="4", Status="Needs marking" },
+                new() { Name="Little Oaks", Children="22 / 24", Teachers="3 / 3", Pending="0", Status="Marked" }
+            }},
+            { "North", new List<ClassRow> {
+                new() { Name="Little Robins", Children="16 / 18", Teachers="2 / 2", Pending="2", Status="Needs marking" },
+                new() { Name="Maple Room", Children="25 / 26", Teachers="4 / 4", Pending="0", Status="Marked" },
+                new() { Name="Forest Friends", Children="27 / 32", Teachers="5 / 6", Pending="1", Status="Staffing attention" }
+            }},
+            { "West", new List<ClassRow> {
+                new() { Name="Rainbow Room", Children="16 / 18", Teachers="1 / 2", Pending="2", Status="Staffing attention" },
+                new() { Name="Sunflower Room", Children="20 / 24", Teachers="3 / 3", Pending="0", Status="Marked" },
+                new() { Name="Ocean Room", Children="22 / 26", Teachers="5 / 5", Pending="0", Status="Marked" }
+            }},
+            { "South", new List<ClassRow> {
+                new() { Name="Sunshine Room", Children="10 / 14", Teachers="2 / 2", Pending="4", Status="Needs marking" },
+                new() { Name="Garden Room", Children="18 / 20", Teachers="4 / 4", Pending="0", Status="Marked" },
+                new() { Name="Tiny Seeds", Children="20 / 24", Teachers="4 / 5", Pending="2", Status="Staffing attention" }
+            }}
+        };
+        return data.ContainsKey(BranchName) ? data[BranchName] : Enumerable.Empty<ClassRow>();
+    }
+
+    private IEnumerable<PersonRow> GetPeople()
+    {
+        if (typeFilter == "children" && currentTab == "teachers") return Enumerable.Empty<PersonRow>();
+        if (typeFilter == "teachers" && currentTab == "children") return Enumerable.Empty<PersonRow>();
+        
+        string targetType = currentTab == "teachers" ? "teachers" : "children";
+        var allPeople = new List<PersonRow>();
+
+        if (targetType == "children") {
+            allPeople.AddRange(new[] {
+                new PersonRow { Name="Aarav Patel", Initials="AP", Room="Bluebirds", Status="Present", In="08:42 AM", Out="—", Type="children" },
+                new PersonRow { Name="Mia Chen", Initials="MC", Room="Bluebirds", Status="Present", In="08:51 AM", Out="—", Type="children" },
+                new PersonRow { Name="Noah Williams", Initials="NW", Room="Butterflies", Status="Late", In="09:17 AM", Out="—", Type="children" },
+                new PersonRow { Name="Amara Singh", Initials="AS", Room="Butterflies", Status="Not marked", In="—", Out="—", Type="children" },
+                new PersonRow { Name="Leo Martin", Initials="LM", Room="Bluebirds", Status="Absent", In="—", Out="—", Type="children" },
+                new PersonRow { Name="Sofia Brown", Initials="SB", Room="Rainbow Room", Status="Present", In="08:35 AM", Out="—", Type="children" }
+            });
+        } else {
+            allPeople.AddRange(new[] {
+                new PersonRow { Name="Priya Sharma", Initials="PS", Room="Bluebirds · Lead", Status="Present", In="07:58 AM", Out="—", Type="teachers" },
+                new PersonRow { Name="Daniel Reed", Initials="DR", Room="Bluebirds · Support", Status="Present", In="08:04 AM", Out="—", Type="teachers" },
+                new PersonRow { Name="Sarah Johnson", Initials="SJ", Room="Butterflies · Lead", Status="Present", In="08:02 AM", Out="—", Type="teachers" },
+                new PersonRow { Name="Maya Thompson", Initials="MT", Room="Butterflies · Support", Status="Not marked", In="—", Out="—", Type="teachers" },
+                new PersonRow { Name="Olivia Garcia", Initials="OG", Room="Rainbow Room · Lead", Status="Absent", In="—", Out="—", Type="teachers" }
+            });
+        }
+
+        var result = allPeople.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(personSearch))
+            result = result.Where(p => (p.Name + " " + p.Room).Contains(personSearch, StringComparison.OrdinalIgnoreCase));
+        
+        if (statusFilter != "all")
+            result = result.Where(p => p.Status.Equals(statusFilter, StringComparison.OrdinalIgnoreCase));
+            
+        if (IsRoomView)
+            result = result.Where(p => p.Room.Contains(ClassroomName, StringComparison.OrdinalIgnoreCase));
+
+        return result;
+    }
+
+    public class ClassRow { public string Name { get; set; } = ""; public string Children { get; set; } = ""; public string Teachers { get; set; } = ""; public string Pending { get; set; } = ""; public string Status { get; set; } = ""; }
+    public class PersonRow { public string Name { get; set; } = ""; public string Initials { get; set; } = ""; public string Room { get; set; } = ""; public string Status { get; set; } = ""; public string In { get; set; } = ""; public string Out { get; set; } = ""; public string Type { get; set; } = ""; }
+}

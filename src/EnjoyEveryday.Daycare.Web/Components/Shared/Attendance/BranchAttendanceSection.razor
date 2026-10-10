@@ -1,0 +1,86 @@
+﻿@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+@inject AttendanceService AttendanceService
+
+<div class="card">
+    <div class="cardhead">
+        <div>
+            <h2>Attendance by branch</h2>
+            <div class="note">Select a branch to see classrooms and people</div>
+        </div>
+        <span class="pill gray">@SelectedDate.ToString("MMM d")</span>
+    </div>
+    <div class="branches" id="branches">
+        @foreach (var branch in Branches)
+        {
+            var summary = BranchSummaries.ContainsKey(branch.Id) ? BranchSummaries[branch.Id] : new BranchSummaryData();
+            <BranchCard 
+                Name="@branch.Name" 
+                SearchTerm="@($"{branch.Name} {branch.Location}".ToLower())" 
+                Icon="🌿" 
+                Address="@(branch.Location ?? "No location")" 
+                CoverageCssClass="@(summary.CoverageCssClass)" 
+                CoverageText="@(summary.CoverageText)" 
+                ChildrenPresent="@($"{summary.PresentChildren} / {summary.ExpectedChildren}")" 
+                ChildrenPercentage="@(summary.ExpectedChildren > 0 ? (summary.PresentChildren * 100 / summary.ExpectedChildren).ToString() : "0")" 
+                TeachersPresent="@($"{summary.PresentTeachers} / {summary.ExpectedTeachers}")" 
+                TeachersPercentage="@(summary.ExpectedTeachers > 0 ? (summary.PresentTeachers * 100 / summary.ExpectedTeachers).ToString() : "0")" />
+        }
+    </div>
+    @if (!Branches.Any())
+    {
+        <div class="note" style="margin-top:12px">No branches found matching the criteria.</div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public IEnumerable<Branch> Branches { get; set; } = Array.Empty<Branch>();
+
+    [Parameter]
+    public DateTime SelectedDate { get; set; } = DateTime.Today;
+
+    private Dictionary<Guid, BranchSummaryData> BranchSummaries = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        BranchSummaries.Clear();
+        foreach (var branch in Branches)
+        {
+            var childAtt = await AttendanceService.GetChildAttendanceAsync(branch.Id, SelectedDate);
+            var teacherAtt = await AttendanceService.GetTeacherAttendanceAsync(branch.Id, SelectedDate);
+
+            var bsd = new BranchSummaryData
+            {
+                ExpectedChildren = childAtt.Count(),
+                PresentChildren = childAtt.Count(x => x.Status == "Present" || x.Status == "Late"),
+                ExpectedTeachers = teacherAtt.Count(),
+                PresentTeachers = teacherAtt.Count(x => x.Status == "Present" || x.Status == "Late")
+            };
+            
+            // Dummy logic for coverage
+            if (bsd.ExpectedTeachers > 0 && bsd.PresentTeachers < bsd.ExpectedTeachers)
+            {
+                bsd.CoverageCssClass = "amber";
+                bsd.CoverageText = "Needs review";
+            }
+            else
+            {
+                bsd.CoverageCssClass = "green";
+                bsd.CoverageText = "Healthy coverage";
+            }
+
+            BranchSummaries[branch.Id] = bsd;
+        }
+    }
+
+    private class BranchSummaryData
+    {
+        public int ExpectedChildren { get; set; }
+        public int PresentChildren { get; set; }
+        public int ExpectedTeachers { get; set; }
+        public int PresentTeachers { get; set; }
+        public string CoverageCssClass { get; set; } = "gray";
+        public string CoverageText { get; set; } = "Attendance pending";
+    }
+}

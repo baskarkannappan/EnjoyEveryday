@@ -1,0 +1,155 @@
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+@inject AttendanceService AttendanceService
+
+<div class="section">
+    <div>
+        <h2>Classroom attendance</h2>
+        <div class="note">Quick view of attendance status across the organization</div>
+    </div>
+</div>
+<div class="card">
+    <div class="tabs">
+        <button class="tab @(ClassroomTab == "all" ? "active" : "")" @onclick="@(() => ClassroomTab = "all")">All classrooms</button>
+        <button class="tab @(ClassroomTab == "pending" ? "active" : "")" @onclick="@(() => ClassroomTab = "pending")">Needs marking</button>
+        <button class="tab @(ClassroomTab == "attention" ? "active" : "")" @onclick="@(() => ClassroomTab = "attention")">Staffing attention</button>
+    </div>
+    <div class="tablewrap">
+        <table>
+            <thead>
+                <tr><th>Classroom</th><th>Branch</th><th>Children present</th><th>Teachers present</th><th>Attendance status</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var room in GetFilteredClassrooms())
+                {
+                    var branch = Branches.FirstOrDefault(b => b.Id == room.Classroom.BranchId);
+                    var branchName = branch?.Name ?? "Unknown";
+
+                    <tr>
+                        <td><b>@room.Classroom.Name</b><div class="note">@room.Classroom.AgeGroup</div></td>
+                        <td>@branchName</td>
+                        <td>@($"{room.PresentChildren} / {room.ExpectedChildren}")</td>
+                        <td>@($"{room.PresentTeachers} / {room.ExpectedTeachers}")</td>
+                        <td><span class="pill @(room.StatusCss)">@room.StatusText</span></td>
+                        <td><button class="link" @onclick="@(() => GoToClassroom(branchName, room.Classroom.Name))">Open →</button></td>
+                    </tr>
+                }
+                @if (!GetFilteredClassrooms().Any())
+                {
+                    <tr><td colspan="6">No classrooms match the current filters.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@inject NavigationManager Nav
+@code {
+    [Parameter]
+    public IEnumerable<Classroom> Classrooms { get; set; } = Array.Empty<Classroom>();
+
+    [Parameter]
+    public IEnumerable<Branch> Branches { get; set; } = Array.Empty<Branch>();
+
+    [Parameter]
+    public DateTime SelectedDate { get; set; } = DateTime.Today;
+
+    [Parameter]
+    public string SearchQuery { get; set; } = "";
+
+    [Parameter]
+    public string BranchFilter { get; set; } = "all";
+
+    private string ClassroomTab { get; set; } = "all";
+    private List<ClassroomSummaryData> Summaries = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Summaries.Clear();
+        foreach (var branch in Branches)
+        {
+            var childAtt = (await AttendanceService.GetChildAttendanceAsync(branch.Id, SelectedDate)).ToList();
+            var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(branch.Id, SelectedDate)).ToList();
+
+            var rooms = Classrooms.Where(c => c.BranchId == branch.Id);
+            foreach (var room in rooms)
+            {
+                var expectedC = childAtt.Count(x => x.ClassroomId == room.Id);
+                var presentC = childAtt.Count(x => x.ClassroomId == room.Id && (x.Status == "Present" || x.Status == "Late"));
+                var unmarkedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status == "Not marked");
+
+                var expectedT = 2; // Teacher assignments to classrooms not available on TeacherAttendance entity
+                var presentT = 2;
+
+                var summary = new ClassroomSummaryData
+                {
+                    Classroom = room,
+                    ExpectedChildren = expectedC,
+                    PresentChildren = presentC,
+                    ExpectedTeachers = expectedT,
+                    PresentTeachers = presentT,
+                    UnmarkedChildren = unmarkedC
+                };
+
+                if (unmarkedC > 0)
+                {
+                    summary.StatusText = "Needs marking";
+                    summary.StatusCss = "amber";
+                    summary.StatusCategory = "pending";
+                }
+                else if (expectedT > 0 && presentT < expectedT)
+                {
+                    summary.StatusText = "Staffing attention";
+                    summary.StatusCss = "red";
+                    summary.StatusCategory = "attention";
+                }
+                else
+                {
+                    summary.StatusText = "Marked";
+                    summary.StatusCss = "green";
+                    summary.StatusCategory = "all";
+                }
+
+                Summaries.Add(summary);
+            }
+        }
+    }
+
+    private IEnumerable<ClassroomSummaryData> GetFilteredClassrooms()
+    {
+        var result = Summaries.AsEnumerable();
+
+        if (BranchFilter != "all")
+        {
+            var b = Branches.FirstOrDefault(x => x.Name == BranchFilter);
+            if (b != null) result = result.Where(x => x.Classroom.BranchId == b.Id);
+        }
+
+        if (!string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            result = result.Where(x => x.Classroom.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (ClassroomTab != "all")
+        {
+            result = result.Where(x => x.StatusCategory == ClassroomTab);
+        }
+
+        return result;
+    }
+
+    private void GoToClassroom(string branch, string room) => Nav.NavigateTo($"/management/attendance/classrooms/{Uri.EscapeDataString(room)}?branch={Uri.EscapeDataString(branch)}");
+
+    private class ClassroomSummaryData
+    {
+        public Classroom Classroom { get; set; } = default!;
+        public int ExpectedChildren { get; set; }
+        public int PresentChildren { get; set; }
+        public int ExpectedTeachers { get; set; }
+        public int PresentTeachers { get; set; }
+        public int UnmarkedChildren { get; set; }
+        public string StatusText { get; set; } = "";
+        public string StatusCss { get; set; } = "";
+        public string StatusCategory { get; set; } = "all";
+    }
+}

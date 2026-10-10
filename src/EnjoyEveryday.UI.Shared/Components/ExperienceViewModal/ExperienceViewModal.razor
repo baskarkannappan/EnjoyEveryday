@@ -115,11 +115,83 @@
                 }
             }
 
+            <hr style="margin: 2rem 0; border: none; border-top: 1px solid #e1e6e0;" />
+            
+            <div class="reviews-section" style="margin-bottom: 25px;">
+                <label style="display: block; font-size: 10px; font-weight: 800; margin-bottom: 12px; text-transform: uppercase; color: #7c877f; letter-spacing: 1px;">TEACHER REVIEWS</label>
+                
+                @if (Reviews != null && Reviews.Any())
+                {
+                    <div style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+                        @foreach (var review in Reviews)
+                        {
+                            <div style="background: #f8f9f5; border-radius: 8px; padding: 15px; border: 1px solid #e1e6e0;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <div style="font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                                        <span style="color: #b45309;">@string.Join("", Enumerable.Repeat("⭐", review.Stars))</span>
+                                        @if (!string.IsNullOrEmpty(review.Rating))
+                                        {
+                                            <span style="background: #e1e6e0; padding: 2px 8px; border-radius: 12px; font-size: 11px;">@review.Rating</span>
+                                        }
+                                    </div>
+                                    <div style="font-size: 12px; color: #7c877f;">@review.CreatedAt.ToString("MMM dd, yyyy")</div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(review.Notes))
+                                {
+                                    <div style="font-size: 14px; color: #26332d;">@review.Notes</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p style="font-size: 14px; color: #7c877f; font-style: italic; margin-bottom: 20px;">No reviews yet. Be the first to try it!</p>
+                }
+
+                @if (OnSubmitReview.HasDelegate)
+                {
+                    <div style="background: white; border: 1px solid #e1e6e0; border-radius: 12px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">Leave a Review</div>
+                        
+                        <div style="display: flex; gap: 15px; margin-bottom: 12px;">
+                            <div style="flex: 1;">
+                                <label style="display: block; font-size: 12px; color: #7c877f; margin-bottom: 4px;">Rating (Stars)</label>
+                                <select @bind="_newReviewStars" style="width: 100%; padding: 8px; border: 1px solid #e1e6e0; border-radius: 6px; font-size: 14px;">
+                                    <option value="5">5 - Excellent</option>
+                                    <option value="4">4 - Good</option>
+                                    <option value="3">3 - Okay</option>
+                                    <option value="2">2 - Needs Work</option>
+                                    <option value="1">1 - Poor</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1;">
+                                <label style="display: block; font-size: 12px; color: #7c877f; margin-bottom: 4px;">Summary (Optional)</label>
+                                <input @bind="_newReviewRating" type="text" placeholder="e.g. Loved it, Too hard" style="width: 100%; padding: 8px; border: 1px solid #e1e6e0; border-radius: 6px; font-size: 14px;" />
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-size: 12px; color: #7c877f; margin-bottom: 4px;">Comments / Adjustments made</label>
+                            <textarea @bind="_newReviewNotes" rows="2" placeholder="How did it go? Did you change anything?" style="width: 100%; padding: 8px; border: 1px solid #e1e6e0; border-radius: 6px; font-size: 14px; resize: vertical;"></textarea>
+                        </div>
+                        
+                        <div style="text-align: right;">
+                            <button @onclick="SubmitReview" style="background: #557c6c; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">Submit Review</button>
+                        </div>
+                    </div>
+                }
+            </div>
+
             <div class="modal-footer">
                 <button class="secondary" @onclick="OnClose" style="margin-right: auto;">Cancel</button>
                 @if (OnCompare.HasDelegate)
                 {
                     <button class="secondary" @onclick="OnCompare">Compare</button>
+                }
+                @if (OnDelete.HasDelegate)
+                {
+                    <button class="secondary" style="color: #d32f2f; border-color: #d32f2f;" @onclick="OnDelete">Delete</button>
                 }
                 <button class="secondary" @onclick="OnPrint">Print</button>
                 <button class="secondary" @onclick="OnDuplicate">Duplicate</button>
@@ -149,5 +221,24 @@
     [Parameter] public EventCallback OnDuplicate { get; set; }
     [Parameter] public EventCallback OnImprove { get; set; }
     [Parameter] public EventCallback OnCompare { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
     [Parameter] public EnjoyEveryday.Domain.Entities.ExecutionGuide? ExecutionGuide { get; set; }
+    
+    [Parameter] public IEnumerable<EnjoyEveryday.Domain.Entities.ExperienceFeedback>? Reviews { get; set; }
+    [Parameter] public EventCallback<(int Stars, string Rating, string Notes)> OnSubmitReview { get; set; }
+
+    private int _newReviewStars = 5;
+    private string _newReviewRating = "";
+    private string _newReviewNotes = "";
+
+    private async Task SubmitReview()
+    {
+        if (OnSubmitReview.HasDelegate)
+        {
+            await OnSubmitReview.InvokeAsync((_newReviewStars, _newReviewRating, _newReviewNotes));
+            _newReviewStars = 5;
+            _newReviewRating = "";
+            _newReviewNotes = "";
+        }
+    }
 }

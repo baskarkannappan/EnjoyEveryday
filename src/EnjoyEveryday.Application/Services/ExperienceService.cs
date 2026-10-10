@@ -1,4 +1,4 @@
-﻿using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
 
@@ -7,11 +7,13 @@ namespace EnjoyEveryday.Application.Services;
 public class ExperienceService
 {
     private readonly IExperienceRepository _experienceRepository;
+    private readonly IExperienceFeedbackRepository _feedbackRepository;
     private readonly ITenantContext _tenantContext;
 
-    public ExperienceService(IExperienceRepository experienceRepository, ITenantContext tenantContext)
+    public ExperienceService(IExperienceRepository experienceRepository, IExperienceFeedbackRepository feedbackRepository, ITenantContext tenantContext)
     {
         _experienceRepository = experienceRepository;
+        _feedbackRepository = feedbackRepository;
         _tenantContext = tenantContext;
     }
 
@@ -65,5 +67,26 @@ public class ExperienceService
     public async Task<IEnumerable<ExperienceVersion>> GetExperienceHistoryAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _experienceRepository.GetVersionsAsync(id, cancellationToken);
+    }
+
+    public async Task<IEnumerable<ExperienceFeedback>> GetFeedbackForExperienceAsync(Guid experienceId, CancellationToken cancellationToken = default)
+    {
+        return await _feedbackRepository.GetByExperienceIdAsync(_tenantContext.TenantId, experienceId, cancellationToken);
+    }
+
+    public async Task<ExperienceFeedback> LeaveFeedbackAsync(Guid experienceId, Guid teacherId, int stars, string notes, string rating = "", CancellationToken cancellationToken = default)
+    {
+        var feedback = new ExperienceFeedback
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantContext.TenantId,
+            ExperienceId = experienceId,
+            TeacherId = teacherId,
+            Stars = stars,
+            Notes = notes,
+            Rating = rating,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        return await _feedbackRepository.AddAsync(feedback, cancellationToken);
     }
 }

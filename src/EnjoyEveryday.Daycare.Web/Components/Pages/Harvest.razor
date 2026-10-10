@@ -20,13 +20,31 @@
               Subtitle="What happened matters more than simply completing the activity.">
     </PageHero>
 
-    <div style="margin-top: 16px; margin-bottom: 16px; display: flex; gap: 12px;">
-        <button class="primary" @onclick="OpenFeedbackDialog">+ Log Feedback</button>
-        <button class="secondary" @onclick="OpenMomentDialog">Log Child Moment</button>
+    <div class="action-required-panel">
+        <h3>Action Required</h3>
+        <p>You ran these experiences recently. How did they go?</p>
+        <div class="pending-actions-grid">
+            @if (_experiences.Any()) {
+                foreach(var exp in _experiences.Where(e => e.Status != "Idea" && e.Status != "Draft").Take(2)) {
+                    <button class="btn-pending primary-pending" @onclick="() => OpenFeedbackDialogFor(exp.Id.ToString())">
+                        ⭐ Rate "@exp.Title"
+                    </button>
+                }
+            }
+            <button class="btn-pending" @onclick="OpenMomentDialog">
+                📸 Log Child Moment
+            </button>
+            <button class="btn-pending" @onclick="OpenFeedbackDialog">
+                + Log Other Feedback
+            </button>
+        </div>
     </div>
 
+    <h3 class="section-title">AI Insights</h3>
     <HarvestInsightCard Title="Your daycare is learning."
                         Message="@($"{_metrics.TotalExperiences} experiences happened this month. {_metrics.TotalFeedbacks} received teacher feedback. {_metrics.PatternsDiscovered} patterns were discovered.")" />
+
+    <h3 class="section-title">Experience Performance</h3>
 
     <div class="harvest-layout">
         <ExperiencePerformanceGrid Items="@_performanceItems" OnViewClick="OnViewClick" />
@@ -120,6 +138,15 @@
         _feedbackText = string.Empty;
         _rating = "Good";
         if (_experiences.Any()) { _selectedExperienceId = _experiences.First().Id.ToString(); }
+    }
+
+    private void OpenFeedbackDialogFor(string experienceId)
+    {
+        _currentFeedbackId = null;
+        _isModalOpen = true;
+        _feedbackText = string.Empty;
+        _rating = "Good";
+        _selectedExperienceId = experienceId;
     }
 
     private async Task OpenMomentDialog()

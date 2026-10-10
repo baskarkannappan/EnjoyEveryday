@@ -6,6 +6,10 @@
         Program signals &mdash; not child scores.
     </div>
 
+    <div class="filter-controls" style="margin-bottom: 16px;">
+        <input type="text" @bind="SearchTerm" @bind:event="oninput" placeholder="Filter by name..." class="filter-input" />
+    </div>
+
     <div class="harvest-row harvest-heading">
         <span>EXPERIENCE</span>
         <span>USES</span>
@@ -13,9 +17,9 @@
         <span>INSIGHT</span>
     </div>
 
-    @if (Items != null)
+    @if (PagedItems != null)
     {
-        @foreach (var item in Items)
+        @foreach (var item in PagedItems)
         {
             <div class="harvest-row">
                 <div>
@@ -30,6 +34,15 @@
             </div>
         }
     }
+
+    @if (TotalPages > 1)
+    {
+        <div class="pagination-controls" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #edf0ed);">
+            <button class="btn-page" disabled="@(CurrentPage == 1)" @onclick="PrevPage">Previous</button>
+            <span style="font-size: 12px; color: var(--muted, #8b958f);">Page @CurrentPage of @TotalPages</span>
+            <button class="btn-page" disabled="@(CurrentPage == TotalPages)" @onclick="NextPage">Next</button>
+        </div>
+    }
 </div>
 
 @code {
@@ -38,4 +51,26 @@
 
     [Parameter]
     public EventCallback<ExperiencePerformanceItem> OnViewClick { get; set; }
+
+    private string SearchTerm { get; set; } = string.Empty;
+    private int CurrentPage { get; set; } = 1;
+    private int PageSize { get; set; } = 5;
+
+    private IEnumerable<ExperiencePerformanceItem> FilteredItems => 
+        Items?.Where(i => string.IsNullOrEmpty(SearchTerm) || i.Title.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<ExperiencePerformanceItem>();
+
+    private int TotalPages => (int)Math.Ceiling(FilteredItems.Count() / (double)PageSize);
+
+    private IEnumerable<ExperiencePerformanceItem> PagedItems => 
+        FilteredItems.Skip((CurrentPage - 1) * PageSize).Take(PageSize);
+
+    private void PrevPage()
+    {
+        if (CurrentPage > 1) CurrentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (CurrentPage < TotalPages) CurrentPage++;
+    }
 }

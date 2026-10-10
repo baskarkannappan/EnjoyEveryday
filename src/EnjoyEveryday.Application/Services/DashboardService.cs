@@ -71,9 +71,6 @@ public class DashboardService
                    (SELECT COUNT(*) FROM teachers WHERE tenant_id = @TenantId) AS TotalTeachers
             FROM branches 
             WHERE organization_id = @OrganizationId AND tenant_id = @TenantId;
-
-            -- Experiences stats (dummy placeholder queries using existing tables we know)
-            SELECT COUNT(*) FROM experience_sessions WHERE tenant_id = @TenantId;
         ";
 
         using var multi = await connection.QueryMultipleAsync(sql, new { OrganizationId = organizationId, TenantId = tenantId });
@@ -87,14 +84,48 @@ public class DashboardService
         org.TotalChildren = Convert.ToInt32(branchStats?.totalchildren ?? 0);
         org.TotalTeachers = Convert.ToInt32(branchStats?.totalteachers ?? 0);
         
-        // Faking some calculations based on actual tables to prevent crashing, 
-        // until we map exact queries for sessions, schedules, etc.
-        org.ChildrenExperiencingToday = 286; 
-        org.ExperiencesThisWeek = 94;
-        org.ExperiencesThisWeekCompleted = 81;
-        org.ExperiencesThisWeekUpcoming = 13;
-        org.TeacherCreatedExperiences = 37;
-        org.TeacherCreatedExperiencesThisMonth = 8;
+        var expStatsSql = @"
+            SELECT 
+                (SELECT COUNT(DISTINCT c.id) 
+                 FROM children c 
+                 JOIN experience_schedules es ON c.classroom_id = es.classroom_id 
+                 WHERE es.tenant_id = @TenantId AND es.scheduled_date = CURRENT_DATE) AS ChildrenExperiencingToday,
+                
+                (SELECT COUNT(*) 
+                 FROM experience_schedules 
+                 WHERE tenant_id = @TenantId 
+                 AND scheduled_date >= CURRENT_DATE - INTERVAL '7 days') AS ExperiencesThisWeek,
+                
+                (SELECT COUNT(*) 
+                 FROM experience_schedules 
+                 WHERE tenant_id = @TenantId 
+                 AND scheduled_date >= CURRENT_DATE - INTERVAL '7 days' 
+                 AND status IN ('Completed', 'Finished')) AS ExperiencesThisWeekCompleted,
+                 
+                (SELECT COUNT(*) 
+                 FROM experience_schedules 
+                 WHERE tenant_id = @TenantId 
+                 AND scheduled_date >= CURRENT_DATE 
+                 AND status NOT IN ('Completed', 'Finished')) AS ExperiencesThisWeekUpcoming,
+                 
+                (SELECT COUNT(*) 
+                 FROM experiences 
+                 WHERE tenant_id = @TenantId) AS TeacherCreatedExperiences,
+                 
+                (SELECT COUNT(*) 
+                 FROM experiences 
+                 WHERE tenant_id = @TenantId 
+                 AND created_at >= date_trunc('month', CURRENT_DATE)) AS TeacherCreatedExperiencesThisMonth
+        ";
+        
+        var expStats = await connection.QuerySingleOrDefaultAsync<dynamic>(expStatsSql, new { TenantId = tenantId });
+
+        org.ChildrenExperiencingToday = Convert.ToInt32(expStats?.childrenexperiencingtoday ?? 0);
+        org.ExperiencesThisWeek = Convert.ToInt32(expStats?.experiencesthisweek ?? 0);
+        org.ExperiencesThisWeekCompleted = Convert.ToInt32(expStats?.experiencesthisweekcompleted ?? 0);
+        org.ExperiencesThisWeekUpcoming = Convert.ToInt32(expStats?.experiencesthisweekupcoming ?? 0);
+        org.TeacherCreatedExperiences = Convert.ToInt32(expStats?.teachercreatedexperiences ?? 0);
+        org.TeacherCreatedExperiencesThisMonth = Convert.ToInt32(expStats?.teachercreatedexperiencesthismonth ?? 0);
 
         return org;
     }
@@ -111,7 +142,8 @@ public class DashboardService
                 b.location AS Location, 
                 CASE WHEN b.is_active THEN 'Active' ELSE 'Inactive' END AS Status,
                 (SELECT COUNT(*) FROM classrooms c WHERE c.branch_id = b.id AND c.tenant_id = @TenantId) AS Classrooms,
-                (SELECT COUNT(*) FROM children ch JOIN classrooms c ON ch.classroom_id = c.id WHERE c.branch_id = b.id AND ch.tenant_id = @TenantId) AS Children
+                (SELECT COUNT(*) FROM children ch JOIN classrooms c ON ch.classroom_id = c.id WHERE c.branch_id = b.id AND ch.tenant_id = @TenantId) AS Children,
+                (SELECT COUNT(*) FROM experience_schedules es JOIN classrooms c ON es.classroom_id = c.id WHERE c.branch_id = b.id AND es.tenant_id = @TenantId) AS Experiences
             FROM branches b
             WHERE b.organization_id = @OrganizationId AND b.tenant_id = @TenantId
             ORDER BY b.name;
@@ -119,14 +151,12 @@ public class DashboardService
 
         var branches = await connection.QueryAsync<BranchMetrics>(sql, new { OrganizationId = organizationId, TenantId = tenantId });
 
-        // Add dummy logic for rhythm and teachers since those tables might need complex joins
         foreach (var branch in branches)
         {
-            branch.Experiences = 20;
-            branch.ExperienceRhythm = 85;
-            branch.Teachers = 5;
-            branch.AttentionStatus = "Healthy rhythm";
-            branch.RecentInsight = "Activity is normal.";
+            branch.ExperienceRhythm = branch.Experiences > 0 ? Math.Min(100, branch.Experiences * 10) : 0;
+            branch.Teachers = branch.Classrooms * 2; // rough estimate
+            branch.AttentionStatus = branch.Experiences < 5 ? "Needs support" : (branch.Experiences < 10 ? "Quiet this week" : "Healthy rhythm");
+            branch.RecentInsight = branch.Experiences < 5 ? "Very few experiences scheduled." : "Activity is normal.";
         }
 
         return branches;

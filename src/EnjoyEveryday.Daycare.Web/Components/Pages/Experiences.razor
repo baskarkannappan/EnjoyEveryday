@@ -80,6 +80,8 @@
                     Duration="15 min" 
                     Setting="Indoor" 
                     Uses="1" 
+                    Stars="@(_ratings.ContainsKey(exp.Id) ? _ratings[exp.Id].Stars : 0)"
+                    ReviewsCount="@(_ratings.ContainsKey(exp.Id) ? _ratings[exp.Id].Count : 0)"
                     Version="v1" 
                     CreatedBy="Teacher"
                     CreatedDate="@exp.CreatedAt.ToString("MMM dd, yyyy")"
@@ -117,7 +119,10 @@
     OnPrint="PrintExperience"
     OnDuplicate="DuplicateExperience"
     OnImprove="ImproveExperience"
-    OnCompare="OpenHistoryDialog" />
+    OnCompare="OpenHistoryDialog"
+    OnDelete="DeleteExperienceAsync"
+    Reviews="@_currentReviews"
+    OnSubmitReview="HandleSubmitReview" />
 
 @if (!_hideHistoryDialog)
 {
@@ -325,8 +330,9 @@
     
     private bool _isModalOpen = false;
     private bool _isViewModalOpen = false;
+    private IEnumerable<ExperienceFeedback>? _currentReviews;
 
-    private void OpenViewExperienceModal(Experience exp)
+    private async Task OpenViewExperienceModal(Experience exp)
     {
         _currentExperience = exp;
         _parsedDna = new ExperienceDna();
@@ -338,7 +344,17 @@
             }
             catch { }
         }
+        
+        _currentReviews = await ExperienceService.GetFeedbackForExperienceAsync(exp.Id);
+        
         _isViewModalOpen = true;
+    }
+
+    private async Task HandleSubmitReview((int Stars, string Rating, string Notes) review)
+    {
+        await ExperienceService.LeaveFeedbackAsync(_currentExperience.Id, _defaultUserId, review.Stars, review.Notes, review.Rating);
+        _currentReviews = await ExperienceService.GetFeedbackForExperienceAsync(_currentExperience.Id);
+        await LoadExperiencesAsync(); // update card aggregation
     }
 
     private async Task DuplicateExperience()
@@ -438,9 +454,21 @@
         }
     }
 
+    private Dictionary<Guid, (double Stars, int Count)> _ratings = new();
+
     private async Task LoadExperiencesAsync()
     {
         _experiences = await ExperienceService.GetExperiencesAsync();
+        _ratings.Clear();
+        foreach (var exp in _experiences)
+        {
+            var feedbacks = await ExperienceService.GetFeedbackForExperienceAsync(exp.Id);
+            if (feedbacks.Any())
+            {
+                var avg = feedbacks.Average(f => f.Stars);
+                _ratings[exp.Id] = (avg, feedbacks.Count());
+            }
+        }
     }
 
     private async Task InsertSampleDataAsync()
@@ -527,6 +555,7 @@
             await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);
             await LoadExperiencesAsync();
             CloseDialog();
+            CloseViewDialog();
         }
     }
 }

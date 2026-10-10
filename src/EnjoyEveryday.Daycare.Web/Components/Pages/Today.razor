@@ -201,64 +201,66 @@
 
                         </div>
 
-                        <button class="ai-action" onclick="showModal('AI Insight')">
+                        <a class="ai-action" href="/intelligence" style="text-decoration:none; color:inherit; text-align:center; display:block;">
                             Explore the insight
-                        </button>
+                        </a>
 
                     </div>
 
 
-                    <!-- LITTLE MOMENTS -->
+                        <div class="section-card">
 
-                    <div class="section-card">
+                            <div class="section-header">
+                                <h2>Little moments</h2>
+                                <span>Today</span>
+                            </div>
 
-                        <div class="section-header">
-                            <h2>Little moments</h2>
-                            <span>Today</span>
+                            @if (_recentMemories.Any())
+                            {
+                                foreach (var memory in _recentMemories)
+                                {
+                                    <div class="moment">
+                                        <div class="moment-name">
+                                            @memory.MomentName
+                                        </div>
+                                        <div class="moment-text">
+                                            “@memory.MomentText”
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="moment">
+                                    <div class="moment-name">
+                                        BLUEBIRDS • Priya
+                                    </div>
+                                    <div class="moment-text">
+                                        “Aarav rebuilt the bridge after it fell
+                                        instead of asking for help.”
+                                    </div>
+                                </div>
+                                <div class="moment">
+                                    <div class="moment-name">
+                                        SUNFLOWERS • Meena
+                                    </div>
+                                    <div class="moment-text">
+                                        “Maya decided the garden needed a hospital
+                                        for injured butterflies.”
+                                    </div>
+                                </div>
+                                <div class="moment">
+                                    <div class="moment-name">
+                                        BUTTERFLIES • Anitha
+                                    </div>
+                                    <div class="moment-text">
+                                        “The children turned the whole room into
+                                        a jungle.”
+                                    </div>
+                                </div>
+                            }
+
                         </div>
-
-                        <div class="moment">
-
-                            <div class="moment-name">
-                                BLUEBIRDS • Priya
-                            </div>
-
-                            <div class="moment-text">
-                                “Aarav rebuilt the bridge after it fell
-                                instead of asking for help.”
-                            </div>
-
-                        </div>
-
-
-                        <div class="moment">
-
-                            <div class="moment-name">
-                                SUNFLOWERS • Meena
-                            </div>
-
-                            <div class="moment-text">
-                                “Maya decided the garden needed a hospital
-                                for injured butterflies.”
-                            </div>
-
-                        </div>
-
-
-                        <div class="moment">
-
-                            <div class="moment-name">
-                                BUTTERFLIES • Anitha
-                            </div>
-
-                            <div class="moment-text">
-                                “The children turned the whole room into
-                                a jungle.”
-                            </div>
-
-                        </div>
-
-                    </div>
 
 
                     <!-- ATTENTION -->
@@ -312,29 +314,29 @@
 
                         <div class="quick-actions">
 
-                            <button class="quick" onclick="openPage('experiences', null)">
+                            <a class="quick" href="/studio" style="text-decoration:none; color:inherit; text-align:left; display:block;">
                                 <div class="quick-icon">✦</div>
                                 <strong>Create experience</strong>
                                 <small>Make something new</small>
-                            </button>
+                            </a>
 
-                            <button class="quick" onclick="openPage('calendar', null)">
+                            <a class="quick" href="/planning" style="text-decoration:none; color:inherit; text-align:left; display:block;">
                                 <div class="quick-icon">□</div>
                                 <strong>Plan the month</strong>
                                 <small>View experience calendar</small>
-                            </button>
+                            </a>
 
-                            <button class="quick" onclick="openPage('classrooms', null)">
+                            <a class="quick" href="/classrooms" style="text-decoration:none; color:inherit; text-align:left; display:block;">
                                 <div class="quick-icon">◫</div>
                                 <strong>View classrooms</strong>
                                 <small>See today's rhythm</small>
-                            </button>
+                            </a>
 
-                            <button class="quick" onclick="showModal('AI Help')">
+                            <a class="quick" href="/intelligence" style="text-decoration:none; color:inherit; text-align:left; display:block;">
                                 <div class="quick-icon">♡</div>
                                 <strong>Ask AI</strong>
                                 <small>Help me think</small>
-                            </button>
+                            </a>
 
                         </div>
 
@@ -757,7 +759,26 @@
                 _classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
             }
         }
+        
+        var momentsSql = @"
+            SELECT 
+                UPPER(cl.name) || ' • ' || u.first_name as MomentName,
+                cs.content as MomentText
+            FROM child_stories cs
+            JOIN children c ON cs.child_id = c.id
+            JOIN classrooms cl ON c.classroom_id = cl.id
+            JOIN users u ON cs.teacher_id = u.id
+            WHERE cs.tenant_id = @TenantId
+            ORDER BY cs.created_at DESC
+            LIMIT 3
+        ";
+        try {
+            var tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001"); // using same mock tenant as others
+            _recentMemories = (await connection.QueryAsync<dynamic>(momentsSql, new { TenantId = tenantId })).ToList();
+        } catch { }
     }
+
+    private List<dynamic> _recentMemories = new();
 
     private bool _isSessionModalOpen = false;
     private Guid _activeSessionScheduleId;

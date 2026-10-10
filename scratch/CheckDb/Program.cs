@@ -11,14 +11,14 @@ public class Program
         using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
-        try 
-        {
-            await connection.ExecuteAsync("ALTER TABLE experience_feedback ADD COLUMN IF NOT EXISTS stars INT NOT NULL DEFAULT 5;");
-            Console.WriteLine("Successfully added stars column.");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
-        }
+        var sql = @"
+            UPDATE experience_feedback f
+            SET experience_id = s.experience_id
+            FROM experience_schedules s
+            WHERE f.experience_schedule_id = s.id AND f.experience_id IS NULL;
+        ";
+        
+        var rows = await connection.ExecuteAsync(sql);
+        Console.WriteLine($"Updated {rows} feedback rows.");
     }
 }

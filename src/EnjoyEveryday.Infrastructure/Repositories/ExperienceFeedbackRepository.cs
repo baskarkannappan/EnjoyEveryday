@@ -18,7 +18,7 @@ public class ExperienceFeedbackRepository : IExperienceFeedbackRepository
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
         var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId,
+            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
                    teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
             FROM experience_feedback
             WHERE id = @Id AND tenant_id = @TenantId";
@@ -29,7 +29,7 @@ public class ExperienceFeedbackRepository : IExperienceFeedbackRepository
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
         var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId,
+            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
                    teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
             FROM experience_feedback
             WHERE experience_schedule_id = @ScheduleId AND tenant_id = @TenantId
@@ -37,12 +37,24 @@ public class ExperienceFeedbackRepository : IExperienceFeedbackRepository
         return await connection.QueryAsync<ExperienceFeedback>(sql, new { ScheduleId = scheduleId, TenantId = tenantId });
     }
 
+    public async Task<IEnumerable<ExperienceFeedback>> GetByExperienceIdAsync(Guid tenantId, Guid experienceId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+        var sql = @"
+            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
+                   teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
+            FROM experience_feedback
+            WHERE experience_id = @ExperienceId AND tenant_id = @TenantId
+            ORDER BY created_at DESC";
+        return await connection.QueryAsync<ExperienceFeedback>(sql, new { ExperienceId = experienceId, TenantId = tenantId });
+    }
+
     public async Task<ExperienceFeedback> AddAsync(ExperienceFeedback feedback, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
         var sql = @"
-            INSERT INTO experience_feedback (id, tenant_id, experience_schedule_id, teacher_id, stars, rating, notes, created_at)
-            VALUES (@Id, @TenantId, @ExperienceScheduleId, @TeacherId, @Stars, @Rating, @Notes, @CreatedAt)";
+            INSERT INTO experience_feedback (id, tenant_id, experience_schedule_id, experience_id, teacher_id, stars, rating, notes, created_at)
+            VALUES (@Id, @TenantId, @ExperienceScheduleId, @ExperienceId, @TeacherId, @Stars, @Rating, @Notes, @CreatedAt)";
         
         await connection.ExecuteAsync(sql, feedback);
         return feedback;
@@ -52,7 +64,7 @@ public class ExperienceFeedbackRepository : IExperienceFeedbackRepository
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
         var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId,
+            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
                    teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
             FROM experience_feedback
             WHERE tenant_id = @TenantId
