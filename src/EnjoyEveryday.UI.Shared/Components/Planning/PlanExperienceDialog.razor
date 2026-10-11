@@ -30,7 +30,7 @@
                 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Experience</label>
-                    <select @bind="_experienceId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                    <select @bind="_experienceId" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
                         <option value="">Select an Experience...</option>
                         @foreach (var exp in _experiences)
                         {
@@ -41,7 +41,7 @@
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Branch</label>
-                    <select @bind="BranchId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                    <select @bind="BranchId" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
                         @if (!_branches.Any())
                         {
                             <option value="">Default Branch</option>
@@ -59,7 +59,7 @@
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Classroom</label>
-                    <select @bind="ClassroomId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_branchId == null && _branches.Any())">
+                    <select @bind="ClassroomId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_isReadOnly || (_branchId == null && _branches.Any()))">
                         <option value="">Select a Classroom...</option>
                         @foreach (var c in _classrooms.Where(c => _branchId == null || c.BranchId == _branchId))
                         {
@@ -70,7 +70,7 @@
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Primary Teacher</label>
-                    <select @bind="_teacherId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(!_classroomId.HasValue)">
+                    <select @bind="_teacherId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_isReadOnly || !_classroomId.HasValue)">
                         <option value="">Select a Teacher...</option>
                         @foreach (var t in GetFilteredTeachers())
                         {
@@ -82,11 +82,11 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Date</label>
-                        <input type="date" @bind="_date" @bind:format="yyyy-MM-dd" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <input type="date" @bind="_date" @bind:format="yyyy-MM-dd" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Time of Day Category</label>
-                        <select @bind="_timeOfDay" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                        <select @bind="_timeOfDay" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
                             <option value="Morning">Morning</option>
                             <option value="Mid-Day">Mid-Day</option>
                             <option value="Afternoon">Afternoon</option>
@@ -97,30 +97,33 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Start Time (Optional)</label>
-                        <input type="time" @bind="_startTime" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <input type="time" @bind="_startTime" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">End Time (Optional)</label>
-                        <input type="time" @bind="_endTime" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <input type="time" @bind="_endTime" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
                     </div>
                 </div>
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Preparation Notes</label>
-                    <textarea @bind="_notes" rows="3" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px; resize: vertical;"></textarea>
+                    <textarea @bind="_notes" disabled="@_isReadOnly" rows="3" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px; resize: vertical;"></textarea>
                 </div>
 
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e6e0;">
-                @if (ScheduleId.HasValue)
+                @if (ScheduleId.HasValue && !_isReadOnly)
                 {
                     <button class="secondary" @onclick="Delete" style="padding: 10px 20px; border: 1px solid #ffcdd2; background: #fff0f0; color: #d32f2f; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: auto;">Delete Plan</button>
                 }
-                <button class="secondary" @onclick="Close" style="padding: 10px 20px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Cancel</button>
-                <button class="primary" @onclick="Save" disabled="@_isSaving" style="padding: 10px 20px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                    @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
-                </button>
+                <button class="secondary" @onclick="Close" style="padding: 10px 20px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Close</button>
+                @if (!_isReadOnly)
+                {
+                    <button class="primary" @onclick="Save" disabled="@_isSaving" style="padding: 10px 20px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
+                    </button>
+                }
             </div>
             
         </div>
@@ -165,6 +168,7 @@
 
     private string _errorMessage = "";
     private bool _isSaving = false;
+    private bool _isReadOnly = false;
 
     private Guid? BranchId
     {
@@ -234,6 +238,8 @@
                 _startTime = s.PlannedStartTime.HasValue ? DateTime.Today.Add(s.PlannedStartTime.Value) : null;
                 _endTime = s.PlannedEndTime.HasValue ? DateTime.Today.Add(s.PlannedEndTime.Value) : null;
                 _notes = s.PreparationNotes ?? "";
+                
+                _isReadOnly = s.Status == "Completed" || (s.ScheduledDate < DateOnly.FromDateTime(DateTime.Today) && s.Status != "Started" && s.Status != "Active");
             }
         }
         else
@@ -248,6 +254,7 @@
             _startTime = null;
             _endTime = null;
             _notes = "";
+            _isReadOnly = false;
         }
         
         IsOpen = true;
@@ -295,6 +302,22 @@
         {
             TimeSpan? startTs = _startTime.HasValue ? _startTime.Value.TimeOfDay : null;
             TimeSpan? endTs = _endTime.HasValue ? _endTime.Value.TimeOfDay : null;
+            
+            if (startTs.HasValue && (startTs.Value.Hours < 8 || startTs.Value.Hours >= 17)) {
+                _errorMessage = "Start time must be between 8:00 AM and 5:00 PM.";
+                _isSaving = false;
+                return;
+            }
+            if (endTs.HasValue && (endTs.Value.Hours < 8 || endTs.Value.Hours >= 17 || (endTs.Value.Hours == 17 && endTs.Value.Minutes > 0))) {
+                _errorMessage = "End time must be between 8:00 AM and 5:00 PM.";
+                _isSaving = false;
+                return;
+            }
+            if (startTs.HasValue && endTs.HasValue && startTs.Value >= endTs.Value) {
+                _errorMessage = "Start time must be before end time.";
+                _isSaving = false;
+                return;
+            }
 
             if (ScheduleId.HasValue)
             {

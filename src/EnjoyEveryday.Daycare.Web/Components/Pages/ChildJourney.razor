@@ -113,15 +113,17 @@
                     @foreach (var entry in _entries)
                     {
                         var entryTags = GetTagsForEntry(entry.Id);
+                        var entryPhotos = GetPhotosForEntry(entry.Id);
                         
                         <JourneyTimelineCard 
-                            DateString="@entry.ObservationDate.ToString("MMM dd")" 
+                            DateString="@entry.ObservationDate.ToLocalTime().ToString("MMM dd")" 
                             Type="@entry.JourneyType" 
                             Title="@(entry.ExperienceId.HasValue ? ("Experience: " + (!string.IsNullOrEmpty(entry.Title) ? entry.Title : (_experienceTitles.ContainsKey(entry.ExperienceId.Value) ? _experienceTitles[entry.ExperienceId.Value] : "Teacher Observation"))) : (string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title))" 
-                            Time="@entry.ObservationDate.ToString("t")"
+                            Time="@entry.ObservationDate.ToLocalTime().ToString("t")"
                             Description="@entry.Observation"
                             Quote="@entry.ChildVoice" 
                             Tags="@entryTags"
+                            Photos="@entryPhotos"
                             OnDelete="() => DeleteEntry(entry.Id)" />
                     }
                 }
@@ -215,6 +217,7 @@
     private List<ChildJourneyEntry>? _allEntries;
     private List<ChildJourneyEntry>? _entries;
     private Dictionary<Guid, List<DevelopmentArea>> _entryAreas = new();
+    private Dictionary<Guid, List<ChildJourneyEvidence>> _entryEvidences = new();
     private Dictionary<Guid, string> _experienceTitles = new();
     
     private Dictionary<Guid, Branch> _branches = new();
@@ -312,11 +315,15 @@
         var areaDict = allAreas.ToDictionary(a => a.Id);
         
         _entryAreas.Clear();
+        _entryEvidences.Clear();
         foreach (var entry in _allEntries)
         {
             var areaIds = await JourneyService.GetDevelopmentAreasForEntryAsync(entry.Id);
             var areas = areaIds.Where(areaDict.ContainsKey).Select(id => areaDict[id]).ToList();
             _entryAreas[entry.Id] = areas;
+
+            var evidences = await JourneyService.GetEvidenceForJourneyEntryAsync(entry.Id);
+            _entryEvidences[entry.Id] = evidences.ToList();
         }
         
         var allExperiences = await ExperienceService.GetExperiencesAsync();
@@ -417,6 +424,17 @@
         return new List<string>();
     }
 
+    private List<string> GetPhotosForEntry(Guid entryId)
+    {
+        if (_entryEvidences.TryGetValue(entryId, out var evidences))
+        {
+            return evidences.Where(e => e.EvidenceType == "Photo" && !string.IsNullOrEmpty(e.TextContent))
+                            .Select(e => e.TextContent!)
+                            .ToList();
+        }
+        return new List<string>();
+    }
+
     private void SetFilter(string filter)
     {
         _currentFilter = filter;
@@ -437,7 +455,7 @@
         
         if (_selectedDate.HasValue)
         {
-            filtered = filtered.Where(e => e.ObservationDate.Date == _selectedDate.Value.Date);
+            filtered = filtered.Where(e => e.ObservationDate.ToLocalTime().Date == _selectedDate.Value.Date);
         }
 
         if (_currentFilter == "Discovery")

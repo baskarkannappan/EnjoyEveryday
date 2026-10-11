@@ -10,6 +10,7 @@
 @inject ExperienceService ExperienceService
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
+@inject TimeProvider TimeProvider
 
 @* <PageTopbar Breadcrumb="Little Stars · Bluebirds · Age 3-4" Title="Experience Planning">
     <RightContent>
@@ -94,16 +95,19 @@
                     var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
                     var dailySchedules = _schedules.Where(s => s.ScheduledDate == currentDate).OrderBy(s => s.TimeOfDay).ToList();
                     <div class="day">
-                        <div class="day-number @(currentDate == DateOnly.FromDateTime(DateTime.Today) ? "today" : "")">
+                        <div class="day-number @(currentDate == DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date) ? "today" : "")">
                             @iterDay
-                            <button class="add-plan-btn" @onclick='() => OpenPlanWizardForDate(currentDate)'>+</button>
+                            @if (currentDate >= DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date))
+                            {
+                                <button class="add-plan-btn" @onclick='() => OpenPlanWizardForDate(currentDate)'>+</button>
+                            }
                         </div>
                         @foreach (var schedule in dailySchedules)
                         {
                             var experience = _experiences.ContainsKey(schedule.ExperienceId) ? _experiences[schedule.ExperienceId] : null;
                             if (experience != null)
                             {
-                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "")" style="cursor: pointer;" @onclick="() => EditSchedule(schedule)">
+                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "") @(schedule.Status == "Completed" || schedule.Status == "Closed" ? "completed" : "")" style="cursor: pointer;" @onclick="() => EditSchedule(schedule)">
                                     <strong>@experience.Title</strong>
                                     <span>
                                         @GetExperienceType(experience) &middot; @schedule.TimeOfDay
@@ -218,7 +222,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var today = DateTime.Today;
+        var today = TimeProvider.GetLocalNow().Date;
         _currentDate = new DateTime(today.Year, today.Month, 1);
 
         var orgs = await OrganizationService.GetOrganizationsAsync();

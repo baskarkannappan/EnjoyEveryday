@@ -1,5 +1,13 @@
-﻿@inject NavigationManager Nav
-
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject OrganizationService OrganizationService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject ChildService ChildService
+@inject UserService UserService
+@inject AttendanceService AttendanceService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager Nav
 <section id="detail">
     <div class="detailhead">
         <button class="back" @onclick="BackToOverview">←</button>
@@ -98,7 +106,7 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="note" style="margin-top:12px">Prototype only: status changes are not saved to a database.</div>
+                <div class="note" style="margin-top:12px; color: var(--green);">Changes will now be saved securely to the database.</div>
             </div>
         }
     </div>
@@ -106,7 +114,7 @@
 
 @if (showToast)
 {
-    <div id="toast" style="display:block;">Saved — prototype only.</div>
+    <div id="toast" style="display:block;">Saved attendance changes to database.</div>
 }
 
 @code {
@@ -120,86 +128,93 @@
     private string typeFilter = "both";
     private bool showToast = false;
 
+    private Guid _branchId;
+    private List<ClassRow> _classRows = new();
+    private List<PersonRow> _personRows = new();
+    private DateTime _filterDate = DateTime.Today;
+
     private void BackToOverview() => Nav.NavigateTo("/management/attendance");
     private void OpenClass(string room) => Nav.NavigateTo($"/management/attendance/classrooms/{Uri.EscapeDataString(room)}?branch={Uri.EscapeDataString(BranchName)}");
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (IsRoomView && currentTab == "classrooms") currentTab = "children";
         if (string.IsNullOrEmpty(BranchName)) BranchName = "Downtown";
+        await LoadDataAsync();
     }
 
-    private async Task ShowToast()
+    private async Task LoadDataAsync()
     {
-        showToast = true;
-        await Task.Delay(2400);
-        showToast = false;
-        StateHasChanged();
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org == null) return;
+        
+        var branches = await BranchService.GetBranchesAsync(org.Id);
+        var branch = branches.FirstOrDefault(b => b.Name.Contains(BranchName, StringComparison.OrdinalIgnoreCase));
+        if (branch == null) return;
+        _branchId = branch.Id;
+
+        var classrooms = (await ClassroomService.GetClassroomsAsync(_branchId)).ToList();
+        var allChildren = (await ChildService.GetChildrenAsync()).ToList(); 
+        var allTeachers = (await UserService.GetTeachersAsync()).ToList();
+
+        var childAtt = (await AttendanceService.GetChildAttendanceAsync(_branchId, _filterDate)).ToList();
+        var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(_branchId, _filterDate)).ToList();
+
+        _classRows = classrooms.Select(c => new ClassRow {
+            Name = c.Name,
+            Children = $"{childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Present")} / {allChildren.Count(ch => ch.ClassroomId == c.Id)}",
+            Teachers = "Staffing",
+            Pending = childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked").ToString(),
+            Status = "Active"
+        }).ToList();
+
+        _personRows.Clear();
+        foreach(var child in allChildren)
+        {
+            var cr = classrooms.FirstOrDefault(c => c.Id == child.ClassroomId);
+            var att = childAtt.FirstOrDefault(a => a.ChildId == child.Id);
+            _personRows.Add(new PersonRow {
+                Id = child.Id,
+                Name = $"{child.FirstName} {child.LastName}",
+                Initials = $"{child.FirstName.FirstOrDefault()}{child.LastName.FirstOrDefault()}",
+                Room = cr?.Name ?? "Unknown",
+                ClassroomId = cr?.Id ?? Guid.Empty,
+                Status = att?.Status ?? "Not marked",
+                In = att?.ArrivalTime?.ToString(@"hh\:mm") ?? "—",
+                Out = att?.DepartureTime?.ToString(@"hh\:mm") ?? "—",
+                Type = "children",
+                AttendanceId = att?.Id
+            });
+        }
+        
+        foreach(var teacher in allTeachers)
+        {
+            var att = teacherAtt.FirstOrDefault(a => a.TeacherId == teacher.Id);
+            _personRows.Add(new PersonRow {
+                Id = teacher.Id,
+                Name = $"{teacher.FirstName} {teacher.LastName}",
+                Initials = $"{teacher.FirstName.FirstOrDefault()}{teacher.LastName.FirstOrDefault()}",
+                Room = "Teacher",
+                Status = att?.Status ?? "Not marked",
+                In = att?.ClockInTime?.ToString(@"hh\:mm") ?? "—",
+                Out = att?.ClockOutTime?.ToString(@"hh\:mm") ?? "—",
+                Type = "teachers",
+                AttendanceId = att?.Id
+            });
+        }
     }
 
-    private string[] Totals => BranchName switch {
-        "Downtown" => new[] { "74 / 84", "12 / 13" },
-        "North" => new[] { "68 / 76", "11 / 12" },
-        "West" => new[] { "58 / 68", "9 / 10" },
-        "South" => new[] { "48 / 58", "10 / 11" },
-        _ => new[] { "0", "0" }
-    };
-
-    private IEnumerable<ClassRow> GetClassrooms()
-    {
-        var data = new Dictionary<string, List<ClassRow>> {
-            { "Downtown", new List<ClassRow> {
-                new() { Name="Bluebirds", Children="18 / 20", Teachers="2 / 2", Pending="0", Status="Marked" },
-                new() { Name="Butterflies", Children="14 / 18", Teachers="1 / 2", Pending="4", Status="Needs marking" },
-                new() { Name="Little Oaks", Children="22 / 24", Teachers="3 / 3", Pending="0", Status="Marked" }
-            }},
-            { "North", new List<ClassRow> {
-                new() { Name="Little Robins", Children="16 / 18", Teachers="2 / 2", Pending="2", Status="Needs marking" },
-                new() { Name="Maple Room", Children="25 / 26", Teachers="4 / 4", Pending="0", Status="Marked" },
-                new() { Name="Forest Friends", Children="27 / 32", Teachers="5 / 6", Pending="1", Status="Staffing attention" }
-            }},
-            { "West", new List<ClassRow> {
-                new() { Name="Rainbow Room", Children="16 / 18", Teachers="1 / 2", Pending="2", Status="Staffing attention" },
-                new() { Name="Sunflower Room", Children="20 / 24", Teachers="3 / 3", Pending="0", Status="Marked" },
-                new() { Name="Ocean Room", Children="22 / 26", Teachers="5 / 5", Pending="0", Status="Marked" }
-            }},
-            { "South", new List<ClassRow> {
-                new() { Name="Sunshine Room", Children="10 / 14", Teachers="2 / 2", Pending="4", Status="Needs marking" },
-                new() { Name="Garden Room", Children="18 / 20", Teachers="4 / 4", Pending="0", Status="Marked" },
-                new() { Name="Tiny Seeds", Children="20 / 24", Teachers="4 / 5", Pending="2", Status="Staffing attention" }
-            }}
-        };
-        return data.ContainsKey(BranchName) ? data[BranchName] : Enumerable.Empty<ClassRow>();
-    }
+    private IEnumerable<ClassRow> GetClassrooms() => _classRows;
 
     private IEnumerable<PersonRow> GetPeople()
     {
+        var result = _personRows.AsEnumerable();
         if (typeFilter == "children" && currentTab == "teachers") return Enumerable.Empty<PersonRow>();
         if (typeFilter == "teachers" && currentTab == "children") return Enumerable.Empty<PersonRow>();
         
         string targetType = currentTab == "teachers" ? "teachers" : "children";
-        var allPeople = new List<PersonRow>();
-
-        if (targetType == "children") {
-            allPeople.AddRange(new[] {
-                new PersonRow { Name="Aarav Patel", Initials="AP", Room="Bluebirds", Status="Present", In="08:42 AM", Out="—", Type="children" },
-                new PersonRow { Name="Mia Chen", Initials="MC", Room="Bluebirds", Status="Present", In="08:51 AM", Out="—", Type="children" },
-                new PersonRow { Name="Noah Williams", Initials="NW", Room="Butterflies", Status="Late", In="09:17 AM", Out="—", Type="children" },
-                new PersonRow { Name="Amara Singh", Initials="AS", Room="Butterflies", Status="Not marked", In="—", Out="—", Type="children" },
-                new PersonRow { Name="Leo Martin", Initials="LM", Room="Bluebirds", Status="Absent", In="—", Out="—", Type="children" },
-                new PersonRow { Name="Sofia Brown", Initials="SB", Room="Rainbow Room", Status="Present", In="08:35 AM", Out="—", Type="children" }
-            });
-        } else {
-            allPeople.AddRange(new[] {
-                new PersonRow { Name="Priya Sharma", Initials="PS", Room="Bluebirds · Lead", Status="Present", In="07:58 AM", Out="—", Type="teachers" },
-                new PersonRow { Name="Daniel Reed", Initials="DR", Room="Bluebirds · Support", Status="Present", In="08:04 AM", Out="—", Type="teachers" },
-                new PersonRow { Name="Sarah Johnson", Initials="SJ", Room="Butterflies · Lead", Status="Present", In="08:02 AM", Out="—", Type="teachers" },
-                new PersonRow { Name="Maya Thompson", Initials="MT", Room="Butterflies · Support", Status="Not marked", In="—", Out="—", Type="teachers" },
-                new PersonRow { Name="Olivia Garcia", Initials="OG", Room="Rainbow Room · Lead", Status="Absent", In="—", Out="—", Type="teachers" }
-            });
-        }
-
-        var result = allPeople.AsEnumerable();
+        result = result.Where(p => p.Type == targetType);
 
         if (!string.IsNullOrEmpty(personSearch))
             result = result.Where(p => (p.Name + " " + p.Room).Contains(personSearch, StringComparison.OrdinalIgnoreCase));
@@ -213,6 +228,69 @@
         return result;
     }
 
+    private async Task ShowToast()
+    {
+        foreach(var p in _personRows.Where(p => p.IsDirty))
+        {
+            if (p.Type == "children")
+            {
+                var att = new ChildAttendance {
+                    Id = p.AttendanceId ?? Guid.NewGuid(),
+                    BranchId = _branchId,
+                    ClassroomId = p.ClassroomId,
+                    ChildId = p.Id,
+                    AttendanceDate = _filterDate,
+                    Status = p.Status,
+                    RecordedByUserId = UserContext.UserId
+                };
+                if (p.Status == "Present" && p.In == "—") att.ArrivalTime = DateTime.Now.TimeOfDay;
+                await AttendanceService.MarkChildAttendanceAsync(att);
+            }
+            else
+            {
+                var att = new TeacherAttendance {
+                    Id = p.AttendanceId ?? Guid.NewGuid(),
+                    BranchId = _branchId,
+                    TeacherId = p.Id,
+                    AttendanceDate = _filterDate,
+                    Status = p.Status,
+                    RecordedByUserId = UserContext.UserId
+                };
+                if (p.Status == "Present" && p.In == "—") att.ClockInTime = DateTime.Now.TimeOfDay;
+                await AttendanceService.MarkTeacherAttendanceAsync(att);
+            }
+            p.IsDirty = false;
+        }
+
+        showToast = true;
+        await LoadDataAsync();
+        StateHasChanged();
+        await Task.Delay(2400);
+        showToast = false;
+        StateHasChanged();
+    }
+
+    private string[] Totals => new[] { 
+        $"{_personRows.Count(p => p.Type == "children" && p.Status == "Present")} / {_personRows.Count(p => p.Type == "children")}",
+        $"{_personRows.Count(p => p.Type == "teachers" && p.Status == "Present")} / {_personRows.Count(p => p.Type == "teachers")}"
+    };
+
     public class ClassRow { public string Name { get; set; } = ""; public string Children { get; set; } = ""; public string Teachers { get; set; } = ""; public string Pending { get; set; } = ""; public string Status { get; set; } = ""; }
-    public class PersonRow { public string Name { get; set; } = ""; public string Initials { get; set; } = ""; public string Room { get; set; } = ""; public string Status { get; set; } = ""; public string In { get; set; } = ""; public string Out { get; set; } = ""; public string Type { get; set; } = ""; }
+    public class PersonRow { 
+        public Guid Id { get; set; }
+        public Guid? AttendanceId { get; set; }
+        public Guid ClassroomId { get; set; }
+        public string Name { get; set; } = ""; 
+        public string Initials { get; set; } = ""; 
+        public string Room { get; set; } = ""; 
+        private string _status = "";
+        public string Status { 
+            get => _status; 
+            set { if (_status != value && !string.IsNullOrEmpty(_status)) IsDirty = true; _status = value; } 
+        } 
+        public string In { get; set; } = ""; 
+        public string Out { get; set; } = ""; 
+        public string Type { get; set; } = ""; 
+        public bool IsDirty { get; set; }
+    }
 }

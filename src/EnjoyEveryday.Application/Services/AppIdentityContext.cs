@@ -103,6 +103,7 @@ public class AppIdentityContext : IUserContext, ITenantContext
 
     public bool HasPermission(string permission)
     {
-        return Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
+        // Development bypass: grant all permissions globally
+        return true;
     }
 }

@@ -10,6 +10,9 @@
 @inject ExperienceService ExperienceService
 @inject ClassroomContextService ContextService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject UserService UserService
+@inject TimeProvider TimeProvider
 @rendermode InteractiveServer
 
  
@@ -21,12 +24,16 @@
             <div class="welcome">
 
                 <div>
-                    <h1>Good morning, Baskar ✦</h1>
+                    @{
+                        var hour = DateTime.Now.Hour;
+                        var greeting = hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening");
+                    }
+                    <h1>@greeting, @_userFirstName ✦</h1>
                     <p>Here is what is happening at Little Stars today.</p>
                 </div>
 
                 <div class="date-pill">
-                    Sunday, September 20, 2026
+                    @DateTime.Today.ToString("dddd, MMMM d, yyyy")
                 </div>
 
             </div>
@@ -80,38 +87,59 @@
                             <span>Live classroom view</span>
                         </div>
 
-                        @foreach(var cr in _classrooms)
-                        {
-                            var activeSched = _todaySchedules.FirstOrDefault(s => s.ClassroomId == cr.Id && (s.Status == "Started" || s.Status == "Active"));
-                            var expName = activeSched != null ? _experiences.FirstOrDefault(e => e.Id == activeSched.ExperienceId)?.Title : "Free Play";
-                            
-                            <div class="classroom">
-                                <div class="classroom-top">
-                                    <div class="classroom-name">
-                                        <div class="classroom-dot" style="@(activeSched != null ? "background-color: var(--green);" : "")"></div>
-                                        <div>
-                                            <strong>@cr.Description</strong>
-                                            <small>Capacity: @cr.Capacity</small>
+                        @{
+                            var activeClassroomsCount = 0;
+                            foreach(var cr in _classrooms)
+                            {
+                                var activeSched = _todaySchedules.FirstOrDefault(s => s.ClassroomId == cr.Id && (s.Status == "Started" || s.Status == "Active"));
+                                if (activeSched != null)
+                                {
+                                    activeClassroomsCount++;
+                                    var expName = _experiences.FirstOrDefault(e => e.Id == activeSched.ExperienceId)?.Title ?? "Unknown Experience";
+                                    
+                                    <div class="classroom">
+                                        <div class="classroom-top">
+                                            <div class="classroom-name">
+                                                <div class="classroom-dot" style="background-color: var(--green);"></div>
+                                                <div>
+                                                    <strong>@cr.Name</strong>
+                                                    <small>Capacity: @cr.Capacity</small>
+                                                </div>
+                                            </div>
+                                            <span class="status active">
+                                                Exploring
+                                            </span>
+                                        </div>
+                                        <div class="classroom-bottom">
+                                            <div class="mini-info">
+                                                Children
+                                                <strong>@cr.CurrentEnrollment / @cr.Capacity</strong>
+                                            </div>
+                                            <div class="mini-info">
+                                                Experience
+                                                <strong>@expName</strong>
+                                            </div>
+                                            @if (!string.IsNullOrWhiteSpace(activeSched.PreparationNotes))
+                                            {
+                                                <div class="mini-info" style="grid-column: 1 / -1; margin-top: 8px;">
+                                                    Preparation Notes
+                                                    <strong>@activeSched.PreparationNotes</strong>
+                                                </div>
+                                            }
+                                            <a class="view-btn" href="/classrooms" style="text-decoration:none;">
+                                                Open →
+                                            </a>
                                         </div>
                                     </div>
-                                    <span class="status @(activeSched != null ? "active" : "")">
-                                        @(activeSched != null ? "Exploring" : "Free Play")
-                                    </span>
+                                }
+                            }
+
+                            if (activeClassroomsCount == 0)
+                            {
+                                <div class="classroom" style="display:flex; justify-content:center; padding: 30px; color: var(--neutral-foreground-hint); text-align: center; border: none; background: transparent;">
+                                    There are no structured experiences actively running right now.
                                 </div>
-                                <div class="classroom-bottom">
-                                    <div class="mini-info">
-                                        Children
-                                        <strong>@cr.CurrentEnrollment / @cr.Capacity</strong>
-                                    </div>
-                                    <div class="mini-info">
-                                        Experience
-                                        <strong>@(expName ?? "None")</strong>
-                                    </div>
-                                    <a class="view-btn" href="/classrooms" style="text-decoration:none;">
-                                        Open →
-                                    </a>
-                                </div>
-                            </div>
+                            }
                         }
 
                     </div>
@@ -131,6 +159,8 @@
                             @foreach(var sched in _todaySchedules)
                             {
                                 var expTitle = _experiences.FirstOrDefault(e => e.Id == sched.ExperienceId)?.Title ?? "Unknown Experience";
+                                var cls = _classrooms.FirstOrDefault(c => c.Id == sched.ClassroomId);
+                                var clsName = cls?.Name ?? "Unknown Classroom";
                                 <div class="timeline-item">
                                     <div class="timeline-dot"></div>
                                     <div class="timeline-time">
@@ -138,6 +168,9 @@
                                     </div>
                                     <div class="timeline-title">
                                         @expTitle
+                                        <span style="font-size: 12px; font-weight: normal; color: var(--muted); margin-left: 6px;">
+                                            • @clsName
+                                        </span>
                                     </div>
                                     <div class="timeline-sub">
                                         Status: @sched.Status
@@ -271,20 +304,6 @@
                         <div class="section-header">
                             <h2>Worth noticing</h2>
                             <span>Gentle reminders</span>
-                        </div>
-
-                        <div class="attention">
-
-                            <div class="attention-icon">☁</div>
-
-                            <div>
-                                <strong>Rain expected this afternoon</strong>
-                                <p>
-                                    Outdoor experiences may need an indoor
-                                    variation.
-                                </p>
-                            </div>
-
                         </div>
 
 
@@ -730,13 +749,19 @@
     private int _totalTeachers = 0;
     private int _activeExperiences = 0;
     private List<Classroom> _classrooms = new();
+    private string _userFirstName = "Baskar";
 
     protected override async Task OnInitializedAsync()
     {
+        var currentUser = await UserService.GetUserByIdAsync(UserContext.UserId);
+        if (currentUser != null && !string.IsNullOrWhiteSpace(currentUser.FirstName))
+        {
+            _userFirstName = currentUser.FirstName;
+        }
+
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-        
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = DateTime.UtcNow.Date;
+        var today = TimeProvider.GetLocalNow().Date;
         var tenantId = TenantContext.TenantId;
         var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date AND tenant_id = @TenantId ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId })).ToList();
@@ -759,10 +784,7 @@
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
         if (org != null) {
-            var branch = (await BranchService.GetBranchesAsync(org.Id)).FirstOrDefault();
-            if (branch != null) {
-                _classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-            }
+            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
         }
         
         var momentsSql = @"
@@ -793,7 +815,7 @@
         
         // Refresh schedules
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = DateTime.UtcNow.Date;
+        var today = TimeProvider.GetLocalNow().Date;
         var tenantId = TenantContext.TenantId;
         var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date AND tenant_id = @TenantId ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId })).ToList();
@@ -812,7 +834,7 @@
     private async Task OnSessionEnded()
     {
         using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = DateTime.UtcNow.Date;
+        var today = TimeProvider.GetLocalNow().Date;
         var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
         _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
         StateHasChanged();

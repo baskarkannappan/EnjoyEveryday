@@ -18,6 +18,7 @@ public interface IChildJourneyService
     Task<IEnumerable<Guid>> GetDevelopmentAreasForEntryAsync(Guid entryId, CancellationToken cancellationToken = default);
 
     Task CreateJourneyEvidenceAsync(ChildJourneyEvidence evidence, CancellationToken cancellationToken = default);
+    Task<IEnumerable<ChildJourneyEvidence>> GetEvidenceForJourneyEntryAsync(Guid entryId, CancellationToken cancellationToken = default);
 
     Task CreateMilestoneAsync(ChildMilestone milestone, CancellationToken cancellationToken = default);
     Task<IEnumerable<ChildMilestone>> GetMilestonesAsync(Guid childId, CancellationToken cancellationToken = default);
@@ -110,6 +111,11 @@ public class ChildJourneyService : IChildJourneyService
     {
         if (evidence.Id == Guid.Empty) evidence.Id = Guid.NewGuid();
         await _repository.CreateJourneyEvidenceAsync(evidence, cancellationToken);
+    }
+
+    public async Task<IEnumerable<ChildJourneyEvidence>> GetEvidenceForJourneyEntryAsync(Guid entryId, CancellationToken cancellationToken = default)
+    {
+        return await _repository.GetEvidenceForJourneyEntryAsync(entryId, cancellationToken);
     }
 
     public async Task CreateMilestoneAsync(ChildMilestone milestone, CancellationToken cancellationToken = default)
