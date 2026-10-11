@@ -1,0 +1,446 @@
+@page "/events/{Id:guid}"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject EventService EventService
+@inject ClassroomService ClassroomService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<div class="details-container">
+    <button class="back-btn" @onclick="GoBack">
+        <span>&larr;</span> Back to Celebrations
+    </button>
+
+    @if (_isLoading)
+    {
+        <div style="display: flex; justify-content: center; padding: 80px;">
+            <FluentProgressRing />
+        </div>
+    }
+    else if (_event == null)
+    {
+        <div class="section-card" style="text-align: center; padding: 60px 20px;">
+            <div style="font-size: 40px; margin-bottom: 12px;">🔍</div>
+            <h2 class="section-title">Celebration Not Found</h2>
+            <p style="color: var(--muted, #7c877f); max-width: 400px; margin: 8px auto 20px;">
+                The requested celebration does not exist, was deleted, or you do not have permission to view it.
+            </p>
+            <button class="btn-primary" @onclick="GoBack">Return to Events</button>
+        </div>
+    }
+    else
+    {
+        <!-- HERO CARD -->
+        <div class="hero-card">
+            <div class="hero-top">
+                <div>
+                    <div class="eyebrow">CELEBRATION DETAILS</div>
+                    <h1 class="hero-title">@_event.Title</h1>
+                    <div class="hero-subtitle">
+                        <span>📅 @_event.EventDate.ToString("dddd, MMMM dd, yyyy")</span>
+                        <span>•</span>
+                        <span>⏰ @(_event.StartTime?.ToString(@"hh\:mm") ?? "All Day")@(_event.EndTime != null ? $" - {_event.EndTime?.ToString(@"hh\:mm")}" : "")</span>
+                        <span>•</span>
+                        <span class="role-badge @(IsAdmin ? "admin" : "readonly")">
+                            @(IsAdmin ? "🛡️ Administrator Access" : "👁️ Read-Only View")
+                        </span>
+                        <span class="status-chip @_event.Status.ToLower()" style="margin-left: 6px;">
+                            @_event.Status
+                        </span>
+                    </div>
+                </div>
+
+                <div class="hero-actions">
+                    @if (IsAdmin)
+                    {
+                        @if (_event.Status == "Draft")
+                        {
+                            <button class="btn-primary" @onclick='() => UpdateStatus("Planned")'>
+                                📅 Plan Event for Calendar
+                            </button>
+                        }
+                        else if (_event.Status == "Planned")
+                        {
+                            <button class="btn-primary" @onclick='() => UpdateStatus("Approved")'>
+                                ✅ Approve Event
+                            </button>
+                        }
+                        else if (_event.Status == "Approved")
+                        {
+                            <button class="btn-primary" @onclick='() => UpdateStatus("Published")'>
+                                📢 Publish to Families
+                            </button>
+                        }
+                        else if (_event.Status == "Published")
+                        {
+                            <button class="btn-secondary" @onclick='() => UpdateStatus("Completed")'>
+                                🏁 Mark Completed
+                            </button>
+                        }
+
+                        <button class="btn-danger" @onclick="PromptDelete">
+                            🗑️ Delete
+                        </button>
+                    }
+                </div>
+            </div>
+
+            @if (_event.Status == "Planned" || _event.Status == "Approved" || _event.Status == "Published")
+            {
+                <div style="margin-top: 20px; padding: 12px 16px; background: #eef5ef; border-radius: 12px; border: 1px solid #dce8dd; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">🗓️</span>
+                        <span style="font-size: 13px; font-weight: 650; color: #3b5244;">
+                            Synchronized with the Experience Planning Calendar. Visible to teachers and staff for schedule coordination.
+                        </span>
+                    </div>
+                    <button class="btn-secondary" style="padding: 6px 12px; font-size: 11px;" @onclick='() => NavigationManager.NavigateTo("/planning")'>
+                        Open Calendar &rarr;
+                    </button>
+                </div>
+            }
+        </div>
+
+        <!-- DETAILS GRID -->
+        <div class="details-grid">
+            <!-- Left Column: Overview / Form -->
+            <div>
+                <div class="section-card">
+                    <div class="section-header">
+                        <h2 class="section-title">Overview & Schedule</h2>
+                        <div class="section-sub">
+                            @(IsAdmin ? "Edit celebration metadata, timings, and location below." : "Celebration logistics and schedule information.")
+                        </div>
+                    </div>
+
+                    @if (IsAdmin)
+                    {
+                        <div style="display: flex; flex-direction: column; gap: 16px;">
+                            <div class="form-group">
+                                <label class="form-label">Celebration Title</label>
+                                <input type="text" class="form-input" @bind="_event.Title" />
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                <div class="form-group">
+                                    <label class="form-label">Date</label>
+                                    <input type="date"
+                                           class="form-input"
+                                           value="@_event.EventDate.ToString("yyyy-MM-dd")"
+                                           @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out var d)) _event.EventDate = d; }" />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Location / Room</label>
+                                    <input type="text" class="form-input" @bind="_event.Location" placeholder="e.g. Activity Center / Room 2" />
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                <div class="form-group">
+                                    <label class="form-label">Start Time</label>
+                                    <input type="time"
+                                           class="form-input"
+                                           value="@(_startTime?.ToString(@"hh\:mm"))"
+                                           @onchange="e => { if (TimeSpan.TryParse(e.Value?.ToString(), out var t)) _startTime = t; }" />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">End Time</label>
+                                    <input type="time"
+                                           class="form-input"
+                                           value="@(_endTime?.ToString(@"hh\:mm"))"
+                                           @onchange="e => { if (TimeSpan.TryParse(e.Value?.ToString(), out var t)) _endTime = t; }" />
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" @bind="_event.Status">
+                                    <option value="Draft">Draft</option>
+                                    <option value="Planned">Planned</option>
+                                    <option value="Approved">Approved</option>
+                                    <option value="Published">Published</option>
+                                    <option value="Completed">Completed</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Description & Planning Notes</label>
+                                <textarea class="form-textarea" rows="4" @bind="_event.Description" placeholder="Overview of traditions, planned activities, special treats, and instructions..."></textarea>
+                            </div>
+
+                            <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px;">
+                                @if (_isSavedNotice)
+                                {
+                                    <span style="display: inline-flex; align-items: center; gap: 4px; color: #047857; font-size: 13px; font-weight: 650;">
+                                        ✓ Saved successfully
+                                    </span>
+                                }
+                                <button class="btn-primary" @onclick="SaveOverview">
+                                    Save Changes
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Read-Only View for Non-Admin -->
+                        <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <div class="read-only-field">
+                                <div class="read-only-label">Celebration Title</div>
+                                <div class="read-only-value">@_event.Title</div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                <div class="read-only-field">
+                                    <div class="read-only-label">Event Date</div>
+                                    <div class="read-only-value">📅 @_event.EventDate.ToString("MMMM dd, yyyy")</div>
+                                </div>
+                                <div class="read-only-field">
+                                    <div class="read-only-label">Location</div>
+                                    <div class="read-only-value">📍 @(_event.Location ?? "Daycare Center")</div>
+                                </div>
+                            </div>
+
+                            <div class="read-only-field">
+                                <div class="read-only-label">Timing</div>
+                                <div class="read-only-value">
+                                    ⏰ @(_event.StartTime?.ToString(@"hh\:mm") ?? "All Day")@(_event.EndTime != null ? $" - {_event.EndTime?.ToString(@"hh\:mm")}" : "")
+                                </div>
+                            </div>
+
+                            <div class="read-only-field">
+                                <div class="read-only-label">Description & Program Notes</div>
+                                <div class="read-only-value" style="font-weight: 400; color: #47534c; white-space: pre-wrap;">
+                                    @(string.IsNullOrWhiteSpace(_event.Description) ? "No detailed program description provided." : _event.Description)
+                                </div>
+                            </div>
+
+                            <div style="padding: 12px 14px; background: #fefce8; border: 1px solid #fef08a; border-radius: 11px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #854d0e;">
+                                <span>🔒</span>
+                                <span>This celebration is managed by daycare administration. Viewing in read-only mode.</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Right Column: Preparation, Tasks, Safety -->
+            <div>
+                <!-- Preparation Tasks Card -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h2 class="section-title">Preparation Tasks</h2>
+                        <div class="section-sub">
+                            Checklist of supplies, decorations, and steps.
+                        </div>
+                    </div>
+
+                    @if (_tasks.Any())
+                    {
+                        <div style="display: flex; flex-direction: column;">
+                            @foreach (var task in _tasks)
+                            {
+                                <div class="task-item">
+                                    <input type="checkbox"
+                                           checked="@task.IsCompleted"
+                                           disabled="@(!IsAdmin)"
+                                           @onchange="() => ToggleTask(task)"
+                                           style="cursor: @(IsAdmin ? "pointer" : "default");" />
+                                    <span style="flex: 1; font-size: 13px; color: #374151; @(task.IsCompleted ? "text-decoration: line-through; color: #9ca3af;" : "")">
+                                        @task.Description
+                                    </span>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="text-align: center; padding: 24px 0; color: #9ca3af; font-size: 13px;">
+                            No preparation tasks added yet.
+                        </div>
+                    }
+
+                    @if (IsAdmin)
+                    {
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <input type="text"
+                                   class="form-input"
+                                   placeholder="Add new task (e.g. Order balloons, prepare allergy list)..."
+                                   @bind="_newTaskDescription" />
+                            <button class="btn-secondary" style="white-space: nowrap;" @onclick="AddTask">
+                                + Add Task
+                            </button>
+                        </div>
+                    }
+                </div>
+
+                <!-- Safety Checks & Allergies Card -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h2 class="section-title">Safety & Inclusion</h2>
+                        <div class="section-sub">
+                            Allergies, dietary requirements, and parent photo consent.
+                        </div>
+                    </div>
+
+                    <div class="safety-box">
+                        <span style="font-size: 20px;">🛡️</span>
+                        <div>
+                            <strong style="display: block; font-size: 13px; font-weight: 750; margin-bottom: 3px;">
+                                Dietary & Consent Verification
+                            </strong>
+                            <span style="font-size: 12px; line-height: 1.5; opacity: 0.95;">
+                                Ensure all classroom allergy binders are reviewed prior to serving special celebratory snacks or treats. Photo consents are tracked per child.
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@* DELETE CONFIRMATION MODAL *@
+@if (_isDeleteConfirmOpen && _event != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(26, 37, 30, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1050; backdrop-filter: blur(4px);">
+        <div style="background: white; border-radius: 20px; padding: 28px; width: min(450px, 90%); box-shadow: 0 25px 60px rgba(0,0,0,0.2);">
+            <div style="font-size: 32px; margin-bottom: 12px;">⚠️</div>
+            <h3 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 750; color: #1a251e;">Delete Celebration?</h3>
+            <p style="color: #5d6d63; font-size: 13px; line-height: 1.5; margin: 0 0 20px 0;">
+                Are you sure you want to permanently delete "<strong>@_event.Title</strong>"? This will also remove it from the experience calendar.
+            </p>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn-secondary" @onclick="() => _isDeleteConfirmOpen = false">
+                    Cancel
+                </button>
+                <button class="btn-danger" @onclick="ConfirmDeleteEvent">
+                    Yes, Delete
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Event? _event;
+    private bool _isLoading = true;
+    private List<EventTask> _tasks = new();
+    private string _newTaskDescription = "";
+    private TimeSpan? _startTime;
+    private TimeSpan? _endTime;
+    private bool _isSavedNotice = false;
+    private bool _isDeleteConfirmOpen = false;
+
+    private bool IsAdmin =>
+        UserContext.Roles.Any(r =>
+            r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationOwner", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Director", StringComparison.OrdinalIgnoreCase))
+        || (!UserContext.Roles.Any(r => r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) || r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase) || r.Equals("Parent", StringComparison.OrdinalIgnoreCase)) && UserContext.HasPermission("event.manage"));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEventAsync();
+    }
+
+    private async Task LoadEventAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _event = await EventService.GetEventByIdAsync(Id);
+            if (_event != null)
+            {
+                _startTime = _event.StartTime;
+                _endTime = _event.EndTime;
+                _tasks = (await EventService.GetTasksAsync(Id)).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading event: {ex.Message}");
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo("/events");
+    }
+
+    private async Task SaveOverview()
+    {
+        if (!IsAdmin || _event == null) return;
+        _event.StartTime = _startTime;
+        _event.EndTime = _endTime;
+        await EventService.UpdateEventAsync(_event);
+        _isSavedNotice = true;
+        StateHasChanged();
+        await Task.Delay(2500);
+        _isSavedNotice = false;
+        StateHasChanged();
+    }
+
+    private async Task UpdateStatus(string newStatus)
+    {
+        if (!IsAdmin || _event == null) return;
+        try
+        {
+            await EventService.UpdateStatusAsync(_event.Id, newStatus);
+            await LoadEventAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating status: {ex.Message}");
+        }
+    }
+
+    private async Task AddTask()
+    {
+        if (!IsAdmin || _event == null || string.IsNullOrWhiteSpace(_newTaskDescription)) return;
+        var task = new EventTask
+        {
+            EventId = _event.Id,
+            Description = _newTaskDescription
+        };
+        await EventService.CreateTaskAsync(task);
+        _newTaskDescription = "";
+        _tasks = (await EventService.GetTasksAsync(Id)).ToList();
+    }
+
+    private async Task ToggleTask(EventTask task)
+    {
+        if (!IsAdmin) return;
+        task.IsCompleted = !task.IsCompleted;
+        task.CompletedAt = task.IsCompleted ? DateTimeOffset.UtcNow : null;
+        await EventService.UpdateTaskAsync(task);
+    }
+
+    private void PromptDelete()
+    {
+        if (!IsAdmin) return;
+        _isDeleteConfirmOpen = true;
+    }
+
+    private async Task ConfirmDeleteEvent()
+    {
+        if (!IsAdmin || _event == null) return;
+        await EventService.DeleteEventAsync(_event.Id);
+        _isDeleteConfirmOpen = false;
+        NavigationManager.NavigateTo("/events");
+    }
+}

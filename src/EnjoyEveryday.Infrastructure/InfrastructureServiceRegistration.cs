@@ -40,6 +40,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IChildRepository, ChildRepository>();
         services.AddScoped<IExperienceRepository, ExperienceRepository>();
+        services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IExperienceScheduleRepository, ExperienceScheduleRepository>();
         services.AddScoped<IExperienceFeedbackRepository, ExperienceFeedbackRepository>();
         services.AddScoped<IChildStoryRepository, ChildStoryRepository>();

@@ -11,6 +11,9 @@
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
 @inject TimeProvider TimeProvider
+@inject EventService EventService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
 
 @* <PageTopbar Breadcrumb="Little Stars · Bluebirds · Age 3-4" Title="Experience Planning">
     <RightContent>
@@ -102,6 +105,19 @@
                                 <button class="add-plan-btn" @onclick='() => OpenPlanWizardForDate(currentDate)'>+</button>
                             }
                         </div>
+                        @* Planned Celebrations & Events *@
+                        @foreach (var evt in _events.Where(e => e.EventDate == currentDate && (e.Status == "Planned" || e.Status == "Approved" || e.Status == "Published")))
+                        {
+                            <div class="scheduled celebration-event" style="cursor: pointer;" @onclick="() => OpenEventFromCalendar(evt)">
+                                <strong style="display: flex; align-items: center; gap: 4px; color: #92400e;">
+                                    <span>🎉</span>
+                                    <span>@evt.Title</span>
+                                </strong>
+                                <span style="color: #b45309; font-weight: 600;">
+                                    Celebration &middot; @(evt.StartTime?.ToString(@"hh\:mm") ?? "All Day")
+                                </span>
+                            </div>
+                        }
                         @foreach (var schedule in dailySchedules)
                         {
                             var experience = _experiences.ContainsKey(schedule.ExperienceId) ? _experiences[schedule.ExperienceId] : null;
@@ -159,6 +175,172 @@
 
 <PlanExperienceDialog IsOpen="@_isPlanWizardOpen" DefaultClassroomId="@(_classroom?.Id)" DefaultDate="@_wizardDefaultDate" ScheduleId="@_wizardScheduleId" OnClose="ClosePlanWizard" OnPlanCreated="OnPlanCreatedFromWizard" />
 
+@if (_isCalendarEventModalOpen && _selectedCalendarEvent != null)
+{
+    <div class="event-modal-backdrop" @onclick="CloseCalendarEventModal">
+        <div class="event-modal-card" @onclick:stopPropagation="true">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #edf0ec; padding-bottom: 16px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.2px; color: #b45309; text-transform: uppercase;">
+                        Celebration & Event
+                    </div>
+                    <h2 style="margin: 4px 0 0 0; font-size: 22px; font-weight: 750; color: #1a251e;">
+                        🎉 @_selectedCalendarEvent.Title
+                    </h2>
+                </div>
+                <button type="button" @onclick="CloseCalendarEventModal" style="background: transparent; border: none; font-size: 20px; color: #7c877f; cursor: pointer; padding: 4px;">✕</button>
+            </div>
+
+            @* Role Badge Banner *@
+            @if (IsAdmin)
+            {
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 10px 14px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">🛡️</span>
+                        <span style="font-size: 12px; font-weight: 650; color: #047857;">Administrator Mode — Full editing and deletion enabled</span>
+                    </div>
+                    <span style="background: #10b981; color: white; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase;">@_selectedCalendarEvent.Status</span>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 10px 14px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">👁️</span>
+                        <span style="font-size: 12px; font-weight: 650; color: #854d0e;">Read-Only View — View only. Only admins can edit or delete celebrations.</span>
+                    </div>
+                    <span style="background: #f59e0b; color: white; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase;">@_selectedCalendarEvent.Status</span>
+                </div>
+            }
+
+            @* Details Body *@
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                @if (IsAdmin)
+                {
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #536159;">Event Title</label>
+                        <input type="text" @bind="_selectedCalendarEvent.Title" style="border: 1px solid #e1e6e0; border-radius: 10px; padding: 10px 12px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box;" />
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #536159;">Date</label>
+                            <input type="date" value="@_selectedCalendarEvent.EventDate.ToString("yyyy-MM-dd")" @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out var d)) _selectedCalendarEvent.EventDate = d; }" style="border: 1px solid #e1e6e0; border-radius: 10px; padding: 9px 12px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box;" />
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #536159;">Location</label>
+                            <input type="text" @bind="_selectedCalendarEvent.Location" placeholder="e.g. Activity Center / Room 2" style="border: 1px solid #e1e6e0; border-radius: 10px; padding: 9px 12px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box;" />
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #536159;">Status</label>
+                            <select @bind="_selectedCalendarEvent.Status" style="border: 1px solid #e1e6e0; border-radius: 10px; padding: 9px 12px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box; background: white;">
+                                <option value="Draft">Draft</option>
+                                <option value="Planned">Planned</option>
+                                <option value="Approved">Approved</option>
+                                <option value="Published">Published</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #536159;">Time Window</label>
+                            <div style="font-size: 13px; color: #47534c; padding: 9px 0;">
+                                @FormatEventTiming(_selectedCalendarEvent)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #536159;">Description</label>
+                        <textarea @bind="_selectedCalendarEvent.Description" rows="3" style="border: 1px solid #e1e6e0; border-radius: 10px; padding: 10px 12px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box; resize: vertical;"></textarea>
+                    </div>
+                }
+                else
+                {
+                    <div style="background: #fafbf9; border: 1px solid #edf0ec; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div>
+                                <div style="font-size: 11px; font-weight: 700; color: #7c877f; text-transform: uppercase;">Scheduled Date</div>
+                                <div style="font-size: 14px; font-weight: 600; color: #1a251e; margin-top: 2px;">
+                                    📅 @_selectedCalendarEvent.EventDate.ToString("MMMM dd, yyyy")
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; font-weight: 700; color: #7c877f; text-transform: uppercase;">Location</div>
+                                <div style="font-size: 14px; font-weight: 600; color: #1a251e; margin-top: 2px;">
+                                    📍 @(_selectedCalendarEvent.Location ?? "Daycare Center")
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="font-size: 11px; font-weight: 700; color: #7c877f; text-transform: uppercase;">Timing</div>
+                            <div style="font-size: 13px; color: #47534c; margin-top: 2px;">
+                                ⏰ @FormatEventTiming(_selectedCalendarEvent)
+                            </div>
+                        </div>
+
+                        <div>
+                            <div style="font-size: 11px; font-weight: 700; color: #7c877f; text-transform: uppercase;">Overview & Purpose</div>
+                            <div style="font-size: 13px; color: #47534c; line-height: 1.5; margin-top: 4px;">
+                                @(string.IsNullOrWhiteSpace(_selectedCalendarEvent.Description) ? "No detailed description provided for this celebration." : _selectedCalendarEvent.Description)
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* Preparation Checklist Preview *@
+                @if (_selectedCalendarEventTasks.Any())
+                {
+                    <div style="border-top: 1px solid #edf0ec; padding-top: 14px;">
+                        <div style="font-size: 12px; font-weight: 750; color: #1a251e; margin-bottom: 8px;">
+                            Preparation Tasks (@_selectedCalendarEventTasks.Count(t => t.IsCompleted)/@_selectedCalendarEventTasks.Count completed)
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            @foreach (var task in _selectedCalendarEventTasks)
+                            {
+                                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #47534c;">
+                                    <input type="checkbox" checked="@task.IsCompleted" disabled="@(!IsAdmin)" @onchange="() => ToggleCalendarEventTask(task)" style="cursor: @(IsAdmin ? "pointer" : "default");" />
+                                    <span style="@(task.IsCompleted ? "text-decoration: line-through; color: #9ca3af;" : "")">@task.Description</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @* Footer Action Buttons *@
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #edf0ec; padding-top: 16px; margin-top: 4px;">
+                <div>
+                    @if (IsAdmin)
+                    {
+                        <button type="button" @onclick="DeleteCalendarEvent" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 11px; padding: 9px 14px; font-size: 12px; font-weight: 650; color: #dc2626; cursor: pointer;">
+                            🗑️ Delete Event
+                        </button>
+                    }
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" @onclick="() => NavigateToCalendarEvent(_selectedCalendarEvent.Id)" style="background: #fff; border: 1px solid #e1e6e0; border-radius: 11px; padding: 9px 14px; font-size: 12px; font-weight: 650; color: #47534c; cursor: pointer;">
+                        View Full Details &rarr;
+                    </button>
+                    <button type="button" @onclick="CloseCalendarEventModal" style="background: #fff; border: 1px solid #e1e6e0; border-radius: 11px; padding: 9px 14px; font-size: 12px; font-weight: 650; color: #47534c; cursor: pointer;">
+                        Close
+                    </button>
+                    @if (IsAdmin)
+                    {
+                        <button type="button" @onclick="SaveCalendarEvent" style="background: #456a55; border: 1px solid #456a55; border-radius: 11px; padding: 9px 16px; font-size: 12px; font-weight: 650; color: #fff; cursor: pointer;">
+                            Save Changes
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private string _activeFilter = "all";
     private bool _isPlanWizardOpen = false;
@@ -166,6 +348,22 @@
     private Classroom? _classroom;
     private List<ExperienceSchedule> _schedules = new();
     private Dictionary<Guid, Experience> _experiences = new();
+    private List<Event> _events = new();
+    private bool _isCalendarEventModalOpen = false;
+    private Event? _selectedCalendarEvent;
+    private List<EventTask> _selectedCalendarEventTasks = new();
+
+    private bool IsAdmin =>
+        UserContext.Roles.Any(r => 
+            r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationOwner", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Director", StringComparison.OrdinalIgnoreCase))
+        || (!UserContext.Roles.Any(r => r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) || r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase) || r.Equals("Parent", StringComparison.OrdinalIgnoreCase)) && UserContext.HasPermission("event.manage"));
+
 
     private List<PlanningControlBar.FilterItem> _filters = new()
     {
@@ -268,6 +466,15 @@
             var schedules = await PlannerService.GetMonthlyScheduleAsync(_classroom.Id, _currentDate.Year, _currentDate.Month);
             _schedules = schedules.ToList();
             CalculateDynamicCards();
+        }
+
+        try
+        {
+            _events = (await EventService.GetEventsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading events for planning calendar: {ex.Message}");
         }
     }
 
@@ -441,5 +648,64 @@
             await PlannerService.CancelScheduleAsync(scheduleId);
             await RefreshSchedules();
         }
+    }
+
+    private async Task OpenEventFromCalendar(Event evt)
+    {
+        _selectedCalendarEvent = evt;
+        try
+        {
+            _selectedCalendarEventTasks = (await EventService.GetTasksAsync(evt.Id)).ToList();
+        }
+        catch
+        {
+            _selectedCalendarEventTasks = new();
+        }
+        _isCalendarEventModalOpen = true;
+    }
+
+    private void CloseCalendarEventModal()
+    {
+        _isCalendarEventModalOpen = false;
+        _selectedCalendarEvent = null;
+        _selectedCalendarEventTasks.Clear();
+    }
+
+    private async Task ToggleCalendarEventTask(EventTask task)
+    {
+        if (!IsAdmin) return;
+        task.IsCompleted = !task.IsCompleted;
+        task.CompletedAt = task.IsCompleted ? DateTimeOffset.UtcNow : null;
+        await EventService.UpdateTaskAsync(task);
+    }
+
+    private async Task SaveCalendarEvent()
+    {
+        if (!IsAdmin || _selectedCalendarEvent == null) return;
+        await EventService.UpdateEventAsync(_selectedCalendarEvent);
+        await LoadSchedules();
+        CloseCalendarEventModal();
+    }
+
+    private async Task DeleteCalendarEvent()
+    {
+        if (!IsAdmin || _selectedCalendarEvent == null) return;
+        await EventService.DeleteEventAsync(_selectedCalendarEvent.Id);
+        await LoadSchedules();
+        CloseCalendarEventModal();
+    }
+
+    private string FormatEventTiming(Event evt)
+    {
+        if (evt.StartTime == null) return "All Day Celebration";
+        var start = evt.StartTime.Value.ToString(@"hh\:mm");
+        if (evt.EndTime == null) return start;
+        var end = evt.EndTime.Value.ToString(@"hh\:mm");
+        return $"{start} - {end}";
+    }
+
+    private void NavigateToCalendarEvent(Guid id)
+    {
+        NavigationManager.NavigateTo($"/events/{id}");
     }
 }

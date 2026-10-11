@@ -16,6 +16,7 @@ public class ChildJourneyEntry
     public Guid? ExperienceParticipationId { get; set; }
     public Guid? LittleMomentId { get; set; }
     public Guid? MilestoneId { get; set; }
+    public Guid? EventId { get; set; }
     
     public string JourneyType { get; set; } = string.Empty; // Observation, LittleMoment, ActivityObservation, Discovery, Milestone
     public string? Title { get; set; }

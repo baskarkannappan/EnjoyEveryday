@@ -1,0 +1,397 @@
+@page "/events"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject EventService EventService
+@inject ClassroomService ClassroomService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<div class="page-container">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">EXPERIENCES & MILESTONES</div>
+            <h1 class="page-title">Celebrations & Events</h1>
+            <div class="page-subtitle">
+                Plan and celebrate birthdays, cultural festivals, seasonal events, and community milestones.
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            @if (IsAdmin)
+            {
+                <button class="btn-primary" @onclick="OpenCreateModal">
+                    <span>+</span> Create Celebration
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="tabs">
+        <button class="tab @(_activeTab == "all" ? "active" : "")" @onclick='() => SetTab("all")'>
+            All Celebrations (@_events.Count)
+        </button>
+        <button class="tab @(_activeTab == "planned" ? "active" : "")" @onclick='() => SetTab("planned")'>
+            Planned (@_events.Count(e => e.Status == "Planned"))
+        </button>
+        <button class="tab @(_activeTab == "approved" ? "active" : "")" @onclick='() => SetTab("approved")'>
+            Approved (@_events.Count(e => e.Status == "Approved" || e.Status == "Published"))
+        </button>
+        <button class="tab @(_activeTab == "draft" ? "active" : "")" @onclick='() => SetTab("draft")'>
+            Drafts (@_events.Count(e => e.Status == "Draft"))
+        </button>
+        <button class="tab @(_activeTab == "completed" ? "active" : "")" @onclick='() => SetTab("completed")'>
+            Completed (@_events.Count(e => e.Status == "Completed"))
+        </button>
+    </div>
+
+    <!-- Search & Filter Controls -->
+    <div class="search-row">
+        <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text"
+                   class="search-input"
+                   placeholder="Search celebrations by title, location, or notes..."
+                   @bind="_searchQuery"
+                   @bind:event="oninput" />
+        </div>
+        <select class="filter-select" @bind="_selectedTypeFilter">
+            <option value="all">All Types</option>
+            <option value="Birthday">Birthday</option>
+            <option value="Festival">Cultural Festival</option>
+            <option value="Graduation">Graduation</option>
+            <option value="Seasonal">Seasonal Event</option>
+            <option value="Family Day">Family Day</option>
+            <option value="Other">Celebration</option>
+        </select>
+        <select class="filter-select" @bind="_selectedClassroomId">
+            <option value="@Guid.Empty">All Classrooms</option>
+            @foreach (var c in _classrooms)
+            {
+                <option value="@c.Id">@c.Name</option>
+            }
+        </select>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div style="display: flex; justify-content: center; padding: 60px;">
+            <FluentProgressRing />
+        </div>
+    }
+    else if (!FilteredEvents.Any())
+    {
+        <div class="empty-state-card">
+            <div class="empty-state-icon">🎈</div>
+            <h3>No Celebrations Found</h3>
+            <p>
+                @(string.IsNullOrWhiteSpace(_searchQuery) && _activeTab == "all"
+                    ? "No celebrations have been scheduled yet. Plan a birthday, cultural festival, or seasonal event to get started."
+                    : "No events match the current filter or search criteria.")
+            </p>
+            @if (IsAdmin)
+            {
+                <button class="btn-primary" @onclick="OpenCreateModal">
+                    <span>+</span> Plan a Celebration
+                </button>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="events-grid">
+            @foreach (var evt in FilteredEvents)
+            {
+                var typeIcon = GetTypeIcon(evt.Title);
+                <article class="event-card" @onclick="() => NavigateToEvent(evt.Id)">
+                    <div class="event-card-top">
+                        <span class="type-chip">
+                            <span>@typeIcon</span>
+                            <span>@(evt.Title.Contains("Birthday", StringComparison.OrdinalIgnoreCase) ? "Birthday" : evt.Title.Contains("Festival", StringComparison.OrdinalIgnoreCase) ? "Festival" : "Celebration")</span>
+                        </span>
+                        <span class="status-chip @evt.Status.ToLower()">
+                            @evt.Status
+                        </span>
+                    </div>
+
+                    <h3 class="event-card-title">@evt.Title</h3>
+
+                    <p class="event-card-desc">
+                        @(string.IsNullOrWhiteSpace(evt.Description) ? "Celebration with children and staff. Click to view schedule and preparation." : evt.Description)
+                    </p>
+
+                    <div class="event-card-meta">
+                        <span class="meta-pill">
+                            <span>📅</span>
+                            <span>@evt.EventDate.ToString("MMM dd, yyyy")</span>
+                        </span>
+                        <span class="meta-pill">
+                            <span>⏰</span>
+                            <span>@(evt.StartTime?.ToString(@"hh\:mm") ?? "All Day")</span>
+                        </span>
+                        <span class="meta-pill">
+                            <span>📍</span>
+                            <span>@(evt.Location ?? "Daycare Center")</span>
+                        </span>
+                    </div>
+
+                    <div class="event-card-bottom">
+                        <span style="font-size: 11px; color: #7c877f;">
+                            @(evt.Status == "Planned" ? "🗓️ Visible on experience calendar" : evt.Status == "Draft" ? "Draft • Admin only" : "Approved • Active")
+                        </span>
+                        <div style="display: flex; gap: 8px; align-items: center;" @onclick:stopPropagation="true">
+                            @if (IsAdmin)
+                            {
+                                <button type="button" class="btn-danger" style="padding: 4px 8px; font-size: 11px;" title="Delete Event" @onclick="() => ConfirmDelete(evt)">
+                                    🗑️
+                                </button>
+                            }
+                            <button type="button" class="card-action-view" @onclick="() => NavigateToEvent(evt.Id)">
+                                View Details &rarr;
+                            </button>
+                        </div>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@* CREATE EVENT MODAL *@
+@if (_isCreateModalOpen)
+{
+    <div class="modal-backdrop" @onclick="CloseCreateModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="eyebrow">NEW CELEBRATION</div>
+                    <h2 style="margin: 4px 0 0 0; font-size: 22px; font-weight: 750; color: #1a251e;">
+                        Plan a Celebration & Event
+                    </h2>
+                </div>
+                <button type="button" class="modal-close-btn" @onclick="CloseCreateModal">✕</button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div class="form-group">
+                    <label class="form-label">Event Title *</label>
+                    <input type="text"
+                           class="form-input"
+                           placeholder="e.g. Maya's 4th Birthday, Fall Harvest Celebration..."
+                           @bind="_newEvent.Title" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Event Date *</label>
+                        <input type="date"
+                               class="form-input"
+                               value="@_newEvent.EventDate.ToString("yyyy-MM-dd")"
+                               @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out var d)) _newEvent.EventDate = d; }" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input type="text"
+                               class="form-input"
+                               placeholder="e.g. Bluebirds Room & Garden"
+                               @bind="_newEvent.Location" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group">
+                        <label class="form-label">Start Time</label>
+                        <input type="time"
+                               class="form-input"
+                               value="@(_newEventStartTime?.ToString(@"hh\:mm"))"
+                               @onchange="e => { if (TimeSpan.TryParse(e.Value?.ToString(), out var t)) _newEventStartTime = t; }" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">End Time</label>
+                        <input type="time"
+                               class="form-input"
+                               value="@(_newEventEndTime?.ToString(@"hh\:mm"))"
+                               @onchange="e => { if (TimeSpan.TryParse(e.Value?.ToString(), out var t)) _newEventEndTime = t; }" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" @bind="_newEvent.Status">
+                        <option value="Planned">Planned (Shows on Experience Calendar)</option>
+                        <option value="Draft">Draft (Planning in progress)</option>
+                        <option value="Approved">Approved</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description & Special Notes</label>
+                    <textarea class="form-textarea"
+                              rows="3"
+                              placeholder="Describe activities, traditions, allergy considerations, or special visitor notes..."
+                              @bind="_newEvent.Description"></textarea>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #edf0ec; padding-top: 18px; margin-top: 8px;">
+                <button type="button" class="btn-secondary" @onclick="CloseCreateModal">
+                    Cancel
+                </button>
+                <button type="button" class="btn-primary" @onclick="CreateNewEvent">
+                    Save Celebration
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Event> _events = new();
+    private List<Classroom> _classrooms = new();
+    private bool _isLoading = true;
+    private string _activeTab = "all";
+    private string _searchQuery = "";
+    private string _selectedTypeFilter = "all";
+    private Guid _selectedClassroomId = Guid.Empty;
+
+    private bool _isCreateModalOpen = false;
+    private Event _newEvent = new();
+    private TimeSpan? _newEventStartTime = new TimeSpan(10, 0, 0);
+    private TimeSpan? _newEventEndTime = new TimeSpan(11, 30, 0);
+
+    private bool IsAdmin =>
+        UserContext.Roles.Any(r =>
+            r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationOwner", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Director", StringComparison.OrdinalIgnoreCase))
+        || (!UserContext.Roles.Any(r => r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) || r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase) || r.Equals("Parent", StringComparison.OrdinalIgnoreCase)) && UserContext.HasPermission("event.manage"));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _events = (await EventService.GetEventsAsync()).ToList();
+            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading events: {ex.Message}");
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private IEnumerable<Event> FilteredEvents
+    {
+        get
+        {
+            var query = _events.AsEnumerable();
+
+            // Tab filter
+            if (_activeTab == "planned")
+                query = query.Where(e => e.Status == "Planned");
+            else if (_activeTab == "approved")
+                query = query.Where(e => e.Status == "Approved" || e.Status == "Published");
+            else if (_activeTab == "draft")
+                query = query.Where(e => e.Status == "Draft");
+            else if (_activeTab == "completed")
+                query = query.Where(e => e.Status == "Completed");
+
+            // Text search
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(e =>
+                    (e.Title?.ToLowerInvariant().Contains(q) ?? false) ||
+                    (e.Description?.ToLowerInvariant().Contains(q) ?? false) ||
+                    (e.Location?.ToLowerInvariant().Contains(q) ?? false));
+            }
+
+            // Type filter
+            if (_selectedTypeFilter != "all")
+            {
+                query = query.Where(e => e.Title.Contains(_selectedTypeFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return query.OrderByDescending(e => e.EventDate);
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private string GetTypeIcon(string title)
+    {
+        if (title.Contains("Birthday", StringComparison.OrdinalIgnoreCase)) return "🎂";
+        if (title.Contains("Festival", StringComparison.OrdinalIgnoreCase)) return "🎏";
+        if (title.Contains("Graduation", StringComparison.OrdinalIgnoreCase)) return "🎓";
+        if (title.Contains("Fall", StringComparison.OrdinalIgnoreCase) || title.Contains("Spring", StringComparison.OrdinalIgnoreCase)) return "🍂";
+        if (title.Contains("Family", StringComparison.OrdinalIgnoreCase)) return "🤝";
+        return "🎉";
+    }
+
+    private void OpenCreateModal()
+    {
+        if (!IsAdmin) return;
+        _newEvent = new Event
+        {
+            Id = Guid.NewGuid(),
+            Title = "",
+            EventDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)),
+            Status = "Planned",
+            IsOrganizationWide = true
+        };
+        _newEventStartTime = new TimeSpan(10, 0, 0);
+        _newEventEndTime = new TimeSpan(11, 30, 0);
+        _isCreateModalOpen = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        _isCreateModalOpen = false;
+    }
+
+    private async Task CreateNewEvent()
+    {
+        if (string.IsNullOrWhiteSpace(_newEvent.Title))
+        {
+            _newEvent.Title = "New Celebration";
+        }
+
+        _newEvent.StartTime = _newEventStartTime;
+        _newEvent.EndTime = _newEventEndTime;
+
+        var id = await EventService.CreateEventAsync(_newEvent);
+        _isCreateModalOpen = false;
+        await LoadDataAsync();
+        NavigateToEvent(id);
+    }
+
+    private async Task ConfirmDelete(Event evt)
+    {
+        if (!IsAdmin) return;
+        await EventService.DeleteEventAsync(evt.Id);
+        await LoadDataAsync();
+    }
+
+    private void NavigateToEvent(Guid id)
+    {
+        NavigationManager.NavigateTo($"/events/{id}");
+    }
+}
