@@ -1,9 +1,12 @@
 @page "/events/{Id:guid}"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject EventService EventService
 @inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager NavigationManager
 @rendermode InteractiveServer
@@ -49,6 +52,18 @@
                         <span class="status-chip @_event.Status.ToLower()" style="margin-left: 6px;">
                             @_event.Status
                         </span>
+                        @if (_event.Scope == "Organization")
+                        {
+                            <span class="scope-badge org" style="margin-left: 6px;">🌐 Org-Wide (All Branches)</span>
+                        }
+                        else if (_event.Scope == "Branch")
+                        {
+                            <span class="scope-badge branch" style="margin-left: 6px;">🏢 Branch: @GetBranchName(_event.BranchId)</span>
+                        }
+                        else
+                        {
+                            <span class="scope-badge classroom" style="margin-left: 6px;">🚪 @GetClassroomScopeDisplay()</span>
+                        }
                     </div>
                 </div>
 
@@ -72,12 +87,30 @@
                             <button class="btn-primary" @onclick='() => UpdateStatus("Published")'>
                                 📢 Publish to Families
                             </button>
+                            <button class="btn-primary" @onclick='() => UpdateStatus("InProgress")' style="background: #52745e; color: white; border-color: #52745e;">
+                                ▶️ Start Celebration
+                            </button>
                         }
                         else if (_event.Status == "Published")
                         {
+                            <button class="btn-primary" @onclick='() => UpdateStatus("InProgress")' style="background: #52745e; color: white; border-color: #52745e;">
+                                ▶️ Start Celebration Now
+                            </button>
                             <button class="btn-secondary" @onclick='() => UpdateStatus("Completed")'>
                                 🏁 Mark Completed
                             </button>
+                        }
+                        else if (_event.Status == "InProgress")
+                        {
+                            <button class="btn-primary" @onclick='() => UpdateStatus("Completed")' style="background: #263d32; color: white; border-color: #263d32;">
+                                🏁 Finish & Mark Completed
+                            </button>
+                        }
+                        else if (_event.Status == "Completed")
+                        {
+                            <span style="font-size: 12.5px; font-weight: 650; color: #263d32; display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: #eef5ef; border: 1px solid #cbd9ce; border-radius: 20px;">
+                                ✨ Event Finished &bull; Photos Enabled
+                            </span>
                         }
 
                         <button class="btn-danger" @onclick="PromptDelete">
@@ -111,13 +144,68 @@
                     <div class="section-header">
                         <h2 class="section-title">Overview & Schedule</h2>
                         <div class="section-sub">
-                            @(IsAdmin ? "Edit celebration metadata, timings, and location below." : "Celebration logistics and schedule information.")
+                            @(IsAdmin && _event.Status != "Completed" ? "Edit celebration metadata, timings, and location below." : "Celebration logistics and schedule information.")
                         </div>
                     </div>
 
-                    @if (IsAdmin)
+                    @if (IsAdmin && _event.Status != "Completed")
                     {
                         <div style="display: flex; flex-direction: column; gap: 16px;">
+                            <div class="form-group">
+                                <label class="form-label">Event Scope</label>
+                                <div class="scope-selector">
+                                    <label class="scope-radio-btn @(_event.Scope == "Organization" ? "selected" : "")">
+                                        <input type="radio" name="scope" value="Organization" checked="@(_event.Scope == "Organization")" @onchange='() => SetScope("Organization")' />
+                                        <span class="icon">🌐</span>
+                                        <strong>Entire Organization</strong>
+                                        <small>All branches & classrooms</small>
+                                    </label>
+                                    <label class="scope-radio-btn @(_event.Scope == "Branch" ? "selected" : "")">
+                                        <input type="radio" name="scope" value="Branch" checked="@(_event.Scope == "Branch")" @onchange='() => SetScope("Branch")' />
+                                        <span class="icon">🏢</span>
+                                        <strong>Specific Branch</strong>
+                                        <small>All rooms in branch</small>
+                                    </label>
+                                    <label class="scope-radio-btn @(_event.Scope == "Classroom" ? "selected" : "")">
+                                        <input type="radio" name="scope" value="Classroom" checked="@(_event.Scope == "Classroom")" @onchange='() => SetScope("Classroom")' />
+                                        <span class="icon">🚪</span>
+                                        <strong>Specific Classroom(s)</strong>
+                                        <small>Selected room(s) only</small>
+                                    </label>
+                                </div>
+                            </div>
+
+                            @if (_event.Scope == "Branch")
+                            {
+                                <div class="form-group" style="padding: 12px; background: #f7faf8; border: 1px solid #dce8dd; border-radius: 12px;">
+                                    <label class="form-label">Branch</label>
+                                    <select class="form-select" @bind="_event.BranchId">
+                                        <option value="">-- Choose Branch --</option>
+                                        @foreach (var b in _branches)
+                                        {
+                                            <option value="@b.Id">@b.Name (@(b.Location ?? "Main"))</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                            else if (_event.Scope == "Classroom")
+                            {
+                                <div class="form-group" style="padding: 12px; background: #f7faf8; border: 1px solid #dce8dd; border-radius: 12px;">
+                                    <label class="form-label">Select Classroom(s)</label>
+                                    <div class="classroom-checkbox-grid">
+                                        @foreach (var cr in _classrooms)
+                                        {
+                                            <label class="checkbox-pill">
+                                                <input type="checkbox"
+                                                       checked="@_selectedClassroomIds.Contains(cr.Id)"
+                                                       @onchange="e => ToggleClassroom(cr.Id, e.Value)" />
+                                                <span>@cr.Name</span>
+                                            </label>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
                             <div class="form-group">
                                 <label class="form-label">Celebration Title</label>
                                 <input type="text" class="form-input" @bind="_event.Title" />
@@ -173,7 +261,7 @@
                             <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px;">
                                 @if (_isSavedNotice)
                                 {
-                                    <span style="display: inline-flex; align-items: center; gap: 4px; color: #047857; font-size: 13px; font-weight: 650;">
+                                    <span style="display: inline-flex; align-items: center; gap: 4px; color: #3e6253; font-size: 13px; font-weight: 650;">
                                         ✓ Saved successfully
                                     </span>
                                 }
@@ -187,6 +275,24 @@
                     {
                         <!-- Read-Only View for Non-Admin -->
                         <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <div class="read-only-field">
+                                <div class="read-only-label">Scope & Target</div>
+                                <div class="read-only-value">
+                                    @if (_event.Scope == "Organization")
+                                    {
+                                        <span class="scope-badge org">🌐 Entire Organization (All Branches & Classrooms)</span>
+                                    }
+                                    else if (_event.Scope == "Branch")
+                                    {
+                                        <span class="scope-badge branch">🏢 Branch: @GetBranchName(_event.BranchId) (All Rooms)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="scope-badge classroom">🚪 Classroom: @GetClassroomScopeDisplay()</span>
+                                    }
+                                </div>
+                            </div>
+
                             <div class="read-only-field">
                                 <div class="read-only-label">Celebration Title</div>
                                 <div class="read-only-value">@_event.Title</div>
@@ -217,9 +323,9 @@
                                 </div>
                             </div>
 
-                            <div style="padding: 12px 14px; background: #fefce8; border: 1px solid #fef08a; border-radius: 11px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #854d0e;">
-                                <span>🔒</span>
-                                <span>This celebration is managed by daycare administration. Viewing in read-only mode.</span>
+                            <div style="padding: 12px 14px; background: #fbf7ee; border: 1px solid #ede3cb; border-radius: 11px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8a6e32;">
+                                <span>@(_event.Status == "Completed" ? "✅" : "🔒")</span>
+                                <span>@(_event.Status == "Completed" ? "This celebration has been completed and is preserved in read-only mode." : "This celebration is managed by daycare administration. Viewing in read-only mode.")</span>
                             </div>
                         </div>
                     }
@@ -245,10 +351,10 @@
                                 <div class="task-item">
                                     <input type="checkbox"
                                            checked="@task.IsCompleted"
-                                           disabled="@(!IsAdmin)"
+                                           disabled="@(!IsAdmin || _event.Status == "Completed")"
                                            @onchange="() => ToggleTask(task)"
-                                           style="cursor: @(IsAdmin ? "pointer" : "default");" />
-                                    <span style="flex: 1; font-size: 13px; color: #374151; @(task.IsCompleted ? "text-decoration: line-through; color: #9ca3af;" : "")">
+                                           style="cursor: @(IsAdmin && _event.Status != "Completed" ? "pointer" : "default");" />
+                                    <span style="flex: 1; font-size: 13px; color: #26332d; @(task.IsCompleted ? "text-decoration: line-through; color: #8a958e;" : "")">
                                         @task.Description
                                     </span>
                                 </div>
@@ -257,12 +363,12 @@
                     }
                     else
                     {
-                        <div style="text-align: center; padding: 24px 0; color: #9ca3af; font-size: 13px;">
+                        <div style="text-align: center; padding: 24px 0; color: #7c877f; font-size: 13px;">
                             No preparation tasks added yet.
                         </div>
                     }
 
-                    @if (IsAdmin)
+                    @if (IsAdmin && _event.Status != "Completed")
                     {
                         <div style="display: flex; gap: 8px; margin-top: 8px;">
                             <input type="text"
@@ -274,6 +380,21 @@
                             </button>
                         </div>
                     }
+                </div>
+
+                <!-- Event Photos Card -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h2 class="section-title">Event Photos</h2>
+                        <div class="section-sub">
+                            Upload photos taken during or after the celebration (max 3, auto-converted to AVIF).
+                        </div>
+                    </div>
+                    <EventPhotoUploader Photos="@_event.PhotoUrls"
+                                        PhotosChanged="OnPhotosChanged"
+                                        MaxPhotos="3"
+                                        ReadOnly="@(!IsAdmin)"
+                                        IsCompleted="@(_event.Status == "Completed")" />
                 </div>
 
                 <!-- Safety Checks & Allergies Card -->
@@ -331,6 +452,9 @@
     private Event? _event;
     private bool _isLoading = true;
     private List<EventTask> _tasks = new();
+    private List<Branch> _branches = new();
+    private List<Classroom> _classrooms = new();
+    private HashSet<Guid> _selectedClassroomIds = new();
     private string _newTaskDescription = "";
     private TimeSpan? _startTime;
     private TimeSpan? _endTime;
@@ -361,11 +485,20 @@
         try
         {
             _event = await EventService.GetEventByIdAsync(Id);
+            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            var orgs = await OrganizationService.GetOrganizationsAsync();
+            var org = orgs.FirstOrDefault();
+            if (org != null)
+            {
+                _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            }
+
             if (_event != null)
             {
                 _startTime = _event.StartTime;
                 _endTime = _event.EndTime;
                 _tasks = (await EventService.GetTasksAsync(Id)).ToList();
+                _selectedClassroomIds = (await EventService.GetEventClassroomsAsync(Id)).ToHashSet();
             }
         }
         catch (Exception ex)
@@ -375,6 +508,42 @@
 
         _isLoading = false;
         StateHasChanged();
+    }
+
+    private void SetScope(string scope)
+    {
+        if (_event == null) return;
+        _event.Scope = scope;
+        if (scope == "Branch" && _branches.Any() && (!_event.BranchId.HasValue || _event.BranchId == Guid.Empty))
+        {
+            _event.BranchId = _branches.First().Id;
+        }
+        else if (scope == "Organization")
+        {
+            _event.BranchId = null;
+        }
+    }
+
+    private void ToggleClassroom(Guid classroomId, object? isChecked)
+    {
+        if (isChecked is bool b && b)
+            _selectedClassroomIds.Add(classroomId);
+        else
+            _selectedClassroomIds.Remove(classroomId);
+    }
+
+    private string GetBranchName(Guid? branchId)
+    {
+        if (!branchId.HasValue) return "All Branches";
+        var b = _branches.FirstOrDefault(br => br.Id == branchId.Value);
+        return b != null ? b.Name : "Branch";
+    }
+
+    private string GetClassroomScopeDisplay()
+    {
+        if (!_selectedClassroomIds.Any()) return "Classroom";
+        var names = _classrooms.Where(c => _selectedClassroomIds.Contains(c.Id)).Select(c => c.Name).ToList();
+        return names.Any() ? string.Join(", ", names) : "Classroom";
     }
 
     private void GoBack()
@@ -387,7 +556,22 @@
         if (!IsAdmin || _event == null) return;
         _event.StartTime = _startTime;
         _event.EndTime = _endTime;
+        if (_event.Scope != "Branch") _event.BranchId = null;
         await EventService.UpdateEventAsync(_event);
+
+        if (_event.Scope == "Classroom")
+        {
+            var existing = (await EventService.GetEventClassroomsAsync(_event.Id)).ToHashSet();
+            foreach (var removeId in existing.Except(_selectedClassroomIds))
+            {
+                await EventService.RemoveClassroomFromEventAsync(_event.Id, removeId);
+            }
+            foreach (var addId in _selectedClassroomIds.Except(existing))
+            {
+                await EventService.AddClassroomToEventAsync(_event.Id, addId);
+            }
+        }
+
         _isSavedNotice = true;
         StateHasChanged();
         await Task.Delay(2500);
@@ -442,5 +626,13 @@
         await EventService.DeleteEventAsync(_event.Id);
         _isDeleteConfirmOpen = false;
         NavigationManager.NavigateTo("/events");
+    }
+
+    private async Task OnPhotosChanged(string[] newPhotos)
+    {
+        if (!IsAdmin || _event == null) return;
+        _event.PhotoUrls = newPhotos;
+        await EventService.UpdateEventPhotosAsync(_event.Id, newPhotos);
+        StateHasChanged();
     }
 }

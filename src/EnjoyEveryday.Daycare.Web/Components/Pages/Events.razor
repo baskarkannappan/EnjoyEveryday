@@ -4,6 +4,8 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject EventService EventService
 @inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager NavigationManager
 @rendermode InteractiveServer
@@ -106,10 +108,25 @@
                 var typeIcon = GetTypeIcon(evt.Title);
                 <article class="event-card" @onclick="() => NavigateToEvent(evt.Id)">
                     <div class="event-card-top">
-                        <span class="type-chip">
-                            <span>@typeIcon</span>
-                            <span>@(evt.Title.Contains("Birthday", StringComparison.OrdinalIgnoreCase) ? "Birthday" : evt.Title.Contains("Festival", StringComparison.OrdinalIgnoreCase) ? "Festival" : "Celebration")</span>
-                        </span>
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <span class="type-chip">
+                                <span>@typeIcon</span>
+                                <span>@(evt.Title.Contains("Birthday", StringComparison.OrdinalIgnoreCase) ? "Birthday" : evt.Title.Contains("Festival", StringComparison.OrdinalIgnoreCase) ? "Festival" : "Celebration")</span>
+                            </span>
+                            @if (evt.Scope == "Organization")
+                            {
+                                <span class="scope-badge org">🌐 Org-Wide</span>
+                            }
+                            else if (evt.Scope == "Branch")
+                            {
+                                var bName = _branches.FirstOrDefault(b => b.Id == evt.BranchId)?.Name ?? "Branch";
+                                <span class="scope-badge branch">🏢 @bName</span>
+                            }
+                            else
+                            {
+                                <span class="scope-badge classroom">🚪 @GetClassroomNames(evt.Id)</span>
+                            }
+                        </div>
                         <span class="status-chip @evt.Status.ToLower()">
                             @evt.Status
                         </span>
@@ -175,6 +192,64 @@
 
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div class="form-group">
+                    <label class="form-label">Event Scope *</label>
+                    <div class="scope-selector">
+                        <label class="scope-radio-btn @(_newEventScope == "Organization" ? "selected" : "")">
+                            <input type="radio" name="scope" value="Organization" checked="@(_newEventScope == "Organization")" @onchange='() => SetScope("Organization")' />
+                            <span class="icon">🌐</span>
+                            <strong>Entire Organization</strong>
+                            <small>Applies to all branches & all classrooms</small>
+                        </label>
+                        <label class="scope-radio-btn @(_newEventScope == "Branch" ? "selected" : "")">
+                            <input type="radio" name="scope" value="Branch" checked="@(_newEventScope == "Branch")" @onchange='() => SetScope("Branch")' />
+                            <span class="icon">🏢</span>
+                            <strong>Specific Branch</strong>
+                            <small>Implicitly applies to all classrooms in branch</small>
+                        </label>
+                        <label class="scope-radio-btn @(_newEventScope == "Classroom" ? "selected" : "")">
+                            <input type="radio" name="scope" value="Classroom" checked="@(_newEventScope == "Classroom")" @onchange='() => SetScope("Classroom")' />
+                            <span class="icon">🚪</span>
+                            <strong>Specific Classroom(s)</strong>
+                            <small>Only applies to chosen classroom(s)</small>
+                        </label>
+                    </div>
+                </div>
+
+                @if (_newEventScope == "Branch")
+                {
+                    <div class="form-group" style="padding: 12px; background: #f7faf8; border: 1px solid #dce8dd; border-radius: 12px;">
+                        <label class="form-label">Select Branch *</label>
+                        <select class="form-select" @bind="_selectedBranchId">
+                            <option value="">-- Choose Branch --</option>
+                            @foreach (var b in _branches)
+                            {
+                                <option value="@b.Id">@b.Name (@(b.Location ?? "Main"))</option>
+                            }
+                        </select>
+                        <small style="color: #64746a; margin-top: 4px; display: block;">
+                            ✦ All classrooms in this branch will automatically inherit this celebration.
+                        </small>
+                    </div>
+                }
+                else if (_newEventScope == "Classroom")
+                {
+                    <div class="form-group" style="padding: 12px; background: #f7faf8; border: 1px solid #dce8dd; border-radius: 12px;">
+                        <label class="form-label">Select Classroom(s) *</label>
+                        <div class="classroom-checkbox-grid">
+                            @foreach (var cr in _classrooms)
+                            {
+                                <label class="checkbox-pill">
+                                    <input type="checkbox"
+                                           checked="@_selectedClassroomIds.Contains(cr.Id)"
+                                           @onchange="e => ToggleClassroomSelection(cr.Id, e.Value)" />
+                                    <span>@cr.Name</span>
+                                </label>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="form-group">
                     <label class="form-label">Event Title *</label>
                     <input type="text"
                            class="form-input"
@@ -219,7 +294,7 @@
                 <div class="form-group">
                     <label class="form-label">Status</label>
                     <select class="form-select" @bind="_newEvent.Status">
-                        <option value="Planned">Planned (Shows on Experience Calendar)</option>
+                        <option value="Planned">Planned (Shows on Experience Calendar & Rhythm)</option>
                         <option value="Draft">Draft (Planning in progress)</option>
                         <option value="Approved">Approved</option>
                     </select>
@@ -249,6 +324,8 @@
 @code {
     private List<Event> _events = new();
     private List<Classroom> _classrooms = new();
+    private List<Branch> _branches = new();
+    private Dictionary<Guid, HashSet<Guid>> _eventClassroomsMap = new();
     private bool _isLoading = true;
     private string _activeTab = "all";
     private string _searchQuery = "";
@@ -257,6 +334,9 @@
 
     private bool _isCreateModalOpen = false;
     private Event _newEvent = new();
+    private string _newEventScope = "Organization";
+    private Guid? _selectedBranchId;
+    private HashSet<Guid> _selectedClassroomIds = new();
     private TimeSpan? _newEventStartTime = new TimeSpan(10, 0, 0);
     private TimeSpan? _newEventEndTime = new TimeSpan(11, 30, 0);
 
@@ -285,6 +365,20 @@
         {
             _events = (await EventService.GetEventsAsync()).ToList();
             _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            
+            var orgs = await OrganizationService.GetOrganizationsAsync();
+            var org = orgs.FirstOrDefault();
+            if (org != null)
+            {
+                _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            }
+
+            _eventClassroomsMap.Clear();
+            foreach (var evt in _events.Where(e => e.Scope == "Classroom"))
+            {
+                var crIds = await EventService.GetEventClassroomsAsync(evt.Id);
+                _eventClassroomsMap[evt.Id] = crIds.ToHashSet();
+            }
         }
         catch (Exception ex)
         {
@@ -336,6 +430,15 @@
         _activeTab = tab;
     }
 
+    private string GetClassroomNames(Guid eventId)
+    {
+        if (!_eventClassroomsMap.TryGetValue(eventId, out var crIds) || !crIds.Any())
+            return "Classroom";
+
+        var names = _classrooms.Where(c => crIds.Contains(c.Id)).Select(c => c.Name).ToList();
+        return names.Any() ? string.Join(", ", names) : "Classroom";
+    }
+
     private string GetTypeIcon(string title)
     {
         if (title.Contains("Birthday", StringComparison.OrdinalIgnoreCase)) return "🎂";
@@ -346,16 +449,40 @@
         return "🎉";
     }
 
+    private void SetScope(string scope)
+    {
+        _newEventScope = scope;
+        if (_newEventScope == "Branch" && _branches.Any() && (_selectedBranchId == null || _selectedBranchId == Guid.Empty))
+        {
+            _selectedBranchId = _branches.First().Id;
+        }
+    }
+
+    private void ToggleClassroomSelection(Guid classroomId, object? isChecked)
+    {
+        if (isChecked is bool b && b)
+        {
+            _selectedClassroomIds.Add(classroomId);
+        }
+        else
+        {
+            _selectedClassroomIds.Remove(classroomId);
+        }
+    }
+
     private void OpenCreateModal()
     {
         if (!IsAdmin) return;
+        _newEventScope = "Organization";
+        _selectedBranchId = _branches.FirstOrDefault()?.Id;
+        _selectedClassroomIds.Clear();
         _newEvent = new Event
         {
             Id = Guid.NewGuid(),
             Title = "",
             EventDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)),
             Status = "Planned",
-            IsOrganizationWide = true
+            Scope = "Organization"
         };
         _newEventStartTime = new TimeSpan(10, 0, 0);
         _newEventEndTime = new TimeSpan(11, 30, 0);
@@ -376,8 +503,19 @@
 
         _newEvent.StartTime = _newEventStartTime;
         _newEvent.EndTime = _newEventEndTime;
+        _newEvent.Scope = _newEventScope;
+        _newEvent.BranchId = _newEventScope == "Branch" ? _selectedBranchId : null;
 
         var id = await EventService.CreateEventAsync(_newEvent);
+
+        if (_newEventScope == "Classroom")
+        {
+            foreach (var crId in _selectedClassroomIds)
+            {
+                await EventService.AddClassroomToEventAsync(id, crId);
+            }
+        }
+
         _isCreateModalOpen = false;
         await LoadDataAsync();
         NavigateToEvent(id);

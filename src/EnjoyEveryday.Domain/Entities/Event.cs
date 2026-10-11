@@ -15,7 +15,14 @@ public class Event
     public string? Location { get; set; }
     public Guid? OrganizerId { get; set; }
     public string Status { get; set; } = "Draft"; // Draft, Planned, Approved, Published, InProgress, Completed, Cancelled
-    public bool IsOrganizationWide { get; set; }
+    public string Scope { get; set; } = "Classroom"; // Organization, Branch, Classroom
+    public Guid? BranchId { get; set; }
+    public bool IsOrganizationWide 
+    { 
+        get => Scope == "Organization"; 
+        set { if (value) Scope = "Organization"; } 
+    }
+    public string[] PhotoUrls { get; set; } = Array.Empty<string>();
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

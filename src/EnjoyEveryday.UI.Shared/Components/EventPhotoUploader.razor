@@ -1,0 +1,164 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<div class="event-photo-uploader">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <div>
+            <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #26332d; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📸 Event Photos</span>
+                <span style="font-size: 0.75rem; font-weight: 600; background: #e6eee9; color: #3e6253; padding: 2px 8px; border-radius: 999px;">
+                    @(Photos?.Length ?? 0) / @MaxPhotos max
+                </span>
+            </h4>
+            <p style="margin: 2px 0 0; font-size: 0.78rem; color: #6c7870;">
+                Capture moments from this event. Automatically converted and saved in AVIF format.
+            </p>
+        </div>
+    </div>
+
+    @if (!IsCompleted)
+    {
+        <div style="padding: 0.85rem 1rem; background: #fbf6ee; border: 1px dashed #d5c3aa; border-radius: 12px; font-size: 0.85rem; color: #855726; display: flex; align-items: center; gap: 0.5rem;">
+            <span>ℹ️</span>
+            <span>Photos can be added once this celebration or event is marked <strong>Completed</strong>.</span>
+        </div>
+    }
+    else
+    {
+        <!-- Photo Gallery Previews -->
+        @if (Photos != null && Photos.Length > 0)
+        {
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                @for (int i = 0; i < Photos.Length; i++)
+                {
+                    var photo = Photos[i];
+                    var idx = i;
+                    <div style="position: relative; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid #e4e7df; background: #26332d; box-shadow: 0 2px 6px rgba(40,55,47,0.06);">
+                        <img src="@photo" alt="Event photo @(idx + 1)" style="width: 100%; height: 100%; object-fit: cover;" />
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(26, 37, 30, 0.7)); padding: 4px 6px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.65rem; color: #fff; background: rgba(0,0,0,0.4); padding: 1px 5px; border-radius: 4px; font-weight: 600;">AVIF</span>
+                            @if (!ReadOnly)
+                            {
+                                <button type="button" @onclick="() => RemovePhoto(idx)" title="Remove photo"
+                                        style="border: none; background: rgba(181, 90, 90, 0.9); color: white; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; line-height: 1;">
+                                    ✕
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Upload Dropzone (if under max) -->
+        @if (!ReadOnly && (Photos == null || Photos.Length < MaxPhotos))
+        {
+            var remaining = MaxPhotos - (Photos?.Length ?? 0);
+            <div style="position: relative; border: 2px dashed @(_isDragging ? "#557c6c" : "#cbd9ce"); background: @(_isDragging ? "#eef5ef" : "#f8f9f5"); border-radius: 14px; padding: 1.5rem 1rem; text-align: center; transition: all 0.2s ease; cursor: pointer;">
+                <input type="file"
+                       accept="image/*"
+                       multiple
+                       @ref="_fileInput"
+                       @onchange="HandleFilesSelected"
+                       style="position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; z-index: 5;"
+                       @ondragenter="() => _isDragging = true"
+                       @ondragleave="() => _isDragging = false"
+                       @ondrop="() => _isDragging = false" />
+
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem; pointer-events: none;">
+                    <div style="font-size: 2rem; line-height: 1;">📸</div>
+                    <div style="font-weight: 600; font-size: 0.9rem; color: #26332d;">
+                        Drop photos here or <span style="color: #557c6c; text-decoration: underline; font-weight: 700;">browse files</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #6c7870;">
+                        You can add up to <strong>@remaining more</strong> photo@(remaining > 1 ? "s" : "") &bull; Auto-converted to <strong>.avif</strong> format
+                    </div>
+                </div>
+
+                @if (_isProcessing)
+                {
+                    <div style="position: absolute; inset: 0; background: rgba(255, 255, 255, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; border-radius: 12px;">
+                        <span style="font-size: 1.5rem; animation: spin 1s infinite linear;">🔄</span>
+                        <span style="font-size: 0.85rem; font-weight: 600; color: #26332d; margin-top: 4px;">Optimizing and converting to AVIF...</span>
+                    </div>
+                }
+            </div>
+        }
+        else if (Photos != null && Photos.Length >= MaxPhotos)
+        {
+            <div style="font-size: 0.8rem; color: #64748b; text-align: center; font-style: italic; margin-top: 0.25rem;">
+                Maximum limit of 3 photos reached for this event.
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string[]? Photos { get; set; } = Array.Empty<string>();
+
+    [Parameter]
+    public EventCallback<string[]> PhotosChanged { get; set; }
+
+    [Parameter]
+    public int MaxPhotos { get; set; } = 3;
+
+    [Parameter]
+    public bool ReadOnly { get; set; } = false;
+
+    [Parameter]
+    public bool IsCompleted { get; set; } = true;
+
+    private ElementReference _fileInput;
+    private bool _isProcessing = false;
+    private bool _isDragging = false;
+
+    private async Task HandleFilesSelected(ChangeEventArgs e)
+    {
+        _isProcessing = true;
+        _isDragging = false;
+        StateHasChanged();
+
+        try
+        {
+            var remaining = MaxPhotos - (Photos?.Length ?? 0);
+            if (remaining <= 0) return;
+
+            var convertedAvifList = await JSRuntime.InvokeAsync<string[]>("window.imageConverter.convertMultipleToAvif", _fileInput, remaining);
+
+            if (convertedAvifList != null && convertedAvifList.Length > 0)
+            {
+                var currentList = (Photos ?? Array.Empty<string>()).ToList();
+                foreach (var img in convertedAvifList)
+                {
+                    if (currentList.Count < MaxPhotos && !string.IsNullOrWhiteSpace(img))
+                    {
+                        currentList.Add(img);
+                    }
+                }
+
+                Photos = currentList.ToArray();
+                await PhotosChanged.InvokeAsync(Photos);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error converting photos to AVIF: {ex.Message}");
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemovePhoto(int index)
+    {
+        if (Photos == null || index < 0 || index >= Photos.Length) return;
+
+        var list = Photos.ToList();
+        list.RemoveAt(index);
+        Photos = list.ToArray();
+        await PhotosChanged.InvokeAsync(Photos);
+    }
+}

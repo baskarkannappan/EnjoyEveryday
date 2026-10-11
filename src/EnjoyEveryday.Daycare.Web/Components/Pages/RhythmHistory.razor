@@ -1,0 +1,846 @@
+@page "/rhythm-history"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Dapper
+@using EnjoyEveryday.Shared.Data
+@inject OrganizationService OrganizationService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject ExperienceService ExperienceService
+@inject EventService EventService
+@inject IDbConnectionFactory DbConnectionFactory
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
+@inject TimeProvider TimeProvider
+@rendermode InteractiveServer
+
+<div class="rhythm-history-content">
+    <!-- HERO / WELCOME HEADER -->
+    <div class="welcome" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+        <div>
+            <button class="back-pill-btn" @onclick='() => NavigationManager.NavigateTo("/")'>
+                <span>&larr;</span> Back to Today
+            </button>
+            <h1 style="font-size: 26px; font-weight: 750; color: var(--text, #26332d); margin: 10px 0 4px 0; letter-spacing: -0.5px;">
+                Past Rhythm History ✦
+            </h1>
+            <p style="color: var(--muted, #6c7870); font-size: 13.5px; margin: 0; max-width: 580px;">
+                Explore the daily flow of past days — review structured experiences, milestones, and celebrations across Little Stars.
+            </p>
+        </div>
+
+        <!-- QUICK DATE PILLS -->
+        <div class="date-pills-bar">
+            <button class="date-pill-btn @(_selectedDate == _today.AddDays(-1) ? "active" : "")" @onclick='() => SetDate(_today.AddDays(-1))'>
+                Yesterday
+            </button>
+            <button class="date-pill-btn @(_selectedDate == _today.AddDays(-2) ? "active" : "")" @onclick='() => SetDate(_today.AddDays(-2))'>
+                2 Days Ago
+            </button>
+            <button class="date-pill-btn @(_selectedDate == _today.AddDays(-7) ? "active" : "")" @onclick='() => SetDate(_today.AddDays(-7))'>
+                1 Week Ago
+            </button>
+            <button class="date-pill-btn @(_selectedDate == _today ? "active" : "")" @onclick='() => SetDate(_today)'>
+                Today
+            </button>
+        </div>
+    </div>
+
+    <!-- FILTER SECTION CARD -->
+    <div class="section-card filter-card">
+        <div class="filter-grid">
+            <!-- Organization -->
+            <div class="filter-group">
+                <label class="filter-label">Organization</label>
+                <select class="theme-select" value="@_selectedOrgId" @onchange="OnOrgChanged">
+                    @foreach (var org in _organizations)
+                    {
+                        <option value="@org.Id">@org.Name</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Branch -->
+            <div class="filter-group">
+                <label class="filter-label">Branch</label>
+                <select class="theme-select" value="@_selectedBranchId" @onchange="OnBranchChanged">
+                    <option value="">🏢 All Branches</option>
+                    @foreach (var b in _filteredBranches)
+                    {
+                        <option value="@b.Id">@b.Name (@(b.Location ?? "Main"))</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Classroom -->
+            <div class="filter-group">
+                <label class="filter-label">Classroom</label>
+                <select class="theme-select" value="@_selectedClassroomId" @onchange="OnClassroomChanged">
+                    <option value="">🚪 All Classrooms</option>
+                    @foreach (var c in _filteredClassrooms)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Date -->
+            <div class="filter-group">
+                <label class="filter-label">Date</label>
+                <input type="date"
+                       class="theme-date-input"
+                       value="@_selectedDate.ToString("yyyy-MM-dd")"
+                       @onchange="OnDateInputChanged" />
+            </div>
+        </div>
+    </div>
+
+    <!-- DAY PULSE / METRICS (matches Today.razor pulse cards) -->
+    <div class="pulse-grid">
+        <div class="pulse-card pulse-main-card">
+            <div class="stat-label">Rhythm for date</div>
+            <div class="stat-number" style="font-size: 20px;">@_selectedDate.ToString("dddd, MMM d")</div>
+            <div class="stat-note">@_timelineItems.Count total activities recorded</div>
+        </div>
+
+        <div class="pulse-card">
+            <div class="stat-label">Experiences Run</div>
+            <div class="stat-number">@_timelineItems.Count(t => !t.IsEvent)</div>
+            <div class="stat-note">Classroom learning sessions</div>
+        </div>
+
+        <div class="pulse-card">
+            <div class="stat-label">Celebrations Held</div>
+            <div class="stat-number">@_timelineItems.Count(t => t.IsEvent)</div>
+            <div class="stat-note">Events & special days</div>
+        </div>
+
+        <div class="pulse-card">
+            <div class="stat-label">Photos Captured</div>
+            <div class="stat-number">@_timelineItems.Sum(t => t.PhotoUrls?.Length ?? 0)</div>
+            <div class="stat-note">Saved in AVIF format</div>
+        </div>
+    </div>
+
+    <!-- DAILY FLOW TIMELINE -->
+    <div class="section-card">
+        <div class="section-header">
+            <div>
+                <h2>Daily Flow Timeline</h2>
+                <span>Chronological rhythm for @_selectedDate.ToString("MMMM d, yyyy")</span>
+            </div>
+            @if (_isLoading)
+            {
+                <span style="font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px;">
+                    <FluentSpinner Size="SpinnerSize.ExtraSmall" /> Loading day rhythm...
+                </span>
+            }
+        </div>
+
+        @if (!_isLoading && !_timelineItems.Any())
+        {
+            <div style="text-align: center; padding: 50px 20px; color: var(--muted, #6c7870);">
+                <div style="font-size: 32px; margin-bottom: 10px;">🍃</div>
+                <strong style="display: block; font-size: 15px; color: var(--text, #26332d); margin-bottom: 6px;">
+                    No recorded rhythm for this date
+                </strong>
+                <p style="font-size: 13px; max-width: 440px; margin: 0 auto 16px; line-height: 1.5;">
+                    No experiences or special celebrations were logged for @_selectedDate.ToString("MMMM d, yyyy") with the selected branch/classroom filters.
+                </p>
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                    <button class="date-pill-btn active" @onclick='() => SetDate(_today)'>
+                        View Today Instead
+                    </button>
+                    <button class="date-pill-btn" @onclick='() => SetDate(_today.AddDays(-1))'>
+                        Check Yesterday
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="timeline">
+                @foreach (var item in _timelineItems)
+                {
+                    <div class="timeline-item">
+                        <!-- Elegant Timeline Dot matching app theme -->
+                        <div class="timeline-dot @(item.IsEvent ? "event-dot" : "")"></div>
+
+                        <!-- Card matching the .classroom card style -->
+                        <div class="classroom rhythm-entry-card">
+                            <div class="classroom-top">
+                                <div class="classroom-name">
+                                    <div class="classroom-dot" style="background-color: @(item.IsEvent ? "#d98a2c" : "var(--accent, #557c6c)");"></div>
+                                    <div>
+                                        <strong>@item.Title</strong>
+                                        <small>⏰ @item.TimeDisplay • @item.ScopeDisplay</small>
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                    <span class="status @(item.Status == "Active" || item.Status == "Started" || item.Status == "InProgress" ? "active" : "")">
+                                        @item.Status
+                                    </span>
+                                    @if (item.IsEvent)
+                                    {
+                                        <span class="scope-badge @item.Scope.ToLower()">
+                                            @(item.Scope == "Organization" ? "🌐 Org-Wide" : item.Scope == "Branch" ? $"🏢 Branch" : $"🚪 Classroom")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(item.Description))
+                            {
+                                <div style="font-size: 12.5px; color: #46554b; margin: 10px 0 4px; line-height: 1.5;">
+                                    @item.Description
+                                </div>
+                            }
+
+                            <!-- Event Photo Thumbnails -->
+                            @if (item.IsEvent && item.PhotoUrls != null && item.PhotoUrls.Length > 0)
+                            {
+                                <div style="margin-top: 10px; padding: 10px 12px; background: var(--surface-soft, #f8f9f5); border: 1px solid #e7ebe7; border-radius: 12px;">
+                                    <div style="font-size: 11px; font-weight: 700; color: #557c6c; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                        📸 Event Photos (@item.PhotoUrls.Length / 3)
+                                    </div>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        @foreach (var pUrl in item.PhotoUrls)
+                                        {
+                                            <div class="rhythm-photo-thumb" @onclick="() => OpenPhotoModal(pUrl)">
+                                                <img src="@pUrl" alt="Event photo" />
+                                                <div class="rhythm-photo-overlay">🔍</div>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Bottom Action Row -->
+                            <div class="classroom-bottom">
+                                <div class="mini-info">
+                                    Type
+                                    <strong>@(item.IsEvent ? "🎉 Celebration" : "🎨 Structured Experience")</strong>
+                                </div>
+
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    @if (item.IsEvent)
+                                    {
+                                        @if (string.Equals(item.Status, "Completed", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <button type="button" class="btn-theme-secondary" @onclick="() => TogglePhotoEditor(item.EventId!.Value)">
+                                                📸 @(item.EditingPhotos ? "Close Photo Editor" : "Manage Photos")
+                                            </button>
+                                        }
+                                        <a class="view-btn" href="/events/@item.EventId" style="text-decoration: none;">
+                                            Details &rarr;
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Expandable Photo Uploader for Completed Celebrations -->
+                            @if (item.IsEvent && item.EditingPhotos)
+                            {
+                                <div style="margin-top: 14px; padding: 14px; background: white; border: 1px solid #e4e7df; border-radius: 14px; box-shadow: 0 4px 12px rgba(40,55,47,0.04);">
+                                    <EventPhotoUploader Photos="@item.PhotoUrls"
+                                                        PhotosChanged="urls => OnEventPhotosUpdated(item, urls)"
+                                                        MaxPhotos="3"
+                                                        ReadOnly="false"
+                                                        IsCompleted="true" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<!-- PHOTO LIGHTBOX MODAL -->
+@if (!string.IsNullOrEmpty(_activePreviewPhoto))
+{
+    <div class="lightbox-overlay" @onclick="() => _activePreviewPhoto = null">
+        <div class="lightbox-content" @onclick:stopPropagation>
+            <button class="lightbox-close" @onclick="() => _activePreviewPhoto = null">✕</button>
+            <img src="@_activePreviewPhoto" alt="Event photo preview" class="lightbox-img" />
+            <div class="lightbox-caption">
+                <span>Optimized AVIF Photo</span>
+                <a href="@_activePreviewPhoto" download="event-photo.avif" class="download-link">⬇ Download</a>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DateOnly _today;
+    private DateOnly _selectedDate;
+    private Guid? _selectedOrgId;
+    private Guid? _selectedBranchId;
+    private Guid? _selectedClassroomId;
+
+    private List<Organization> _organizations = new();
+    private List<Branch> _allBranches = new();
+    private List<Branch> _filteredBranches = new();
+    private List<Classroom> _allClassrooms = new();
+    private List<Classroom> _filteredClassrooms = new();
+    private List<Experience> _experiences = new();
+
+    private List<HistoricalRhythmItem> _timelineItems = new();
+    private bool _isLoading = true;
+    private string? _activePreviewPhoto;
+
+    public class HistoricalRhythmItem
+    {
+        public bool IsEvent { get; set; }
+        public TimeSpan? StartTime { get; set; }
+        public TimeSpan? EndTime { get; set; }
+        public string TimeDisplay { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string? Description { get; set; }
+        public string Scope { get; set; } = "Classroom";
+        public string ScopeDisplay { get; set; } = "";
+        public string Status { get; set; } = "";
+        public Guid? ClassroomId { get; set; }
+        public Guid? EventId { get; set; }
+        public Guid? ScheduleId { get; set; }
+        public string[] PhotoUrls { get; set; } = Array.Empty<string>();
+        public bool EditingPhotos { get; set; } = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
+        _selectedDate = _today.AddDays(-1); // Default to yesterday
+
+        try
+        {
+            _organizations = (await OrganizationService.GetOrganizationsAsync()).ToList();
+            if (_organizations.Any())
+            {
+                _selectedOrgId = _organizations.First().Id;
+                _allBranches = (await BranchService.GetBranchesAsync(_selectedOrgId.Value)).ToList();
+                _filteredBranches = _allBranches;
+            }
+
+            _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            _filteredClassrooms = _allClassrooms;
+            _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+
+            await LoadRhythmForDateAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing RhythmHistory: {ex.Message}");
+            _isLoading = false;
+        }
+    }
+
+    private void SetDate(DateOnly date)
+    {
+        _selectedDate = date;
+        _ = LoadRhythmForDateAsync();
+    }
+
+    private void OnDateInputChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            _selectedDate = parsed;
+            _ = LoadRhythmForDateAsync();
+        }
+    }
+
+    private void OnOrgChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var orgId))
+        {
+            _selectedOrgId = orgId;
+            _selectedBranchId = null;
+            _selectedClassroomId = null;
+            UpdateFilteredLists();
+            _ = LoadRhythmForDateAsync();
+        }
+    }
+
+    private void OnBranchChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (Guid.TryParse(val, out var bId))
+        {
+            _selectedBranchId = bId;
+        }
+        else
+        {
+            _selectedBranchId = null;
+        }
+        _selectedClassroomId = null;
+        UpdateFilteredLists();
+        _ = LoadRhythmForDateAsync();
+    }
+
+    private void OnClassroomChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (Guid.TryParse(val, out var cId))
+        {
+            _selectedClassroomId = cId;
+        }
+        else
+        {
+            _selectedClassroomId = null;
+        }
+        _ = LoadRhythmForDateAsync();
+    }
+
+    private void UpdateFilteredLists()
+    {
+        if (_selectedBranchId.HasValue)
+        {
+            _filteredClassrooms = _allClassrooms.Where(c => c.BranchId == _selectedBranchId.Value).ToList();
+        }
+        else
+        {
+            _filteredClassrooms = _allClassrooms;
+        }
+    }
+
+    private async Task LoadRhythmForDateAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            using var connection = await DbConnectionFactory.CreateConnectionAsync();
+
+            // 1. Fetch experience schedules for selected date
+            var schedSql = @"
+                SELECT s.id, s.tenant_id as TenantId, s.experience_id as ExperienceId, 
+                       s.classroom_id as ClassroomId, s.scheduled_date as ScheduledDate, 
+                       s.time_of_day as TimeOfDay, s.status as Status, s.planned_start_time as PlannedStartTime, 
+                       s.planned_end_time as PlannedEndTime, s.preparation_notes as PreparationNotes
+                FROM experience_schedules s
+                JOIN classrooms c ON s.classroom_id = c.id
+                WHERE s.tenant_id = @TenantId
+                  AND s.scheduled_date = @Date
+                  AND (@ClassroomId IS NULL OR s.classroom_id = @ClassroomId)
+                  AND (@BranchId IS NULL OR c.branch_id = @BranchId)
+                ORDER BY s.planned_start_time ASC NULLS LAST, s.time_of_day ASC";
+
+            var schedules = (await connection.QueryAsync<ExperienceSchedule>(schedSql, new
+            {
+                TenantId = tenantId,
+                Date = _selectedDate.ToDateTime(TimeOnly.MinValue),
+                ClassroomId = _selectedClassroomId,
+                BranchId = _selectedBranchId
+            })).ToList();
+
+            // 2. Fetch events for selected date
+            var events = (await EventService.GetEventsForDateAsync(
+                _selectedDate,
+                _selectedBranchId,
+                _selectedClassroomId
+            )).ToList();
+
+            // Build map of classrooms for classroom-scoped events
+            var eventClassroomMap = new Dictionary<Guid, HashSet<Guid>>();
+            foreach (var ev in events.Where(e => e.Scope == "Classroom"))
+            {
+                var cIds = await EventService.GetEventClassroomsAsync(ev.Id);
+                eventClassroomMap[ev.Id] = cIds.ToHashSet();
+            }
+
+            var items = new List<HistoricalRhythmItem>();
+
+            // Convert schedules to timeline items
+            foreach (var s in schedules)
+            {
+                var exp = _experiences.FirstOrDefault(e => e.Id == s.ExperienceId);
+                var room = _allClassrooms.FirstOrDefault(c => c.Id == s.ClassroomId);
+                var timeDisp = s.PlannedStartTime.HasValue
+                    ? DateTime.Today.Add(s.PlannedStartTime.Value).ToString("t")
+                    : (!string.IsNullOrWhiteSpace(s.TimeOfDay) ? s.TimeOfDay : "Completed");
+
+                items.Add(new HistoricalRhythmItem
+                {
+                    IsEvent = false,
+                    StartTime = s.PlannedStartTime,
+                    EndTime = s.PlannedEndTime,
+                    TimeDisplay = timeDisp,
+                    Title = exp?.Title ?? "Experience",
+                    Description = s.PreparationNotes,
+                    Scope = "Classroom",
+                    ScopeDisplay = room?.Name ?? "Classroom",
+                    Status = s.Status,
+                    ClassroomId = s.ClassroomId,
+                    ScheduleId = s.Id
+                });
+            }
+
+            // Convert events to timeline items
+            foreach (var ev in events)
+            {
+                var timeDisp = ev.StartTime.HasValue
+                    ? DateTime.Today.Add(ev.StartTime.Value).ToString("t")
+                    : "All Day";
+
+                string scopeDisplay;
+                if (ev.Scope == "Organization")
+                {
+                    scopeDisplay = "All Branches & Classrooms";
+                }
+                else if (ev.Scope == "Branch")
+                {
+                    var b = _allBranches.FirstOrDefault(br => br.Id == ev.BranchId);
+                    scopeDisplay = $"{b?.Name ?? "Branch"} (All Rooms)";
+                }
+                else
+                {
+                    if (eventClassroomMap.TryGetValue(ev.Id, out var crIds) && crIds.Any())
+                    {
+                        var names = _allClassrooms.Where(c => crIds.Contains(c.Id)).Select(c => c.Name).ToList();
+                        scopeDisplay = string.Join(", ", names);
+                    }
+                    else
+                    {
+                        scopeDisplay = "Specific Classrooms";
+                    }
+                }
+
+                items.Add(new HistoricalRhythmItem
+                {
+                    IsEvent = true,
+                    StartTime = ev.StartTime,
+                    EndTime = ev.EndTime,
+                    TimeDisplay = timeDisp,
+                    Title = ev.Title,
+                    Description = ev.Description,
+                    Scope = ev.Scope,
+                    ScopeDisplay = scopeDisplay,
+                    Status = ev.Status,
+                    EventId = ev.Id,
+                    PhotoUrls = ev.PhotoUrls ?? Array.Empty<string>()
+                });
+            }
+
+            _timelineItems = items.OrderBy(i => i.StartTime ?? TimeSpan.Zero).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading rhythm history: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void TogglePhotoEditor(Guid eventId)
+    {
+        var item = _timelineItems.FirstOrDefault(t => t.EventId == eventId);
+        if (item != null)
+        {
+            item.EditingPhotos = !item.EditingPhotos;
+        }
+    }
+
+    private async Task OnEventPhotosUpdated(HistoricalRhythmItem item, string[] newPhotos)
+    {
+        if (item.EventId == null) return;
+        item.PhotoUrls = newPhotos;
+        await EventService.UpdateEventPhotosAsync(item.EventId.Value, newPhotos);
+        StateHasChanged();
+    }
+
+    private void OpenPhotoModal(string photoUrl)
+    {
+        _activePreviewPhoto = photoUrl;
+    }
+}
+
+<style>
+.rhythm-history-content {
+    padding: 24px 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+    background-color: var(--bg, #f5f5ef);
+    min-height: 100vh;
+    font-family: var(--body-font, "Figtree", sans-serif);
+}
+
+.back-pill-btn {
+    border: 1px solid #dce4dd;
+    background: #ffffff;
+    color: #3e6253;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 650;
+    padding: 6px 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+
+.back-pill-btn:hover {
+    background: #eef5ef;
+    border-color: #cbd9ce;
+}
+
+.date-pills-bar {
+    display: flex;
+    gap: 8px;
+    background: white;
+    padding: 5px;
+    border-radius: 24px;
+    border: 1px solid #e7ebe7;
+    box-shadow: 0 2px 6px rgba(40,55,47,0.03);
+}
+
+.date-pill-btn {
+    border: none;
+    background: transparent;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted, #6c7870);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.date-pill-btn:hover {
+    color: var(--text, #26332d);
+    background: #f4f6f4;
+}
+
+.date-pill-btn.active {
+    background: var(--accent, #557c6c);
+    color: white;
+    box-shadow: 0 2px 8px rgba(85, 124, 108, 0.25);
+}
+
+/* Filter Card */
+.filter-card {
+    padding: 18px 22px;
+    margin-bottom: 22px;
+}
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-label {
+    font-size: 11px;
+    font-weight: 750;
+    color: #89938d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.theme-select, .theme-date-input {
+    border: 1px solid #dce4dd;
+    border-radius: 12px;
+    padding: 9px 13px;
+    font-size: 13px;
+    color: var(--text, #26332d);
+    background: #f8f9f5;
+    outline: none;
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+
+.theme-select:focus, .theme-date-input:focus {
+    border-color: var(--accent, #557c6c);
+    background: #ffffff;
+    box-shadow: 0 0 0 2px rgba(85, 124, 108, 0.15);
+}
+
+/* Pulse / Metric Cards */
+.pulse-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.pulse-card {
+    background: white;
+    border: 1px solid #e7ebe7;
+    border-radius: 17px;
+    padding: 18px;
+    box-shadow: 0 4px 14px rgba(40,55,47,0.03);
+}
+
+.pulse-main-card {
+    background: linear-gradient(135deg, #fbfaf6 0%, #ffffff 100%);
+    border-color: #e4e7df;
+}
+
+.stat-label {
+    color: #89938d;
+    font-size: 12px;
+    margin-bottom: 7px;
+    font-weight: 600;
+}
+
+.stat-number {
+    font-size: 24px;
+    font-weight: 750;
+    color: var(--text, #26332d);
+}
+
+.stat-note {
+    margin-top: 5px;
+    font-size: 11px;
+    color: #849087;
+}
+
+/* Timeline Cards */
+.rhythm-entry-card {
+    background: #fafbf9;
+    border: 1px solid #e8ece9;
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 0;
+    transition: all 0.2s ease;
+}
+
+.rhythm-entry-card:hover {
+    background: #ffffff;
+    border-color: #cbd9ce;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(40,55,47,0.04);
+}
+
+.rhythm-photo-thumb {
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid #dce4dd;
+}
+
+.rhythm-photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.rhythm-photo-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(38, 51, 45, 0.5);
+    color: white;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.rhythm-photo-thumb:hover .rhythm-photo-overlay {
+    opacity: 1;
+}
+
+.btn-theme-secondary {
+    background: #eef5ef;
+    color: #263d32;
+    border: 1px solid #dce4dd;
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn-theme-secondary:hover {
+    background: #e1ede3;
+    border-color: #cbd9ce;
+}
+
+/* Lightbox Modal */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(26, 37, 30, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    padding: 20px;
+    backdrop-filter: blur(5px);
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.lightbox-img {
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: 16px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+    object-fit: contain;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: rgba(255,255,255,0.25);
+    border: none;
+    color: white;
+    font-size: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.lightbox-close:hover {
+    background: rgba(255,255,255,0.4);
+}
+
+.lightbox-caption {
+    margin-top: 12px;
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    color: #e4e7df;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.download-link {
+    color: #a7f3d0;
+    text-decoration: none;
+    font-weight: 650;
+}
+</style>

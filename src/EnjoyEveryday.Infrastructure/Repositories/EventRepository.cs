@@ -35,24 +35,75 @@ public class EventRepository : IEventRepository
         );
     }
 
+    public async Task<IEnumerable<Event>> GetByBranchAsync(Guid tenantId, Guid branchId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+        var sql = @"
+            SELECT DISTINCT e.* FROM events e
+            LEFT JOIN event_classrooms ec ON e.id = ec.event_id
+            LEFT JOIN classrooms c ON c.id = ec.classroom_id
+            WHERE e.tenant_id = @TenantId 
+              AND (e.scope = 'Organization' 
+                   OR e.is_organization_wide = true 
+                   OR (e.scope = 'Branch' AND e.branch_id = @BranchId)
+                   OR (c.branch_id = @BranchId))
+            ORDER BY e.event_date DESC, e.start_time ASC NULLS LAST";
+        return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, BranchId = branchId });
+    }
+
     public async Task<IEnumerable<Event>> GetByClassroomAsync(Guid tenantId, Guid classroomId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
         var sql = @"
-            SELECT e.* FROM events e
+            SELECT DISTINCT e.* FROM events e
             LEFT JOIN event_classrooms ec ON e.id = ec.event_id
+            LEFT JOIN classrooms c ON c.id = @ClassroomId
             WHERE e.tenant_id = @TenantId 
-              AND (e.is_organization_wide = true OR ec.classroom_id = @ClassroomId)
-            ORDER BY e.event_date DESC";
+              AND (e.scope = 'Organization' 
+                   OR e.is_organization_wide = true 
+                   OR (e.scope = 'Branch' AND e.branch_id = c.branch_id)
+                   OR (ec.classroom_id = @ClassroomId))
+            ORDER BY e.event_date DESC, e.start_time ASC NULLS LAST";
         return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, ClassroomId = classroomId });
+    }
+
+    public async Task<IEnumerable<Event>> GetEventsForDateAsync(Guid tenantId, DateOnly date, Guid? branchId = null, Guid? classroomId = null)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+        var sql = @"
+            SELECT DISTINCT e.* FROM events e
+            LEFT JOIN event_classrooms ec ON e.id = ec.event_id
+            LEFT JOIN classrooms c ON c.id = @ClassroomId
+            LEFT JOIN classrooms ec_c ON ec_c.id = ec.classroom_id
+            WHERE e.tenant_id = @TenantId 
+              AND e.event_date = @Date
+              AND (
+                  (@ClassroomId IS NOT NULL AND (
+                      e.scope = 'Organization' 
+                      OR e.is_organization_wide = true 
+                      OR (e.scope = 'Branch' AND e.branch_id = c.branch_id) 
+                      OR (ec.classroom_id = @ClassroomId)
+                  ))
+                  OR
+                  (@ClassroomId IS NULL AND @BranchId IS NOT NULL AND (
+                      e.scope = 'Organization' 
+                      OR e.is_organization_wide = true 
+                      OR (e.scope = 'Branch' AND e.branch_id = @BranchId) 
+                      OR (ec_c.branch_id = @BranchId)
+                  ))
+                  OR
+                  (@ClassroomId IS NULL AND @BranchId IS NULL)
+              )
+            ORDER BY e.start_time ASC NULLS LAST";
+        return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, Date = date, BranchId = branchId, ClassroomId = classroomId });
     }
 
     public async Task<Guid> CreateAsync(Event evt)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
         var sql = @"
-            INSERT INTO events (id, tenant_id, title, description, event_type_id, event_date, start_time, end_time, location, organizer_id, status, is_organization_wide, created_at, updated_at)
-            VALUES (@Id, @TenantId, @Title, @Description, @EventTypeId, @EventDate, @StartTime, @EndTime, @Location, @OrganizerId, @Status, @IsOrganizationWide, @CreatedAt, @UpdatedAt)
+            INSERT INTO events (id, tenant_id, title, description, event_type_id, event_date, start_time, end_time, location, organizer_id, status, scope, branch_id, is_organization_wide, photo_urls, created_at, updated_at)
+            VALUES (@Id, @TenantId, @Title, @Description, @EventTypeId, @EventDate, @StartTime, @EndTime, @Location, @OrganizerId, @Status, @Scope, @BranchId, @IsOrganizationWide, @PhotoUrls, @CreatedAt, @UpdatedAt)
             RETURNING id";
         return await connection.ExecuteScalarAsync<Guid>(sql, evt);
     }
@@ -66,9 +117,20 @@ public class EventRepository : IEventRepository
             SET title = @Title, description = @Description, event_type_id = @EventTypeId, 
                 event_date = @EventDate, start_time = @StartTime, end_time = @EndTime, 
                 location = @Location, organizer_id = @OrganizerId, status = @Status, 
-                is_organization_wide = @IsOrganizationWide, updated_at = @UpdatedAt
+                scope = @Scope, branch_id = @BranchId, is_organization_wide = @IsOrganizationWide, 
+                photo_urls = @PhotoUrls, updated_at = @UpdatedAt
             WHERE id = @Id AND tenant_id = @TenantId";
         await connection.ExecuteAsync(sql, evt);
+    }
+
+    public async Task UpdatePhotosAsync(Guid tenantId, Guid eventId, string[] photoUrls)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+        var sql = @"
+            UPDATE events 
+            SET photo_urls = @PhotoUrls, updated_at = @UpdatedAt
+            WHERE id = @Id AND tenant_id = @TenantId";
+        await connection.ExecuteAsync(sql, new { Id = eventId, TenantId = tenantId, PhotoUrls = photoUrls, UpdatedAt = DateTimeOffset.UtcNow });
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id)

@@ -9,7 +9,9 @@ public interface IEventRepository
 {
     Task<Event?> GetByIdAsync(Guid tenantId, Guid id);
     Task<IEnumerable<Event>> GetAllForTenantAsync(Guid tenantId);
+    Task<IEnumerable<Event>> GetByBranchAsync(Guid tenantId, Guid branchId);
     Task<IEnumerable<Event>> GetByClassroomAsync(Guid tenantId, Guid classroomId);
+    Task<IEnumerable<Event>> GetEventsForDateAsync(Guid tenantId, DateOnly date, Guid? branchId = null, Guid? classroomId = null);
     Task<Guid> CreateAsync(Event evt);
     Task UpdateAsync(Event evt);
     Task DeleteAsync(Guid tenantId, Guid id);
@@ -39,4 +41,7 @@ public interface IEventRepository
     Task UpdateEventRsvpAsync(EventRsvp rsvp);
     Task<IEnumerable<EventRsvp>> GetEventRsvpsAsync(Guid eventId);
     Task<EventRsvp?> GetEventRsvpAsync(Guid eventId, Guid childId);
+
+    // Event Photos
+    Task UpdatePhotosAsync(Guid tenantId, Guid eventId, string[] photoUrls);
 }

@@ -109,6 +109,29 @@ public class EventService
         return await _eventRepository.GetByClassroomAsync(tenantId, classroomId);
     }
 
+    public async Task<IEnumerable<Event>> GetEventsByBranchAsync(Guid branchId)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _eventRepository.GetByBranchAsync(tenantId, branchId);
+    }
+
+    public async Task<IEnumerable<Event>> GetEventsForDateAsync(DateOnly date, Guid? branchId = null, Guid? classroomId = null)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _eventRepository.GetEventsForDateAsync(tenantId, date, branchId, classroomId);
+    }
+
+    public async Task<IEnumerable<Guid>> GetEventClassroomsAsync(Guid eventId)
+    {
+        return await _eventRepository.GetEventClassroomsAsync(eventId);
+    }
+
+    public async Task RemoveClassroomFromEventAsync(Guid eventId, Guid classroomId)
+    {
+        if (!_userContext.HasPermission("event.manage")) throw new UnauthorizedAccessException();
+        await _eventRepository.RemoveEventClassroomAsync(eventId, classroomId);
+    }
+
     public async Task UpdateStatusAsync(Guid eventId, string newStatus, string? exceptionReason = null)
     {
         var evt = await GetEventByIdAsync(eventId);
@@ -205,5 +228,64 @@ public class EventService
         {
             return await _eventRepository.CreateEventRsvpAsync(rsvp);
         }
+    }
+
+    // Event Photos
+    public async Task AddEventPhotoAsync(Guid eventId, string photoUrl)
+    {
+        var evt = await GetEventByIdAsync(eventId);
+        if (evt == null) throw new ArgumentException("Event not found");
+
+        if (!string.Equals(evt.Status, "Completed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Photos can only be added to completed events.");
+        }
+
+        var currentPhotos = (evt.PhotoUrls ?? Array.Empty<string>()).ToList();
+        if (currentPhotos.Count >= 3)
+        {
+            throw new InvalidOperationException("A maximum of 3 photos is allowed per event.");
+        }
+
+        currentPhotos.Add(photoUrl);
+        await _eventRepository.UpdatePhotosAsync(_tenantContext.TenantId, eventId, currentPhotos.ToArray());
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = evt.TenantId,
+            UserId = _userContext.UserId,
+            Action = "Event.PhotoAdded",
+            EntityType = "Event",
+            EntityId = eventId,
+            Details = $"Added photo to event '{evt.Title}'."
+        });
+    }
+
+    public async Task RemoveEventPhotoAsync(Guid eventId, string photoUrl)
+    {
+        var evt = await GetEventByIdAsync(eventId);
+        if (evt == null) throw new ArgumentException("Event not found");
+
+        var currentPhotos = (evt.PhotoUrls ?? Array.Empty<string>()).ToList();
+        currentPhotos.Remove(photoUrl);
+        await _eventRepository.UpdatePhotosAsync(_tenantContext.TenantId, eventId, currentPhotos.ToArray());
+    }
+
+    public async Task UpdateEventPhotosAsync(Guid eventId, string[] photoUrls)
+    {
+        var evt = await GetEventByIdAsync(eventId);
+        if (evt == null) throw new ArgumentException("Event not found");
+
+        if (!string.Equals(evt.Status, "Completed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Photos can only be added to completed events.");
+        }
+
+        if (photoUrls != null && photoUrls.Length > 3)
+        {
+            throw new InvalidOperationException("A maximum of 3 photos is allowed per event.");
+        }
+
+        await _eventRepository.UpdatePhotosAsync(_tenantContext.TenantId, eventId, photoUrls ?? Array.Empty<string>());
     }
 }
