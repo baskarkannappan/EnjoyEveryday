@@ -637,6 +637,146 @@ async def get_weekly_plan(req: WeeklyPlanRequest, x_tenant_api_key: str | None =
             "dailyPlans": fallback_plans
         }
 
+PARENT_COMMUNICATION_INSTRUCTION = """You are an experienced, compassionate early childhood educator assistant for EnjoyEveryday daycare SaaS.
+Your goal is to draft a warm, respectful, parent-friendly communication update for a child's family based STRICTLY on recorded daycare evidence.
+
+CRITICAL GROUNDING AND PRIVACY RULES:
+1. ONLY refer to activities, moments, meals, naps, and milestones provided in the context. NEVER invent experiences, quotes, accomplishments, or developmental claims.
+2. If evidence is minimal or not recorded for a section, do not fabricate details. Explain gently what was engaged in or that quiet rest/play was observed.
+3. NEVER compare children with others or diagnose medical/developmental conditions.
+4. Keep the tone warm, celebratory, clear, and professional. Avoid internal jargon or acronyms.
+5. Provide:
+   - "title": A warm subject line (e.g., "Aarav's Day: Building Tall Towers & Outdoor Joy" or "Weekly Learning Highlights for Aarav")
+   - "greeting": A personal opening (e.g., "Dear Sunita,")
+   - "highlights": 1-2 friendly paragraphs detailing what the child engaged in today/this week.
+   - "growthAndLearning": What skills or curiosity this experience encouraged (e.g. sharing, fine-motor coordination, vocabulary).
+   - "familyConversationStarter": A fun, simple open-ended question the family can ask at dinner or bedtime (e.g., "Ask Aarav about the giant block tower we built together this morning!").
+   - "signOff": Warm closing from the classroom team.
+
+Return the result EXACTLY as a JSON object:
+{
+  "title": "...",
+  "greeting": "...",
+  "highlights": "...",
+  "growthAndLearning": "...",
+  "familyConversationStarter": "...",
+  "signOff": "Warmly,\\nThe Classroom Team"
+}
+Do NOT use markdown code blocks (```json) in your response. Just output the raw JSON object.
+"""
+
+class ParentCommunicationRequest(BaseModel):
+    childName: str
+    classroomName: str = "Classroom"
+    recipientName: str = "Parent"
+    recipientRelationship: str = "Parent"
+    communicationType: str = "DailyUpdate"
+    reportingPeriod: str = "Today"
+    attendanceSummary: str = ""
+    completedExperiences: list[str] = []
+    approvedMoments: list[str] = []
+    careHighlights: list[str] = []
+    milestoneHighlights: list[str] = []
+    relevantEvents: list[str] = []
+    teacherNotes: str = ""
+
+@app.post("/api/parent-communication")
+def generate_parent_communication(req: ParentCommunicationRequest, x_tenant_api_key: str = Header(None)):
+    child_name = req.childName or "Your child"
+    parent_greeting = f"Dear {req.recipientName}," if req.recipientName else f"Dear {child_name}'s Family,"
+    
+    # Grounded fallback draft builder
+    def build_grounded_fallback():
+        highlights_parts = []
+        if req.attendanceSummary:
+            highlights_parts.append(f"{child_name} was welcomed into our classroom ({req.attendanceSummary}).")
+        if req.completedExperiences:
+            exp_text = "; ".join(req.completedExperiences[:3])
+            highlights_parts.append(f"During group experiences, {child_name} participated with interest in: {exp_text}.")
+        if req.approvedMoments:
+            mom_text = "; ".join(req.approvedMoments[:3])
+            highlights_parts.append(f"A wonderful moment we observed: {mom_text}.")
+        if req.careHighlights:
+            care_text = "; ".join(req.careHighlights[:3])
+            highlights_parts.append(f"Care & daily rhythm highlights: {care_text}.")
+        if not highlights_parts:
+            highlights_parts.append(f"{child_name} had a calm and gentle day participating in classroom play and social interactions.")
+
+        highlights = " ".join(highlights_parts)
+        
+        learning_parts = []
+        if req.milestoneHighlights:
+            learning_parts.append(f"Celebrated milestone: {'; '.join(req.milestoneHighlights)}.")
+        if req.completedExperiences:
+            learning_parts.append(f"These experiences supported hands-on discovery, social cooperation, and fine-motor expression.")
+        else:
+            learning_parts.append(f"Today's play supported communication, peer relationships, and natural curiosity.")
+        growth = " ".join(learning_parts)
+
+        # Family conversation starter
+        starter = f"Ask {child_name} about their favorite thing they explored or played with friends today!"
+        if req.completedExperiences:
+            first_exp = req.completedExperiences[0]
+            starter = f"Ask {child_name} what they enjoyed most during our '{first_exp}' exploration today!"
+
+        title = f"{child_name}'s Daily Joy & Learning" if req.communicationType == "DailyUpdate" else f"{child_name}'s Weekly Learning Highlights"
+
+        return {
+            "title": title,
+            "greeting": parent_greeting,
+            "highlights": highlights,
+            "growthAndLearning": growth,
+            "familyConversationStarter": starter,
+            "signOff": f"Warmly,\nThe {req.classroomName} Team"
+        }
+
+    try:
+        if not x_tenant_api_key:
+            return build_grounded_fallback()
+
+        genai.configure(api_key=x_tenant_api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=PARENT_COMMUNICATION_INSTRUCTION)
+
+        context_payload = {
+            "childName": child_name,
+            "classroomName": req.classroomName,
+            "recipientName": req.recipientName,
+            "recipientRelationship": req.recipientRelationship,
+            "communicationType": req.communicationType,
+            "reportingPeriod": req.reportingPeriod,
+            "attendanceSummary": req.attendanceSummary,
+            "completedExperiences": req.completedExperiences[:5],
+            "approvedMoments": req.approvedMoments[:5],
+            "careHighlights": req.careHighlights[:5],
+            "milestoneHighlights": req.milestoneHighlights[:3],
+            "relevantEvents": req.relevantEvents[:3],
+            "teacherNotes": req.teacherNotes
+        }
+
+        prompt = f"Please prepare a parent communication update based strictly on this verified evidence:\n{json.dumps(context_payload, indent=2)}"
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        parsed = json.loads(text.strip())
+        return {
+            "title": parsed.get("title", f"{child_name}'s Learning Update"),
+            "greeting": parsed.get("greeting", parent_greeting),
+            "highlights": parsed.get("highlights", ""),
+            "growthAndLearning": parsed.get("growthAndLearning", ""),
+            "familyConversationStarter": parsed.get("familyConversationStarter", ""),
+            "signOff": parsed.get("signOff", f"Warmly,\nThe {req.classroomName} Team")
+        }
+    except Exception as e:
+        print(f"Error in parent communication AI: {e}")
+        return build_grounded_fallback()
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
 

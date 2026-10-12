@@ -1,0 +1,472 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IParentCommunicationAssistantService CommService
+
+@if (IsOpen)
+{
+    <div class="modal-overlay" @onclick="HandleOverlayClick">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <!-- Modal Header -->
+            <div class="modal-header">
+                <div class="header-branding">
+                    <div class="sparkle-badge">✦</div>
+                    <div>
+                        <h2 class="header-title">AI Parent Communication Assistant</h2>
+                        <div class="header-subtitle">
+                            Prepare personalized, evidence-grounded parent updates for <strong>@ChildName</strong>.
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="close-btn" @onclick="CloseAsync" aria-label="Close">✕</button>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="tabs-nav">
+                <button type="button" class="tab-btn @(_activeTab == "edit" ? "active" : "")" @onclick='() => _activeTab = "edit"'>
+                    📝 Draft &amp; Edit
+                </button>
+                <button type="button" class="tab-btn @(_activeTab == "preview" ? "active" : "")" @onclick='() => _activeTab = "preview"' disabled="@(_currentDraft == null)">
+                    👁️ Parent Preview
+                </button>
+                <button type="button" class="tab-btn @(_activeTab == "history" ? "active" : "")" @onclick='() => _activeTab = "history"'>
+                    📜 History (@_history.Count)
+                </button>
+            </div>
+
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="alert-banner alert-error">
+                        ⚠️ @_errorMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(_successMessage))
+                {
+                    <div class="alert-banner alert-success">
+                        ✓ @_successMessage
+                    </div>
+                }
+
+                @if (_activeTab == "edit")
+                {
+                    <!-- Configuration Bar -->
+                    <div class="config-bar">
+                        <div class="config-group">
+                            <label>Update Type</label>
+                            <select class="form-control" @bind="_communicationType">
+                                <option value="@ParentCommunicationTypes.DailyUpdate">Daily Child Update</option>
+                                <option value="@ParentCommunicationTypes.WeeklySummary">Weekly Learning Summary</option>
+                                <option value="@ParentCommunicationTypes.ActivityUpdate">Completed Experience Update</option>
+                                <option value="@ParentCommunicationTypes.MilestoneCelebration">Milestone Celebration</option>
+                                <option value="@ParentCommunicationTypes.EventFollowUp">Event Follow-Up</option>
+                            </select>
+                        </div>
+
+                        <div class="config-group">
+                            <label>Recipient / Guardian</label>
+                            <select class="form-control" @bind="_selectedRecipientId">
+                                @if (_recipients.Any())
+                                {
+                                    @foreach (var r in _recipients)
+                                    {
+                                        <option value="@r.PersonId">@r.FullName (@r.Relationship) @(!r.CanReceiveInformation ? "[Restricted]" : "")</option>
+                                    }
+                                }
+                                else
+                                {
+                                    <option value="">No Guardian Linked</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="config-group">
+                            <label>Reporting Period</label>
+                            <div class="date-range-inputs">
+                                <input type="date" class="form-control" @bind="_startDate" />
+                                <span class="date-sep">to</span>
+                                <input type="date" class="form-control" @bind="_endDate" />
+                            </div>
+                        </div>
+
+                        <div class="config-group" style="align-self: flex-end;">
+                            <button type="button" class="btn-generate" @onclick="HandleGenerateClicked" disabled="@_isGenerating">
+                                @if (_isGenerating)
+                                {
+                                    <span class="spinner-small"></span>
+                                    <span>Gathering Evidence...</span>
+                                }
+                                else
+                                {
+                                    <span>✦ Generate Draft</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Authorization & Evidence Info Banner -->
+                    @if (SelectedRecipient != null)
+                    {
+                        <div class="recipient-auth-badge">
+                            <span class="auth-icon">🔒</span>
+                            <span>
+                                Target: <strong>@SelectedRecipient.FullName</strong> (@SelectedRecipient.Relationship)
+                                · Email: <em>@(SelectedRecipient.Email ?? "Portal Only")</em>
+                                · Daily Updates: <strong>@(SelectedRecipient.ReceivesDailyUpdates ? "Allowed" : "No")</strong>
+                                · Information Permission: <strong style="color: @(SelectedRecipient.CanReceiveInformation ? "#31523c" : "#b55a5a");">@(SelectedRecipient.CanReceiveInformation ? "Verified" : "Restricted")</strong>
+                            </span>
+                        </div>
+                    }
+
+                    <!-- Teacher Notes -->
+                    <div class="teacher-notes-box">
+                        <label>Optional Focus / Teacher Reflection Note</label>
+                        <input type="text" class="form-control" placeholder="e.g. Aarav helped a friend clean up blocks today; had a peaceful nap." @bind="_teacherNotes" />
+                    </div>
+
+                    @if (_currentDraft != null)
+                    {
+                        <!-- Draft Editor -->
+                        <div class="draft-editor-card">
+                            <div class="editor-header">
+                                <div class="draft-status-pill status-@_currentDraft.Status.ToLower()">
+                                    Status: @_currentDraft.Status
+                                </div>
+                                <div class="grounding-info">
+                                    ✓ Grounded in verified daycare records &middot; Parent-visible only
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Message Subject / Title</label>
+                                <input type="text" class="form-control title-input" @bind="_currentDraft.Title" />
+                            </div>
+
+                            <div class="form-group">
+                                <label>Message Body (Editable)</label>
+                                <textarea class="form-control content-textarea" rows="8" @bind="_currentDraft.ContentFinal"></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Family Conversation Starter</label>
+                                <input type="text" class="form-control" @bind="_currentDraft.FamilyConversationStarter" placeholder="Open-ended question for family dinner or bedtime..." />
+                            </div>
+                        </div>
+                    }
+                    else if (!_isGenerating)
+                    {
+                        <div class="empty-draft-prompt">
+                            <div class="empty-icon">💌</div>
+                            <h3>No draft generated yet</h3>
+                            <p>Select the communication type and reporting date, then click <strong>✦ Generate Draft</strong> to review evidence-based updates.</p>
+                        </div>
+                    }
+                }
+                else if (_activeTab == "preview" && _currentDraft != null)
+                {
+                    <!-- Parent Portal View Simulation -->
+                    <div class="parent-preview-wrapper">
+                        <div class="preview-device-card">
+                            <div class="preview-header">
+                                <div class="daycare-brand">🌿 EnjoyEveryday Parent Portal</div>
+                                <div class="preview-date">@DateTime.Today.ToString("dddd, MMMM d, yyyy")</div>
+                            </div>
+
+                            <div class="preview-content">
+                                <div class="preview-badge-row">
+                                    <span class="preview-type-pill">@_currentDraft.CommunicationType</span>
+                                    <span class="preview-classroom">@(ClassroomName ?? "Classroom")</span>
+                                </div>
+
+                                <h3 class="preview-title">@_currentDraft.Title</h3>
+
+                                <div class="preview-message-body">
+                                    @foreach (var paragraph in (_currentDraft.ContentFinal ?? "").Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries))
+                                    {
+                                        <p>@paragraph</p>
+                                    }
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(_currentDraft.FamilyConversationStarter))
+                                {
+                                    <div class="conversation-starter-card">
+                                        <div class="starter-label">💬 Family Conversation Starter</div>
+                                        <div class="starter-text">@_currentDraft.FamilyConversationStarter</div>
+                                    </div>
+                                }
+
+                                <div class="preview-footer">
+                                    <div class="signature">Warm regards,<br /><strong>@(ClassroomName ?? "Classroom") Educator Team</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (_activeTab == "history")
+                {
+                    <div class="history-list">
+                        @if (_history.Any())
+                        {
+                            @foreach (var item in _history)
+                            {
+                                <div class="history-card">
+                                    <div class="history-header">
+                                        <div>
+                                            <span class="history-type">@item.CommunicationType</span>
+                                            <span class="history-recipient">To: @(item.RecipientName ?? "Family") (@item.RecipientRelationship)</span>
+                                        </div>
+                                        <span class="status-badge status-@item.Status.ToLower()">@item.Status</span>
+                                    </div>
+
+                                    <h4 class="history-title">@item.Title</h4>
+                                    <p class="history-snippet">@GetSnippet(item.ContentFinal)</p>
+
+                                    <div class="history-footer">
+                                        <span>Sent: @(item.SentAt.HasValue ? item.SentAt.Value.ToString("MMM dd, yyyy h:mm tt") : "Not sent")</span>
+                                        <span>Channel: @item.DeliveryChannel</span>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="empty-history">
+                                <p>No previous communication records for this child.</p>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="modal-footer">
+                <div class="footer-left">
+                    @if (_currentDraft != null && _activeTab == "edit")
+                    {
+                        <button type="button" class="btn-outline-danger" @onclick="ConfirmRegenerateAsync" disabled="@_isGenerating">
+                            ↻ Re-generate Draft
+                        </button>
+                    }
+                </div>
+
+                <div class="footer-right">
+                    <button type="button" class="btn-cancel" @onclick="CloseAsync">Close</button>
+
+                    @if (_currentDraft != null)
+                    {
+                        <button type="button" class="btn-secondary" @onclick="SaveDraftAsync" disabled="@_isSaving">
+                            @if (_isSaving)
+                            {
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save Draft</span>
+                            }
+                        </button>
+
+                        <button type="button" class="btn-primary" @onclick="ApproveAndSendAsync" disabled="@_isSending || _currentDraft.Status == ParentCommunicationStatus.Sent">
+                            @if (_isSending)
+                            {
+                                <span class="spinner-small"></span>
+                                <span>Sending to Parent...</span>
+                            }
+                            else if (_currentDraft.Status == ParentCommunicationStatus.Sent)
+                            {
+                                <span>✓ Sent to Parent</span>
+                            }
+                            else
+                            {
+                                <span>✓ Approve &amp; Send Message</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid ChildId { get; set; }
+    [Parameter] public string ChildName { get; set; } = "Child";
+    [Parameter] public Guid? ClassroomId { get; set; }
+    [Parameter] public string? ClassroomName { get; set; }
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSent { get; set; }
+
+    private string _activeTab = "edit";
+    private string _communicationType = ParentCommunicationTypes.DailyUpdate;
+    private DateOnly _startDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _endDate = DateOnly.FromDateTime(DateTime.Today);
+    private Guid? _selectedRecipientId;
+    private string _teacherNotes = string.Empty;
+
+    private List<ParentCommunicationRecipientInfo> _recipients = new();
+    private List<ParentCommunication> _history = new();
+    private ParentCommunication? _currentDraft;
+
+    private bool _isGenerating;
+    private bool _isSaving;
+    private bool _isSending;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private ParentCommunicationRecipientInfo? SelectedRecipient =>
+        _recipients.FirstOrDefault(r => r.PersonId == _selectedRecipientId) ?? _recipients.FirstOrDefault();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && ChildId != Guid.Empty)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            var recs = await CommService.GetRecipientsForChildAsync(ChildId);
+            _recipients = recs.ToList();
+            if (_selectedRecipientId == null || !_recipients.Any(r => r.PersonId == _selectedRecipientId))
+            {
+                _selectedRecipientId = _recipients.FirstOrDefault(r => r.CanReceiveInformation)?.PersonId ?? _recipients.FirstOrDefault()?.PersonId;
+            }
+
+            var hist = await CommService.GetChildCommunicationHistoryAsync(ChildId);
+            _history = hist.ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleGenerateClicked()
+    {
+        await GenerateDraftAsync();
+    }
+
+    private async Task ConfirmRegenerateAsync()
+    {
+        await GenerateDraftAsync();
+    }
+
+    private async Task GenerateDraftAsync()
+    {
+        _isGenerating = true;
+        _errorMessage = null;
+        _successMessage = null;
+
+        try
+        {
+            var input = new GenerateParentCommunicationInput
+            {
+                ChildId = ChildId,
+                ClassroomId = ClassroomId,
+                CommunicationType = _communicationType,
+                StartDate = _startDate,
+                EndDate = _endDate,
+                RecipientPersonId = _selectedRecipientId,
+                TeacherNotes = string.IsNullOrWhiteSpace(_teacherNotes) ? null : _teacherNotes
+            };
+
+            _currentDraft = await CommService.GenerateDraftAsync(input);
+            _successMessage = "Draft generated from verified records. Review and edit before sending.";
+            _activeTab = "edit";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isGenerating = false;
+        }
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (_currentDraft == null) return;
+        _isSaving = true;
+        _errorMessage = null;
+
+        try
+        {
+            var update = new UpdateParentCommunicationDraftInput
+            {
+                CommunicationId = _currentDraft.Id,
+                Title = _currentDraft.Title,
+                ContentFinal = _currentDraft.ContentFinal,
+                FamilyConversationStarter = _currentDraft.FamilyConversationStarter,
+                TeacherNotes = _teacherNotes
+            };
+
+            _currentDraft = await CommService.UpdateDraftAsync(update);
+            _successMessage = "Draft saved successfully.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task ApproveAndSendAsync()
+    {
+        if (_currentDraft == null) return;
+        _isSending = true;
+        _errorMessage = null;
+
+        try
+        {
+            // First save any unsaved edits
+            await SaveDraftAsync();
+
+            var sendInput = new SendParentCommunicationInput
+            {
+                CommunicationId = _currentDraft.Id,
+                DeliveryChannel = "PortalAndEmail"
+            };
+
+            _currentDraft = await CommService.ApproveAndSendAsync(sendInput);
+            _successMessage = $"Message approved and delivered to {_currentDraft.RecipientName}!";
+            await LoadDataAsync();
+            await OnSent.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandleOverlayClick()
+    {
+        await CloseAsync();
+    }
+
+    private static string GetSnippet(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        return text.Length > 120 ? text.Substring(0, 117) + "..." : text;
+    }
+}
