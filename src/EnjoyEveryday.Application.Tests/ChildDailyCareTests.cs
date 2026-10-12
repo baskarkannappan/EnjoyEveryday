@@ -330,8 +330,8 @@ public class ChildDailyCareTests
         var nap = new ChildNapSession
         {
             ChildId = _childId,
-            StartTime = DateTime.UtcNow.AddMinutes(-80),
-            EndTime = DateTime.UtcNow,
+            StartTime = DateTime.Today.AddHours(12),
+            EndTime = DateTime.Today.AddHours(13).AddMinutes(20),
             DurationMinutes = 80,
             Status = "Completed",
             ParentVisible = true

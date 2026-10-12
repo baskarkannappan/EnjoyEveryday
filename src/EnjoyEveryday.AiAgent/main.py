@@ -310,6 +310,188 @@ async def get_recommendations(req: RecommendationRequest, x_tenant_api_key: str 
             })
         return {"recommendations": fallback}
 
+JOURNEY_INSIGHTS_INSTRUCTION = """You are an early childhood education specialist supporting teachers in reviewing child progress.
+Your task is to analyze recorded child journey observations, session participations, and teacher feedback for a specific child during a selected reporting period.
+
+CRITICAL INSTRUCTIONS & SAFEGUARDS:
+1. Grounding in Evidence: Use ONLY the provided 'evidenceMemories'. Every single statement you make must be directly backed by the evidence.
+2. NO Hallucination: Do NOT invent observations, skills, developmental milestones, historical events, diagnoses, or parental feedback.
+3. NO Clinical or Diagnostic Claims: Absolutely NO psychological, medical, or clinical diagnoses or unsupported developmental scores or rankings.
+4. Clearly Distinguish Categories:
+   - 'JourneySummary': Concise factual summary of recorded experiences and activities.
+   - 'RecordedInterests': Interests explicitly supported by recorded teacher observations.
+   - 'ParticipationPatterns': Factual patterns from recorded participation and feedback.
+   - 'LearningOpportunities': Learning areas and experience opportunities the child had.
+   - 'IdeasToConsider': Non-prescriptive ideas for future activities to explore.
+5. Clearly Distinguish Classification:
+   - 'RecordedFact': Direct facts from observations or sessions.
+   - 'ObservedPattern': Observed patterns across multiple entries.
+   - 'EducationalSuggestion': Educational ideas for teacher reflection.
+6. Evidence Citations:
+   - In each item's 'supportingEvidence', cite the exact 'sourceId', 'sourceType', 'title', and brief 'summary' from the evidence memories that substantiate the statement.
+7. Evidence Gaps:
+   - If records are limited, sparse, or missing for the reporting period, state so neutrally in 'evidenceGaps'. Do NOT treat missing records as a negative reflection on the child.
+8. Future Activity Handoff:
+   - For 'IdeasToConsider', whenever possible match suggestions to a provided candidate experience ID and title from 'candidateExperiences'.
+9. Tone:
+   - Neutral, respectful, encouraging, professional, and non-judgmental.
+
+Return the result EXACTLY as a JSON object matching this schema:
+{
+  "overallSummary": "A concise, factual 2-3 sentence overview of recorded activities.",
+  "evidenceGaps": "Note about any missing or limited records for this period, or null if sufficient records exist.",
+  "items": [
+    {
+      "category": "JourneySummary" | "RecordedInterests" | "ParticipationPatterns" | "LearningOpportunities" | "IdeasToConsider",
+      "classification": "RecordedFact" | "ObservedPattern" | "EducationalSuggestion",
+      "statement": "Clear, grounded sentence.",
+      "evidenceStrength": "Strong" | "Supported" | "Emerging" | "Limited",
+      "supportingEvidence": [
+        {
+          "sourceId": "UUID string from evidence",
+          "sourceType": "child_stories" | "child_journey_entries" | "experience_participations",
+          "title": "Title of record",
+          "summary": "Brief explanation of what was recorded"
+        }
+      ],
+      "suggestedExperienceId": "UUID string matching candidate experience if applicable or null",
+      "suggestedExperienceTitle": "Title matching candidate experience if applicable or null",
+      "rankOrder": 1
+    }
+  ]
+}
+Do NOT use markdown code blocks (```json) in your response. Output only raw JSON.
+"""
+
+class JourneyInsightRequest(BaseModel):
+    childId: str
+    childName: str
+    periodType: str
+    periodStartDate: str
+    periodEndDate: str
+    evidenceMemories: list[EvidenceMemoryItem]
+    candidateExperiences: list[RecommendationCandidate] = []
+
+@app.post("/api/journey-insights")
+async def get_journey_insights(req: JourneyInsightRequest, x_tenant_api_key: str | None = Header(default=None)):
+    if not x_tenant_api_key:
+        raise HTTPException(status_code=401, detail="X-Tenant-Api-Key header is missing. Please configure your AI API key in Settings.")
+
+    try:
+        genai.configure(api_key=x_tenant_api_key)
+        model = genai.GenerativeModel("gemini-3.5-flash", system_instruction=JOURNEY_INSIGHTS_INSTRUCTION)
+
+        context_payload = {
+            "childName": req.childName,
+            "periodType": req.periodType,
+            "periodStartDate": req.periodStartDate,
+            "periodEndDate": req.periodEndDate,
+            "evidenceCount": len(req.evidenceMemories),
+            "evidenceMemories": [m.dict() for m in req.evidenceMemories[:40]],
+            "candidateExperiences": [c.dict() for c in req.candidateExperiences[:20]]
+        }
+
+        prompt = f"Please generate evidence-grounded child journey insights for {req.childName} based on these records:\n{json.dumps(context_payload, indent=2)}"
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        parsed = json.loads(text.strip())
+        
+        # Post-validation: ensure valid candidate IDs if provided
+        valid_exp_ids = {c.id for c in req.candidateExperiences}
+        for item in parsed.get("items", []):
+            exp_id = item.get("suggestedExperienceId")
+            if exp_id and exp_id not in valid_exp_ids:
+                item["suggestedExperienceId"] = None
+                item["suggestedExperienceTitle"] = None
+
+        return parsed
+    except Exception as e:
+        print(f"Error generating journey insights: {e}")
+        # Deterministic grounded fallback
+        fallback_items = []
+        rank = 1
+        
+        if req.evidenceMemories:
+            fallback_items.append({
+                "category": "JourneySummary",
+                "classification": "RecordedFact",
+                "statement": f"{req.childName} participated in {len(req.evidenceMemories)} recorded learning moments and experiences during this period.",
+                "evidenceStrength": "Supported",
+                "supportingEvidence": [
+                    {
+                        "sourceId": req.evidenceMemories[0].sourceId,
+                        "sourceType": req.evidenceMemories[0].sourceType,
+                        "title": req.evidenceMemories[0].title,
+                        "summary": req.evidenceMemories[0].description or req.evidenceMemories[0].title
+                    }
+                ],
+                "suggestedExperienceId": None,
+                "suggestedExperienceTitle": None,
+                "rankOrder": rank
+            })
+            rank += 1
+
+            # Extract an interest if available
+            first_mem = req.evidenceMemories[0]
+            fallback_items.append({
+                "category": "RecordedInterests",
+                "classification": "RecordedFact",
+                "statement": f"Recorded observation indicates engaged interest in: {first_mem.title}.",
+                "evidenceStrength": "Supported",
+                "supportingEvidence": [
+                    {
+                        "sourceId": first_mem.sourceId,
+                        "sourceType": first_mem.sourceType,
+                        "title": first_mem.title,
+                        "summary": first_mem.description or first_mem.title
+                    }
+                ],
+                "suggestedExperienceId": None,
+                "suggestedExperienceTitle": None,
+                "rankOrder": rank
+            })
+            rank += 1
+        else:
+            fallback_items.append({
+                "category": "JourneySummary",
+                "classification": "RecordedFact",
+                "statement": f"No active journey observations or completed experiences were recorded for {req.childName} during this period.",
+                "evidenceStrength": "Limited",
+                "supportingEvidence": [],
+                "suggestedExperienceId": None,
+                "suggestedExperienceTitle": None,
+                "rankOrder": rank
+            })
+            rank += 1
+
+        if req.candidateExperiences:
+            top_cand = req.candidateExperiences[0]
+            fallback_items.append({
+                "category": "IdeasToConsider",
+                "classification": "EducationalSuggestion",
+                "statement": f"Consider exploring '{top_cand.title}' to offer hands-on engagement in {top_cand.category or 'creative play'}.",
+                "evidenceStrength": "Emerging",
+                "supportingEvidence": [],
+                "suggestedExperienceId": top_cand.id,
+                "suggestedExperienceTitle": top_cand.title,
+                "rankOrder": rank
+            })
+
+        return {
+            "overallSummary": f"Journey records show {len(req.evidenceMemories)} recorded moments between {req.periodStartDate} and {req.periodEndDate}.",
+            "evidenceGaps": "Records are limited for this period; additional teacher observations will provide richer insights." if len(req.evidenceMemories) < 3 else None,
+            "items": fallback_items
+        }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
 

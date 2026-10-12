@@ -1,0 +1,350 @@
+@using System.Text.Json
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IChildJourneyInsightService InsightService
+@inject NavigationManager NavigationManager
+
+<div class="insight-container">
+    <div class="insight-header">
+        <div class="header-left">
+            <div class="sparkle-icon">✦</div>
+            <div>
+                <h3 class="header-title">Child Journey Insights</h3>
+                <div class="header-disclaimer">Grounded in recorded observations & experiences — not a diagnostic assessment.</div>
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <div class="period-select-wrap">
+                <select class="period-select" @bind="_selectedPeriodType" @bind:after="OnPeriodTypeChanged" disabled="@_isLoading">
+                    <option value="Last7Days">Last 7 Days</option>
+                    <option value="Last30Days">Last 30 Days</option>
+                    <option value="CurrentMonth">Current Month</option>
+                    <option value="Custom">Custom Range</option>
+                </select>
+            </div>
+
+            @if (_selectedPeriodType == "Custom")
+            {
+                <div class="custom-date-range">
+                    <input type="date" class="date-input" @bind="_customStartDate" />
+                    <span>to</span>
+                    <input type="date" class="date-input" @bind="_customEndDate" />
+                </div>
+            }
+
+            <button type="button" class="btn-generate" @onclick="GenerateInsightsAsync" disabled="@_isLoading">
+                @if (_isLoading)
+                {
+                    <span class="spinner-small"></span>
+                    <span>Analyzing Evidence...</span>
+                }
+                else
+                {
+                    <span>✦ Generate Insights</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-box error-alert">
+            <span>⚠️ @_errorMessage</span>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="loading-state">
+            <div class="pulse-ring">✦</div>
+            <p>Reviewing authorized observations, experience sessions, and teacher notes...</p>
+        </div>
+    }
+    else if (_currentRequest != null)
+    {
+        <div class="insight-body">
+            <!-- Overall Summary Banner -->
+            <div class="summary-card">
+                <div class="summary-period-pill">
+                    Period: @_currentRequest.PeriodStartDate.ToString("MMM d, yyyy") – @_currentRequest.PeriodEndDate.ToString("MMM d, yyyy")
+                    • @_currentRequest.EvidenceCount evidence items reviewed
+                </div>
+                <p class="summary-text">@_currentRequest.OverallSummary</p>
+            </div>
+
+            <!-- Categorized Insight Items -->
+            <div class="insight-sections-grid">
+                @{
+                    var summaryItems = _currentRequest.Items.Where(i => i.Category == "JourneySummary").ToList();
+                    var interestItems = _currentRequest.Items.Where(i => i.Category == "RecordedInterests").ToList();
+                    var patternItems = _currentRequest.Items.Where(i => i.Category == "ParticipationPatterns").ToList();
+                    var learningItems = _currentRequest.Items.Where(i => i.Category == "LearningOpportunities").ToList();
+                    var ideaItems = _currentRequest.Items.Where(i => i.Category == "IdeasToConsider").ToList();
+                }
+
+                @if (interestItems.Any())
+                {
+                    <div class="section-card">
+                        <div class="section-badge badge-interests">🌱 Recorded Interests & Strengths</div>
+                        <div class="items-list">
+                            @foreach (var item in interestItems)
+                            {
+                                <div class="insight-row">
+                                    <div class="statement-wrap">
+                                        <div class="class-pill pill-fact">@item.Classification</div>
+                                        <p class="statement-text">@item.Statement</p>
+                                    </div>
+                                    @RenderEvidenceCitations(item)
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (patternItems.Any())
+                {
+                    <div class="section-card">
+                        <div class="section-badge badge-patterns">📊 Participation Patterns</div>
+                        <div class="items-list">
+                            @foreach (var item in patternItems)
+                            {
+                                <div class="insight-row">
+                                    <div class="statement-wrap">
+                                        <div class="class-pill pill-pattern">@item.Classification</div>
+                                        <p class="statement-text">@item.Statement</p>
+                                    </div>
+                                    @RenderEvidenceCitations(item)
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (learningItems.Any())
+                {
+                    <div class="section-card">
+                        <div class="section-badge badge-learning">✨ Learning Opportunities</div>
+                        <div class="items-list">
+                            @foreach (var item in learningItems)
+                            {
+                                <div class="insight-row">
+                                    <div class="statement-wrap">
+                                        <div class="class-pill pill-learning">@item.Classification</div>
+                                        <p class="statement-text">@item.Statement</p>
+                                    </div>
+                                    @RenderEvidenceCitations(item)
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (ideaItems.Any())
+                {
+                    <div class="section-card highlight-card">
+                        <div class="section-badge badge-ideas">💡 Ideas to Consider (Next Steps)</div>
+                        <div class="items-list">
+                            @foreach (var item in ideaItems)
+                            {
+                                <div class="insight-row">
+                                    <div class="statement-wrap">
+                                        <div class="class-pill pill-suggestion">@item.Classification</div>
+                                        <p class="statement-text">@item.Statement</p>
+                                    </div>
+
+                                    @if (!string.IsNullOrEmpty(item.SuggestedExperienceTitle))
+                                    {
+                                        <div class="action-handoff">
+                                            <span class="exp-title">Suggested: @item.SuggestedExperienceTitle</span>
+                                            <a href="/experiences" class="btn-explore-link">
+                                                Explore Related Activities →
+                                            </a>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Evidence Gaps & Disclaimer Notice -->
+            @if (!string.IsNullOrEmpty(_currentRequest.EvidenceGaps))
+            {
+                <div class="gaps-box">
+                    <div class="gaps-icon">ℹ️</div>
+                    <div>
+                        <strong>Notice on Evidence Completeness:</strong>
+                        <div>@_currentRequest.EvidenceGaps</div>
+                    </div>
+                </div>
+            }
+
+            <div class="generated-footer">
+                <span>Generated: @_currentRequest.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</span>
+                <span>• Strict Human-in-the-Loop review: Insights remain private to authorized educators until approved.</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <div class="empty-icon">✦</div>
+            <h4>Explore @ChildName's Journey Insights</h4>
+            <p>Select a reporting period and click <strong>Generate Insights</strong> to synthesize recorded observations, experiences, and interests into a traceable reflection.</p>
+        </div>
+    }
+</div>
+
+@* Evidence Detail Modal *@
+@if (_selectedCitation != null)
+{
+    <div class="modal-backdrop" @onclick="() => _selectedCitation = null">
+        <div class="evidence-modal" @onclick:stopPropagation="true">
+            <div class="evidence-modal-header">
+                <h4>📄 Supporting Source Record</h4>
+                <button type="button" class="btn-close" @onclick="() => _selectedCitation = null">✕</button>
+            </div>
+            <div class="evidence-modal-body">
+                <div class="detail-row">
+                    <strong>Source Type:</strong>
+                    <span>@_selectedCitation.SourceType</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Record Title:</strong>
+                    <span>@_selectedCitation.Title</span>
+                </div>
+                @if (!string.IsNullOrEmpty(_selectedCitation.Summary))
+                {
+                    <div class="detail-row">
+                        <strong>Recorded Content:</strong>
+                        <div class="citation-text">@_selectedCitation.Summary</div>
+                    </div>
+                }
+            </div>
+            <div class="evidence-modal-footer">
+                <button type="button" class="btn-primary" @onclick="() => _selectedCitation = null">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid ChildId { get; set; }
+    [Parameter] public string ChildName { get; set; } = "Child";
+
+    private string _selectedPeriodType = "Last30Days";
+    private DateOnly? _customStartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+    private DateOnly? _customEndDate = DateOnly.FromDateTime(DateTime.Today);
+
+    private ChildJourneyInsightRequest? _currentRequest;
+    private bool _isLoading = false;
+    private string? _errorMessage;
+    private ChildJourneyEvidenceCitation? _selectedCitation;
+    private Guid _lastLoadedChildId = Guid.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ChildId != Guid.Empty && ChildId != _lastLoadedChildId)
+        {
+            _lastLoadedChildId = ChildId;
+            _errorMessage = null;
+            await LoadLatestInsightsAsync();
+        }
+    }
+
+    private async Task LoadLatestInsightsAsync()
+    {
+        if (ChildId == Guid.Empty) return;
+
+        try
+        {
+            _currentRequest = await InsightService.GetLatestInsightForChildAsync(ChildId);
+            if (_currentRequest != null)
+            {
+                _selectedPeriodType = _currentRequest.PeriodType;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading latest insights: {ex.Message}");
+        }
+    }
+
+    private void OnPeriodTypeChanged()
+    {
+        if (_selectedPeriodType == "Custom" && (!_customStartDate.HasValue || !_customEndDate.HasValue))
+        {
+            _customStartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+            _customEndDate = DateOnly.FromDateTime(DateTime.Today);
+        }
+    }
+
+    private async Task GenerateInsightsAsync()
+    {
+        if (ChildId == Guid.Empty) return;
+
+        _isLoading = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var input = new GenerateJourneyInsightInput
+            {
+                ChildId = ChildId,
+                PeriodType = _selectedPeriodType,
+                CustomStartDate = _selectedPeriodType == "Custom" ? _customStartDate : null,
+                CustomEndDate = _selectedPeriodType == "Custom" ? _customEndDate : null
+            };
+
+            _currentRequest = await InsightService.GenerateJourneyInsightsAsync(input);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private RenderFragment RenderEvidenceCitations(ChildJourneyInsightItem item) => builder =>
+    {
+        if (string.IsNullOrEmpty(item.SupportingEvidence)) return;
+
+        List<ChildJourneyEvidenceCitation>? citations = null;
+        try
+        {
+            citations = JsonSerializer.Deserialize<List<ChildJourneyEvidenceCitation>>(item.SupportingEvidence);
+        }
+        catch { }
+
+        if (citations != null && citations.Any())
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "citations-wrap");
+            builder.AddMarkupContent(2, "<span class=\"citations-label\">Evidence:</span>");
+
+            foreach (var cit in citations)
+            {
+                builder.OpenElement(3, "button");
+                builder.AddAttribute(4, "type", "button");
+                builder.AddAttribute(5, "class", "citation-badge");
+                builder.AddAttribute(6, "onclick", EventCallback.Factory.Create(this, () => OpenCitation(cit)));
+                builder.AddContent(7, $"📄 {cit.Title}");
+                builder.CloseElement();
+            }
+
+            builder.CloseElement();
+        }
+    };
+
+    private void OpenCitation(ChildJourneyEvidenceCitation citation)
+    {
+        _selectedCitation = citation;
+    }
+}

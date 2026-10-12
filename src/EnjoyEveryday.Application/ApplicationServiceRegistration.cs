@@ -45,6 +45,8 @@ public static class ApplicationServiceRegistration
         services.AddHttpClient<IAiIdeaService, AiIdeaService>();
         services.AddHttpClient<IActivityRecommendationService, ActivityRecommendationService>();
         services.AddScoped<ActivityRecommendationService>();
+        services.AddHttpClient<IChildJourneyInsightService, ChildJourneyInsightService>();
+        services.AddScoped<ChildJourneyInsightService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>();
