@@ -103,7 +103,17 @@ public class AppIdentityContext : IUserContext, ITenantContext
 
     public bool HasPermission(string permission)
     {
-        // Development bypass: grant all permissions globally
-        return true;
+        if (!IsAuthenticated)
+            return false;
+
+        // Admin and owner roles inherit all operational permissions
+        if (Roles.Any(r => r is "PlatformAdmin" or "OrganizationOwner" or "OrganizationAdmin" or "Daycare Admin" or "Admin"))
+            return true;
+
+        if (_isDevelopment && !Permissions.Any())
+            return true;
+
+        // In authenticated context, check explicitly issued claims
+        return Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
     }
 }

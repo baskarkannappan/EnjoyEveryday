@@ -50,6 +50,11 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IHarvestRepository, HarvestRepository>();
         services.AddScoped<ITenantSettingsRepository, TenantSettingsRepository>();
         services.AddScoped<IAttendanceRepository, AttendanceRepository>();
+        services.AddScoped<IParentRepository, ParentRepository>();
+        services.AddScoped<IConsentRepository, ConsentRepository>();
+        services.AddScoped<IFloorMapRepository, FloorMapRepository>();
+        services.AddScoped<IEmergencyContactRepository, EmergencyContactRepository>();
+        services.AddScoped<IChildDailyCareRepository, ChildDailyCareRepository>();
 
         return services;
     }

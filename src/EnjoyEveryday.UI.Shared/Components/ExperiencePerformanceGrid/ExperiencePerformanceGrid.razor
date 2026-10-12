@@ -6,18 +6,44 @@
         Program signals &mdash; not child scores.
     </div>
 
-    <div class="filter-controls" style="margin-bottom: 16px;">
-        <input type="text" @bind="SearchTerm" @bind:event="oninput" placeholder="Filter by name..." class="filter-input" />
+    <div class="filter-controls" style="margin-bottom: 16px; position: relative;">
+        <input type="text" 
+               value="@SearchTerm" 
+               @oninput="OnSearchInput" 
+               placeholder="Filter by name..." 
+               class="filter-input" />
+        @if (!string.IsNullOrWhiteSpace(SearchTerm))
+        {
+            <button type="button" class="btn-clear-inline" @onclick="ClearSearch" title="Clear filter">&times;</button>
+        }
     </div>
 
     <div class="harvest-row harvest-heading">
-        <span>EXPERIENCE</span>
-        <span>USES</span>
-        <span>RESPONSE</span>
+        <span class="sortable-header" @onclick='() => SortByColumn("title")'>
+            EXPERIENCE
+            @if (_sortColumn == "title")
+            {
+                <span class="sort-indicator">@(_sortAscending ? "▲" : "▼")</span>
+            }
+        </span>
+        <span class="sortable-header" @onclick='() => SortByColumn("uses")'>
+            USES
+            @if (_sortColumn == "uses")
+            {
+                <span class="sort-indicator">@(_sortAscending ? "▲" : "▼")</span>
+            }
+        </span>
+        <span class="sortable-header" @onclick='() => SortByColumn("response")'>
+            RESPONSE
+            @if (_sortColumn == "response")
+            {
+                <span class="sort-indicator">@(_sortAscending ? "▲" : "▼")</span>
+            }
+        </span>
         <span>INSIGHT</span>
     </div>
 
-    @if (PagedItems != null)
+    @if (PagedItems != null && PagedItems.Any())
     {
         @foreach (var item in PagedItems)
         {
@@ -34,13 +60,19 @@
             </div>
         }
     }
+    else
+    {
+        <div class="empty-state" style="padding: 24px 0; text-align: center; color: var(--muted, #8b958f); font-size: 11px;">
+            No experiences found matching your filter.
+        </div>
+    }
 
     @if (TotalPages > 1)
     {
         <div class="pagination-controls" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #edf0ed);">
-            <button class="btn-page" disabled="@(CurrentPage == 1)" @onclick="PrevPage">Previous</button>
+            <button class="btn-page" disabled="@(CurrentPage <= 1)" @onclick="PrevPage">Previous</button>
             <span style="font-size: 12px; color: var(--muted, #8b958f);">Page @CurrentPage of @TotalPages</span>
-            <button class="btn-page" disabled="@(CurrentPage == TotalPages)" @onclick="NextPage">Next</button>
+            <button class="btn-page" disabled="@(CurrentPage >= TotalPages)" @onclick="NextPage">Next</button>
         </div>
     }
 </div>
@@ -56,13 +88,58 @@
     private int CurrentPage { get; set; } = 1;
     private int PageSize { get; set; } = 5;
 
-    private IEnumerable<ExperiencePerformanceItem> FilteredItems => 
-        Items?.Where(i => string.IsNullOrEmpty(SearchTerm) || i.Title.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<ExperiencePerformanceItem>();
+    private string _sortColumn = "title";
+    private bool _sortAscending = true;
 
-    private int TotalPages => (int)Math.Ceiling(FilteredItems.Count() / (double)PageSize);
+    private IEnumerable<ExperiencePerformanceItem> FilteredAndSortedItems
+    {
+        get
+        {
+            var list = Items?.Where(i => string.IsNullOrEmpty(SearchTerm) || i.Title.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase)).ToList() 
+                       ?? new List<ExperiencePerformanceItem>();
+
+            list = _sortColumn switch
+            {
+                "title" => _sortAscending ? list.OrderBy(i => i.Title).ToList() : list.OrderByDescending(i => i.Title).ToList(),
+                "uses" => _sortAscending ? list.OrderBy(i => i.Uses).ToList() : list.OrderByDescending(i => i.Uses).ToList(),
+                "response" => _sortAscending ? list.OrderBy(i => i.Response).ToList() : list.OrderByDescending(i => i.Response).ToList(),
+                _ => list
+            };
+
+            return list;
+        }
+    }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredAndSortedItems.Count() / (double)PageSize));
 
     private IEnumerable<ExperiencePerformanceItem> PagedItems => 
-        FilteredItems.Skip((CurrentPage - 1) * PageSize).Take(PageSize);
+        FilteredAndSortedItems.Skip((CurrentPage - 1) * PageSize).Take(PageSize);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SearchTerm = e.Value?.ToString() ?? string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void ClearSearch()
+    {
+        SearchTerm = string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void SortByColumn(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortAscending = !_sortAscending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = column == "title"; // title defaults to asc, uses to desc or asc
+        }
+        CurrentPage = 1;
+    }
 
     private void PrevPage()
     {
@@ -74,3 +151,4 @@
         if (CurrentPage < TotalPages) CurrentPage++;
     }
 }
+

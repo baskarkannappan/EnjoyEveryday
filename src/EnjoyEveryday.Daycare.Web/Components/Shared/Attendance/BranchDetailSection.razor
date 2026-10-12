@@ -29,8 +29,8 @@
     <div class="stats">
         <div class="stat"><div class="mlabel">Children present</div><div class="statnum">@Totals[0]</div><span class="pill green">Attendance</span></div>
         <div class="stat"><div class="mlabel">Teachers present</div><div class="statnum">@Totals[1]</div><span class="pill blue">Staff</span></div>
-        <div class="stat"><div class="mlabel">Not marked</div><div class="statnum">4</div><span class="pill amber">Action needed</span></div>
-        <div class="stat"><div class="mlabel">Missing check-out</div><div class="statnum">2</div><span class="pill red">Review</span></div>
+        <div class="stat"><div class="mlabel">Not marked</div><div class="statnum">@UnmarkedCount</div><span class="pill amber">Action needed</span></div>
+        <div class="stat"><div class="mlabel">Missing check-out</div><div class="statnum">@MissingCheckoutCount</div><span class="pill red">Review</span></div>
     </div>
     <div class="card">
         <div class="tabs">
@@ -73,17 +73,17 @@
                         <option>Absent</option>
                         <option>Not marked</option>
                     </select>
-                    <button class="btn primary" @onclick="() => ShowToast() ">Mark selected present</button>
-                    <button class="btn" @onclick="() => ShowToast() ">Save changes</button>
+                    <button class="btn primary" @onclick="MarkSelectedPresent">Mark selected present</button>
+                    <button class="btn" @onclick="() => ShowToast()">Save changes</button>
                 </div>
                 <div class="tablewrap">
                     <table>
-                        <thead><tr><th><input type="checkbox" aria-label="Select all"></th><th>Person</th><th>Classroom / Role</th><th>Status</th><th>Arrival / Clock-in</th><th>Departure / Clock-out</th></tr></thead>
+                        <thead><tr><th><input type="checkbox" @onchange="ToggleSelectAll" aria-label="Select all"></th><th>Person</th><th>Classroom / Role</th><th>Status</th><th>Arrival / Clock-in</th><th>Departure / Clock-out</th></tr></thead>
                         <tbody>
                             @foreach(var p in GetPeople())
                             {
                                 <tr>
-                                    <td><input type="checkbox" aria-label="Select @p.Name"></td>
+                                    <td><input type="checkbox" @bind="p.IsSelected" aria-label="Select @p.Name"></td>
                                     <td><div class="person"><span class="personicon">@p.Initials</span>@p.Name</div></td>
                                     <td>@p.Room</td>
                                     <td>
@@ -106,7 +106,7 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="note" style="margin-top:12px; color: var(--green);">Changes will now be saved securely to the database.</div>
+                <div class="note" style="margin-top:12px;">Changes will now be saved securely to the database.</div>
             </div>
         }
     </div>
@@ -133,8 +133,40 @@
     private List<PersonRow> _personRows = new();
     private DateTime _filterDate = DateTime.Today;
 
-    private void BackToOverview() => Nav.NavigateTo("/management/attendance");
+    private int UnmarkedCount => _personRows.Count(p => p.Status == "Not marked");
+    private int MissingCheckoutCount => _personRows.Count(p => p.Status == "Present" && (p.Out == "—" || string.IsNullOrEmpty(p.Out)));
+
+    private void BackToOverview()
+    {
+        if (IsRoomView)
+            Nav.NavigateTo($"/management/attendance/branches/{Uri.EscapeDataString(BranchName)}");
+        else
+            Nav.NavigateTo("/management/attendance");
+    }
+
     private void OpenClass(string room) => Nav.NavigateTo($"/management/attendance/classrooms/{Uri.EscapeDataString(room)}?branch={Uri.EscapeDataString(BranchName)}");
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        bool isChecked = (bool)(e.Value ?? false);
+        foreach(var p in GetPeople())
+        {
+            p.IsSelected = isChecked;
+        }
+    }
+
+    private async Task MarkSelectedPresent()
+    {
+        foreach(var p in GetPeople().Where(p => p.IsSelected))
+        {
+            if (p.Status != "Present")
+            {
+                p.Status = "Present";
+                p.IsDirty = true;
+            }
+        }
+        await ShowToast();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -161,12 +193,36 @@
         var childAtt = (await AttendanceService.GetChildAttendanceAsync(_branchId, _filterDate)).ToList();
         var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(_branchId, _filterDate)).ToList();
 
-        _classRows = classrooms.Select(c => new ClassRow {
-            Name = c.Name,
-            Children = $"{childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Present")} / {allChildren.Count(ch => ch.ClassroomId == c.Id)}",
-            Teachers = "Staffing",
-            Pending = childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked").ToString(),
-            Status = "Active"
+        _classRows = classrooms.Select(c => {
+            var expectedC = allChildren.Count(ch => ch.ClassroomId == c.Id);
+            var presentC = childAtt.Count(a => a.ClassroomId == c.Id && (a.Status == "Present" || a.Status == "Late"));
+            var pendingC = childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked");
+
+            var expectedT = 2;
+            var presentT = teacherAtt.Count(a => a.Status == "Present" || a.Status == "Late");
+            if (presentT > expectedT) presentT = expectedT;
+
+            string status;
+            if (pendingC > 0)
+            {
+                status = "Needs marking";
+            }
+            else if (expectedT > 0 && presentT < expectedT)
+            {
+                status = "Staffing attention";
+            }
+            else
+            {
+                status = "Marked";
+            }
+
+            return new ClassRow {
+                Name = c.Name,
+                Children = $"{presentC} / {expectedC}",
+                Teachers = $"{presentT} / {expectedT}",
+                Pending = pendingC.ToString(),
+                Status = status
+            };
         }).ToList();
 
         _personRows.Clear();
@@ -271,8 +327,8 @@
     }
 
     private string[] Totals => new[] { 
-        $"{_personRows.Count(p => p.Type == "children" && p.Status == "Present")} / {_personRows.Count(p => p.Type == "children")}",
-        $"{_personRows.Count(p => p.Type == "teachers" && p.Status == "Present")} / {_personRows.Count(p => p.Type == "teachers")}"
+        $"{_personRows.Count(p => p.Type == "children" && (p.Status == "Present" || p.Status == "Late"))} / {_personRows.Count(p => p.Type == "children")}",
+        $"{_personRows.Count(p => p.Type == "teachers" && (p.Status == "Present" || p.Status == "Late"))} / {_personRows.Count(p => p.Type == "teachers")}"
     };
 
     public class ClassRow { public string Name { get; set; } = ""; public string Children { get; set; } = ""; public string Teachers { get; set; } = ""; public string Pending { get; set; } = ""; public string Status { get; set; } = ""; }
@@ -292,5 +348,6 @@
         public string Out { get; set; } = ""; 
         public string Type { get; set; } = ""; 
         public bool IsDirty { get; set; }
+        public bool IsSelected { get; set; }
     }
 }

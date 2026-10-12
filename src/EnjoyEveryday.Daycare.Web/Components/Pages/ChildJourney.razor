@@ -9,6 +9,7 @@
 @using EnjoyEveryday.Application.Services
 
 @inject IChildJourneyService JourneyService
+@inject IChildDailyCareService DailyCareService
 @inject ExperienceService ExperienceService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
@@ -96,6 +97,7 @@
                 <button class="filter-btn @(_currentFilter == "Discovery" ? "active" : "")" @onclick='() => SetFilter("Discovery")'>Discover</button>
                 <button class="filter-btn @(_currentFilter == "Create" ? "active" : "")" @onclick='() => SetFilter("Create")'>Create</button>
                 <button class="filter-btn @(_currentFilter == "Connection" ? "active" : "")" @onclick='() => SetFilter("Connection")'>Connect</button>
+                <button class="filter-btn @(_currentFilter == "DailyCare" ? "active" : "")" @onclick='() => SetFilter("DailyCare")'>Daily Care (@_careEvents.Count)</button>
                 
                 <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 14px; color: #666; font-weight: 500;">Date:</span>
@@ -108,29 +110,26 @@
             </div>
 
             <div class="timeline">
-                @if (_entries != null && _entries.Any())
+                @if (_displayTimeline != null && _displayTimeline.Any())
                 {
-                    @foreach (var entry in _entries)
+                    @foreach (var item in _displayTimeline)
                     {
-                        var entryTags = GetTagsForEntry(entry.Id);
-                        var entryPhotos = GetPhotosForEntry(entry.Id);
-                        
                         <JourneyTimelineCard 
-                            DateString="@entry.ObservationDate.ToLocalTime().ToString("MMM dd")" 
-                            Type="@entry.JourneyType" 
-                            Title="@(entry.ExperienceId.HasValue ? ("Experience: " + (!string.IsNullOrEmpty(entry.Title) ? entry.Title : (_experienceTitles.ContainsKey(entry.ExperienceId.Value) ? _experienceTitles[entry.ExperienceId.Value] : "Teacher Observation"))) : (string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title))" 
-                            Time="@entry.ObservationDate.ToLocalTime().ToString("t")"
-                            Description="@entry.Observation"
-                            Quote="@entry.ChildVoice" 
-                            Tags="@entryTags"
-                            Photos="@entryPhotos"
-                            OnDelete="() => DeleteEntry(entry.Id)" />
+                            DateString="@item.DateString" 
+                            Type="@item.BadgeType" 
+                            Title="@item.Title" 
+                            Time="@item.TimeString"
+                            Description="@item.Description"
+                            Quote="@item.Quote" 
+                            Tags="@item.Tags"
+                            Photos="@item.Photos"
+                            OnDelete="@(item.CanDelete ? () => HandleDelete(item) : default)" />
                     }
                 }
                 else
                 {
                     <div style="padding: 24px; text-align: center; color: #666; background: #f9faf9; border-radius: 8px;">
-                        No moments logged yet. Click "Log Moment" to start Aarav's journey!
+                        No moments or daily care activities logged yet.
                     </div>
                 }
             </div>
@@ -215,7 +214,9 @@
     private Guid _childId => _selectedChildId != Guid.Empty ? _selectedChildId : (ChildId ?? Guid.Empty);
     private Child? _selectedChild;
     private List<ChildJourneyEntry>? _allEntries;
-    private List<ChildJourneyEntry>? _entries;
+    private List<ChildCareEvent> _allCareEvents = new();
+    private List<ChildCareEvent> _careEvents = new();
+    private List<JourneyItemViewModel> _displayTimeline = new();
     private Dictionary<Guid, List<DevelopmentArea>> _entryAreas = new();
     private Dictionary<Guid, List<ChildJourneyEvidence>> _entryEvidences = new();
     private Dictionary<Guid, string> _experienceTitles = new();
@@ -310,6 +311,17 @@
         if (_childId == Guid.Empty) return;
         var entries = await JourneyService.GetChildJourneyAsync(_childId);
         _allEntries = entries.ToList();
+
+        try
+        {
+            var careList = await DailyCareService.GetChildCareEventsAsync(_childId);
+            _allCareEvents = careList?.ToList() ?? new List<ChildCareEvent>();
+        }
+        catch
+        {
+            _allCareEvents = new List<ChildCareEvent>();
+        }
+        _careEvents = _allCareEvents;
         
         var allAreas = await JourneyService.GetDevelopmentAreasAsync();
         var areaDict = allAreas.ToDictionary(a => a.Id);
@@ -358,20 +370,32 @@
 
     private void CalculateDynamicCards()
     {
+        int obsCount = _allEntries?.Count ?? 0;
+        int careCount = _allCareEvents?.Count ?? 0;
+        _totalMoments = obsCount + careCount;
+
+        var now = DateTime.UtcNow;
+        int obsRecent = _allEntries?.Count(e => e.ObservationDate >= now.AddDays(-7)) ?? 0;
+        int careRecent = _allCareEvents?.Count(c => c.EventTime >= now.AddDays(-7)) ?? 0;
+        _recentActivity = obsRecent + careRecent;
+
         if (_allEntries == null || !_allEntries.Any())
         {
-            _totalMoments = 0;
-            _currentFocus = "Discovery";
-            _recentActivity = 0;
+            _currentFocus = "Daily Care & Wellbeing";
             _uniqueAreas = 0;
             _growingInterests.Clear();
             _recentAccomplishments.Clear();
-            _notableMemory = null;
+            if (_allCareEvents != null && _allCareEvents.Any())
+            {
+                var latestCare = _allCareEvents.OrderByDescending(c => c.EventTime).First();
+                _notableMemory = $"{latestCare.EventType} recorded: {latestCare.Notes ?? "Routine care on schedule."}";
+            }
+            else
+            {
+                _notableMemory = null;
+            }
             return;
         }
-
-        _totalMoments = _allEntries.Count;
-        _recentActivity = _allEntries.Count(e => e.ObservationDate >= DateTime.Now.AddDays(-7));
         
         var allTags = _entryAreas.SelectMany(x => x.Value).Select(a => a.Name).ToList();
         _uniqueAreas = allTags.Distinct().Count();
@@ -449,30 +473,173 @@
 
     private void ApplyFilter()
     {
-        if (_allEntries == null) return;
-        
-        var filtered = _allEntries.AsEnumerable();
-        
+        var items = new List<JourneyItemViewModel>();
+        var filteredEntries = (_allEntries ?? Enumerable.Empty<ChildJourneyEntry>()).AsEnumerable();
+        var filteredCare = (_allCareEvents ?? Enumerable.Empty<ChildCareEvent>()).AsEnumerable();
+
         if (_selectedDate.HasValue)
         {
-            filtered = filtered.Where(e => e.ObservationDate.ToLocalTime().Date == _selectedDate.Value.Date);
+            filteredEntries = filteredEntries.Where(e => e.ObservationDate.ToLocalTime().Date == _selectedDate.Value.Date);
+            filteredCare = filteredCare.Where(c => c.EventTime.ToLocalTime().Date == _selectedDate.Value.Date);
         }
 
-        if (_currentFilter == "Discovery")
+        if (_currentFilter == "all")
         {
-            filtered = filtered.Where(e => e.JourneyType == "Discovery" || (string.IsNullOrEmpty(e.JourneyType) == false && e.JourneyType.Contains("Discover")));
+            items.AddRange(filteredEntries.Select(MapEntryToTimelineItem));
+            items.AddRange(filteredCare.Select(MapCareEventToTimelineItem));
+        }
+        else if (_currentFilter == "DailyCare")
+        {
+            items.AddRange(filteredCare.Select(MapCareEventToTimelineItem));
+        }
+        else if (_currentFilter == "Discovery")
+        {
+            items.AddRange(filteredEntries
+                .Where(e => e.JourneyType == "Discovery" || (string.IsNullOrEmpty(e.JourneyType) == false && e.JourneyType.Contains("Discover")))
+                .Select(MapEntryToTimelineItem));
         }
         else if (_currentFilter == "Create")
         {
-            filtered = filtered.Where(e => e.JourneyType == "Create" || GetTagsForEntry(e.Id).Any(t => t.Contains("Creat")));
+            items.AddRange(filteredEntries
+                .Where(e => e.JourneyType == "Create" || GetTagsForEntry(e.Id).Any(t => t.Contains("Creat")))
+                .Select(MapEntryToTimelineItem));
         }
         else if (_currentFilter == "Connection")
         {
-            filtered = filtered.Where(e => e.JourneyType == "Connection" || GetTagsForEntry(e.Id).Any(t => t.Contains("Social") || t.Contains("Emot")));
+            items.AddRange(filteredEntries
+                .Where(e => e.JourneyType == "Connection" || GetTagsForEntry(e.Id).Any(t => t.Contains("Social") || t.Contains("Emot")))
+                .Select(MapEntryToTimelineItem));
         }
-        
-        // Ensure they are ordered by most recent first
-        _entries = filtered.OrderByDescending(e => e.ObservationDate).ToList();
+
+        _displayTimeline = items.OrderByDescending(i => i.Timestamp).ToList();
+        _careEvents = filteredCare.ToList();
+    }
+
+    private JourneyItemViewModel MapCareEventToTimelineItem(ChildCareEvent ev)
+    {
+        string badgeType = ev.EventType switch
+        {
+            CareEventTypes.DiaperChange => "Diaper",
+            CareEventTypes.Meal => "Meal",
+            CareEventTypes.SleepRest => "Sleep",
+            CareEventTypes.Toileting => "Toileting",
+            CareEventTypes.Hygiene => "Hygiene",
+            CareEventTypes.Comfort => "Comfort",
+            _ => "Care"
+        };
+
+        string title = ev.EventType switch
+        {
+            CareEventTypes.DiaperChange => $"Diaper Change — {ev.DiaperCondition ?? "Checked"}",
+            CareEventTypes.Meal => $"Meal: {ev.MealType ?? "Nutrition"} ({ev.AmountConsumed ?? "Recorded"})",
+            CareEventTypes.SleepRest => $"Sleep & Rest — {ev.RestStatus ?? "Rested"}",
+            CareEventTypes.Toileting => $"Toileting — {ev.ToiletingActivity ?? "Routine"}",
+            CareEventTypes.Hygiene => $"Hygiene — {ev.HygieneType ?? "Routine"}",
+            CareEventTypes.Comfort => $"Comfort & Wellbeing — {ev.ComfortMood ?? "Observed"}",
+            _ => $"Daily Care — {ev.EventType}"
+        };
+
+        var tags = new List<string> { ev.EventType };
+        if (!string.IsNullOrWhiteSpace(ev.RecordedByName))
+        {
+            tags.Add($"Teacher: {ev.RecordedByName}");
+        }
+
+        var descParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(ev.Notes))
+        {
+            descParts.Add(ev.Notes);
+        }
+
+        if (ev.EventType == CareEventTypes.Meal)
+        {
+            if (!string.IsNullOrWhiteSpace(ev.FoodOffered))
+                descParts.Add($"Offered: {ev.FoodOffered}");
+            if (ev.FluidOz.HasValue)
+                descParts.Add($"Fluids: {ev.FluidOz.Value:0.#} oz");
+            if (!string.IsNullOrWhiteSpace(ev.AmountConsumed))
+                tags.Add($"Consumed: {ev.AmountConsumed}");
+        }
+        else if (ev.EventType == CareEventTypes.DiaperChange)
+        {
+            if (!string.IsNullOrWhiteSpace(ev.SkinObservation))
+                descParts.Add($"Skin check: {ev.SkinObservation}");
+            if (!string.IsNullOrWhiteSpace(ev.DiaperCondition))
+                tags.Add($"Condition: {ev.DiaperCondition}");
+        }
+        else if (ev.EventType == CareEventTypes.SleepRest)
+        {
+            if (!string.IsNullOrWhiteSpace(ev.RestStatus))
+                tags.Add($"Status: {ev.RestStatus}");
+        }
+        else if (ev.EventType == CareEventTypes.Toileting)
+        {
+            if (!string.IsNullOrWhiteSpace(ev.ToiletingActivity))
+                tags.Add($"Activity: {ev.ToiletingActivity}");
+        }
+        else if (ev.EventType == CareEventTypes.Hygiene)
+        {
+            if (!string.IsNullOrWhiteSpace(ev.HygieneType))
+                tags.Add($"Type: {ev.HygieneType}");
+        }
+        else if (ev.EventType == CareEventTypes.Comfort)
+        {
+            if (!string.IsNullOrWhiteSpace(ev.ComfortMood))
+                tags.Add($"Mood: {ev.ComfortMood}");
+        }
+
+        string desc = descParts.Any() ? string.Join(" • ", descParts) : $"Routine {ev.EventType} recorded for child.";
+
+        return new JourneyItemViewModel
+        {
+            Id = ev.Id,
+            Timestamp = ev.EventTime,
+            Category = "DailyCare",
+            BadgeType = badgeType,
+            Title = title,
+            Description = desc,
+            Quote = "",
+            Tags = tags,
+            Photos = new List<string>(),
+            CanDelete = false
+        };
+    }
+
+    private JourneyItemViewModel MapEntryToTimelineItem(ChildJourneyEntry entry)
+    {
+        string title = entry.ExperienceId.HasValue 
+            ? ("Experience: " + (!string.IsNullOrEmpty(entry.Title) ? entry.Title : (_experienceTitles.ContainsKey(entry.ExperienceId.Value) ? _experienceTitles[entry.ExperienceId.Value] : "Teacher Observation")))
+            : (string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title);
+
+        return new JourneyItemViewModel
+        {
+            Id = entry.Id,
+            Timestamp = entry.ObservationDate.UtcDateTime,
+            Category = "Observation",
+            BadgeType = entry.JourneyType ?? "Discovery",
+            Title = title,
+            Description = entry.Observation ?? "",
+            Quote = entry.ChildVoice ?? "",
+            Tags = GetTagsForEntry(entry.Id),
+            Photos = GetPhotosForEntry(entry.Id),
+            CanDelete = true
+        };
+    }
+
+    public class JourneyItemViewModel
+    {
+        public Guid Id { get; set; }
+        public DateTime Timestamp { get; set; }
+        public string DateString => Timestamp.ToLocalTime().ToString("MMM dd");
+        public string TimeString => Timestamp.ToLocalTime().ToString("t");
+        public string Category { get; set; } = "Observation";
+        public string BadgeType { get; set; } = "Discovery";
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Quote { get; set; } = "";
+        public List<string> Tags { get; set; } = new();
+        public List<string> Photos { get; set; } = new();
+        public bool CanDelete { get; set; }
     }
 
     private void OpenModal(string type)
@@ -509,6 +676,14 @@
     private void CloseModal()
     {
         _isModalOpen = false;
+    }
+    
+    private async Task HandleDelete(JourneyItemViewModel item)
+    {
+        if (item.CanDelete)
+        {
+            await DeleteEntry(item.Id);
+        }
     }
     
     private async Task DeleteEntry(Guid entryId)

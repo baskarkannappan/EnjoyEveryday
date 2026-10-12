@@ -1,0 +1,98 @@
+@page "/messages"
+@attribute [Authorize]
+@inject ParentSessionState SessionState
+@rendermode InteractiveServer
+
+<PageTitle>Messages — EnjoyEveryday</PageTitle>
+
+<div style="background: linear-gradient(135deg, #eef5ef 0%, #f7faf8 100%); border: 1px solid #dce8df; border-radius: 20px; padding: 26px 30px; margin-bottom: 24px;">
+    <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #3b6b4a; text-transform: uppercase; margin-bottom: 4px;">
+        COMMUNICATION &middot; PARENT &amp; TEACHER
+    </div>
+    <h1 style="font-size: 26px; font-weight: 800; color: #1c2b20; margin: 0 0 6px 0; letter-spacing: -0.5px;">
+        Classroom Messages
+    </h1>
+    <p style="font-size: 14px; color: #475569; margin: 0; max-width: 600px;">
+        Direct, secure communication between verified parents and assigned classroom teachers.
+    </p>
+    <div style="margin-top: 10px; font-size: 12px; color: #166534; background: #eef5ef; padding: 6px 12px; border-radius: 8px; display: inline-block;">
+        ℹ️ Preview Mode: Direct educator messaging queue is being enabled for this branch. Urgent inquiries should be directed to the main office phone.
+    </div>
+</div>
+
+<div style="background: white; border: 1px solid #e2e8f0; border-radius: 18px; padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); max-width: 700px;">
+    <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;">
+        <div style="width: 44px; height: 44px; border-radius: 12px; background: #eef5ef; color: #2d5a3c; display: grid; place-items: center; font-size: 22px;">
+            👩‍🏫
+        </div>
+        <div>
+            <div style="font-weight: 750; font-size: 16px; color: #1e293b;">
+                @(SessionState.SelectedChild != null ? $"{SessionState.SelectedChild.ClassroomName} Educators" : "Classroom Teachers")
+            </div>
+            <div style="font-size: 12px; color: #64748b;">
+                @(SessionState.SelectedChild?.OrganizationName ?? "Daycare")
+            </div>
+        </div>
+    </div>
+
+    <!-- MESSAGE THREAD -->
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; min-height: 180px;">
+        @if (_messages.Count == 0)
+        {
+            <div style="text-align: center; color: #94a3b8; font-size: 13px; margin: auto;">
+                No messages yet. Send a question to your child's teachers below.
+            </div>
+        }
+        else
+        {
+            @foreach (var msg in _messages)
+            {
+                <div style="align-self: @(msg.IsFromParent ? "flex-end" : "flex-start"); max-width: 80%; background: @(msg.IsFromParent ? "#2d5a3c" : "#f1f5f9"); color: @(msg.IsFromParent ? "white" : "#1e293b"); padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.5;">
+                    <div>@msg.Content</div>
+                    <div style="font-size: 10px; margin-top: 4px; text-align: right; opacity: 0.8;">
+                        @msg.Timestamp.ToString("h:mm tt")
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <!-- SEND INPUT -->
+    <div style="display: flex; gap: 10px;">
+        <input style="flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; outline: none;"
+               @bind="_draftMessage"
+               @bind:event="oninput"
+               @onkeyup="HandleKeyUp"
+               placeholder="Type a message to your child's teachers..." />
+        <button class="primary" 
+                style="padding: 10px 20px; border-radius: 10px; border: 0; background: #2d5a3c; color: white; cursor: pointer; font-weight: 600; font-size: 14px;"
+                @onclick="SendMessage">
+            Send
+        </button>
+    </div>
+</div>
+
+@code {
+    private record ChatMessage(string Content, DateTime Timestamp, bool IsFromParent);
+    private List<ChatMessage> _messages = new()
+    {
+        new ChatMessage("Hello Sunita! Aarav had a wonderful morning exploring the butterfly specimens today.", DateTime.Today.AddHours(10).AddMinutes(15), false)
+    };
+    private string _draftMessage = string.Empty;
+
+    private void SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_draftMessage)) return;
+
+        _messages.Add(new ChatMessage(_draftMessage, DateTime.Now, true));
+        _draftMessage = string.Empty;
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            SendMessage();
+        }
+    }
+}

@@ -1,0 +1,1015 @@
+@using System.IO
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using Microsoft.AspNetCore.Components.Forms
+@inject IFloorMapService FloorMapService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject IUserContext UserContext
+@inject IJSRuntime JSRuntime
+
+<div class="floor-maps-section">
+
+    <!-- Top Workflow & Information Banner -->
+    <div class="workflow-card">
+        <div class="workflow-header" @onclick="ToggleWorkflowInfo">
+            <div class="workflow-title">
+                <span class="workflow-icon">🗺️</span>
+                <span>Branch Emergency Floor Maps & Safety Route Workflow</span>
+                <span class="step-badge">Audited Compliance</span>
+            </div>
+            <div class="toggle-icon">@(_showWorkflowInfo ? "▲" : "▼")</div>
+        </div>
+
+        @if (_showWorkflowInfo)
+        {
+            <div class="workflow-steps-grid">
+                <div class="workflow-step">
+                    <div class="step-num">1</div>
+                    <div class="step-content">
+                        <h4>Draft & Upload Plan</h4>
+                        <p>Authorized branch personnel upload architectural drawings (PDF, PNG, JPG). Coordinates are saved in a normalized system for responsive display.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">2</div>
+                    <div class="step-content">
+                        <h4>Annotate Safety Markers</h4>
+                        <p>Place emergency exits, fire extinguishers, first-aid stations, assembly points, and AEDs with instructions readable in grayscale print.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">3</div>
+                    <div class="step-content">
+                        <h4>Review & Official Approval</h4>
+                        <p>Submit for review by an authorized safety officer. Publication requires validation of mandatory emergency elements and marks prior versions superseded.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">4</div>
+                    <div class="step-content">
+                        <h4>Immutable Record & Branch Print</h4>
+                        <p>Published floor maps are immutable. Modifying an active map automatically creates a new draft revision, preserving audit history.</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Summary KPI Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card good">
+            <div class="kpi-label">Published Active Maps</div>
+            <div class="kpi-val">@_maps.Count(m => m.Status == FloorMapStatus.Published)</div>
+            <div class="kpi-sub">Verified & Ready to Print</div>
+        </div>
+        <div class="kpi-card info">
+            <div class="kpi-label">Draft Revisions</div>
+            <div class="kpi-val">@_maps.Count(m => m.Status == FloorMapStatus.Draft)</div>
+            <div class="kpi-sub">In preparation</div>
+        </div>
+        <div class="kpi-card attention">
+            <div class="kpi-label">Pending Safety Review</div>
+            <div class="kpi-val">@_maps.Count(m => m.Status == FloorMapStatus.PendingReview)</div>
+            <div class="kpi-sub">Awaiting authorization</div>
+        </div>
+        <div class="kpi-card muted">
+            <div class="kpi-label">Configured Markers</div>
+            <div class="kpi-val">@_maps.Sum(m => m.Markers.Count)</div>
+            <div class="kpi-sub">Exits, Extinguishers & AEDs</div>
+        </div>
+    </div>
+
+    <!-- Filter & Action Bar -->
+    <div class="action-bar">
+        <div class="filter-controls">
+            <div class="control-group">
+                <label>Branch:</label>
+                <select @bind="_selectedBranchFilter" @bind:after="OnFilterChanged" class="select-input">
+                    <option value="">All Authorized Branches</option>
+                    @foreach (var b in _branches)
+                    {
+                        <option value="@b.Id.ToString()">@b.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Floor:</label>
+                <select @bind="_selectedFloorFilter" @bind:after="OnFilterChanged" class="select-input">
+                    <option value="">All Floors</option>
+                    <option value="Floor 1">Floor 1 (Ground)</option>
+                    <option value="Floor 2">Floor 2</option>
+                    <option value="Floor 3">Floor 3</option>
+                    <option value="Basement">Basement</option>
+                    <option value="Grounds">Exterior Grounds</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Status:</label>
+                <select @bind="_selectedStatusFilter" @bind:after="OnFilterChanged" class="select-input">
+                    <option value="">All Statuses</option>
+                    <option value="@FloorMapStatus.Published">Published</option>
+                    <option value="@FloorMapStatus.Draft">Draft</option>
+                    <option value="@FloorMapStatus.PendingReview">Pending Review</option>
+                    <option value="@FloorMapStatus.Superseded">Superseded</option>
+                    <option value="@FloorMapStatus.Retired">Retired</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="right-actions">
+            <button class="btn primary" @onclick="OpenCreateModal">
+                <span class="btn-icon">➕</span> Create / Upload Floor Map
+            </button>
+        </div>
+    </div>
+
+    <!-- Feedback alerts -->
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-banner error">
+            <span>⚠️ @_errorMessage</span>
+            <button class="close-alert" @onclick="() => _errorMessage = null">✕</button>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="alert-banner success">
+            <span>✓ @_successMessage</span>
+            <button class="close-alert" @onclick="() => _successMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- Floor Maps Table / Cards -->
+    @if (_loading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <div>Loading branch emergency floor maps...</div>
+        </div>
+    }
+    else if (_filteredMaps.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-icon">📍</div>
+            <h3>No Emergency Floor Maps Found</h3>
+            <p>No floor plans match your current branch or status filter. Click "Create / Upload Floor Map" to configure safety diagrams and evacuation routes.</p>
+            <button class="btn primary" @onclick="OpenCreateModal">Create Floor Map Record</button>
+        </div>
+    }
+    else
+    {
+        <div class="maps-grid">
+            @foreach (var map in _filteredMaps)
+            {
+                var branchName = _branches.FirstOrDefault(b => b.Id == map.BranchId)?.Name ?? "Main Branch";
+                <div class="map-card @map.Status.ToLowerInvariant()">
+                    <div class="map-card-header">
+                        <div>
+                            <span class="floor-badge">@map.FloorLevel</span>
+                            @if (!string.IsNullOrEmpty(map.BuildingArea))
+                            {
+                                <span class="area-badge">@map.BuildingArea</span>
+                            }
+                            <h3 class="map-title">@map.Name</h3>
+                            <div class="map-branch">📍 @branchName</div>
+                        </div>
+                        <div class="status-and-version">
+                            <span class="status-pill status-@map.Status.ToLowerInvariant()">@FormatStatus(map.Status)</span>
+                            <span class="version-tag">Rev v@(map.Version).0</span>
+                        </div>
+                    </div>
+
+                    <div class="map-card-body">
+                        @if (!string.IsNullOrEmpty(map.Description))
+                        {
+                            <p class="map-desc">@map.Description</p>
+                        }
+
+                        <div class="meta-row">
+                            <div class="meta-item">
+                                <span class="meta-icon">🛡️</span>
+                                <span><strong>@map.Markers.Count</strong> safety markers configured</span>
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-icon">📄</span>
+                                <span>@(map.FileType.Contains("pdf", StringComparison.OrdinalIgnoreCase) ? "PDF Document" : "Floor Image")</span>
+                            </div>
+                        </div>
+
+                        <div class="audit-row">
+                            @if (map.Status == FloorMapStatus.Published)
+                            {
+                                <div>Approved & Published by <strong>@map.PublishedBy</strong> on @map.PublishedAt?.ToString("MMM dd, yyyy")</div>
+                            }
+                            else
+                            {
+                                <div>Prepared by <strong>@map.CreatedBy</strong> on @map.CreatedAt.ToString("MMM dd, yyyy")</div>
+                            }
+                            @if (map.ReviewDueAt.HasValue)
+                            {
+                                <div class="review-due @(map.ReviewDueAt < DateTime.UtcNow ? "overdue" : "")">
+                                    Next Review Due: @map.ReviewDueAt.Value.ToString("MMM dd, yyyy")
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="map-card-footer">
+                        <button class="btn secondary sm" @onclick="() => OpenViewerModal(map)">
+                            👁️ View &amp; Print
+                        </button>
+
+                        @if (map.Status == FloorMapStatus.Draft)
+                        {
+                            <button class="btn outline sm" @onclick="() => OpenEditorModal(map)">
+                                ✏️ Edit Markers
+                            </button>
+                            <button class="btn primary sm" @onclick="() => SubmitForReview(map)">
+                                📤 Submit Review
+                            </button>
+                        }
+                        else if (map.Status == FloorMapStatus.PendingReview)
+                        {
+                            <button class="btn outline sm" @onclick="() => OpenEditorModal(map)">
+                                ✏️ Edit Markers
+                            </button>
+                            <button class="btn success sm" @onclick="() => PublishMap(map)">
+                                🛡️ Approve &amp; Publish
+                            </button>
+                        }
+                        else if (map.Status == FloorMapStatus.Published)
+                        {
+                            <button class="btn outline sm" @onclick="() => CreateNewDraftRevision(map)">
+                                📑 Create New Revision
+                            </button>
+                            <button class="btn danger-subtle sm" @onclick="() => RetireMap(map)">
+                                🔒 Retire
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- MARKER EDITOR / CREATION MODAL -->
+    @if (_showEditorModal)
+    {
+        <div class="modal-backdrop" @onclick="CloseEditorModal">
+            <div class="modal-window editor-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <div>
+                        <div class="eyebrow">Interactive Safety Marker System</div>
+                        <h2>@(_isCreatingNew ? "Create Branch Emergency Floor Map" : $"Edit Floor Plan & Markers — {_editingMap.Name}")</h2>
+                    </div>
+                    <button class="close-btn" @onclick="CloseEditorModal">✕</button>
+                </div>
+
+                <div class="modal-body">
+                    <!-- Form Metadata Grid -->
+                    <div class="editor-grid">
+                        <div class="form-section">
+                            <h3>1. Plan Details</h3>
+                            <div class="form-row">
+                                <div class="form-field">
+                                    <label>Authorized Branch *</label>
+                                    <select @bind="_editingMap.BranchId" class="select-input" disabled="@(!_isCreatingNew)">
+                                        <option value="@Guid.Empty">-- Select Branch --</option>
+                                        @foreach (var b in _branches)
+                                        {
+                                            <option value="@b.Id">@b.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label>Floor / Level *</label>
+                                    <select @bind="_editingMap.FloorLevel" class="select-input">
+                                        <option value="Floor 1">Floor 1 (Ground Level)</option>
+                                        <option value="Floor 2">Floor 2</option>
+                                        <option value="Floor 3">Floor 3</option>
+                                        <option value="Basement">Basement Level</option>
+                                        <option value="Grounds">Exterior Grounds &amp; Playground</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-field">
+                                    <label>Map Name *</label>
+                                    <input type="text" @bind="_editingMap.Name" class="text-input" placeholder="e.g. Main Daycare Floor 1 Evacuation Map" />
+                                </div>
+                                <div class="form-field">
+                                    <label>Building / Area</label>
+                                    <input type="text" @bind="_editingMap.BuildingArea" class="text-input" placeholder="e.g. North Wing / Early Years Hall" />
+                                </div>
+                            </div>
+
+                            <div class="form-field">
+                                <label>Emergency Instructions for this Floor</label>
+                                <textarea @bind="_editingMap.EmergencyInstructions" class="textarea-input" rows="3" placeholder="e.g. In case of alarm, evacuate via East staircase to Assembly Point A. Teachers must conduct headcounts using physical attendance rosters."></textarea>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-field">
+                                    <label>Floor Plan File (PDF, PNG, JPG)</label>
+                                    <InputFile OnChange="OnMapFileSelected" class="file-input" accept=".pdf,.png,.jpg,.jpeg" />
+                                    <span class="file-hint">Max file size 15 MB. Validated with magic byte inspection.</span>
+                                </div>
+                                <div class="form-field">
+                                    <label>Next Mandatory Review Date</label>
+                                    <input type="date" value="@(_editingMap.ReviewDueAt?.ToString("yyyy-MM-dd"))" @onchange="OnReviewDateChanged" class="text-input" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Interactive Marker Pallet & Instructions -->
+                        <div class="palette-section">
+                            <h3>2. Safety Marker Pallet</h3>
+                            <p class="palette-instruction">Select a safety marker type, then <strong>click anywhere on the floor plan</strong> to position it.</p>
+                            
+                            <div class="palette-items">
+                                @foreach (var type in _availableMarkerTypes)
+                                {
+                                    var isSelected = _selectedMarkerTool == type;
+                                    var color = SafetyMarkerType.GetColor(type);
+                                    var markerCode = SafetyMarkerType.GetShortCode(type);
+                                    <button class="palette-btn @(isSelected ? "selected" : "")" 
+                                            @onclick="() => SelectMarkerTool(type)"
+                                            style="border-color: @color;">
+                                        <span class="marker-dot" style="background-color: @color;">@markerCode</span>
+                                        <span class="palette-label">@FormatMarkerTypeName(type)</span>
+                                    </button>
+                                }
+                            </div>
+
+                            <div class="selected-tool-banner">
+                                Active Placement Tool: <strong>@FormatMarkerTypeName(_selectedMarkerTool)</strong> 
+                                <span class="click-hint">(Click plan to place)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visual Canvas for Marker Annotation -->
+                    <div class="canvas-section">
+                        <div class="canvas-header">
+                            <div>
+                                <h3>3. Floor Plan Annotation Canvas</h3>
+                                <span class="canvas-sub">Normalized coordinates: scaled responsively across tablets, desktop, and print.</span>
+                            </div>
+                            <div class="marker-counter-badge">
+                                Markers Placed: <strong>@_editingMarkers.Count</strong>
+                            </div>
+                        </div>
+
+                        <div class="map-viewport-wrapper">
+                            <div class="map-canvas-container" @onclick="OnCanvasClick">
+                                @if (!string.IsNullOrEmpty(_previewImageSource))
+                                {
+                                    <img src="@_previewImageSource" class="floor-plan-img" alt="Floor plan preview" />
+                                }
+                                else if (!string.IsNullOrEmpty(_editingMap.FileStorageKey) && _editingMap.FileType != "application/pdf")
+                                {
+                                    <img src="/api/floormaps/@(_editingMap.Id)/file" class="floor-plan-img" alt="Floor plan" />
+                                }
+                                else if (_editingMap.FileType == "application/pdf" || _selectedFileIsPdf)
+                                {
+                                    <div class="pdf-canvas-placeholder">
+                                        <div class="pdf-notice">
+                                            <span class="pdf-icon">📄</span>
+                                            <strong>PDF Architectural Drawing Loaded</strong>
+                                            <p>Markers placed below will anchor to normalized coordinates over this floor plan. PDF vector export & printing preserves full clarity.</p>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="canvas-placeholder">
+                                        <div class="placeholder-icon">📐</div>
+                                        <div>Floor Plan Architectural Drawing Grid</div>
+                                        <p>Click "Choose File" above to load your building schematic, or place safety markers directly onto the layout grid.</p>
+                                    </div>
+                                }
+
+                                <!-- Rendered Markers -->
+                                @foreach (var marker in _editingMarkers)
+                                {
+                                    var color = SafetyMarkerType.GetColor(marker.MarkerType);
+                                    var markerCode = SafetyMarkerType.GetShortCode(marker.MarkerType);
+                                    <div class="safety-marker-pin"
+                                         style="left: @(marker.NormalizedX * 100)%; top: @(marker.NormalizedY * 100)%; background-color: @color;"
+                                         title="@marker.Label: @marker.Instructions"
+                                         @onclick:stopPropagation="true"
+                                         @onclick="() => SelectActiveMarker(marker)">
+                                        <span class="marker-code">@markerCode</span>
+                                        <span class="marker-tooltip">@marker.Label</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configured Markers List Table -->
+                    @if (_editingMarkers.Count > 0)
+                    {
+                        <div class="markers-table-section">
+                            <h3>Configured Safety Markers on this Map (@_editingMarkers.Count)</h3>
+                            <div class="table-responsive">
+                                <table class="markers-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Code</th>
+                                            <th>Type</th>
+                                            <th>Label / Identifier</th>
+                                            <th>Emergency Instructions</th>
+                                            <th>Coordinates</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var m in _editingMarkers)
+                                        {
+                                            var color = SafetyMarkerType.GetColor(m.MarkerType);
+                                            var markerCode = SafetyMarkerType.GetShortCode(m.MarkerType);
+                                            <tr>
+                                                <td>
+                                                    <span class="marker-dot-sm" style="background-color: @color;">@markerCode</span>
+                                                </td>
+                                                <td><strong>@FormatMarkerTypeName(m.MarkerType)</strong></td>
+                                                <td>
+                                                    <input type="text" @bind="m.Label" class="text-input sm" placeholder="e.g. Exit Door E1" />
+                                                </td>
+                                                <td>
+                                                    <input type="text" @bind="m.Instructions" class="text-input sm" placeholder="e.g. Push crash bar; leads to courtyard" />
+                                                </td>
+                                                <td class="coord-cell">
+                                                    X: @((m.NormalizedX * 100).ToString("F1"))%, Y: @((m.NormalizedY * 100).ToString("F1"))%
+                                                </td>
+                                                <td>
+                                                    <button class="btn danger-icon sm" @onclick="() => RemoveMarker(m)" title="Remove marker">🗑️</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn outline" @onclick="CloseEditorModal">Cancel</button>
+                    <button class="btn secondary" @onclick="SaveMapDraft">
+                        💾 Save as Draft
+                    </button>
+                    <button class="btn primary" @onclick="SaveAndSubmitReview">
+                        📤 Submit for Review
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- INTERACTIVE VIEWER & PRINT MODAL -->
+    @if (_showViewerModal && _viewingMap != null)
+    {
+        var branch = _branches.FirstOrDefault(b => b.Id == _viewingMap.BranchId);
+        <div class="modal-backdrop" @onclick="CloseViewerModal">
+            <div class="modal-window print-modal" @onclick:stopPropagation="true">
+                <div class="modal-header no-print">
+                    <div>
+                        <div class="eyebrow">Safety &amp; Evacuation Floor Plan</div>
+                        <h2>@_viewingMap.Name</h2>
+                    </div>
+                    <div class="viewer-actions">
+                        <button class="btn primary" @onclick="TriggerBrowserPrint">🖨️ Print Map</button>
+                        <button class="close-btn" @onclick="CloseViewerModal">✕</button>
+                    </div>
+                </div>
+
+                <div class="modal-body print-area" id="printable-map-sheet">
+                    <!-- Print Header -->
+                    <div class="print-header">
+                        <div class="brand-line">
+                            <span class="sparkle">✨</span>
+                            <span class="brand-title">EnjoyEveryday Childcare — Safety &amp; Trust</span>
+                        </div>
+                        <div class="print-meta-grid">
+                            <div>
+                                <div class="print-meta-label">Branch:</div>
+                                <div class="print-meta-val">@(branch?.Name ?? "Main Campus")</div>
+                            </div>
+                            <div>
+                                <div class="print-meta-label">Level / Building:</div>
+                                <div class="print-meta-val">@_viewingMap.FloorLevel @(!string.IsNullOrEmpty(_viewingMap.BuildingArea) ? $"({_viewingMap.BuildingArea})" : "")</div>
+                            </div>
+                            <div>
+                                <div class="print-meta-label">Revision &amp; Status:</div>
+                                <div class="print-meta-val">Rev v@(_viewingMap.Version).0 — @_viewingMap.Status</div>
+                            </div>
+                            <div>
+                                <div class="print-meta-label">Published Date:</div>
+                                <div class="print-meta-val">@(_viewingMap.PublishedAt?.ToString("MMM dd, yyyy") ?? _viewingMap.CreatedAt.ToString("MMM dd, yyyy"))</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Emergency Instructions Callout -->
+                    @if (!string.IsNullOrEmpty(_viewingMap.EmergencyInstructions))
+                    {
+                        <div class="emergency-callout">
+                            <div class="callout-title">🚨 EMERGENCY EVACUATION PROCEDURES:</div>
+                            <p>@_viewingMap.EmergencyInstructions</p>
+                        </div>
+                    }
+
+                    <!-- Map Display with Markers Overlay -->
+                    <div class="print-viewport">
+                        <div class="print-map-container">
+                            @if (_viewingMap.FileType == "application/pdf")
+                            {
+                                <object data="/api/floormaps/@(_viewingMap.Id)/file" type="application/pdf" class="print-pdf-obj">
+                                    <div class="pdf-fallback-view">
+                                        <p>PDF Floor Plan: <a href="/api/floormaps/@(_viewingMap.Id)/file" target="_blank">Open PDF in new tab</a></p>
+                                    </div>
+                                </object>
+                            }
+                            else
+                            {
+                                <img src="/api/floormaps/@(_viewingMap.Id)/file" class="print-map-img" alt="Floor plan" />
+                            }
+
+                            <!-- Marker pins -->
+                            @foreach (var m in _viewingMap.Markers)
+                            {
+                                var color = SafetyMarkerType.GetColor(m.MarkerType);
+                                var markerCode = SafetyMarkerType.GetShortCode(m.MarkerType);
+                                <div class="safety-marker-pin print-pin"
+                                     style="left: @(m.NormalizedX * 100)%; top: @(m.NormalizedY * 100)%; background-color: @color;">
+                                    <span class="marker-code">@markerCode</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Safety Legend (Accessible in Grayscale) -->
+                    <div class="legend-card">
+                        <div class="legend-header">SAFETY MARKER LEGEND (Grayscale &amp; High-Contrast Accessible)</div>
+                        <div class="legend-grid">
+                            @foreach (var type in _viewingMap.Markers.Select(m => m.MarkerType).Distinct())
+                            {
+                                var color = SafetyMarkerType.GetColor(type);
+                                var markerCode = SafetyMarkerType.GetShortCode(type);
+                                var matchingMarkers = _viewingMap.Markers.Where(m => m.MarkerType == type).ToList();
+                                <div class="legend-item">
+                                    <span class="marker-dot-sm" style="background-color: @color;">@markerCode</span>
+                                    <div>
+                                        <div class="legend-type-title">@FormatMarkerTypeName(type) (@matchingMarkers.Count)</div>
+                                        <div class="legend-instructions">
+                                            @string.Join(" • ", matchingMarkers.Where(m => !string.IsNullOrEmpty(m.Instructions)).Select(m => $"{m.Label}: {m.Instructions}"))
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Print Footer -->
+                    <div class="print-footer">
+                        <div>EnjoyEveryday Safety &amp; Trust Document Management. Verified branch safety plan.</div>
+                        <div>Not a substitute for official municipal building inspections. Last review: @(_viewingMap.ReviewDueAt?.ToString("MMM dd, yyyy") ?? "Annual")</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _showWorkflowInfo = false;
+    private List<BranchFloorMap> _maps = new();
+    private List<BranchFloorMap> _filteredMaps = new();
+    private List<Branch> _branches = new();
+
+    private string _selectedBranchFilter = "";
+    private string _selectedFloorFilter = "";
+    private string _selectedStatusFilter = "";
+
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    // Editor modal state
+    private bool _showEditorModal = false;
+    private bool _isCreatingNew = false;
+    private BranchFloorMap _editingMap = new();
+    private List<FloorMapMarker> _editingMarkers = new();
+    private string _selectedMarkerTool = SafetyMarkerType.EmergencyExit;
+    private IBrowserFile? _uploadedFile;
+    private string? _previewImageSource;
+    private bool _selectedFileIsPdf;
+
+    // Viewer modal state
+    private bool _showViewerModal = false;
+    private BranchFloorMap? _viewingMap;
+
+    private readonly List<string> _availableMarkerTypes = new()
+    {
+        SafetyMarkerType.EmergencyExit,
+        SafetyMarkerType.FirstAid,
+        SafetyMarkerType.FireExtinguisher,
+        SafetyMarkerType.FireAlarm,
+        SafetyMarkerType.AssemblyPoint,
+        SafetyMarkerType.AED,
+        SafetyMarkerType.EvacuationRoute,
+        SafetyMarkerType.AccessibleRoute,
+        SafetyMarkerType.EmergencyEquipment,
+        SafetyMarkerType.Other
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+            var primaryOrg = orgs.FirstOrDefault();
+
+            if (primaryOrg != null)
+            {
+                _branches = (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList();
+            }
+
+            _maps = (await FloorMapService.GetMapsAsync()).ToList();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load floor maps: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        _filteredMaps = _maps.Where(m =>
+            (string.IsNullOrEmpty(_selectedBranchFilter) || m.BranchId.ToString() == _selectedBranchFilter) &&
+            (string.IsNullOrEmpty(_selectedFloorFilter) || m.FloorLevel.Equals(_selectedFloorFilter, StringComparison.OrdinalIgnoreCase)) &&
+            (string.IsNullOrEmpty(_selectedStatusFilter) || m.Status.Equals(_selectedStatusFilter, StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+    }
+
+    private void OnFilterChanged()
+    {
+        ApplyFilters();
+    }
+
+    private void ToggleWorkflowInfo()
+    {
+        _showWorkflowInfo = !_showWorkflowInfo;
+    }
+
+    private void OpenCreateModal()
+    {
+        _isCreatingNew = true;
+        _uploadedFile = null;
+        _previewImageSource = null;
+        _selectedFileIsPdf = false;
+        _editingMarkers.Clear();
+        _editingMap = new BranchFloorMap
+        {
+            BranchId = _branches.FirstOrDefault()?.Id ?? Guid.Empty,
+            FloorLevel = "Floor 1",
+            Name = "Ground Floor Evacuation Plan",
+            ReviewDueAt = DateTime.UtcNow.AddMonths(12)
+        };
+        _showEditorModal = true;
+    }
+
+    private void OpenEditorModal(BranchFloorMap map)
+    {
+        _isCreatingNew = false;
+        _uploadedFile = null;
+        _previewImageSource = null;
+        _selectedFileIsPdf = map.FileType.Contains("pdf", StringComparison.OrdinalIgnoreCase);
+        _editingMap = new BranchFloorMap
+        {
+            Id = map.Id,
+            TenantId = map.TenantId,
+            OrganizationId = map.OrganizationId,
+            BranchId = map.BranchId,
+            Name = map.Name,
+            BuildingArea = map.BuildingArea,
+            FloorLevel = map.FloorLevel,
+            Description = map.Description,
+            FileStorageKey = map.FileStorageKey,
+            FileType = map.FileType,
+            FileSize = map.FileSize,
+            ContentHash = map.ContentHash,
+            Version = map.Version,
+            Status = map.Status,
+            ReviewDueAt = map.ReviewDueAt,
+            EmergencyInstructions = map.EmergencyInstructions
+        };
+
+        _editingMarkers = map.Markers.Select(m => new FloorMapMarker
+        {
+            Id = m.Id,
+            FloorMapId = m.FloorMapId,
+            MarkerType = m.MarkerType,
+            Label = m.Label,
+            Instructions = m.Instructions,
+            NormalizedX = m.NormalizedX,
+            NormalizedY = m.NormalizedY,
+            DisplayOrder = m.DisplayOrder
+        }).ToList();
+
+        _showEditorModal = true;
+    }
+
+    private void CloseEditorModal()
+    {
+        _showEditorModal = false;
+    }
+
+    private void OpenViewerModal(BranchFloorMap map)
+    {
+        _viewingMap = map;
+        _showViewerModal = true;
+    }
+
+    private void CloseViewerModal()
+    {
+        _showViewerModal = false;
+        _viewingMap = null;
+    }
+
+    private void SelectMarkerTool(string type)
+    {
+        _selectedMarkerTool = type;
+    }
+
+    private async Task OnMapFileSelected(InputFileChangeEventArgs e)
+    {
+        _uploadedFile = e.File;
+        _selectedFileIsPdf = _uploadedFile.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+
+        if (!_selectedFileIsPdf)
+        {
+            try
+            {
+                using var stream = _uploadedFile.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var base64 = Convert.ToBase64String(ms.ToArray());
+                _previewImageSource = $"data:{_uploadedFile.ContentType};base64,{base64}";
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Error previewing image: {ex.Message}";
+            }
+        }
+        else
+        {
+            _previewImageSource = null;
+        }
+    }
+
+    private void OnReviewDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+        {
+            _editingMap.ReviewDueAt = dt;
+        }
+    }
+
+    private void OnCanvasClick(MouseEventArgs e)
+    {
+        // Coordinate calculation: mouse relative to container width & height
+        // In Blazor Server, we can calculate normalized (0.0 to 1.0) using client coordinates or approx layout
+        // For reliable precision, default to normalized values or calculated relative offset
+        var normX = Math.Clamp(e.OffsetX / 800.0, 0.05, 0.95);
+        var normY = Math.Clamp(e.OffsetY / 500.0, 0.05, 0.95);
+
+        var newMarker = new FloorMapMarker
+        {
+            Id = Guid.NewGuid(),
+            MarkerType = _selectedMarkerTool,
+            Label = $"{FormatMarkerTypeName(_selectedMarkerTool)} #{_editingMarkers.Count + 1}",
+            Instructions = GetDefaultInstructions(_selectedMarkerTool),
+            NormalizedX = Math.Round(normX, 3),
+            NormalizedY = Math.Round(normY, 3),
+            DisplayOrder = _editingMarkers.Count + 1
+        };
+
+        _editingMarkers.Add(newMarker);
+    }
+
+    private void SelectActiveMarker(FloorMapMarker marker)
+    {
+        _selectedMarkerTool = marker.MarkerType;
+    }
+
+    private void RemoveMarker(FloorMapMarker marker)
+    {
+        _editingMarkers.Remove(marker);
+    }
+
+    private async Task SaveMapDraft()
+    {
+        try
+        {
+            _errorMessage = null;
+
+            if (_isCreatingNew)
+            {
+                if (_uploadedFile == null)
+                {
+                    _errorMessage = "Please choose a floor plan file (PDF, PNG, JPG).";
+                    return;
+                }
+
+                using var stream = _uploadedFile.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024);
+                var request = new CreateFloorMapRequest
+                {
+                    BranchId = _editingMap.BranchId,
+                    Name = _editingMap.Name,
+                    BuildingArea = _editingMap.BuildingArea,
+                    FloorLevel = _editingMap.FloorLevel,
+                    Description = _editingMap.Description,
+                    EmergencyInstructions = _editingMap.EmergencyInstructions,
+                    ReviewDueAt = _editingMap.ReviewDueAt,
+                    FileStream = stream,
+                    FileName = _uploadedFile.Name,
+                    FileContentType = _uploadedFile.ContentType
+                };
+
+                var created = await FloorMapService.CreateDraftMapAsync(request);
+
+                if (_editingMarkers.Count > 0)
+                {
+                    await FloorMapService.SaveMarkersAsync(created.Id, _editingMarkers);
+                }
+
+                _successMessage = $"Draft floor map '{created.Name}' created successfully.";
+            }
+            else
+            {
+                Stream? stream = null;
+                if (_uploadedFile != null)
+                {
+                    stream = _uploadedFile.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024);
+                }
+
+                var updateReq = new UpdateFloorMapRequest
+                {
+                    Id = _editingMap.Id,
+                    Name = _editingMap.Name,
+                    BuildingArea = _editingMap.BuildingArea,
+                    FloorLevel = _editingMap.FloorLevel,
+                    Description = _editingMap.Description,
+                    EmergencyInstructions = _editingMap.EmergencyInstructions,
+                    ReviewDueAt = _editingMap.ReviewDueAt,
+                    NewFileStream = stream,
+                    NewFileName = _uploadedFile?.Name,
+                    NewFileContentType = _uploadedFile?.ContentType,
+                    Markers = _editingMarkers
+                };
+
+                await FloorMapService.UpdateDraftMapAsync(updateReq);
+                _successMessage = "Draft floor map and markers updated.";
+            }
+
+            CloseEditorModal();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private async Task SaveAndSubmitReview()
+    {
+        await SaveMapDraft();
+        var map = _maps.FirstOrDefault(m => m.Name == _editingMap.Name);
+        if (map != null && map.Status == FloorMapStatus.Draft)
+        {
+            await SubmitForReview(map);
+        }
+    }
+
+    private async Task SubmitForReview(BranchFloorMap map)
+    {
+        try
+        {
+            _errorMessage = null;
+            await FloorMapService.SubmitForReviewAsync(map.Id);
+            _successMessage = $"Floor map '{map.Name}' submitted for safety review.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to submit for review: {ex.Message}";
+        }
+    }
+
+    private async Task PublishMap(BranchFloorMap map)
+    {
+        try
+        {
+            _errorMessage = null;
+            await FloorMapService.PublishMapAsync(map.Id);
+            _successMessage = $"Floor map '{map.Name}' officially published. Prior version (if any) superseded.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Publication failed: {ex.Message}";
+        }
+    }
+
+    private async Task CreateNewDraftRevision(BranchFloorMap map)
+    {
+        try
+        {
+            _errorMessage = null;
+            var newDraft = await FloorMapService.CreateNewDraftFromPublishedAsync(map.Id);
+            _successMessage = $"Created draft revision v{newDraft.Version}.0 from published map.";
+            await LoadDataAsync();
+            OpenEditorModal(newDraft);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to create revision: {ex.Message}";
+        }
+    }
+
+    private async Task RetireMap(BranchFloorMap map)
+    {
+        try
+        {
+            _errorMessage = null;
+            await FloorMapService.RetireMapAsync(map.Id);
+            _successMessage = $"Floor map '{map.Name}' retired.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Retire failed: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerBrowserPrint()
+    {
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+
+    private static string FormatStatus(string status) => status switch
+    {
+        FloorMapStatus.Published => "Published Active",
+        FloorMapStatus.Draft => "Draft",
+        FloorMapStatus.PendingReview => "Pending Review",
+        FloorMapStatus.Superseded => "Superseded",
+        FloorMapStatus.Retired => "Retired",
+        _ => status
+    };
+
+    private static string FormatMarkerTypeName(string type) => type switch
+    {
+        SafetyMarkerType.EmergencyExit => "Emergency Exit",
+        SafetyMarkerType.FirstAid => "First Aid Station",
+        SafetyMarkerType.FireExtinguisher => "Fire Extinguisher",
+        SafetyMarkerType.FireAlarm => "Fire Alarm Pull",
+        SafetyMarkerType.AssemblyPoint => "Assembly Point",
+        SafetyMarkerType.AED => "AED / Defibrillator",
+        SafetyMarkerType.EvacuationRoute => "Evacuation Route",
+        SafetyMarkerType.AccessibleRoute => "Accessible Route",
+        SafetyMarkerType.EmergencyEquipment => "Emergency Equipment",
+        _ => "Other Safety Location"
+    };
+
+    private static string GetDefaultInstructions(string type) => type switch
+    {
+        SafetyMarkerType.EmergencyExit => "Primary evacuation exit — maintain clear corridor.",
+        SafetyMarkerType.FirstAid => "Wall-mounted standard pediatric kit and eye-wash station.",
+        SafetyMarkerType.FireExtinguisher => "Class ABC multi-purpose extinguisher; inspect monthly.",
+        SafetyMarkerType.FireAlarm => "Manual pull station; activates building-wide strobe & siren.",
+        SafetyMarkerType.AssemblyPoint => "Primary muster area in courtyard; report to Floor Marshal.",
+        SafetyMarkerType.AED => "Automated External Defibrillator with pediatric pads.",
+        SafetyMarkerType.EvacuationRoute => "Follow illuminated exit signage to exterior.",
+        _ => "Safety marker position."
+    };
+}

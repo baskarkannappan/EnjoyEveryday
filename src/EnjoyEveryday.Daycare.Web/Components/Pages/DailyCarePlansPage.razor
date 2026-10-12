@@ -1,0 +1,222 @@
+@page "/daily-care/plans"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IChildDailyCareService DailyCareService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+
+<PageTitle>Individual Child Care Plans — EnjoyEveryday</PageTitle>
+
+<section class="content">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Care Plans &amp; Routines</div>
+            <h1>Individual Child Care Plans</h1>
+            <p class="header-description">
+                Authorized routine guidance, allergy and dietary restrictions, bottle schedules, safe sleep routines, 
+                and comfort strategies tailored for each enrolled child.
+            </p>
+        </div>
+        <div class="header-actions">
+            <a href="/daily-care" class="btn">← Back to Today's Care</a>
+        </div>
+    </div>
+
+    <div class="plans-container">
+        @if (_plans.Count == 0)
+        {
+            <div class="empty-card">
+                <span style="font-size: 32px;">📋</span>
+                <h3>No specific care plans registered yet</h3>
+                <p>Default age-appropriate classroom care standards currently apply across all active children.</p>
+            </div>
+        }
+        else
+        {
+            <div class="plans-grid">
+                @foreach (var plan in _plans)
+                {
+                    <div class="plan-sheet">
+                        <div class="plan-sheet-top">
+                            <div>
+                                <span class="badge-v">Version @plan.Version</span>
+                                <h3>@plan.ChildName</h3>
+                                <span class="effective-date">Effective: @plan.EffectiveDate.ToString("MMM d, yyyy")</span>
+                            </div>
+                            <span class="status-pill active">@plan.Status</span>
+                        </div>
+
+                        <div class="plan-body-sections">
+                            <div class="plan-field">
+                                <strong>⚠️ Allergies &amp; Dietary Guidance:</strong>
+                                <p>@(plan.DietaryAllergiesSummary ?? "No documented food allergies.")</p>
+                            </div>
+                            <div class="plan-field">
+                                <strong>👶 Diaper &amp; Toileting Routine:</strong>
+                                <p>@(plan.DiaperRoutineGuidance ?? "Routine 2-hour diaper checks.")</p>
+                                @if (!string.IsNullOrEmpty(plan.ToiletingSupportPlan))
+                                {
+                                    <small>Support: @plan.ToiletingSupportPlan</small>
+                                }
+                            </div>
+                            <div class="plan-field">
+                                <strong>🥣 Feeding &amp; Bottle Instructions:</strong>
+                                <p>@(plan.FeedingInstructions ?? "Self-feeds standard classroom meals.")</p>
+                            </div>
+                            <div class="plan-field">
+                                <strong>🌙 Sleep Routine:</strong>
+                                <p>@(plan.SleepRoutineGuidance ?? "Quiet rest per classroom schedule.")</p>
+                            </div>
+                            <div class="plan-field">
+                                <strong>❤️ Comfort &amp; Calming:</strong>
+                                <p>@(plan.ComfortCalmingPreferences ?? "Calm reassurance when tired.")</p>
+                            </div>
+                            <div class="plan-field">
+                                <strong>📦 Required Cubby Supplies:</strong>
+                                <p>@(plan.RequiredSuppliesNote ?? "Standard diapers, wipes, and spare clothes.")</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private List<ChildCarePlan> _plans = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+        var primaryOrg = orgs.FirstOrDefault();
+        var branches = primaryOrg != null ? (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList() : new List<Branch>();
+        if (branches.Count > 0)
+        {
+            var planList = new List<ChildCarePlan>();
+            foreach (var b in branches)
+            {
+                var p = (await DailyCareService.GetClassroomOverviewAsync(b.Id, null, DateOnly.FromDateTime(DateTime.Today))).ToList();
+                foreach (var child in p)
+                {
+                    var cp = await DailyCareService.GetChildCarePlanAsync(child.ChildId);
+                    if (cp != null && !planList.Any(x => x.Id == cp.Id))
+                    {
+                        cp.ChildName = child.ChildName;
+                        planList.Add(cp);
+                    }
+                }
+            }
+            _plans = planList;
+        }
+    }
+}
+
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 25px;
+    margin-bottom: 24px;
+}
+.eyebrow {
+    color: var(--green, #557760);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 800;
+    margin-bottom: 6px;
+}
+.page-header h1 {
+    margin: 0;
+    font-size: 30px;
+    letter-spacing: -1px;
+    color: var(--text, #26332d);
+}
+.header-description {
+    margin: 8px 0 0;
+    max-width: 760px;
+    color: var(--muted, #78827c);
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+.plans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 20px;
+}
+.plan-sheet {
+    background: #ffffff;
+    border: 1px solid #dce7de;
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.plan-sheet-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid #eef2ee;
+    padding-bottom: 12px;
+}
+.plan-sheet-top h3 {
+    margin: 4px 0 2px;
+    font-size: 18px;
+    font-weight: 800;
+    color: #27322c;
+}
+.badge-v {
+    background: #edf3ee;
+    color: #52745e;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.effective-date {
+    font-size: 11px;
+    color: #8a998f;
+}
+.status-pill.active {
+    background: #edf3ee;
+    color: #3b5a45;
+    font-size: 11px;
+    font-weight: 750;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+.plan-body-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.plan-field strong {
+    font-size: 12px;
+    color: #27322c;
+}
+.plan-field p {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    color: #526157;
+    line-height: 1.4;
+}
+.plan-field small {
+    display: block;
+    font-size: 11.5px;
+    color: #6b7a70;
+    margin-top: 2px;
+}
+.empty-card {
+    text-align: center;
+    background: #ffffff;
+    border: 1px solid #dce7de;
+    border-radius: 16px;
+    padding: 40px;
+    color: #6b7a70;
+}
+</style>

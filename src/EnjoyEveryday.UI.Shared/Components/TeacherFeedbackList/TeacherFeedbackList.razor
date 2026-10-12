@@ -1,17 +1,107 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
 <div class="panel">
-    <h3>@Title</h3>
-    <div class="panel-description">
-        @Subtitle
+    <div class="panel-header">
+        <div>
+            <h3>
+                @Title
+                @if (Items != null && Items.Any())
+                {
+                    <span class="count-badge">@Items.Count()</span>
+                }
+            </h3>
+            <div class="panel-description">
+                @Subtitle
+            </div>
+        </div>
     </div>
 
-    @foreach (var item in Items)
+    <div class="filter-controls">
+        <div class="search-box">
+            <input type="text" 
+                   value="@SearchTerm" 
+                   @oninput="OnSearchInput" 
+                   placeholder="Filter by teacher or text..." 
+                   class="filter-input" />
+            @if (!string.IsNullOrWhiteSpace(SearchTerm))
+            {
+                <button type="button" class="btn-clear-inline" @onclick="ClearSearch" title="Clear search">&times;</button>
+            }
+        </div>
+        <div class="filter-row">
+            <div class="select-group">
+                <label class="control-label">Sort:</label>
+                <select class="filter-select" value="@SortBy" @onchange="OnSortChange">
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="author-asc">Teacher (A &rarr; Z)</option>
+                    <option value="author-desc">Teacher (Z &rarr; A)</option>
+                </select>
+            </div>
+
+            @if (AvailableRatings.Any())
+            {
+                <div class="select-group">
+                    <label class="control-label">Rating:</label>
+                    <select class="filter-select" value="@RatingFilter" @onchange="OnRatingChange">
+                        <option value="">All ratings</option>
+                        @foreach (var rating in AvailableRatings)
+                        {
+                            <option value="@rating">@rating</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(SearchTerm) || !string.IsNullOrWhiteSpace(RatingFilter))
+            {
+                <button type="button" class="btn-reset" @onclick="ResetFilters">Reset</button>
+            }
+        </div>
+    </div>
+
+    @if (PagedItems.Any())
     {
-        <div class="quote" style="cursor: pointer;" @onclick="() => OnItemClick.InvokeAsync(item)">
-            <div class="quote-mark">"</div>
-            <p>@item.Notes</p>
-            <small>&mdash; @item.Author</small>
+        <div class="feedback-list">
+            @foreach (var item in PagedItems)
+            {
+                <div class="quote" style="cursor: pointer;" @onclick="() => OnItemClick.InvokeAsync(item)">
+                    <div class="quote-header">
+                        <div class="quote-mark">&ldquo;</div>
+                        @if (!string.IsNullOrWhiteSpace(item.Rating))
+                        {
+                            <span class="rating-badge rating-@GetRatingClass(item.Rating)">@item.Rating</span>
+                        }
+                    </div>
+                    <p>@item.Notes</p>
+                    <div class="quote-meta">
+                        <small>&mdash; @item.Author</small>
+                        @if (item.CreatedAt.HasValue)
+                        {
+                            <small class="feedback-date">&bull; @item.CreatedAt.Value.ToString("MMM d, yyyy")</small>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <p>No feedback found matching your criteria.</p>
+            @if (!string.IsNullOrWhiteSpace(SearchTerm) || !string.IsNullOrWhiteSpace(RatingFilter))
+            {
+                <button type="button" class="btn-reset-secondary" @onclick="ResetFilters">Clear filters</button>
+            }
+        </div>
+    }
+
+    @if (TotalPages > 1)
+    {
+        <div class="pagination-controls">
+            <button class="btn-page" disabled="@(CurrentPage <= 1)" @onclick="PrevPage">Previous</button>
+            <span class="page-info">Page @CurrentPage of @TotalPages <span class="total-count">(@FilteredAndSortedItems.Count() total)</span></span>
+            <button class="btn-page" disabled="@(CurrentPage >= TotalPages)" @onclick="NextPage">Next</button>
         </div>
     }
 </div>
@@ -21,4 +111,104 @@
     [Parameter] public string Subtitle { get; set; } = "Recent feedback";
     [Parameter] public IEnumerable<FeedbackItem> Items { get; set; } = Array.Empty<FeedbackItem>();
     [Parameter] public EventCallback<FeedbackItem> OnItemClick { get; set; }
+    [Parameter] public int PageSize { get; set; } = 4;
+
+    private string SearchTerm { get; set; } = string.Empty;
+    private string SortBy { get; set; } = "newest";
+    private string RatingFilter { get; set; } = string.Empty;
+    private int CurrentPage { get; set; } = 1;
+
+    private IEnumerable<string> AvailableRatings =>
+        Items?.Where(i => !string.IsNullOrWhiteSpace(i.Rating))
+              .Select(i => i.Rating!)
+              .Distinct()
+              .OrderBy(r => r) ?? Enumerable.Empty<string>();
+
+    private IEnumerable<FeedbackItem> FilteredAndSortedItems
+    {
+        get
+        {
+            var query = Items ?? Enumerable.Empty<FeedbackItem>();
+
+            if (!string.IsNullOrWhiteSpace(SearchTerm))
+            {
+                query = query.Where(i =>
+                    (i.Notes?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (i.Author?.Contains(SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            if (!string.IsNullOrWhiteSpace(RatingFilter))
+            {
+                query = query.Where(i => string.Equals(i.Rating, RatingFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            query = SortBy switch
+            {
+                "oldest" => query.OrderBy(i => i.CreatedAt ?? DateTimeOffset.MinValue).ThenBy(i => i.Id),
+                "author-asc" => query.OrderBy(i => i.Author).ThenByDescending(i => i.CreatedAt ?? DateTimeOffset.MinValue),
+                "author-desc" => query.OrderByDescending(i => i.Author).ThenByDescending(i => i.CreatedAt ?? DateTimeOffset.MinValue),
+                _ => query.OrderByDescending(i => i.CreatedAt ?? DateTimeOffset.MinValue).ThenByDescending(i => i.Id)
+            };
+
+            return query.ToList();
+        }
+    }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredAndSortedItems.Count() / (double)PageSize));
+
+    private IEnumerable<FeedbackItem> PagedItems =>
+        FilteredAndSortedItems.Skip((CurrentPage - 1) * PageSize).Take(PageSize);
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SearchTerm = e.Value?.ToString() ?? string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void ClearSearch()
+    {
+        SearchTerm = string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void OnSortChange(ChangeEventArgs e)
+    {
+        SortBy = e.Value?.ToString() ?? "newest";
+        CurrentPage = 1;
+    }
+
+    private void OnRatingChange(ChangeEventArgs e)
+    {
+        RatingFilter = e.Value?.ToString() ?? string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void ResetFilters()
+    {
+        SearchTerm = string.Empty;
+        RatingFilter = string.Empty;
+        SortBy = "newest";
+        CurrentPage = 1;
+    }
+
+    private void PrevPage()
+    {
+        if (CurrentPage > 1) CurrentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (CurrentPage < TotalPages) CurrentPage++;
+    }
+
+    private string GetRatingClass(string? rating) =>
+        (rating?.ToLowerInvariant()) switch
+        {
+            var r when r?.Contains("love") == true => "love",
+            var r when r?.Contains("good") == true => "good",
+            var r when r?.Contains("diff") == true => "difficult",
+            var r when r?.Contains("work") == true => "notworking",
+            _ => "default"
+        };
 }
+

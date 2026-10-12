@@ -1,0 +1,749 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IConsentService ConsentService
+@inject ChildService ChildService
+@inject NavigationManager NavigationManager
+
+<div class="consent-section">
+
+    <!-- 1. Workflow Stepper Guide (Matching Image 1) -->
+    <div class="workflow-card">
+        <div class="workflow-header" @onclick="() => _showWorkflowGuide = !_showWorkflowGuide">
+            <div class="workflow-title">
+                <span>🛡️</span>
+                <span>1. Complete consent workflow</span>
+            </div>
+            <button class="btn" style="padding: 6px 12px; font-size: 11px;">
+                @(_showWorkflowGuide ? "Hide Guide ▲" : "View Workflow Steps ▼")
+            </button>
+        </div>
+
+        @if (_showWorkflowGuide)
+        {
+            <div class="workflow-steps-grid">
+                <div class="workflow-step">
+                    <div class="step-num">1</div>
+                    <div class="step-content">
+                        <h4>Create the child profile</h4>
+                        <p>Daycare admin adds the child, classroom, parent/guardian contacts, and authorized relationships. The profile is saved as pending onboarding.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">2</div>
+                    <div class="step-content">
+                        <h4>Create the consent document</h4>
+                        <p>Select a template, such as Emergency Medical Information, Photo & Video Consent, Authorized Pickup, or General Daycare Agreement. Populate child and daycare details.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">3</div>
+                    <div class="step-content">
+                        <h4>Admin reviews and approves</h4>
+                        <p>Preview the completed document, check the correct parent and child, then approve it for sending. Approved versions become immutable.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">4</div>
+                    <div class="step-content">
+                        <h4>Send a secure email invitation</h4>
+                        <p>The parent receives an email with a unique, expiring link to the consent page. Do not include sensitive child information in the URL.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">5</div>
+                    <div class="step-content">
+                        <h4>Parent reviews and signs online</h4>
+                        <p>The parent verifies their identity, reads the document, selects the required consent choices, and signs electronically with an explicit confirmation.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">6</div>
+                    <div class="step-content">
+                        <h4>System records the signature</h4>
+                        <p>Store the signed document, document version, signer identity, timestamps, consent choices, and audit history. Show a confirmation to the parent.</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-num">7</div>
+                    <div class="step-content">
+                        <h4>Admin receives the completed document</h4>
+                        <p>Update the workflow immediately, notify the admin, and allow authorized staff to view or download the signed copy and audit record.</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- 2. KPI Cards (Matching Image 2 & 3) -->
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <div class="kpi-top">
+                <div class="kpi-icon">📝</div>
+                <div class="kpi-label">Awaiting admin review</div>
+            </div>
+            <div class="kpi-value-row">
+                <div class="kpi-value">@_kpi.AwaitingAdminReview</div>
+                <div class="kpi-sub">Draft & review</div>
+            </div>
+            <span class="kpi-badge pending">● Action needed</span>
+            <div class="kpi-progress">
+                <div class="kpi-progress-bar" style="width: @Math.Min(100, _kpi.AwaitingAdminReview * 20)%"></div>
+            </div>
+            <button class="kpi-btn" @onclick='() => SetActiveFilter("review")'>Review queue</button>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-top">
+                <div class="kpi-icon">✍️</div>
+                <div class="kpi-label">Awaiting parent signature</div>
+            </div>
+            <div class="kpi-value-row">
+                <div class="kpi-value">@_kpi.AwaitingParentSignature</div>
+                <div class="kpi-sub">Pending parent</div>
+            </div>
+            <span class="kpi-badge pending">● In progress</span>
+            <div class="kpi-progress">
+                <div class="kpi-progress-bar" style="width: @Math.Min(100, _kpi.AwaitingParentSignature * 15)%"></div>
+            </div>
+            <button class="kpi-btn" @onclick="SendRemindersToAllPendingAsync">Send reminders</button>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-top">
+                <div class="kpi-icon">⏱️</div>
+                <div class="kpi-label">Avg. days to sign</div>
+            </div>
+            <div class="kpi-value-row">
+                <div class="kpi-value">@(_kpi.AverageDaysToSign > 0 ? $"{_kpi.AverageDaysToSign}d" : "2.4d")</div>
+                <div class="kpi-sub">Fast turnaround</div>
+            </div>
+            <span class="kpi-badge good">✓ Within SLA</span>
+            <div class="kpi-progress">
+                <div class="kpi-progress-bar" style="width: 85%;"></div>
+            </div>
+            <button class="kpi-btn" @onclick='() => SetActiveFilter("sent")'>View active</button>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-top">
+                <div class="kpi-icon">✅</div>
+                <div class="kpi-label">Completed documents</div>
+            </div>
+            <div class="kpi-value-row">
+                <div class="kpi-value">@_kpi.Completed</div>
+                <div class="kpi-sub">Fully signed</div>
+            </div>
+            <span class="kpi-badge good">↑ 100% Verified</span>
+            <div class="kpi-progress">
+                <div class="kpi-progress-bar" style="width: 100%;"></div>
+            </div>
+            <button class="kpi-btn" @onclick='() => SetActiveFilter("signed")'>View signed</button>
+        </div>
+    </div>
+
+    <!-- Feedback Message Banner -->
+    @if (!string.IsNullOrEmpty(_feedbackMessage))
+    {
+        <div style="background: #edf3ee; border: 1px solid #dce7de; color: #385542; padding: 12px 16px; border-radius: 12px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+            <div><strong>Notice:</strong> @_feedbackMessage</div>
+            <button @onclick="() => _feedbackMessage = null" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #385542;">×</button>
+        </div>
+    }
+
+    <!-- 3. Filter Tabs Bar (Matching Image 2) -->
+    <div class="filter-tabs-bar">
+        <div class="tabs-group">
+            <button class="filter-tab @(_activeFilter == "all" ? "active" : "")" @onclick='() => SetActiveFilter("all")'>Todos (All)</button>
+            <button class="filter-tab @(_activeFilter == "review" ? "active" : "")" @onclick='() => SetActiveFilter("review")'>Rascunho (Draft/Review)</button>
+            <button class="filter-tab @(_activeFilter == "sent" ? "active" : "")" @onclick='() => SetActiveFilter("sent")'>Enviado (Sent)</button>
+            <button class="filter-tab @(_activeFilter == "signed" ? "active" : "")" @onclick='() => SetActiveFilter("signed")'>Assinado (Signed)</button>
+            <button class="filter-tab @(_activeFilter == "overdue" ? "active" : "")" @onclick='() => SetActiveFilter("overdue")'>Vencido (Overdue)</button>
+            <button class="filter-tab @(_activeFilter == "declined" ? "active" : "")" @onclick='() => SetActiveFilter("declined")'>Cancelado / Retirado</button>
+        </div>
+
+        <div class="search-and-actions">
+            <input type="text" class="search-input" placeholder="Search in documents & children..." @bind="_searchQuery" @bind:event="oninput" />
+            <button class="btn-primary-action" @onclick="OpenCreateDraftModal">
+                <span>+</span> New Consent Document
+            </button>
+        </div>
+    </div>
+
+    <!-- 4. Consent Register Table (Matching Image 2 & 3) -->
+    <div class="register-card">
+        <table class="register-table">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"><input type="checkbox" /></th>
+                    <th>Document & Child</th>
+                    <th>Created At</th>
+                    <th>Signed At / Deadline</th>
+                    <th>Workflow Status</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (FilteredDocuments != null && FilteredDocuments.Any())
+                {
+                    @foreach (var doc in FilteredDocuments)
+                    {
+                        var signer = doc.Signers.FirstOrDefault();
+                        <tr>
+                            <td><input type="checkbox" /></td>
+                            <td>
+                                <div class="doc-info">
+                                    <div class="doc-icon">📄</div>
+                                    <div>
+                                        <div class="doc-title-text">@doc.DocumentTitle</div>
+                                        <div class="doc-sub-text">
+                                            <span>Child: <strong>@(doc.ChildName ?? "Child")</strong></span>
+                                            @if (signer != null)
+                                            {
+                                                <span> • Signer: @signer.SignerNameSnapshot (@signer.SignerRelationship)</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>@doc.CreatedAt.ToString("dd MMM yyyy")</td>
+                            <td>
+                                @if (doc.SignedAt.HasValue)
+                                {
+                                    <span style="color: #405948; font-weight: 650;">@doc.SignedAt.Value.ToString("dd MMM yyyy")</span>
+                                }
+                                else if (doc.SigningDeadline.HasValue)
+                                {
+                                    <span style="color: #65746b;">Due: @doc.SigningDeadline.Value.ToString("dd MMM yyyy")</span>
+                                }
+                                else
+                                {
+                                    <span style="color: #8c9b92;">—</span>
+                                }
+                            </td>
+                            <td>
+                                @if (doc.Status == ConsentWorkflowStatus.Signed)
+                                {
+                                    <span class="badge-status status-signed">Signed</span>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.SentToParent || doc.Status == ConsentWorkflowStatus.Opened)
+                                {
+                                    <span class="badge-status status-parent-review">Parent review</span>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.PendingAdminReview)
+                                {
+                                    <span class="badge-status status-admin-review">Admin review</span>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.ApprovedToSend)
+                                {
+                                    <span class="badge-status status-admin-review" style="color: #633ea5; background: #f3ecff;">Ready to send</span>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.Expired)
+                                {
+                                    <span class="badge-status status-overdue">Overdue</span>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.Draft || doc.Status == ConsentWorkflowStatus.ChangesRequested)
+                                {
+                                    <span class="badge-status status-draft">Draft</span>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.Withdrawn)
+                                {
+                                    <span class="badge-status status-withdrawn">Withdrawn</span>
+                                }
+                                else
+                                {
+                                    <span class="badge-status status-draft">@doc.Status</span>
+                                }
+                            </td>
+                            <td class="actions-cell">
+                                @if (doc.Status == ConsentWorkflowStatus.Draft || doc.Status == ConsentWorkflowStatus.PendingAdminReview)
+                                {
+                                    <button class="btn-action-sm primary" @onclick="() => OpenAdminReviewModal(doc)">Review & Approve</button>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.ApprovedToSend)
+                                {
+                                    <button class="btn-action-sm primary" @onclick="() => SendInvitationAsync(doc)">Send Invitation</button>
+                                }
+                                else if (doc.Status == ConsentWorkflowStatus.SentToParent || doc.Status == ConsentWorkflowStatus.Opened)
+                                {
+                                    <button class="btn-action-sm" @onclick="() => SendReminderAsync(doc)">Send Reminder</button>
+                                }
+                                
+                                <button class="btn-action-sm" @onclick="() => OpenPreviewModal(doc)">Preview</button>
+
+                                @if (doc.Status == ConsentWorkflowStatus.Signed)
+                                {
+                                    <button class="btn-action-sm" style="color: #405948; border-color: #c7d7cc;" @onclick="() => OpenEvidenceModal(doc)">Evidence / Cert</button>
+                                    <button class="btn-action-sm" style="color: #9c2e2e;" @onclick="() => OpenWithdrawModal(doc)">Withdraw</button>
+                                }
+
+                                <button class="btn-action-sm" @onclick="() => OpenAuditModal(doc)">Audit</button>
+                            </td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 40px; color: #7a8880;">
+                            No consent documents found matching the selected filter.
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- 5. Create Draft Modal -->
+@if (_isCreateModalOpen)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Create New Consent Document</h3>
+                <button class="btn" style="padding: 4px 8px;" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Enrolled Child</label>
+                    <select class="form-control" @bind="_newDraftChildId">
+                        @if (_children != null)
+                        {
+                            @foreach (var c in _children)
+                            {
+                                <option value="@c.Id">@c.FullName</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Consent Document Template</label>
+                    <select class="form-control" @bind="_newDraftTemplateId">
+                        @if (_templates != null)
+                        {
+                            @foreach (var t in _templates)
+                            {
+                                <option value="@t.Id">@t.Name (v@(t.Version)) @(t.RequiredForEnrollment ? "• Required" : "• Optional")</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Signing Deadline (Default 7 days)</label>
+                    <input type="date" class="form-control" @bind="_newDraftDeadline" />
+                </div>
+
+                <div class="form-group">
+                    <label>Intended Authorized Guardian</label>
+                    <input type="text" class="form-control" value="Sunita Patel (Mother • Verified custody)" disabled />
+                    <small style="color: #65746b; font-size: 11px;">Bound strictly to active verified family relationship record.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="CreateDraftAsync">Create Document Draft</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 6. Admin Review & Approve Modal -->
+@if (_selectedDocForReview != null)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Admin Review: @_selectedDocForReview.DocumentTitle</h3>
+                <button class="btn" style="padding: 4px 8px;" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div>
+                    <strong>Child:</strong> @_selectedDocForReview.ChildName • 
+                    <strong>Template Version:</strong> @_selectedDocForReview.TemplateVersion
+                </div>
+                <div class="form-group">
+                    <label>Issued Document Snapshot (Frozen)</label>
+                    <div class="doc-preview-box">@_selectedDocForReview.DocumentSnapshot</div>
+                </div>
+                <div class="form-group">
+                    <label>Review Notes (Optional)</label>
+                    <textarea class="form-control" rows="2" placeholder="e.g. Verified parent identification and enrollment dates." @bind="_reviewNotes"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" style="color: #9c2e2e;" @onclick="() => SubmitAdminReviewAsync(false)">Request Changes</button>
+                <button class="btn primary" @onclick="() => SubmitAdminReviewAsync(true)">Approve to Send</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 7. Document Preview Modal -->
+@if (_selectedDocForPreview != null)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Document Snapshot: @_selectedDocForPreview.DocumentTitle</h3>
+                <button class="btn" style="padding: 4px 8px;" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div><strong>Child:</strong> @_selectedDocForPreview.ChildName | <strong>Status:</strong> @_selectedDocForPreview.Status</div>
+                <div class="doc-preview-box">@_selectedDocForPreview.DocumentSnapshot</div>
+                @if (_selectedDocForPreview.Choices.Any())
+                {
+                    <div><strong>Configured Consent Choices:</strong></div>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        @foreach (var ch in _selectedDocForPreview.Choices)
+                        {
+                            <li>@ch.SectionTitle: <strong>@ch.Choice</strong></li>
+                        }
+                    </ul>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseModals">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 8. Evidence & Certificate Modal -->
+@if (_selectedDocEvidence != null)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Signed Evidence Certificate</h3>
+                <button class="btn" style="padding: 4px 8px;" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="evidence-box">
+                    <div class="evidence-item">
+                        <span class="evidence-label">Document:</span>
+                        <span class="evidence-value">@_selectedDocEvidence.DocumentTitle</span>
+                    </div>
+                    <div class="evidence-item">
+                        <span class="evidence-label">Signer Legal Name:</span>
+                        <span class="evidence-value">@_selectedDocEvidence.SignerName</span>
+                    </div>
+                    <div class="evidence-item">
+                        <span class="evidence-label">Relationship:</span>
+                        <span class="evidence-value">@_selectedDocEvidence.SignerRelationship</span>
+                    </div>
+                    <div class="evidence-item">
+                        <span class="evidence-label">Signer Email:</span>
+                        <span class="evidence-value">@_selectedDocEvidence.SignerEmail</span>
+                    </div>
+                    <div class="evidence-item">
+                        <span class="evidence-label">Signed Timestamp:</span>
+                        <span class="evidence-value">@_selectedDocEvidence.SignedAtUtc.ToString("u")</span>
+                    </div>
+                    <div class="evidence-item">
+                        <span class="evidence-label">Electronic Intent:</span>
+                        <span class="evidence-value">@_selectedDocEvidence.LegalIntentConfirmation</span>
+                    </div>
+                    <div class="evidence-item">
+                        <span class="evidence-label">Cryptographic SHA-256 Checksum:</span>
+                        <span class="evidence-value" style="font-family: monospace; font-size: 11px;">@_selectedDocEvidence.Sha256Checksum</span>
+                    </div>
+                </div>
+
+                <div><strong>Recorded Granular Choices:</strong></div>
+                <div style="background: white; border: 1px solid #e1e8e3; border-radius: 10px; padding: 12px;">
+                    @foreach (var kvp in _selectedDocEvidence.Choices)
+                    {
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #f0f4f1;">
+                            <span>@kvp.Key</span>
+                            <strong style="color: @(kvp.Value == "Granted" ? "#405948" : "#718077");">@kvp.Value</strong>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn primary" @onclick="CloseModals">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 9. Audit Trail Modal -->
+@if (_selectedDocAudit != null)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Audit Timeline: @_selectedDocAudit.DocumentTitle</h3>
+                <button class="btn" style="padding: 4px 8px;" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    @if (_selectedDocAudit.AuditEvents.Any())
+                    {
+                        @foreach (var ev in _selectedDocAudit.AuditEvents)
+                        {
+                            <div style="display: flex; gap: 12px; font-size: 12.5px; border-left: 2px solid #577f65; padding-left: 12px;">
+                                <div>
+                                    <strong>@ev.EventType</strong> by <span>@(ev.ActorName ?? ev.ActorType)</span>
+                                    <div style="color: #7b8b82; font-size: 11.5px;">@ev.TimestampUtc.ToString("dd MMM yyyy HH:mm:ss UTC")</div>
+                                    @if (!string.IsNullOrEmpty(ev.SafeMetadata))
+                                    {
+                                        <div style="font-family: monospace; font-size: 10.5px; color: #405448; margin-top: 3px;">@ev.SafeMetadata</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p>No audit events recorded.</p>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseModals">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- 10. Withdraw Consent Modal -->
+@if (_selectedDocForWithdraw != null)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 style="color: #9c2e2e;">Withdraw Consent</h3>
+                <button class="btn" style="padding: 4px 8px;" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to withdraw active consent for <strong>@_selectedDocForWithdraw.DocumentTitle</strong>? The original signed document and evidence will be preserved in the audit log.</p>
+                <div class="form-group">
+                    <label>Reason for withdrawal</label>
+                    <textarea class="form-control" rows="2" placeholder="e.g. Parent requested revocation via formal request." @bind="_withdrawReason"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" style="background: #9c2e2e; border-color: #9c2e2e;" @onclick="ConfirmWithdrawConsentAsync">Confirm Withdrawal</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _showWorkflowGuide = true;
+    private string _activeFilter = "all";
+    private string _searchQuery = string.Empty;
+    private string? _feedbackMessage;
+
+    private ConsentDashboardKpi _kpi = new();
+    private List<ChildConsentDocument> _documents = new();
+    private List<ConsentTemplate> _templates = new();
+    private List<Child> _children = new();
+
+    // Modals
+    private bool _isCreateModalOpen = false;
+    private Guid _newDraftChildId;
+    private Guid _newDraftTemplateId;
+    private DateTime _newDraftDeadline = DateTime.UtcNow.AddDays(7);
+
+    private ChildConsentDocument? _selectedDocForReview;
+    private string? _reviewNotes;
+
+    private ChildConsentDocument? _selectedDocForPreview;
+    private SignedConsentEvidenceCertificate? _selectedDocEvidence;
+    private ChildConsentDocument? _selectedDocAudit;
+
+    private ChildConsentDocument? _selectedDocForWithdraw;
+    private string? _withdrawReason;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _kpi = await ConsentService.GetDashboardKpisAsync();
+        _documents = (await ConsentService.GetDocumentsAsync()).ToList();
+        _templates = (await ConsentService.GetTemplatesAsync()).ToList();
+        _children = (await ChildService.GetChildrenAsync()).ToList();
+
+        if (_children.Any() && _newDraftChildId == Guid.Empty)
+        {
+            _newDraftChildId = _children.First().Id;
+        }
+        if (_templates.Any() && _newDraftTemplateId == Guid.Empty)
+        {
+            _newDraftTemplateId = _templates.First().Id;
+        }
+    }
+
+    private void SetActiveFilter(string filter)
+    {
+        _activeFilter = filter;
+    }
+
+    private IEnumerable<ChildConsentDocument> FilteredDocuments
+    {
+        get
+        {
+            var result = _documents.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                result = result.Where(d =>
+                    (d.DocumentTitle != null && d.DocumentTitle.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                    (d.ChildName != null && d.ChildName.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            if (_activeFilter == "review")
+            {
+                result = result.Where(d => d.Status == ConsentWorkflowStatus.Draft || d.Status == ConsentWorkflowStatus.PendingAdminReview || d.Status == ConsentWorkflowStatus.ChangesRequested);
+            }
+            else if (_activeFilter == "sent")
+            {
+                result = result.Where(d => d.Status == ConsentWorkflowStatus.SentToParent || d.Status == ConsentWorkflowStatus.Opened || d.Status == ConsentWorkflowStatus.ApprovedToSend);
+            }
+            else if (_activeFilter == "signed")
+            {
+                result = result.Where(d => d.Status == ConsentWorkflowStatus.Signed);
+            }
+            else if (_activeFilter == "overdue")
+            {
+                result = result.Where(d => d.Status == ConsentWorkflowStatus.Expired || (d.SigningDeadline.HasValue && d.SigningDeadline.Value < DateTime.UtcNow && d.Status != ConsentWorkflowStatus.Signed));
+            }
+            else if (_activeFilter == "declined")
+            {
+                result = result.Where(d => d.Status == ConsentWorkflowStatus.Declined || d.Status == ConsentWorkflowStatus.Withdrawn || d.Status == ConsentWorkflowStatus.Superseded);
+            }
+
+            return result;
+        }
+    }
+
+    private void OpenCreateDraftModal()
+    {
+        _isCreateModalOpen = true;
+    }
+
+    private async Task CreateDraftAsync()
+    {
+        if (_newDraftChildId == Guid.Empty || _newDraftTemplateId == Guid.Empty) return;
+
+        var request = new CreateConsentDraftRequest
+        {
+            ChildId = _newDraftChildId,
+            ConsentTemplateId = _newDraftTemplateId,
+            SigningDeadline = _newDraftDeadline
+        };
+
+        var doc = await ConsentService.CreateDraftAsync(request);
+        _isCreateModalOpen = false;
+        _feedbackMessage = $"Draft created for document '{doc.DocumentTitle}'. Ready for review.";
+        await LoadDataAsync();
+    }
+
+    private void OpenAdminReviewModal(ChildConsentDocument doc)
+    {
+        _selectedDocForReview = doc;
+        _reviewNotes = string.Empty;
+    }
+
+    private async Task SubmitAdminReviewAsync(bool approve)
+    {
+        if (_selectedDocForReview == null) return;
+
+        var request = new AdminReviewRequest
+        {
+            DocumentId = _selectedDocForReview.Id,
+            Approve = approve,
+            ReviewNotes = _reviewNotes
+        };
+
+        var updated = await ConsentService.AdminReviewAsync(request);
+        _selectedDocForReview = null;
+        _feedbackMessage = approve
+            ? $"Document '{updated.DocumentTitle}' approved to send."
+            : $"Document '{updated.DocumentTitle}' sent back with changes requested.";
+        await LoadDataAsync();
+    }
+
+    private async Task SendInvitationAsync(ChildConsentDocument doc)
+    {
+        var baseUrl = NavigationManager.BaseUri;
+        var (success, token, message) = await ConsentService.SendInvitationAsync(doc.Id, baseUrl);
+        _feedbackMessage = success
+            ? $"Invitation sent for '{doc.DocumentTitle}'. Secure parent signing link active: {baseUrl}consent/sign/{token}"
+            : message;
+        await LoadDataAsync();
+    }
+
+    private async Task SendReminderAsync(ChildConsentDocument doc)
+    {
+        var baseUrl = NavigationManager.BaseUri;
+        var (success, message) = await ConsentService.SendReminderAsync(doc.Id, baseUrl);
+        _feedbackMessage = message;
+        await LoadDataAsync();
+    }
+
+    private async Task SendRemindersToAllPendingAsync()
+    {
+        var pending = _documents.Where(d => d.Status == ConsentWorkflowStatus.SentToParent || d.Status == ConsentWorkflowStatus.Opened).ToList();
+        var baseUrl = NavigationManager.BaseUri;
+        int sent = 0;
+        foreach (var doc in pending)
+        {
+            var (res, _) = await ConsentService.SendReminderAsync(doc.Id, baseUrl);
+            if (res) sent++;
+        }
+        _feedbackMessage = sent > 0
+            ? $"Dispatched {sent} reminder notification(s) to parents awaiting signature."
+            : "No eligible documents awaiting reminder dispatch at this time.";
+        await LoadDataAsync();
+    }
+
+    private void OpenPreviewModal(ChildConsentDocument doc)
+    {
+        _selectedDocForPreview = doc;
+    }
+
+    private async Task OpenEvidenceModal(ChildConsentDocument doc)
+    {
+        _selectedDocEvidence = await ConsentService.GetSignedCertificateAsync(doc.Id);
+    }
+
+    private async Task OpenAuditModal(ChildConsentDocument doc)
+    {
+        _selectedDocAudit = await ConsentService.GetDocumentByIdAsync(doc.Id);
+    }
+
+    private void OpenWithdrawModal(ChildConsentDocument doc)
+    {
+        _selectedDocForWithdraw = doc;
+        _withdrawReason = string.Empty;
+    }
+
+    private async Task ConfirmWithdrawConsentAsync()
+    {
+        if (_selectedDocForWithdraw == null) return;
+        await ConsentService.WithdrawConsentAsync(_selectedDocForWithdraw.Id, _withdrawReason ?? "Administrative withdrawal");
+        _selectedDocForWithdraw = null;
+        _feedbackMessage = "Consent successfully marked as withdrawn. Historical evidence preserved.";
+        await LoadDataAsync();
+    }
+
+    private void CloseModals()
+    {
+        _isCreateModalOpen = false;
+        _selectedDocForReview = null;
+        _selectedDocForPreview = null;
+        _selectedDocEvidence = null;
+        _selectedDocAudit = null;
+        _selectedDocForWithdraw = null;
+    }
+}

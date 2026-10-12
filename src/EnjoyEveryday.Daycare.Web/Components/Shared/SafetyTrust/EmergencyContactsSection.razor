@@ -1,0 +1,756 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@inject IEmergencyContactService EmergencyContactService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject IUserContext UserContext
+@inject IJSRuntime JSRuntime
+
+<div class="emergency-contacts-container">
+
+    <!-- Top View Switcher Tabs -->
+    <div class="view-tabs-header">
+        <div class="view-tabs">
+            <button class="view-tab-btn @(_activeView == "directory" ? "active" : "")" @onclick='() => SetView("directory")'>
+                <span class="tab-icon">📋</span>
+                <span>Emergency Contact Directory</span>
+                <span class="tab-pill">@_contacts.Count</span>
+            </button>
+            <button class="view-tab-btn @(_activeView == "card" ? "active" : "")" @onclick='() => SetView("card")'>
+                <span class="tab-icon">🖨️</span>
+                <span>Printable Emergency Card</span>
+                <span class="tab-pill good">Ready to Print</span>
+            </button>
+        </div>
+
+        @if (_activeView == "directory")
+        {
+            <button class="btn primary" @onclick="OpenCreateModal">
+                <span class="btn-icon">➕</span> Add Emergency Contact
+            </button>
+        }
+        else
+        {
+            <div class="card-controls-top">
+                <button class="btn primary" @onclick="TriggerBrowserPrint">
+                    <span class="btn-icon">🖨️</span> Print Emergency Card
+                </button>
+            </div>
+        }
+    </div>
+
+    <!-- Alert Messages -->
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-banner error">
+            <span>⚠️ @_errorMessage</span>
+            <button class="close-alert" @onclick="() => _errorMessage = null">✕</button>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="alert-banner success">
+            <span>✓ @_successMessage</span>
+            <button class="close-alert" @onclick="() => _successMessage = null">✕</button>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <div>Loading verified emergency contacts...</div>
+        </div>
+    }
+    else if (_activeView == "directory")
+    {
+        <!-- VIEW A: EMERGENCY CONTACT DIRECTORY -->
+
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card good">
+                <div class="kpi-label">Verified Numbers</div>
+                <div class="kpi-val">@_contacts.Count(c => c.VerificationStatus == VerificationStatus.Verified) / @_contacts.Count</div>
+                <div class="kpi-sub">Independently confirmed</div>
+            </div>
+            <div class="kpi-card attention">
+                <div class="kpi-label">Unverified Pending Check</div>
+                <div class="kpi-val">@_contacts.Count(c => c.VerificationStatus == VerificationStatus.Unverified)</div>
+                <div class="kpi-sub">Requires verification action</div>
+            </div>
+            <div class="kpi-card warning">
+                <div class="kpi-label">Overdue for Review</div>
+                <div class="kpi-val">@_contacts.Count(c => c.ReviewDueAt.HasValue && c.ReviewDueAt.Value < DateTime.UtcNow)</div>
+                <div class="kpi-sub">Semi-annual check required</div>
+            </div>
+            <div class="kpi-card info">
+                <div class="kpi-label">Active Directory Contacts</div>
+                <div class="kpi-val">@_contacts.Count(c => c.IsActive)</div>
+                <div class="kpi-sub">Available across branches</div>
+            </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-bar">
+            <div class="filter-group">
+                <label>Scope:</label>
+                <select @bind="_scopeFilter" @bind:after="ApplyFilters" class="select-input">
+                    <option value="">All Scopes</option>
+                    <option value="@EmergencyContactScope.Jurisdiction">Jurisdiction (Universal)</option>
+                    <option value="@EmergencyContactScope.Organization">Organization-Wide</option>
+                    <option value="@EmergencyContactScope.Branch">Branch-Specific</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Category:</label>
+                <select @bind="_categoryFilter" @bind:after="ApplyFilters" class="select-input">
+                    <option value="">All Categories</option>
+                    <option value="@EmergencyContactCategory.EmergencyServices">Emergency Services (911)</option>
+                    <option value="@EmergencyContactCategory.Police">Police</option>
+                    <option value="@EmergencyContactCategory.FireService">Fire &amp; Rescue</option>
+                    <option value="@EmergencyContactCategory.Ambulance">Ambulance / Medical</option>
+                    <option value="@EmergencyContactCategory.PoisonControl">Poison Control</option>
+                    <option value="@EmergencyContactCategory.NearestHospital">Nearest Hospital</option>
+                    <option value="@EmergencyContactCategory.BranchDirector">Branch Director</option>
+                    <option value="@EmergencyContactCategory.DesignatedOnCall">Designated On-Call</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Status:</label>
+                <select @bind="_verificationFilter" @bind:after="ApplyFilters" class="select-input">
+                    <option value="">All Verification Statuses</option>
+                    <option value="@VerificationStatus.Verified">Verified Only</option>
+                    <option value="@VerificationStatus.Unverified">Unverified Only</option>
+                    <option value="Overdue">Overdue for Review</option>
+                </select>
+            </div>
+
+            <div class="filter-group search-box">
+                <input type="text" @bind="_searchQuery" @bind:event="oninput" @bind:after="ApplyFilters" placeholder="Search by contact name, phone, or area..." class="text-input" />
+            </div>
+        </div>
+
+        <!-- Contacts Table / List -->
+        @if (_filteredContacts.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-icon">📞</div>
+                <h3>No Emergency Contacts Match Filter</h3>
+                <p>Adjust your search criteria or add new safety and emergency contacts for this branch.</p>
+                <button class="btn primary" @onclick="OpenCreateModal">Add New Contact</button>
+            </div>
+        }
+        else
+        {
+            <div class="contacts-grid">
+                @foreach (var c in _filteredContacts)
+                {
+                    var isOverdue = c.ReviewDueAt.HasValue && c.ReviewDueAt.Value < DateTime.UtcNow;
+                    <div class="contact-card @(!c.IsActive ? "inactive" : "")">
+                        <div class="contact-card-top">
+                            <div>
+                                <span class="scope-pill">@c.Scope</span>
+                                <span class="category-pill">@EmergencyContactCategory.GetDisplayName(c.Category)</span>
+                                <h3 class="contact-name">@c.Name</h3>
+                            </div>
+                            <div>
+                                @if (c.VerificationStatus == VerificationStatus.Verified && !isOverdue)
+                                {
+                                    <span class="verify-badge verified">✓ Verified</span>
+                                }
+                                else if (isOverdue)
+                                {
+                                    <span class="verify-badge overdue">⚠️ Overdue Review</span>
+                                }
+                                else
+                                {
+                                    <span class="verify-badge unverified">⚠️ Unverified Demo</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="contact-numbers">
+                            <div class="primary-phone">
+                                <span class="phone-label">Primary:</span>
+                                <a href="tel:@c.PhoneNumber" class="phone-link">@c.PhoneNumber</a>
+                            </div>
+                            @if (!string.IsNullOrEmpty(c.AlternatePhoneNumber))
+                            {
+                                <div class="alt-phone">
+                                    <span class="phone-label">Alternate:</span>
+                                    <a href="tel:@c.AlternatePhoneNumber" class="alt-link">@c.AlternatePhoneNumber</a>
+                                </div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(c.Address))
+                        {
+                            <div class="contact-address">
+                                <span>📍</span>
+                                <span>@c.Address</span>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(c.Instructions))
+                        {
+                            <div class="contact-instructions">
+                                <span class="instruction-label">Protocol:</span> @c.Instructions
+                            </div>
+                        }
+
+                        <div class="contact-audit">
+                            @if (c.VerificationStatus == VerificationStatus.Verified && !string.IsNullOrEmpty(c.VerifiedBy))
+                            {
+                                <div>Confirmed by <strong>@c.VerifiedBy</strong> on @c.VerifiedAt?.ToString("MMM dd, yyyy")</div>
+                                @if (c.ReviewDueAt.HasValue)
+                                {
+                                    <div class="@(isOverdue ? "text-danger" : "")">Next Review Due: @c.ReviewDueAt.Value.ToString("MMM dd, yyyy")</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="text-warning">Not independently verified. Confirm before publishing.</div>
+                            }
+                        </div>
+
+                        <div class="contact-actions">
+                            @if (c.VerificationStatus != VerificationStatus.Verified || isOverdue)
+                            {
+                                <button class="btn success sm" @onclick="() => VerifyContact(c)">
+                                    ✓ Confirm &amp; Verify
+                                </button>
+                            }
+                            <button class="btn outline sm" @onclick="() => OpenEditModal(c)">
+                                ✏️ Edit
+                            </button>
+                            <button class="btn outline sm" @onclick="() => ToggleActive(c)">
+                                @(c.IsActive ? "Deactivate" : "Activate")
+                            </button>
+                            <button class="btn danger-icon sm" @onclick="() => DeleteContact(c)" title="Delete contact">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <!-- VIEW B: PRINTABLE EMERGENCY CARD -->
+        <div class="card-builder-view">
+            <!-- Controls panel (No Print) -->
+            <div class="card-controls-panel no-print">
+                <div class="control-box">
+                    <label>Select Role-Specific Layout:</label>
+                    <div class="role-selector-btns">
+                        <button class="role-btn @(_selectedCardRole == EmergencyCardRole.Parent ? "active" : "")"
+                                @onclick='() => SetCardRole(EmergencyCardRole.Parent)'>
+                            👨‍👩‍👧 Parent Card
+                        </button>
+                        <button class="role-btn @(_selectedCardRole == EmergencyCardRole.Teacher ? "active" : "")"
+                                @onclick='() => SetCardRole(EmergencyCardRole.Teacher)'>
+                            🧑‍🏫 Teacher Card
+                        </button>
+                        <button class="role-btn @(_selectedCardRole == EmergencyCardRole.Administrator ? "active" : "")"
+                                @onclick='() => SetCardRole(EmergencyCardRole.Administrator)'>
+                            🛡️ Administrator Card
+                        </button>
+                    </div>
+                </div>
+
+                <div class="control-box">
+                    <label>Select Target Branch:</label>
+                    <select @bind="_selectedCardBranchId" @bind:after="OnCardBranchChanged" class="select-input">
+                        @foreach (var b in _branches)
+                        {
+                            <option value="@b.Id">@b.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="print-instruction-box">
+                    <strong>🖨️ Reliable Printing Tip:</strong> Click "Print Emergency Card" above. The stylesheet automatically optimizes for US Letter / A4 paper and pocket fold formats, hiding sidebars and buttons.
+                </div>
+            </div>
+
+            <!-- Missing / Unverified Critical Numbers Warnings -->
+            @if (_cardModel != null && _cardModel.Warnings.Count > 0)
+            {
+                <div class="critical-warnings-box no-print">
+                    <div class="warning-title">⚠️ Mandatory Safety Warnings for this Card:</div>
+                    <ul>
+                        @foreach (var w in _cardModel.Warnings)
+                        {
+                            <li>@w</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <!-- PRINTABLE CARD SHEET (Visible on Screen & in Print) -->
+            <div class="card-sheet-container" id="printable-emergency-card-sheet">
+                <div class="printable-card-frame">
+                    <!-- Brand & Header -->
+                    <div class="card-sheet-header">
+                        <div class="brand-badge">
+                            <span class="sparkle">✨</span>
+                            <span class="brand-text">EnjoyEveryday Childcare</span>
+                        </div>
+                        <div class="role-title-tag">
+                            @_cardModel?.Role.ToUpperInvariant() EMERGENCY SAFETY CARD
+                        </div>
+                    </div>
+
+                    <!-- Branch Info Banner -->
+                    <div class="card-branch-banner">
+                        <div class="branch-col">
+                            <div class="branch-name">@(_cardModel?.BranchName)</div>
+                            <div class="branch-org">@(_cardModel?.OrganizationName)</div>
+                        </div>
+                        <div class="branch-col-right">
+                            <div class="branch-address">📍 @(_cardModel?.BranchAddress)</div>
+                            <div class="branch-phone">📞 Branch Desk: @(_cardModel?.BranchPhone)</div>
+                        </div>
+                    </div>
+
+                    <!-- Verified Emergency Numbers Grid -->
+                    <div class="card-contacts-section">
+                        <div class="section-title">
+                            VERIFIED EMERGENCY CONTACT NUMBERS
+                            @if (_cardModel?.Role == EmergencyCardRole.Parent)
+                            {
+                                <span class="privacy-note">(Public &amp; Emergency Dispatch Only — Staff Personal Numbers Redacted)</span>
+                            }
+                        </div>
+
+                        <div class="card-table-wrap">
+                            <table class="card-emergency-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 25%;">Service / Contact</th>
+                                        <th style="width: 25%;">Telephone Number</th>
+                                        <th style="width: 20%;">Facility / Location</th>
+                                        <th style="width: 30%;">Emergency Instructions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (_cardModel != null)
+                                    {
+                                        @foreach (var c in _cardModel.Contacts)
+                                        {
+                                            var isEmergencyDispatch = c.Category == EmergencyContactCategory.EmergencyServices;
+                                            <tr class="@(isEmergencyDispatch ? "highlight-row" : "")">
+                                                <td>
+                                                    <strong>@c.Name</strong>
+                                                    <div class="sub-cat">@EmergencyContactCategory.GetDisplayName(c.Category)</div>
+                                                </td>
+                                                <td>
+                                                    <div class="prominent-phone">@c.PhoneNumber</div>
+                                                    @if (!string.IsNullOrEmpty(c.AlternatePhoneNumber))
+                                                    {
+                                                        <div class="alt-phone-sm">Alt: @c.AlternatePhoneNumber</div>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <div class="table-loc">@(c.Address ?? c.CountryRegion ?? "Branch Jurisdiction")</div>
+                                                </td>
+                                                <td>
+                                                    <div class="table-instr">@(c.Instructions ?? "Follow standard branch protocol.")</div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Immediate Emergency Protocols Callout -->
+                    <div class="protocol-box">
+                        <div class="protocol-head">🚨 IMMEDIATE ACTION GUIDELINES:</div>
+                        <div class="protocol-grid">
+                            <div class="protocol-item">
+                                <strong>1. Medical Emergency:</strong> Call 911 immediately. State branch address clearly. Retrieve AED &amp; Pediatric First-Aid Kit.
+                            </div>
+                            <div class="protocol-item">
+                                <strong>2. Evacuation:</strong> Guide children through designated exit routes to primary courtyard assembly point. Bring attendance register.
+                            </div>
+                            <div class="protocol-item">
+                                <strong>3. Parent Notification:</strong> Authorized administration sends priority broadcast after emergency services are engaged.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Printable Card Footer -->
+                    <div class="card-sheet-footer">
+                        <div class="footer-left">
+                            Generated for: <strong>@(_cardModel?.Role) Distribution</strong> • EnjoyEveryday Safety &amp; Trust Module
+                        </div>
+                        <div class="footer-right">
+                            Verified on: @(_cardModel?.GeneratedAtUtc.ToString("MMM dd, yyyy")) • Valid for 6 Months
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- CREATE / EDIT CONTACT MODAL -->
+    @if (_showContactModal)
+    {
+        <div class="modal-backdrop" @onclick="CloseContactModal">
+            <div class="modal-window contact-modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <div>
+                        <div class="eyebrow">Safety &amp; Trust Emergency Directory</div>
+                        <h2>@(_isCreatingContact ? "Add Emergency Contact" : $"Edit Contact — {_editingContact.Name}")</h2>
+                    </div>
+                    <button class="close-btn" @onclick="CloseContactModal">✕</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="modal-form-grid">
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>Applicable Scope *</label>
+                                <select @bind="_editingContact.Scope" class="select-input">
+                                    <option value="@EmergencyContactScope.Jurisdiction">Jurisdiction (e.g. 911 / National Helpline)</option>
+                                    <option value="@EmergencyContactScope.Organization">Organization-Wide</option>
+                                    <option value="@EmergencyContactScope.Branch">Branch-Specific</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label>Category *</label>
+                                <select @bind="_editingContact.Category" class="select-input">
+                                    <option value="@EmergencyContactCategory.EmergencyServices">Emergency Services (911)</option>
+                                    <option value="@EmergencyContactCategory.Police">Police</option>
+                                    <option value="@EmergencyContactCategory.FireService">Fire &amp; Rescue</option>
+                                    <option value="@EmergencyContactCategory.Ambulance">Ambulance / Medical</option>
+                                    <option value="@EmergencyContactCategory.PoisonControl">Poison Control</option>
+                                    <option value="@EmergencyContactCategory.NearestHospital">Nearest Hospital</option>
+                                    <option value="@EmergencyContactCategory.BranchDirector">Branch Director</option>
+                                    <option value="@EmergencyContactCategory.DesignatedOnCall">Designated On-Call</option>
+                                    <option value="@EmergencyContactCategory.Other">Other Approved Contact</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>Contact / Service Name *</label>
+                                <input type="text" @bind="_editingContact.Name" class="text-input" placeholder="e.g. Children's Memorial Pediatric ER" />
+                            </div>
+                            <div class="form-field">
+                                <label>Assigned Branch (if branch scope)</label>
+                                <select @bind="_editingContact.BranchId" class="select-input">
+                                    <option value="">None (Universal)</option>
+                                    @foreach (var b in _branches)
+                                    {
+                                        <option value="@b.Id">@b.Name</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>Primary Telephone *</label>
+                                <input type="text" @bind="_editingContact.PhoneNumber" class="text-input" placeholder="e.g. 911 or (555) 019-2834" />
+                            </div>
+                            <div class="form-field">
+                                <label>Alternate Telephone</label>
+                                <input type="text" @bind="_editingContact.AlternatePhoneNumber" class="text-input" placeholder="e.g. (555) 019-2835" />
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label>Country / Region Jurisdiction</label>
+                                <input type="text" @bind="_editingContact.CountryRegion" class="text-input" placeholder="e.g. US / California Regional" />
+                            </div>
+                            <div class="form-field">
+                                <label>Display Order Priority</label>
+                                <input type="number" @bind="_editingContact.DisplayOrder" class="text-input" />
+                            </div>
+                        </div>
+
+                        <div class="form-field">
+                            <label>Physical Address (Facility Location)</label>
+                            <input type="text" @bind="_editingContact.Address" class="text-input" placeholder="e.g. 1200 Healthcare Plaza, Suite 100" />
+                        </div>
+
+                        <div class="form-field">
+                            <label>Emergency Instructions / Response Protocol</label>
+                            <textarea @bind="_editingContact.Instructions" class="textarea-input" rows="3" placeholder="e.g. State branch address clearly; Level 1 pediatric trauma center 1.8 miles away."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn outline" @onclick="CloseContactModal">Cancel</button>
+                    <button class="btn primary" @onclick="SaveContact">
+                        💾 Save Emergency Contact
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+</div>
+
+@code {
+    private bool _loading = true;
+    private string _activeView = "directory"; // "directory" or "card"
+    private List<EmergencyContact> _contacts = new();
+    private List<EmergencyContact> _filteredContacts = new();
+    private List<Branch> _branches = new();
+
+    // Filters
+    private string _scopeFilter = "";
+    private string _categoryFilter = "";
+    private string _verificationFilter = "";
+    private string _searchQuery = "";
+
+    // Feedback
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    // Contact modal
+    private bool _showContactModal = false;
+    private bool _isCreatingContact = false;
+    private EmergencyContact _editingContact = new();
+
+    // Printable card view state
+    private string _selectedCardRole = EmergencyCardRole.Parent;
+    private Guid _selectedCardBranchId = Guid.Empty;
+    private EmergencyCardModel? _cardModel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+            var primaryOrg = orgs.FirstOrDefault();
+
+            if (primaryOrg != null)
+            {
+                _branches = (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList();
+            }
+
+            if (_selectedCardBranchId == Guid.Empty && _branches.Count > 0)
+            {
+                _selectedCardBranchId = _branches[0].Id;
+            }
+
+            _contacts = (await EmergencyContactService.GetContactsAsync()).ToList();
+            ApplyFilters();
+
+            if (_selectedCardBranchId != Guid.Empty)
+            {
+                await RefreshCardModelAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load emergency contacts: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        _filteredContacts = _contacts.Where(c =>
+            (string.IsNullOrEmpty(_scopeFilter) || c.Scope == _scopeFilter) &&
+            (string.IsNullOrEmpty(_categoryFilter) || c.Category == _categoryFilter) &&
+            (string.IsNullOrEmpty(_verificationFilter) ||
+                (_verificationFilter == "Overdue" ? (c.ReviewDueAt.HasValue && c.ReviewDueAt.Value < DateTime.UtcNow) : c.VerificationStatus == _verificationFilter)) &&
+            (string.IsNullOrEmpty(_searchQuery) ||
+                c.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                c.PhoneNumber.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                (c.Address != null && c.Address.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)))
+        ).ToList();
+    }
+
+    private async Task SetView(string view)
+    {
+        _activeView = view;
+        if (view == "card")
+        {
+            await RefreshCardModelAsync();
+        }
+        StateHasChanged();
+    }
+
+    private async Task SetCardRole(string role)
+    {
+        _selectedCardRole = role;
+        await RefreshCardModelAsync();
+    }
+
+    private async Task OnCardBranchChanged()
+    {
+        await RefreshCardModelAsync();
+    }
+
+    private async Task RefreshCardModelAsync()
+    {
+        if (_selectedCardBranchId == Guid.Empty) return;
+        try
+        {
+            _cardModel = await EmergencyContactService.GeneratePrintableCardAsync(_selectedCardBranchId, _selectedCardRole);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to generate emergency card: {ex.Message}";
+        }
+    }
+
+    private void OpenCreateModal()
+    {
+        _isCreatingContact = true;
+        _editingContact = new EmergencyContact
+        {
+            Scope = EmergencyContactScope.Branch,
+            Category = EmergencyContactCategory.EmergencyServices,
+            BranchId = _branches.FirstOrDefault()?.Id,
+            IsActive = true,
+            DisplayOrder = _contacts.Count + 1
+        };
+        _showContactModal = true;
+    }
+
+    private void OpenEditModal(EmergencyContact contact)
+    {
+        _isCreatingContact = false;
+        _editingContact = new EmergencyContact
+        {
+            Id = contact.Id,
+            TenantId = contact.TenantId,
+            OrganizationId = contact.OrganizationId,
+            BranchId = contact.BranchId,
+            Scope = contact.Scope,
+            Category = contact.Category,
+            Name = contact.Name,
+            PhoneNumber = contact.PhoneNumber,
+            AlternatePhoneNumber = contact.AlternatePhoneNumber,
+            CountryRegion = contact.CountryRegion,
+            Address = contact.Address,
+            Instructions = contact.Instructions,
+            VerificationStatus = contact.VerificationStatus,
+            VerifiedBy = contact.VerifiedBy,
+            VerifiedAt = contact.VerifiedAt,
+            ReviewDueAt = contact.ReviewDueAt,
+            IsActive = contact.IsActive,
+            DisplayOrder = contact.DisplayOrder
+        };
+        _showContactModal = true;
+    }
+
+    private void CloseContactModal()
+    {
+        _showContactModal = false;
+    }
+
+    private async Task SaveContact()
+    {
+        try
+        {
+            _errorMessage = null;
+
+            if (string.IsNullOrWhiteSpace(_editingContact.Name))
+            {
+                _errorMessage = "Contact / Service name is required.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_editingContact.PhoneNumber))
+            {
+                _errorMessage = "Phone number is required.";
+                return;
+            }
+
+            if (_isCreatingContact)
+            {
+                await EmergencyContactService.CreateContactAsync(_editingContact);
+                _successMessage = $"Emergency contact '{_editingContact.Name}' added.";
+            }
+            else
+            {
+                await EmergencyContactService.UpdateContactAsync(_editingContact);
+                _successMessage = $"Emergency contact '{_editingContact.Name}' updated.";
+            }
+
+            CloseContactModal();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private async Task VerifyContact(EmergencyContact contact)
+    {
+        try
+        {
+            _errorMessage = null;
+            var verifier = !string.IsNullOrEmpty(UserContext.Email) ? UserContext.Email : "Safety Officer";
+            await EmergencyContactService.VerifyContactAsync(contact.Id, verifier, DateTime.UtcNow.AddMonths(6));
+            _successMessage = $"Contact '{contact.Name}' verified. Next review due in 6 months.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Verification failed: {ex.Message}";
+        }
+    }
+
+    private async Task ToggleActive(EmergencyContact contact)
+    {
+        try
+        {
+            _errorMessage = null;
+            contact.IsActive = !contact.IsActive;
+            await EmergencyContactService.UpdateContactAsync(contact);
+            _successMessage = $"Contact '{contact.Name}' is now {(contact.IsActive ? "active" : "inactive")}.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Status change failed: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteContact(EmergencyContact contact)
+    {
+        try
+        {
+            _errorMessage = null;
+            await EmergencyContactService.DeleteContactAsync(contact.Id);
+            _successMessage = $"Emergency contact '{contact.Name}' removed.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Delete failed: {ex.Message}";
+        }
+    }
+
+    private async Task TriggerBrowserPrint()
+    {
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+}

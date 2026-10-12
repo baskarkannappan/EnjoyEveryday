@@ -1,83 +1,142 @@
-@* Navigation menu matching the approved EnjoyEveryday wireframe sidebar *@
+@inject IParentService ParentService
+@inject ParentSessionState SessionState
+@inject NavigationManager Navigation
+@implements IDisposable
 
-<nav class="custom-nav" style="padding: 15px; height: 100%;">
-    
-    <!-- BRANDING HEADER -->
-    <div style="display: flex; gap: 12px; align-items: center; padding: 12px 10px 24px;">
-        <div style="width: 40px; height: 40px; border-radius: 13px; background: var(--accent-light); color: var(--accent-dark); display: grid; place-items: center; font-size: 22px;">
-            ✨
+<nav class="custom-nav" style="padding: 16px; height: 100%; display: flex; flex-direction: column; justify-content: space-between;">
+    <div>
+        <!-- BRANDING HEADER -->
+        <div style="display: flex; gap: 12px; align-items: center; padding: 8px 6px 20px;">
+            <div style="width: 40px; height: 40px; border-radius: 13px; background: #eef5ef; color: #2d5a3c; display: grid; place-items: center; font-size: 20px; font-weight: bold;">
+                🌱
+            </div>
+            <div>
+                <div style="font-weight: 750; font-size: 16px; letter-spacing: -0.4px; color: var(--text, #1c2b20);">EnjoyEveryday</div>
+                <div style="font-size: 11px; color: var(--muted, #64748b); font-weight: 500;">Parent &amp; Family Portal</div>
+            </div>
         </div>
-        <div>
-            <div style="font-weight: 750; font-size: 16px; letter-spacing: -0.5px; color: var(--text);">EnjoyEveryday</div>
-            <!-- <div style="font-size: 11px; color: var(--muted); margin-top: 3px;">Every child deserves a wonderful day</div> -->
+
+        <!-- CHILD SELECTOR CARD -->
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin: 0 0 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+            <div style="color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; margin-bottom: 6px; text-transform: uppercase;">
+                My Child
+            </div>
+            @if (_loading)
+            {
+                <div style="font-size: 13px; color: #94a3b8;">Loading children...</div>
+            }
+            else if (_children.Count == 0)
+            {
+                <div style="font-size: 12px; color: #ef4444; font-weight: 500;">
+                    No children linked
+                    <div style="margin-top: 6px;">
+                        <a href="/auth/login" style="color: #2d5a3c; text-decoration: underline; font-weight: 600; font-size: 11px;">Connect Demo Child</a>
+                    </div>
+                </div>
+            }
+            else if (_children.Count == 1)
+            {
+                <div style="font-weight: 700; color: #1e293b; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                    <span>🧒</span>
+                    <span>@_children[0].FirstName @_children[0].LastName</span>
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+                    @(_children[0].ClassroomName ?? "Classroom") · @(_children[0].OrganizationName ?? "Daycare")
+                </div>
+            }
+            else
+            {
+                <select style="width: 100%; border: 0; outline: none; background: transparent; font-weight: 700; color: #1e293b; font-size: 14px; cursor: pointer; padding: 2px 0;"
+                        value="@SessionState.SelectedChild?.ChildId"
+                        @onchange="OnChildSelectChanged">
+                    @foreach (var child in _children)
+                    {
+                        <option value="@child.ChildId">@child.FirstName @child.LastName (@child.ClassroomName)</option>
+                    }
+                </select>
+                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
+                    @(SessionState.SelectedChild?.OrganizationName ?? "Daycare")
+                </div>
+            }
         </div>
+
+        <!-- NAVIGATION LINKS -->
+        <div class="nav-section" style="font-size: 10px; font-weight: 800; color: #94a3b8; letter-spacing: 0.8px; margin: 16px 8px 8px;">MY FAMILY</div>
+
+        <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
+            <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" />
+            <span>My Child Today</span>
+        </NavLink>
+
+        <NavLink class="nav-item" href="/journey">
+            <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" />
+            <span>Child Journey</span>
+        </NavLink>
+
+        <NavLink class="nav-item" href="/events">
+            <FluentIcon Value="@(new Icons.Regular.Size20.CalendarLtr())" />
+            <span>Events &amp; Celebrations</span>
+        </NavLink>
+
+        <NavLink class="nav-item" href="/messages">
+            <FluentIcon Value="@(new Icons.Regular.Size20.ChatMultiple())" />
+            <span>Messages</span>
+        </NavLink>
+
+        <NavLink class="nav-item" href="/family">
+            <FluentIcon Value="@(new Icons.Regular.Size20.PersonHeart())" />
+            <span>Family Profile</span>
+        </NavLink>
     </div>
 
-    <!-- TENANT / ORGANIZATION BOX -->
-    <div style="background: white; border: 1px solid var(--border); border-radius: 14px; padding: 13px; margin: 0 0 20px 0;">
-        <div style="color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: 1px; margin-bottom: 7px; text-transform: uppercase;">Organization</div>
-        <select style="width: 100%; border: 0; outline: none; background: transparent; font-weight: 700; color: var(--text); font-size: 14px; cursor: pointer; padding: 0;">
-            <option>Little Stars Daycare</option>
-        </select>
+    <!-- LOGOUT / AUTH FOOTER -->
+    <div style="border-top: 1px solid #f1f5f9; padding-top: 14px; margin-top: 20px;">
+        <a href="/auth/logout" class="nav-item" style="color: #64748b; text-decoration: none; display: flex; align-items: center; gap: 10px;">
+            <FluentIcon Value="@(new Icons.Regular.Size20.SignOut())" />
+            <span>Sign Out</span>
+        </a>
     </div>
-
-    @* DAILY *@
-    <div class="nav-section">DAILY</div>
-    <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
-        <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" />
-        <span>Today</span>
-    </NavLink>
-
-    @* EXPERIENCES *@
-    <div class="nav-section">EXPERIENCES</div>
-    <NavLink class="nav-item" href="/experiences">
-        <FluentIcon Value="@(new Icons.Regular.Size20.Library())" />
-        <span>Experience Library</span>
-    </NavLink>
-    <NavLink class="nav-item" href="/planner">
-        <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" />
-        <span>Monthly Planner</span>
-    </NavLink>
-    <NavLink class="nav-item" href="/harvest">
-        <FluentIcon Value="@(new Icons.Regular.Size20.LeafTwo())" />
-        <span>Harvest &amp; Insights</span>
-    </NavLink>
-
-    @* PEOPLE *@
-    <div class="nav-section">PEOPLE</div>
-    <NavLink class="nav-item" href="/children">
-        <FluentIcon Value="@(new Icons.Regular.Size20.PersonAvailable())" />
-        <span>Children</span>
-    </NavLink>
-    <NavLink class="nav-item" href="/classrooms">
-        <FluentIcon Value="@(new Icons.Regular.Size20.Board())" />
-        <span>Classrooms</span>
-    </NavLink>
-    <NavLink class="nav-item" href="/teachers">
-        <FluentIcon Value="@(new Icons.Regular.Size20.Person())" />
-        <span>Teachers</span>
-    </NavLink>
-
-    @* JOURNEY *@
-    <div class="nav-section">JOURNEY</div>
-    <NavLink class="nav-item" href="/journey">
-        <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" />
-        <span>Child Journey</span>
-    </NavLink>
-    <NavLink class="nav-item" href="/stories">
-        <FluentIcon Value="@(new Icons.Regular.Size20.BookOpen())" />
-        <span>Parent Stories</span>
-    </NavLink>
-
-    @* MANAGEMENT *@
-    <div class="nav-section">MANAGEMENT</div>
-    <NavLink class="nav-item" href="/management">
-        <FluentIcon Value="@(new Icons.Regular.Size20.DataBarVertical())" />
-        <span>Organization</span>
-    </NavLink>
-    <NavLink class="nav-item" href="/settings">
-        <FluentIcon Value="@(new Icons.Regular.Size20.Settings())" />
-        <span>Settings</span>
-    </NavLink>
-
 </nav>
+
+@code {
+    private List<ParentAuthorizedChild> _children = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SessionState.OnChildChanged += StateHasChanged;
+        await LoadChildrenAsync();
+    }
+
+    private async Task LoadChildrenAsync()
+    {
+        try
+        {
+            _loading = true;
+            var children = (await ParentService.GetAuthorizedChildrenAsync()).ToList();
+            _children = children;
+            SessionState.SetAuthorizedChildren(_children);
+        }
+        catch (Exception)
+        {
+            _children = new List<ParentAuthorizedChild>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnChildSelectChanged(ChangeEventArgs e)
+    {
+        if (e.Value != null && Guid.TryParse(e.Value.ToString(), out var childId))
+        {
+            SessionState.SelectChild(childId);
+        }
+    }
+
+    public void Dispose()
+    {
+        SessionState.OnChildChanged -= StateHasChanged;
+    }
+}

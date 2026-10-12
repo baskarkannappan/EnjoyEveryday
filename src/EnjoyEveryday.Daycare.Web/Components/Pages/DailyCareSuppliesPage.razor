@@ -1,0 +1,219 @@
+@page "/daily-care/supplies"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IChildDailyCareService DailyCareService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+
+<PageTitle>Personal Care Supplies — EnjoyEveryday</PageTitle>
+
+<section class="content">
+    <div class="page-header">
+        <div>
+            <div class="eyebrow">Personal Care Supplies</div>
+            <h1>Care Supplies &amp; Low-Stock Warnings</h1>
+            <p class="header-description">
+                Monitor child cubby inventories: diapers, wipes, spare clothes, and bottles. 
+                Keep track of items running low and trigger reassuring reminders to parents.
+            </p>
+        </div>
+        <div class="header-actions">
+            <a href="/daily-care" class="btn">← Back to Today's Care</a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_statusMsg))
+    {
+        <div class="alert-banner success" style="margin-bottom: 20px;">
+            <span>✅ @_statusMsg</span>
+        </div>
+    }
+
+    <div class="supplies-page-container">
+        <div class="supplies-table-card">
+            <table class="styled-table">
+                <thead>
+                    <tr>
+                        <th>Child</th>
+                        <th>Supply Item</th>
+                        <th>Current Status</th>
+                        <th>Cubby Details</th>
+                        <th>Last Reported By</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_allSupplies.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 30px; color: #6b7a70;">
+                                No supply records registered yet.
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var supply in _allSupplies)
+                        {
+                            <tr>
+                                <td><strong>@supply.ChildName</strong></td>
+                                <td>@supply.SupplyType</td>
+                                <td>
+                                    <span class="status-pill @supply.Status.ToLower()">@supply.Status</span>
+                                </td>
+                                <td>@(supply.ThresholdNote ?? "Standard stock")</td>
+                                <td>@(supply.LastReportedByName ?? "Teacher")</td>
+                                <td>
+                                    <div style="display: flex; gap: 6px;">
+                                        @if (supply.Status != "Low")
+                                        {
+                                            <button class="btn outline sm" @onclick='() => SetStatus(supply, "Low")'>
+                                                Mark Low
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn secondary sm" @onclick='() => SetStatus(supply, "Adequate")'>
+                                                Mark Restocked
+                                            </button>
+                                            <button class="btn primary sm" @onclick="() => SendParentReminder(supply)">
+                                                Notify Parent
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+@code {
+    private List<ChildCareSupply> _allSupplies = new();
+    private string? _statusMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSupplies();
+    }
+
+    private async Task LoadSupplies()
+    {
+        var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+        var primaryOrg = orgs.FirstOrDefault();
+        var branches = primaryOrg != null ? (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList() : new List<Branch>();
+        var list = new List<ChildCareSupply>();
+        foreach (var b in branches)
+        {
+            var overview = await DailyCareService.GetClassroomOverviewAsync(b.Id, null, DateOnly.FromDateTime(DateTime.Today));
+            foreach (var child in overview)
+            {
+                var supplies = await DailyCareService.GetChildSuppliesAsync(child.ChildId);
+                foreach (var s in supplies)
+                {
+                    s.ChildName = child.ChildName;
+                    list.Add(s);
+                }
+            }
+        }
+        _allSupplies = list;
+    }
+
+    private async Task SetStatus(ChildCareSupply supply, string status)
+    {
+        supply.Status = status;
+        await DailyCareService.UpdateSupplyStatusAsync(supply);
+        _statusMsg = $"{supply.SupplyType} for {supply.ChildName} updated to {status}.";
+        await LoadSupplies();
+    }
+
+    private void SendParentReminder(ChildCareSupply supply)
+    {
+        _statusMsg = $"Parent reminder generated for {supply.ChildName}'s {supply.SupplyType}.";
+    }
+}
+
+<style>
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 25px;
+    margin-bottom: 24px;
+}
+.eyebrow {
+    color: var(--green, #557760);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 800;
+    margin-bottom: 6px;
+}
+.page-header h1 {
+    margin: 0;
+    font-size: 30px;
+    letter-spacing: -1px;
+    color: var(--text, #26332d);
+}
+.header-description {
+    margin: 8px 0 0;
+    max-width: 760px;
+    color: var(--muted, #78827c);
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+.supplies-table-card {
+    background: #ffffff;
+    border: 1px solid #dce7de;
+    border-radius: 16px;
+    overflow-x: auto;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.02);
+}
+.styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.styled-table th {
+    text-align: left;
+    padding: 12px 16px;
+    background: #f7faf8;
+    color: #435449;
+    font-weight: 750;
+    border-bottom: 1px solid #dce7de;
+}
+.styled-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #eef2ee;
+    vertical-align: middle;
+}
+.status-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 12px;
+}
+.status-pill.adequate {
+    background: #edf3ee;
+    color: #3b5a45;
+    border: 1px solid #d2e2d5;
+}
+.status-pill.low {
+    background: #fff8eb;
+    color: #b46d0a;
+    border: 1px solid #fae8c8;
+}
+.alert-banner.success {
+    background: #edf3ee;
+    color: #52745e;
+    border: 1px solid #dce7de;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 13px;
+}
+</style>

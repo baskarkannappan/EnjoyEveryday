@@ -26,7 +26,8 @@ public static class AuthEndpoints
             if (env.IsDevelopment())
             {
                 using var conn = await db.CreateConnectionAsync();
-                var user = await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, tenant_id FROM users LIMIT 1");
+                var user = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT id, email, tenant_id FROM users WHERE email = 'admin@littlestars.com' UNION ALL SELECT id, email, tenant_id FROM users LIMIT 1");
                 if (user != null)
                 {
                     var claims = new List<Claim>
@@ -35,9 +36,17 @@ public static class AuthEndpoints
                         new Claim(ClaimTypes.Email, user.email),
                         new Claim("TenantId", user.tenant_id.ToString())
                     };
+
+                    var memberships = (await conn.QueryAsync<Guid>(
+                        "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
+                        new { UserId = (Guid)user.id })).ToList();
+                    Guid? activeOrgId = memberships.FirstOrDefault();
+
+                    await BuildAuthClaimsAsync(conn, claims, (Guid)user.id, activeOrgId);
+
                     var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
                     await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
-                    return Results.Redirect("/select-organization");
+                    return Results.Redirect(returnUrl ?? "/");
                 }
             }
 

@@ -29,6 +29,19 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAesEncryptionService, AesEncryptionService>();
         services.AddScoped<TenantSettingsService>();
         services.AddScoped<AttendanceService>();
+        services.AddScoped<IParentService, ParentService>();
+        services.AddScoped<ParentService>();
+        services.AddSingleton<IConsentStorageService, LocalConsentStorageService>();
+        services.AddScoped<IConsentEmailService, ConsentEmailService>();
+        services.AddScoped<IConsentService, ConsentService>();
+        services.AddScoped<ConsentService>();
+        services.AddSingleton<IFloorMapStorageService, LocalFloorMapStorageService>();
+        services.AddScoped<IFloorMapService, FloorMapService>();
+        services.AddScoped<FloorMapService>();
+        services.AddScoped<IEmergencyContactService, EmergencyContactService>();
+        services.AddScoped<EmergencyContactService>();
+        services.AddScoped<IChildDailyCareService, ChildDailyCareService>();
+        services.AddScoped<ChildDailyCareService>();
         services.AddHttpClient<IAiIdeaService, AiIdeaService>();
 
         // Register the dynamic IdentityContext for both abstractions

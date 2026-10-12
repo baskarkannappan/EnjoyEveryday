@@ -1,177 +1,347 @@
 @page "/"
 @page "/today"
-@using EnjoyEveryday.Application.Services
-@using EnjoyEveryday.Domain.Entities
-@inject PlannerService PlannerService
-@inject ClassroomService ClassroomService
-@inject OrganizationService OrganizationService
-@inject BranchService BranchService
-@inject ExecutionService ExecutionService
-@inject ExperienceService ExperienceService
-@inject ClassroomContextService ContextService
+@attribute [Authorize]
+@inject IParentService ParentService
+@inject ParentSessionState SessionState
+@inject NavigationManager Navigation
+@implements IDisposable
 @rendermode InteractiveServer
-<section
-    id="page-today"
-    class="page active">
-    <PageHero 
-        Eyebrow="MONDAY &middot; SEPTEMBER 21" 
-        Title="Let's make today memorable." 
-        Subtitle="Bluebirds classroom &middot; 18 children &middot; Ages 3&ndash;4">
-        <RightContent>
-            <div class="weather">
-                <div id="weatherIcon" class="weather-icon">☁</div>
-                <div>
-                    <strong id="weatherText">Rainy outside</strong>
-                    <span>Perfect indoor day</span>
+
+<PageTitle>My Child Today — EnjoyEveryday</PageTitle>
+
+@if (_loading)
+{
+    <div style="padding: 40px; text-align: center; color: #64748b;">
+        <FluentProgressRing />
+        <p style="margin-top: 12px; font-weight: 500;">Loading today's moments...</p>
+    </div>
+}
+else if (SessionState.SelectedChild == null)
+{
+    <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
+        <div style="font-size: 40px; margin-bottom: 12px;">🌱</div>
+        <FluentText Size="TextSize.Size500" Weight="TextWeight.Bold">No Authorized Children Found</FluentText>
+        <p style="color: #64748b; max-width: 450px; margin: 12px auto 16px;">
+            Your account is not currently linked to an active child enrollment. Please contact your daycare center administrator to verify your family relationship.
+        </p>
+        <div>
+            <a href="/auth/login" style="display: inline-block; padding: 8px 18px; background: #2d5a3c; color: white; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">Connect Demo Child</a>
+        </div>
+    </FluentCard>
+}
+else
+{
+    <!-- HERO / WELCOME CARD -->
+    <div style="background: linear-gradient(135deg, #eef5ef 0%, #f7faf8 100%); border: 1px solid #dce8df; border-radius: 20px; padding: 28px 32px; margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+            <div>
+                <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #3b6b4a; text-transform: uppercase; margin-bottom: 4px;">
+                    TODAY &middot; @DateTime.Today.ToString("dddd, MMMM dd, yyyy").ToUpper()
+                </div>
+                <h1 style="font-size: 26px; font-weight: 800; color: #1c2b20; margin: 0 0 6px 0; letter-spacing: -0.5px;">
+                    @SessionState.SelectedChild.FirstName's Day
+                </h1>
+                <div style="font-size: 14px; color: #475569; display: flex; align-items: center; gap: 8px;">
+                    <span>📍 @(SessionState.SelectedChild.ClassroomName ?? "Classroom")</span>
+                    <span>&middot;</span>
+                    <span>@(SessionState.SelectedChild.OrganizationName ?? "Daycare")</span>
                 </div>
             </div>
-        </RightContent>
-    </PageHero>
-    <div class="section-title">
+
+            <!-- ATTENDANCE BADGE -->
+            <div style="background: white; border: 1px solid #dce8df; border-radius: 14px; padding: 14px 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px; text-transform: uppercase;">
+                    Attendance Status
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    @if (_summary?.Attendance?.Status == "Present")
+                    {
+                        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+                        <strong style="color: #166534; font-size: 15px;">Checked In</strong>
+                        @if (_summary.Attendance.ArrivalTime.HasValue)
+                        {
+                            <span style="font-size: 13px; color: #64748b;">(@DateTime.Today.Add(_summary.Attendance.ArrivalTime.Value).ToString("h:mm tt"))</span>
+                        }
+                    }
+                    else if (_summary?.Attendance?.Status == "Departed")
+                    {
+                        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #3b82f6;"></span>
+                        <strong style="color: #1e40af; font-size: 15px;">Picked Up</strong>
+                    }
+                    else if (_summary?.Attendance?.Status == "Absent")
+                    {
+                        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+                        <strong style="color: #991b1b; font-size: 15px;">Absent</strong>
+                    }
+                    else
+                    {
+                        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1;"></span>
+                        <strong style="color: #64748b; font-size: 14px;">Not Yet Arrived</strong>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN TWO-COLUMN CONTENT -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px;">
+        
+        <!-- LEFT COLUMN: DAILY TIMELINE -->
         <div>
-            <h3>
-                Today's rhythm
-            </h3>
-            <span>
-                A gentle plan — not a checklist.
-            </span>
-        </div>
-        <button
-            class="secondary"
-            data-page-link="planner">
-            View month
-        </button>
-    </div>
-    <div class="rhythm">
-        @{
-            int index = 1;
-        }
-        @foreach (var schedule in _schedules)
-        {
-            var exp = GetExperience(schedule.ExperienceId);
-            if (exp != null)
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2 style="font-size: 18px; font-weight: 800; color: #1e293b; margin: 0;">Today's Timeline</h2>
+                <span style="font-size: 12px; color: #64748b; font-weight: 500;">
+                    @(_summary?.TimelineItems.Count ?? 0) recorded updates
+                </span>
+            </div>
+
+            @if (_summary == null || _summary.TimelineItems.Count == 0)
             {
-                var num = index.ToString("D2");
-                var type = GetExperienceType(exp).ToUpper();
-                var desc = $"{schedule.TimeOfDay} &middot; {exp.Status}";
-                <RhythmCard Number="@num" Type="@type" Title="@exp.Title" Description="@desc" IsSelected="@(index == 1)" ActionText="@(index == 1 ? "Start experience" : "View")" />
-                index++;
+                <FluentCard Style="padding: 30px; text-align: center; border-radius: 16px;">
+                    <div style="font-size: 28px; margin-bottom: 8px;">☀️</div>
+                    <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">Quiet Start to the Day</div>
+                    <div style="font-size: 13px; color: #64748b;">
+                        Daily activities and teacher observations will appear here as the day unfolds.
+                    </div>
+                </FluentCard>
             }
-        }
-    </div>
-    <div class="two-column">
-        <div class="panel">
-            <h3>
-                Classroom feeling
-            </h3>
-            <div class="panel-description">
-                What does the room feel like right now?
-            </div>
-            <div class="feelings">
-                <FeelingButton Icon="☀" Name="Energetic" IsActive="true" />
-                <FeelingButton Icon="◐" Name="Curious" />
-                <FeelingButton Icon="☁" Name="Quiet" />
-                <FeelingButton Icon="↗" Name="Restless" />
-            </div>
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                    @foreach (var item in _summary.TimelineItems)
+                    {
+                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; gap: 16px;">
+                            <div style="min-width: 60px; text-align: center;">
+                                <div style="font-size: 11px; font-weight: 750; color: #3b6b4a; background: #eef5ef; padding: 4px 6px; border-radius: 8px;">
+                                    @item.TimeLabel
+                                </div>
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+                                    <div style="font-weight: 750; font-size: 15px; color: #1e293b;">@item.Title</div>
+                                    @if (item.IsCompleted)
+                                    {
+                                        <span style="font-size: 10px; font-weight: 700; background: #eef5ef; color: #2d5a3c; padding: 2px 8px; border-radius: 12px;">Completed</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="font-size: 10px; font-weight: 700; background: #f8fafc; color: #64748b; padding: 2px 8px; border-radius: 12px;">Planned</span>
+                                    }
+                                </div>
+                                <div style="font-size: 13px; color: #475569; line-height: 1.5;">@item.Description</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- PARENT DAILY CARE REPORT (Matching Screenshot 3) -->
+            @if (_summary?.DailyCareReport != null)
+            {
+                <div style="margin-top: 24px; background: #ffffff; border: 1px solid #dce8df; border-radius: 18px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+                    <div style="margin-bottom: 16px;">
+                        <h3 style="font-size: 17px; font-weight: 800; color: #1c2b20; margin: 0 0 2px 0;">Today at EnjoyEveryday</h3>
+                        <span style="font-size: 12px; color: #64748b;">Daily care &amp; wellbeing summary</span>
+                    </div>
+
+                    <!-- 2x2 Care KPI Grid -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px;">
+                        
+                        <!-- Diaper changes -->
+                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 14px; padding: 14px;">
+                            <div style="font-size: 20px; margin-bottom: 4px;">👶</div>
+                            <div style="font-size: 22px; font-weight: 800; color: #1c2b20;">@_summary.DailyCareReport.DiaperChangesCount</div>
+                            <div style="font-size: 12px; color: #526157; font-weight: 600;">Diaper changes</div>
+                        </div>
+
+                        <!-- Rest time -->
+                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 14px; padding: 14px;">
+                            <div style="font-size: 20px; margin-bottom: 4px;">🌙</div>
+                            <div style="font-size: 22px; font-weight: 800; color: #1c2b20;">@_summary.DailyCareReport.RestTimeFormatted</div>
+                            <div style="font-size: 12px; color: #526157; font-weight: 600;">Rest time</div>
+                        </div>
+
+                        <!-- Lunch / Meals -->
+                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 14px; padding: 14px;">
+                            <div style="font-size: 20px; margin-bottom: 4px;">🍴</div>
+                            <div style="font-size: 18px; font-weight: 800; color: #1c2b20;">Lunch</div>
+                            <div style="font-size: 12px; color: #526157; font-weight: 600;">@_summary.DailyCareReport.LunchMealStatus</div>
+                        </div>
+
+                        <!-- Mood / Comfort -->
+                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 14px; padding: 14px;">
+                            <div style="font-size: 20px; margin-bottom: 4px;">❤️</div>
+                            <div style="font-size: 18px; font-weight: 800; color: #1c2b20;">@_summary.DailyCareReport.PrimaryMoodObservation</div>
+                            <div style="font-size: 12px; color: #526157; font-weight: 600;">Comfort &amp; mood</div>
+                        </div>
+
+                    </div>
+
+                    <!-- Factual Daily Reassurance Note -->
+                    @if (!string.IsNullOrEmpty(_summary.DailyCareReport.DailyReassuranceText))
+                    {
+                        <div style="background: #edf3ee; border-left: 3px solid #52745e; border-radius: 0 10px 10px 0; padding: 12px 16px; margin-bottom: 12px;">
+                            <p style="margin: 0; font-size: 13px; color: #26332d; font-style: italic; line-height: 1.5;">
+                                &ldquo;@_summary.DailyCareReport.DailyReassuranceText&rdquo;
+                            </p>
+                        </div>
+                    }
+
+                    @if (_summary.DailyCareReport.LowSupplies.Count > 0)
+                    {
+                        <div style="background: #fff8eb; border: 1px solid #fae8c8; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 16px;">📦</span>
+                            <div style="font-size: 12px; color: #92400e;">
+                                <strong>Cubby Replenishment Needed:</strong>
+                                @string.Join(", ", _summary.DailyCareReport.LowSupplies.Select(s => s.SupplyType))
+                            </div>
+                        </div>
+                    }
+
+                    <div style="font-size: 11px; color: #8a998f; font-style: italic;">
+                        The report is generated from actual persisted records and observations, not invented by AI.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- DAILY CARE ROUTINES NOTICE -->
+                <div style="margin-top: 20px; background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 14px; padding: 14px 18px; display: flex; gap: 12px; align-items: center;">
+                    <span style="font-size: 20px;">🥣</span>
+                    <div style="font-size: 12px; color: #57534e;">
+                        <strong>Meals &amp; Rest Routines:</strong> Detailed feeding and nap logs are recorded during designated rest hours.
+                    </div>
+                </div>
+            }
         </div>
-        <div class="panel">
-            <h3>
-                ✨ Today's surprise
-            </h3>
-            <div class="panel-description">
-                Something unexpected.
+
+        <!-- RIGHT COLUMN: APPROVED MOMENTS & UPCOMING CELEBRATIONS -->
+        <div>
+            <!-- APPROVED MOMENTS -->
+            <div style="margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="font-size: 18px; font-weight: 800; color: #1e293b; margin: 0;">Captured Moments</h2>
+                    <NavLink href="/journey" style="font-size: 12px; font-weight: 700; color: #3b6b4a; text-decoration: none;">View All Journey &rarr;</NavLink>
+                </div>
+
+                @if (_summary?.ApprovedMoments == null || _summary.ApprovedMoments.Count == 0)
+                {
+                    <FluentCard Style="padding: 24px; text-align: center; border-radius: 16px;">
+                        <div style="font-size: 24px; margin-bottom: 6px;">📸</div>
+                        <div style="font-weight: 600; font-size: 13px; color: #64748b;">No photos or shared moments yet today.</div>
+                        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Teacher-approved moments will show up here immediately.</div>
+                    </FluentCard>
+                }
+                else
+                {
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        @foreach (var moment in _summary.ApprovedMoments)
+                        {
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <span style="font-size: 16px;">✨</span>
+                                    <span style="font-weight: 750; font-size: 14px; color: #1e293b;">@(moment.Title ?? "Little Moment")</span>
+                                    <span style="font-size: 11px; color: #94a3b8; margin-left: auto;">@moment.ObservationDate.ToString("h:mm tt")</span>
+                                </div>
+                                <p style="font-size: 13px; color: #475569; margin: 0 0 10px 0; line-height: 1.5;">@moment.Observation</p>
+                                @if (!string.IsNullOrEmpty(moment.ChildVoice))
+                                {
+                                    <div style="background: #f8fafc; border-left: 3px solid #3b6b4a; padding: 6px 12px; font-size: 12px; font-style: italic; color: #334155; border-radius: 0 8px 8px 0;">
+                                        &ldquo;@moment.ChildVoice&rdquo;
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
             </div>
-            <div class="surprise">
-                <strong>
-                    Something strange is hiding.
-                </strong>
-                <p>
-                    Can the children discover it?
-                </p>
-                <button
-                    id="surpriseButton"
-                    class="text-button">
-                    Reveal later →
-                </button>
+
+            <!-- UPCOMING EVENTS & CELEBRATIONS -->
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="font-size: 18px; font-weight: 800; color: #1e293b; margin: 0;">Upcoming Celebrations</h2>
+                    <NavLink href="/events" style="font-size: 12px; font-weight: 700; color: #3b6b4a; text-decoration: none;">View All &rarr;</NavLink>
+                </div>
+
+                @if (_summary?.UpcomingEvents == null || _summary.UpcomingEvents.Count == 0)
+                {
+                    <FluentCard Style="padding: 24px; text-align: center; border-radius: 16px;">
+                        <div style="font-size: 24px; margin-bottom: 6px;">🎈</div>
+                        <div style="font-weight: 600; font-size: 13px; color: #64748b;">No scheduled events this week.</div>
+                    </FluentCard>
+                }
+                else
+                {
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        @foreach (var evt in _summary.UpcomingEvents)
+                        {
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                    <span style="font-weight: 750; font-size: 14px; color: #1e293b;">@evt.Title</span>
+                                    <span style="font-size: 11px; font-weight: 700; color: #2d5a3c; background: #eef5ef; padding: 2px 8px; border-radius: 10px;">
+                                        @evt.EventDate.ToString("MMM dd")
+                                    </span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(evt.Location))
+                                {
+                                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">📍 @evt.Location</div>
+                                }
+                                <div style="margin-top: 10px;">
+                                    <NavLink href="/events" style="font-size: 12px; font-weight: 700; color: #2d5a3c; text-decoration: underline;">
+                                        View Event &amp; RSVP
+                                    </NavLink>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
+
         </div>
     </div>
-</section>
+}
+
 @code {
-    private List<ExperienceSchedule> _schedules = new();
-    private List<Experience> _experiences = new();
-    private Classroom? _classroom;
-    private ClassroomContextData? _contextData;
-    private ExperienceSchedule? _activeSchedule;
-    private int _selectedStars = 5;
-    private string _selectedRating = string.Empty;
-    private string _feedbackNotes = string.Empty;
+    private ChildDailySummary? _summary;
+    private bool _loading = true;
+
     protected override async Task OnInitializedAsync()
     {
-        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        SessionState.OnChildChanged += OnChildSelectionChanged;
+        await LoadSummaryAsync();
+    }
+
+    private async void OnChildSelectionChanged()
+    {
+        await LoadSummaryAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        if (SessionState.SelectedChild == null)
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
-            {
-                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-                _classroom = classrooms.FirstOrDefault();
-                if (_classroom != null)
-                {
-                    _contextData = await ContextService.GetClassroomContextAsync(_classroom.Id);
-                    var today = DateOnly.FromDateTime(DateTime.Today);
-                    _schedules = (await PlannerService.GetMonthlyScheduleAsync(_classroom.Id, today.Year, today.Month))
-                                 .Where(s => s.ScheduledDate == today)
-                                 .ToList();
-                }
-            }
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _loading = true;
+            _summary = await ParentService.GetChildDailySummaryAsync(SessionState.SelectedChild.ChildId, DateTime.Today);
+        }
+        catch (Exception)
+        {
+            _summary = null;
+        }
+        finally
+        {
+            _loading = false;
         }
     }
-    private Experience? GetExperience(Guid experienceId)
+
+    public void Dispose()
     {
-        return _experiences.FirstOrDefault(e => e.Id == experienceId);
-    }
-    private async Task OpenExecutionDialog(ExperienceSchedule schedule)
-    {
-        _activeSchedule = schedule;
-        _selectedStars = 5;
-        _selectedRating = string.Empty;
-        _feedbackNotes = string.Empty;
-        if (schedule.Status == "Planned")
-        {
-            await ExecutionService.StartExperienceAsync(schedule.Id, Guid.Parse("50000000-0000-0000-0000-000000000001"));
-            schedule.Status = "Started";
-        }
-    }
-    private void CloseExecutionDialog()
-    {
-        _activeSchedule = null;
-    }
-    private async Task CompleteExperience()
-    {
-        if (_activeSchedule != null && !string.IsNullOrEmpty(_selectedRating))
-        {
-            // Note: For now using a dummy TeacherId since auth is not fully implemented on UI side.
-            await ExecutionService.CompleteExperienceAsync(_activeSchedule.Id, Guid.NewGuid(), _selectedStars, _selectedRating, _feedbackNotes);
-            _activeSchedule.Status = "Completed";
-            _activeSchedule = null;
-        }
-    }
-    private string GetExperienceType(Experience experience)
-    {
-        if (string.IsNullOrEmpty(experience.DnaPayload)) return "Experience";
-        try 
-        {
-            var json = System.Text.Json.JsonDocument.Parse(experience.DnaPayload);
-            if (json.RootElement.TryGetProperty("type", out var typeElement))
-            {
-                return typeElement.GetString() ?? "Experience";
-            }
-        }
-        catch { }
-        return "Experience";
+        SessionState.OnChildChanged -= OnChildSelectionChanged;
     }
 }

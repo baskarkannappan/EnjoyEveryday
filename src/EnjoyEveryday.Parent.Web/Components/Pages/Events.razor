@@ -1,0 +1,200 @@
+@page "/events"
+@attribute [Authorize]
+@inject IParentService ParentService
+@inject ParentSessionState SessionState
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Events &amp; Celebrations — EnjoyEveryday</PageTitle>
+
+@if (_loading)
+{
+    <div style="padding: 40px; text-align: center; color: #64748b;">
+        <FluentProgressRing />
+        <p style="margin-top: 12px; font-weight: 500;">Loading events &amp; celebrations...</p>
+    </div>
+}
+else if (SessionState.SelectedChild == null)
+{
+    <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
+        <div style="font-size: 40px; margin-bottom: 12px;">🎈</div>
+        <FluentText Size="TextSize.Size500" Weight="TextWeight.Bold">No Authorized Child Selected</FluentText>
+    </FluentCard>
+}
+else
+{
+    <!-- HEADER -->
+    <div style="background: linear-gradient(135deg, #eef5ef 0%, #f7faf8 100%); border: 1px solid #dce8df; border-radius: 20px; padding: 26px 30px; margin-bottom: 24px;">
+        <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #3b6b4a; text-transform: uppercase; margin-bottom: 4px;">
+            COMMUNITY &middot; CELEBRATIONS &amp; MEMORIES
+        </div>
+        <h1 style="font-size: 26px; font-weight: 800; color: #1c2b20; margin: 0 0 6px 0; letter-spacing: -0.5px;">
+            Classroom &amp; Daycare Events
+        </h1>
+        <p style="font-size: 14px; color: #475569; margin: 0; max-width: 600px;">
+            Join in celebrations, respond to classroom invitations, and browse approved memories.
+        </p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_feedbackMessage))
+    {
+        <div style="background: #eef5ef; border: 1px solid #bbf7d0; border-radius: 12px; padding: 12px 18px; margin-bottom: 20px; color: #166534; font-size: 14px; font-weight: 600;">
+            ✓ @_feedbackMessage
+        </div>
+    }
+
+    <!-- EVENTS LIST -->
+    @if (_events.Count == 0)
+    {
+        <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
+            <div style="font-size: 32px; margin-bottom: 8px;">🎈</div>
+            <FluentText Size="TextSize.Size400" Weight="TextWeight.Bold">No Published Events</FluentText>
+            <p style="color: #64748b; font-size: 13px; margin: 8px auto 0; max-width: 400px;">
+                When upcoming celebrations or classroom gatherings are scheduled, invitations will appear here.
+            </p>
+        </FluentCard>
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            @foreach (var evt in _events)
+            {
+                var isCompleted = string.Equals(evt.Status, "Completed", StringComparison.OrdinalIgnoreCase);
+
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 18px; padding: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h3 style="font-size: 18px; font-weight: 750; color: #1e293b; margin: 0;">@evt.Title</h3>
+                                @if (isCompleted)
+                                {
+                                    <span style="font-size: 11px; font-weight: 700; background: #eef5ef; color: #2d5a3c; padding: 2px 8px; border-radius: 10px;">
+                                        Completed
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span style="font-size: 11px; font-weight: 700; background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 10px;">
+                                        Upcoming
+                                    </span>
+                                }
+                            </div>
+                            <div style="font-size: 13px; color: #64748b; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;">
+                                <span>📅 @evt.EventDate.ToString("dddd, MMMM dd, yyyy")</span>
+                                @if (!string.IsNullOrEmpty(evt.Location))
+                                {
+                                    <span>📍 @evt.Location</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(evt.Description))
+                    {
+                        <p style="font-size: 14px; color: #334155; line-height: 1.5; margin: 0 0 16px 0;">
+                            @evt.Description
+                        </p>
+                    }
+
+                    <!-- PHOTOS FOR COMPLETED EVENTS -->
+                    @if (isCompleted && evt.PhotoUrls != null && evt.PhotoUrls.Length > 0)
+                    {
+                        <div style="margin-top: 14px; margin-bottom: 16px;">
+                            <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px;">Celebration Memories &amp; Photos:</div>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                @foreach (var photo in evt.PhotoUrls)
+                                {
+                                    <img src="@photo" alt="Celebration photo" style="width: 140px; height: 100px; object-fit: cover; border-radius: 10px; border: 1px solid #e2e8f0;" />
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- RSVP INTERACTION IF UPCOMING -->
+                    @if (!isCompleted)
+                    {
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 18px; margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div>
+                                <span style="font-size: 13px; font-weight: 700; color: #1e293b;">Family RSVP:</span>
+                                <span style="font-size: 12px; color: #64748b; margin-left: 6px;">Will your family attend this celebration?</span>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="primary" 
+                                        style="font-size: 12px; padding: 6px 14px; border-radius: 10px; border: 0; background: #2d5a3c; color: white; cursor: pointer; font-weight: 600;"
+                                        @onclick='() => SubmitRsvp(evt.Id, "Attending")'>
+                                    ✓ Attending
+                                </button>
+                                <button style="font-size: 12px; padding: 6px 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer; font-weight: 600;"
+                                        @onclick='() => SubmitRsvp(evt.Id, "Declined")'>
+                                    Cannot Attend
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<Event> _events = new();
+    private bool _loading = true;
+    private string? _feedbackMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SessionState.OnChildChanged += OnChildSelectionChanged;
+        await LoadEventsAsync();
+    }
+
+    private async void OnChildSelectionChanged()
+    {
+        await LoadEventsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        if (SessionState.SelectedChild == null)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _loading = true;
+            _events = (await ParentService.GetApprovedEventsAsync(SessionState.SelectedChild.ChildId)).ToList();
+        }
+        catch (Exception)
+        {
+            _events = new List<Event>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SubmitRsvp(Guid eventId, string status)
+    {
+        if (SessionState.SelectedChild == null) return;
+
+        try
+        {
+            await ParentService.SubmitEventRsvpAsync(eventId, SessionState.SelectedChild.ChildId, status, "Submitted via Parent Portal");
+            _feedbackMessage = $"Thank you! Your RSVP has been recorded as '{status}'.";
+            await LoadEventsAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Could not update RSVP: {ex.Message}";
+        }
+    }
+
+    public void Dispose()
+    {
+        SessionState.OnChildChanged -= OnChildSelectionChanged;
+    }
+}

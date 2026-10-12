@@ -1,0 +1,290 @@
+@page "/consent/sign/{Token}"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IConsentService ConsentService
+@inject NavigationManager NavigationManager
+
+<div class="signing-container">
+    <div class="signing-card">
+
+        <div class="signing-header">
+            <div class="brand-badge">🛡️ Little Stars Safety & Trust</div>
+            <h1>@(_session?.DocumentTitle ?? "Electronic Consent Document")</h1>
+            <p class="signing-subtitle">
+                Authorized guardian verification & electronic consent review for EnjoyEveryday Daycare.
+            </p>
+        </div>
+
+        @if (_isLoading)
+        {
+            <div style="padding: 60px; text-align: center; color: #5a6e62;">
+                <p>Verifying secure signing link...</p>
+            </div>
+        }
+        else if (_isSignedSuccess)
+        {
+            <div class="success-screen">
+                <div class="success-icon">✓</div>
+                <h2>Document Successfully Signed</h2>
+                <p class="success-desc">
+                    Thank you, <strong>@_typedLegalName</strong>. Your electronic signature and consent choices for <strong>@_session?.ChildName</strong> have been securely recorded.
+                </p>
+                <div style="background: #f4f8f5; border: 1px solid #d4e2d8; border-radius: 12px; padding: 16px; font-size: 12.5px; text-align: left; width: 100%; max-width: 480px;">
+                    <div><strong>Signed At:</strong> @DateTime.UtcNow.ToString("dd MMM yyyy HH:mm:ss UTC")</div>
+                    <div><strong>Confirmation Status:</strong> Legally Recorded • Audit Trail Active</div>
+                    <div><strong>Child:</strong> @_session?.ChildName</div>
+                    <div><strong>Signer:</strong> @_typedLegalName (@_session?.SignerRelationship)</div>
+                </div>
+                <p style="font-size: 12px; color: #76867e; margin-top: 10px;">
+                    A confirmation copy has been sent to your verified email address: @_session?.SignerEmail.
+                </p>
+            </div>
+        }
+        else if (_session == null || _session.IsInvalid)
+        {
+            <div style="padding: 50px; text-align: center;">
+                <div style="font-size: 40px; margin-bottom: 12px;">🔒</div>
+                <h2 style="font-size: 20px; color: #222e27; margin: 0 0 8px;">Invalid or Expired Link</h2>
+                <p style="color: #63756b; font-size: 13.5px; max-width: 440px; margin: 0 auto;">
+                    @(_session?.ErrorMessage ?? "This signing link is no longer valid, has expired, or has already been used.")
+                </p>
+                <p style="font-size: 12.5px; color: #839389; margin-top: 16px;">
+                    Please contact Little Stars daycare administration if you need a new invitation.
+                </p>
+            </div>
+        }
+        else if (_session.IsAlreadySigned)
+        {
+            <div style="padding: 50px; text-align: center;">
+                <div style="font-size: 40px; margin-bottom: 12px;">✅</div>
+                <h2 style="font-size: 20px; color: #222e27; margin: 0 0 8px;">Already Completed</h2>
+                <p style="color: #63756b; font-size: 13.5px; max-width: 440px; margin: 0 auto;">
+                    This document for <strong>@_session.ChildName</strong> was already signed by <strong>@_session.SignerName</strong> and is securely archived in the daycare records.
+                </p>
+            </div>
+        }
+        else if (_session.IsExpired)
+        {
+            <div style="padding: 50px; text-align: center;">
+                <div style="font-size: 40px; margin-bottom: 12px;">⌛</div>
+                <h2 style="font-size: 20px; color: #a43030; margin: 0 0 8px;">Signing Invitation Expired</h2>
+                <p style="color: #63756b; font-size: 13.5px; max-width: 440px; margin: 0 auto;">
+                    The signing deadline for this document has passed. Please contact daycare staff to receive an updated invitation.
+                </p>
+            </div>
+        }
+        else
+        {
+            <div class="signing-body">
+
+                <!-- Signer & Child verified identity context -->
+                <div class="child-meta-box">
+                    <div class="meta-field">
+                        <label>Child</label>
+                        <span>@_session.ChildName</span>
+                    </div>
+                    <div class="meta-field">
+                        <label>Authorized Signer</label>
+                        <span>@_session.SignerName (@_session.SignerRelationship)</span>
+                    </div>
+                    <div class="meta-field">
+                        <label>Verified Email</label>
+                        <span>@_session.SignerEmail</span>
+                    </div>
+                    <div class="meta-field">
+                        <label>Deadline</label>
+                        <span>@(_session.SigningDeadline?.ToString("dd MMM yyyy") ?? "Within 7 days")</span>
+                    </div>
+                </div>
+
+                <!-- Immutable Terms & Conditions Snapshot -->
+                <div>
+                    <h3 style="margin: 0 0 8px; font-size: 14.5px; font-weight: 750; color: #1e2c24;">
+                        Document Terms & Instructions (Version @_session.TemplateVersion)
+                    </h3>
+                    <div class="document-terms-box">
+                        @_session.DocumentSnapshot
+                    </div>
+                </div>
+
+                <!-- Granular Choices (Non-bundled consents) -->
+                @if (_session.Choices.Any())
+                {
+                    <div class="choices-section">
+                        <div class="choices-title">Your Consent Choices (Select your preference for each section):</div>
+                        @foreach (var ch in _session.Choices)
+                        {
+                            <div class="choice-item-card">
+                                <div class="choice-info">
+                                    <strong>@ch.SectionTitle</strong>
+                                    <small>@(ch.IsMandatory ? "Required acknowledgment for enrollment" : "Optional parent permission")</small>
+                                </div>
+                                <div class="choice-options">
+                                    @if (ch.IsMandatory)
+                                    {
+                                        <button class="choice-btn selected-grant" disabled>Acknowledged</button>
+                                    }
+                                    else
+                                    {
+                                        var isGranted = GetSelectedChoice(ch.SectionKey) == ConsentChoiceValue.Granted;
+                                        <button class="choice-btn @(isGranted ? "selected-grant" : "")"
+                                                @onclick='() => SetChoice(ch.SectionKey, ConsentChoiceValue.Granted)'>
+                                            ✓ Grant Consent
+                                        </button>
+                                        <button class="choice-btn @(!isGranted ? "selected-decline" : "")"
+                                                @onclick='() => SetChoice(ch.SectionKey, ConsentChoiceValue.Declined)'>
+                                            ✕ Decline
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Electronic Signature & Intent Section -->
+                <div class="signing-signature-area">
+                    <label class="intent-checkbox-label">
+                        <input type="checkbox" @bind="_legalIntentConfirmed" />
+                        <span>
+                            <strong>I confirm that I have reviewed this document and intend to sign electronically.</strong><br>
+                            <span style="font-size: 12px; color: #5f7065;">
+                                By checking this box, I acknowledge that my electronic signature constitutes my legal affirmation and agreement to the selected terms on behalf of my child.
+                            </span>
+                        </span>
+                    </label>
+
+                    <div class="typed-name-group">
+                        <label>Type Full Legal Name (Signer Identity)</label>
+                        <input type="text"
+                               class="typed-input"
+                               placeholder="e.g. @_session.SignerName"
+                               @bind="_typedLegalName"
+                               @bind:event="oninput" />
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div style="color: #b52727; font-size: 13px; font-weight: 600;">
+                            ⚠️ @_errorMessage
+                        </div>
+                    }
+
+                    <div class="signing-actions">
+                        <button class="btn-decline" @onclick="DeclineDocumentAsync">
+                            Decline Document
+                        </button>
+                        <button class="btn-sign"
+                                disabled="@(!_legalIntentConfirmed || string.IsNullOrWhiteSpace(_typedLegalName) || _isSubmitting)"
+                                @onclick="SubmitSignatureAsync">
+                            @(_isSubmitting ? "Submitting..." : "Adopt & Sign Electronically")
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        }
+
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+
+    private bool _isLoading = true;
+    private bool _isSubmitting = false;
+    private bool _isSignedSuccess = false;
+    private string? _errorMessage;
+
+    private ParentSigningSession? _session;
+    private bool _legalIntentConfirmed = false;
+    private string _typedLegalName = string.Empty;
+    private Dictionary<string, string> _selectedChoices = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSessionAsync();
+    }
+
+    private async Task LoadSessionAsync()
+    {
+        _isLoading = true;
+        _session = await ConsentService.GetSigningSessionByTokenAsync(Token);
+        _isLoading = false;
+
+        if (_session != null && !_session.IsInvalid && !_session.IsAlreadySigned && !_session.IsExpired)
+        {
+            _typedLegalName = _session.SignerName;
+            foreach (var ch in _session.Choices)
+            {
+                _selectedChoices[ch.SectionKey] = ch.Choice;
+            }
+        }
+    }
+
+    private string GetSelectedChoice(string sectionKey)
+    {
+        return _selectedChoices.TryGetValue(sectionKey, out var val) ? val : ConsentChoiceValue.Granted;
+    }
+
+    private void SetChoice(string sectionKey, string value)
+    {
+        _selectedChoices[sectionKey] = value;
+    }
+
+    private async Task SubmitSignatureAsync()
+    {
+        if (!_legalIntentConfirmed)
+        {
+            _errorMessage = "Please confirm your electronic signature intent.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_typedLegalName))
+        {
+            _errorMessage = "Please enter your typed legal name.";
+            return;
+        }
+
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        var request = new SubmitSignatureRequest
+        {
+            RawToken = Token,
+            TypedLegalName = _typedLegalName.Trim(),
+            LegalIntentConfirmed = true,
+            Choices = _selectedChoices,
+            IpAddress = "127.0.0.1",
+            UserAgent = "Browser Client"
+        };
+
+        var (success, msg) = await ConsentService.SignDocumentAsync(request);
+        _isSubmitting = false;
+
+        if (success)
+        {
+            _isSignedSuccess = true;
+        }
+        else
+        {
+            _errorMessage = msg ?? "Failed to complete signature.";
+        }
+    }
+
+    private async Task DeclineDocumentAsync()
+    {
+        var (success, msg) = await ConsentService.DeclineDocumentAsync(Token, "Parent opted out on signing portal.");
+        if (success)
+        {
+            _errorMessage = "Document declined. Daycare staff will be informed.";
+            await LoadSessionAsync();
+        }
+        else
+        {
+            _errorMessage = msg;
+        }
+    }
+}
