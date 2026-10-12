@@ -88,6 +88,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
 
         // 2. Resolve Date Range
         var (startDate, endDate) = ResolveDateRange(filter.ReportingPeriod);
+        var formattedRange = $"{startDate:MMM d, yyyy} – {endDate:MMM d, yyyy}";
         var today = DateOnly.FromDateTime(DateTime.Today);
 
         // 3. Compute Metrics Deterministically
@@ -108,7 +109,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         if (!recentInsights.Any())
         {
             // Auto-generate fresh insights for this filter
-            return await GenerateInsightsInternalAsync(org, branchName, classroomName, filter, operational, curriculum, planningGaps, dataQuality, cancellationToken);
+            return await GenerateInsightsInternalAsync(org, branchName, classroomName, filter, operational, curriculum, planningGaps, dataQuality, formattedRange, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Category))
@@ -122,6 +123,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
             OrganizationName = org.Name,
             BranchName = branchName,
             ClassroomName = classroomName,
+            ReportingPeriodFormatted = formattedRange,
             OperationalOverview = operational,
             CurriculumVariety = curriculum,
             PlanningGaps = planningGaps,
@@ -157,6 +159,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         }
 
         var (startDate, endDate) = ResolveDateRange(filter.ReportingPeriod);
+        var formattedRange = $"{startDate:MMM d, yyyy} – {endDate:MMM d, yyyy}";
         var today = DateOnly.FromDateTime(DateTime.Today);
 
         var operational = await _repository.GetOperationalOverviewAsync(tenantId, filter, startDate, endDate, cancellationToken);
@@ -164,7 +167,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         var planningGaps = await _repository.GetPlanningGapsAsync(tenantId, filter, today, cancellationToken);
         var dataQuality = await _repository.GetDataQualityAsync(tenantId, filter, startDate, endDate, cancellationToken);
 
-        return await GenerateInsightsInternalAsync(org, branchName, classroomName, filter, operational, curriculum, planningGaps, dataQuality, cancellationToken);
+        return await GenerateInsightsInternalAsync(org, branchName, classroomName, filter, operational, curriculum, planningGaps, dataQuality, formattedRange, cancellationToken);
     }
 
     private async Task<OrganizationIntelligenceReport> GenerateInsightsInternalAsync(
@@ -176,6 +179,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         CurriculumVarietyMetrics curriculum,
         PlanningGapsMetrics planningGaps,
         DataQualityMetrics dataQuality,
+        string formattedRange,
         CancellationToken cancellationToken)
     {
         var tenantId = _tenantContext.TenantId;
@@ -220,6 +224,8 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
                 SuggestedNextStep = raw.SuggestedNextStep,
                 EvidenceStrength = evidenceStrength,
                 DataLimitations = raw.DataLimitations ?? "Based on recorded activities and attendance logs.",
+                SourceType = raw.IsAiGenerated ? "AiInterpretation" : "DeterministicRule",
+                IsAiGenerated = raw.IsAiGenerated,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
@@ -244,6 +250,7 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
             OrganizationName = org.Name,
             BranchName = branchName,
             ClassroomName = classroomName,
+            ReportingPeriodFormatted = formattedRange,
             OperationalOverview = operational,
             CurriculumVariety = curriculum,
             PlanningGaps = planningGaps,
@@ -262,10 +269,10 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         DataQualityMetrics dataQuality,
         CancellationToken cancellationToken)
     {
-        var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        try
         {
-            try
+            var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
+            if (!string.IsNullOrWhiteSpace(apiKey))
             {
                 var payload = new
                 {
@@ -298,14 +305,18 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
                     var result = await response.Content.ReadFromJsonAsync<List<AiInsightDto>>(cancellationToken: cancellationToken);
                     if (result != null && result.Any())
                     {
+                        foreach (var item in result)
+                        {
+                            item.IsAiGenerated = true;
+                        }
                         return result;
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error invoking AI service for organization intelligence; using deterministic fallback.");
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error invoking AI service for organization intelligence; falling back safely to deterministic rules.");
         }
 
         return BuildDeterministicFallback(scopeName, operational, curriculum, planningGaps, dataQuality);
@@ -325,10 +336,11 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         {
             Title = "Operational Attendance & Classroom Rhythm",
             Category = OrganizationIntelligenceCategory.OperationalOverview,
-            Observation = $"Attendance rate is {operational.AttendanceRatePercentage}% across {operational.TotalClassrooms} classrooms, with {operational.CompletedExperiencesCount} completed experiences.",
+            Observation = $"Attendance rate is {operational.AttendanceRatePercentage}% across {operational.TotalClassrooms} classrooms ({operational.ActualPresentCount} present out of {operational.ExpectedAttendanceCount} recorded days), with {operational.CompletedExperiencesCount} completed experiences.",
             PossibleExplanation = "High attendance and steady completion numbers reflect a healthy, stable operating rhythm across classrooms.",
             SuggestedNextStep = "Review arrival peaks during morning check-in to ensure optimal educator-to-child ratios.",
-            DataLimitations = "Calculated from confirmed attendance records logged in the system."
+            DataLimitations = "Calculated from confirmed attendance records logged in the system.",
+            IsAiGenerated = false
         });
 
         // 2. Curriculum Variety
@@ -340,7 +352,8 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
             Observation = $"Classrooms engaged in {curriculum.UniqueExperienceTitlesCount} unique activities ({curriculum.VarietyDiversityPercentage}% variety score), with strong activity in {topDomain}.",
             PossibleExplanation = "Teachers are incorporating varied sensory, cognitive, and cooperative experiences into classroom schedules.",
             SuggestedNextStep = "Encourage educators to explore less frequent learning areas (like outdoor nature exploration) in next week's plans.",
-            DataLimitations = "Domain counts are inferred from tags in scheduled experiences."
+            DataLimitations = "Domain counts are inferred from tags in scheduled experiences.",
+            IsAiGenerated = false
         });
 
         // 3. Planning Gaps
@@ -354,7 +367,8 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
                 Observation = $"{planningGaps.ClassroomsWithFewOrNoPlans.Count} classroom(s) ({clsNames}) currently have fewer than 2 experiences scheduled for the coming week.",
                 PossibleExplanation = "Educators may be preparing plans manually or waiting for weekly theme approvals.",
                 SuggestedNextStep = "Remind lead teachers to utilize the AI Weekly Planning Assistant to prepare balanced drafts in advance.",
-                DataLimitations = "Only accounts for scheduled calendar entries; spontaneous daily play is not captured."
+                DataLimitations = "Only accounts for scheduled calendar entries; spontaneous daily play is not captured.",
+                IsAiGenerated = false
             });
         }
 
@@ -368,7 +382,8 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
                 Observation = $"Found {dataQuality.MissingDepartureTimesCount} attendance records missing departure timestamps and {dataQuality.DraftsAwaitingReviewCount} parent communication drafts awaiting review.",
                 PossibleExplanation = "Afternoon transition rush can lead to deferred checkout entries and delayed communication approvals.",
                 SuggestedNextStep = "Standardize the afternoon handover checklist so all children are signed out and parent drafts approved before closure.",
-                DataLimitations = "Calculated based on active attendance checkouts and pending communication drafts."
+                DataLimitations = "Calculated based on active attendance checkouts and pending communication drafts.",
+                IsAiGenerated = false
             });
         }
 
@@ -394,5 +409,6 @@ public class OrganizationIntelligenceService : IOrganizationIntelligenceService
         public string? PossibleExplanation { get; set; }
         public string? SuggestedNextStep { get; set; }
         public string? DataLimitations { get; set; }
+        public bool IsAiGenerated { get; set; }
     }
 }

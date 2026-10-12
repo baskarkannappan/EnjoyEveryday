@@ -363,12 +363,14 @@ public class OrganizationIntelligenceRepository : IOrganizationIntelligenceRepos
                 id, tenant_id, organization_id, branch_id, classroom_id,
                 scope_type, reporting_period, category, title, observation,
                 supporting_metrics_json, possible_explanation, suggested_next_step,
-                evidence_strength, data_limitations, created_at, updated_at
+                evidence_strength, data_limitations, source_type, is_ai_generated,
+                created_at, updated_at
             ) VALUES (
                 @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId,
                 @ScopeType, @ReportingPeriod, @Category, @Title, @Observation,
                 @SupportingMetricsJson::jsonb, @PossibleExplanation, @SuggestedNextStep,
-                @EvidenceStrength, @DataLimitations, @CreatedAt, @UpdatedAt
+                @EvidenceStrength, @DataLimitations, @SourceType, @IsAiGenerated,
+                @CreatedAt, @UpdatedAt
             )
             RETURNING *;";
 
@@ -389,6 +391,8 @@ public class OrganizationIntelligenceRepository : IOrganizationIntelligenceRepos
             insight.SuggestedNextStep,
             insight.EvidenceStrength,
             insight.DataLimitations,
+            insight.SourceType,
+            insight.IsAiGenerated,
             insight.CreatedAt,
             insight.UpdatedAt
         });

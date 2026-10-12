@@ -50,6 +50,7 @@ public class OperationalOverviewMetrics
     public int PlannedExperiencesCount { get; set; }
     public int CompletedExperiencesCount { get; set; }
     public int UpcomingExperiencesCount { get; set; }
+    public double CompletionRatePercentage => PlannedExperiencesCount > 0 ? Math.Round(CompletedExperiencesCount * 100.0 / PlannedExperiencesCount, 1) : 0.0;
 
     public int LoggedMomentsCount { get; set; }
     public int LoggedCareEventsCount { get; set; }
@@ -109,6 +110,9 @@ public class OrganizationIntelligenceInsight
     public string EvidenceStrength { get; set; } = EvidenceStrengthLevel.Strong;
     public string? DataLimitations { get; set; }
 
+    public string SourceType { get; set; } = "DeterministicRule";
+    public bool IsAiGenerated { get; set; } = false;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -119,6 +123,7 @@ public class OrganizationIntelligenceReport
     public string OrganizationName { get; set; } = string.Empty;
     public string? BranchName { get; set; }
     public string? ClassroomName { get; set; }
+    public string ReportingPeriodFormatted { get; set; } = string.Empty;
 
     public OperationalOverviewMetrics OperationalOverview { get; set; } = new();
     public CurriculumVarietyMetrics CurriculumVariety { get; set; } = new();
@@ -128,3 +133,4 @@ public class OrganizationIntelligenceReport
     public List<OrganizationIntelligenceInsight> Insights { get; set; } = new();
     public DateTimeOffset GeneratedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
