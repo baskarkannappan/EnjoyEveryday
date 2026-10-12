@@ -1,0 +1,352 @@
+@using System.Text.Json
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IActivityRecommendationService RecommendationService
+@inject ClassroomService ClassroomService
+@inject ChildService ChildService
+@inject NavigationManager NavigationManager
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="ai-avatar">✦</div>
+                    <div>
+                        <div class="eyebrow">AI INTELLIGENCE & RECOMMENDATIONS</div>
+                        <h2 class="modal-title">Activity Recommendations</h2>
+                        <div class="modal-subtitle">Grounded in actual child observations and classroom learning history.</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" @onclick="Close">✕</button>
+            </div>
+
+            <!-- Configuration & Scope Bar -->
+            <div class="config-bar">
+                <div class="form-field">
+                    <label>Scope</label>
+                    <select class="form-select" @bind="SelectedScope" @bind:after="OnScopeChanged">
+                        <option value="Classroom">Current Classroom</option>
+                        <option value="Child">Individual Child</option>
+                    </select>
+                </div>
+
+                @if (SelectedScope == "Child")
+                {
+                    <div class="form-field">
+                        <label>Select Child</label>
+                        <select class="form-select" @bind="SelectedChildId">
+                            <option value="@Guid.Empty">-- Choose Child --</option>
+                            @foreach (var ch in _children)
+                            {
+                                <option value="@ch.Id">@ch.FirstName @ch.LastName</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div class="form-field">
+                    <label>Duration</label>
+                    <select class="form-select" @bind="_preferredDuration">
+                        <option value="15">15 Minutes</option>
+                        <option value="20">20 Minutes</option>
+                        <option value="30">30 Minutes</option>
+                        <option value="45">45 Minutes</option>
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label>Environment</label>
+                    <select class="form-select" @bind="_preferredEnvironment">
+                        <option value="Any">Indoor or Outdoor</option>
+                        <option value="Indoor">Indoor Only</option>
+                        <option value="Outdoor">Outdoor / Nature</option>
+                    </select>
+                </div>
+
+                <div style="margin-left: auto; align-self: flex-end;">
+                    <button type="button" class="btn-generate" disabled="@_isLoading" @onclick="GenerateSuggestionsAsync">
+                        @if (_isLoading)
+                        {
+                            <span>Analyzing Evidence...</span>
+                        }
+                        else
+                        {
+                            <span>✦ Get Suggestions</span>
+                        }
+                    </button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="error-banner">
+                    ⚠️ @_errorMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div class="success-banner">
+                    ✅ @_successMessage
+                </div>
+            }
+
+            <!-- Recommendations List -->
+            <div class="recommendations-container">
+                @if (_isLoading)
+                {
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <div style="font-weight: 700; color: #2d4c38; font-size: 15px;">Reviewing Learning Records & Observations</div>
+                        <div style="font-size: 13px; color: #6e7d72;">Grounding recommendations in actual child stories, journey moments, and classroom rhythm...</div>
+                    </div>
+                }
+                else if (_recommendations == null || !_recommendations.Any())
+                {
+                    <div class="empty-state">
+                        <div style="font-size: 32px; margin-bottom: 8px;">🌱</div>
+                        <div style="font-weight: 700; color: #26332d; font-size: 16px;">Ready to Explore Next Experiences</div>
+                        <div style="font-size: 13px; color: #6c7870; max-width: 480px; margin: 6px auto 16px;">
+                            Click <strong>"✦ Get Suggestions"</strong> to retrieve suitable activities grounded in past participation and teacher observations.
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="cards-list">
+                        @foreach (var rec in _recommendations)
+                        {
+                            <div class="rec-card @(rec.IsEvidenceLimited ? "evidence-limited" : "")">
+                                <div class="rec-card-top">
+                                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                        <span class="badge-format">@rec.SuggestedFormat</span>
+                                        <span class="badge-duration">⏱️ @(rec.EstimatedDurationMinutes ?? 20) min</span>
+                                        @if (rec.IsEvidenceLimited)
+                                        {
+                                            <span class="badge-limited">Catalog Suggestion</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge-grounded">✦ Evidence-Grounded</span>
+                                        }
+                                    </div>
+                                    <div class="rank-label">Suggestion #@rec.RankOrder</div>
+                                </div>
+
+                                <h3 class="rec-title">@rec.ExperienceTitle</h3>
+
+                                <div class="rec-rationale">
+                                    <strong>Why this fits:</strong> @rec.Rationale
+                                </div>
+
+                                <!-- Evidence Citations -->
+                                @if (!string.IsNullOrEmpty(rec.SupportingEvidence))
+                                {
+                                    var citations = DeserializeCitations(rec.SupportingEvidence);
+                                    if (citations.Any())
+                                    {
+                                        <div class="evidence-box">
+                                            <div class="evidence-box-title">Supporting Records:</div>
+                                            <div class="evidence-tags">
+                                                @foreach (var cit in citations)
+                                                {
+                                                    <span class="evidence-tag">
+                                                        <span>📜</span>
+                                                        <span>@cit.Summary</span>
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                }
+
+                                <!-- Actions -->
+                                <div class="rec-card-bottom">
+                                    @if (_activeAcceptItemId == rec.Id)
+                                    {
+                                        <div class="schedule-form">
+                                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                                <input type="date" class="form-input-sm" @bind="_acceptDate" />
+                                                <select class="form-select-sm" @bind="_acceptTimeOfDay">
+                                                    <option value="Morning">Morning</option>
+                                                    <option value="Afternoon">Afternoon</option>
+                                                </select>
+                                                <button type="button" class="btn-confirm-accept" @onclick="() => ConfirmAcceptAsync(rec)">
+                                                    Confirm & Plan
+                                                </button>
+                                                <button type="button" class="btn-cancel-sm" @onclick="() => _activeAcceptItemId = null">
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+                                            <button type="button" class="btn-reject" @onclick="() => RejectAsync(rec)">
+                                                Dismiss
+                                            </button>
+                                            <button type="button" class="btn-accept" @onclick="() => PromptAccept(rec)">
+                                                Accept & Add to Plan &rarr;
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid ClassroomId { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnPlanCreated { get; set; }
+
+    private string SelectedScope = "Classroom";
+    private Guid SelectedChildId = Guid.Empty;
+    private int _preferredDuration = 20;
+    private string _preferredEnvironment = "Any";
+
+    private List<Child> _children = new();
+    private List<ActivityRecommendationItem>? _recommendations;
+    private Guid _currentRequestId = Guid.Empty;
+    private bool _isLoading = false;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private Guid? _activeAcceptItemId;
+    private DateTime _acceptDate = DateTime.Today;
+    private string _acceptTimeOfDay = "Morning";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && ClassroomId != Guid.Empty && !_children.Any())
+        {
+            var list = await ChildService.GetChildrenByClassroomAsync(ClassroomId);
+            _children = list.ToList();
+        }
+    }
+
+    private void OnScopeChanged()
+    {
+        if (SelectedScope == "Classroom")
+        {
+            SelectedChildId = Guid.Empty;
+        }
+    }
+
+    private async Task GenerateSuggestionsAsync()
+    {
+        if (ClassroomId == Guid.Empty)
+        {
+            _errorMessage = "Please select an active classroom.";
+            return;
+        }
+
+        _isLoading = true;
+        _errorMessage = null;
+        _successMessage = null;
+        _recommendations = null;
+        StateHasChanged();
+
+        try
+        {
+            var prefs = new RecommendationPreferencesDto
+            {
+                PreferredDurationMinutes = _preferredDuration,
+                Environment = _preferredEnvironment
+            };
+
+            Guid? targetChild = SelectedScope == "Child" && SelectedChildId != Guid.Empty ? SelectedChildId : null;
+
+            var result = await RecommendationService.GenerateRecommendationsAsync(
+                ClassroomId,
+                targetChild,
+                prefs);
+
+            _currentRequestId = result.Request.Id;
+            _recommendations = result.Items;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to generate recommendations: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void PromptAccept(ActivityRecommendationItem item)
+    {
+        _activeAcceptItemId = item.Id;
+        _acceptDate = DateTime.Today;
+        _acceptTimeOfDay = "Morning";
+    }
+
+    private async Task ConfirmAcceptAsync(ActivityRecommendationItem item)
+    {
+        try
+        {
+            var dateOnly = DateOnly.FromDateTime(_acceptDate);
+            var decision = await RecommendationService.AcceptRecommendationAsync(
+                _currentRequestId,
+                item.Id,
+                dateOnly,
+                _acceptTimeOfDay);
+
+            _successMessage = $"'{item.ExperienceTitle}' has been added to Experience Planning for {_acceptDate:MMM dd} ({_acceptTimeOfDay})!";
+            _activeAcceptItemId = null;
+            _recommendations?.Remove(item);
+            await OnPlanCreated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error accepting recommendation: {ex.Message}";
+        }
+    }
+
+    private async Task RejectAsync(ActivityRecommendationItem item)
+    {
+        try
+        {
+            await RecommendationService.RejectRecommendationAsync(
+                _currentRequestId,
+                item.Id,
+                "Dismissed by teacher");
+
+            _recommendations?.Remove(item);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error rejecting recommendation: {ex.Message}";
+        }
+    }
+
+    private List<ActivityRecommendationService.SupportingEvidenceCitationDto> DeserializeCitations(string json)
+    {
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return JsonSerializer.Deserialize<List<ActivityRecommendationService.SupportingEvidenceCitationDto>>(json, options) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private async Task Close()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+}

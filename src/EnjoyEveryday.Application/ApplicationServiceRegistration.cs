@@ -43,6 +43,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IChildDailyCareService, ChildDailyCareService>();
         services.AddScoped<ChildDailyCareService>();
         services.AddHttpClient<IAiIdeaService, AiIdeaService>();
+        services.AddHttpClient<IActivityRecommendationService, ActivityRecommendationService>();
+        services.AddScoped<ActivityRecommendationService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>();

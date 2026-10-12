@@ -192,42 +192,124 @@ async def improve_experience(req: ImproveRequest, x_tenant_api_key: str | None =
           }
         }
 
-class MaterialsRequest(BaseModel):
-    experienceDna: dict
+RECOMMENDATIONS_INSTRUCTION = """You are an expert early childhood education planning advisor in the EnjoyEveryday SaaS system.
+Your job is to recommend 3 to 5 learning experiences from the provided catalog of candidate experiences for a child or classroom.
 
-@app.post("/api/materials")
-async def suggest_materials(req: MaterialsRequest, x_tenant_api_key: str | None = Header(default=None)):
+STRICT GROUNDING & SAFETY RULES:
+1. Grounding in Actual Records: You must ONLY recommend experiences that exist in the provided 'candidateExperiences' list. Never invent experience titles, descriptions, or IDs.
+2. Grounding in Evidence: When explaining why an activity is suitable, you must ONLY cite facts, observations, and interests that are explicitly documented in the provided 'evidenceMemories'.
+3. Do NOT Hallucinate: Do NOT invent observations, child moods, developmental milestones, historical events, diagnoses, or parental feedback.
+4. Limited Evidence Handling: If 'evidenceMemories' is empty or has minimal information, state clearly that evidence is limited, mark 'isEvidenceLimited' as true, and recommend suitable general classroom experiences based on age and category.
+5. Supporting Evidence References: In 'supportingEvidence', list the specific 'sourceId', 'sourceType', and 'title' from the evidence memories that justify the suggestion.
+6. Return format: Return the result EXACTLY as a JSON array of objects. Do NOT use markdown code blocks (```json).
+
+Each object in the array must match this schema:
+{
+  "experienceId": "UUID string matching candidate experience",
+  "experienceTitle": "Title matching candidate experience",
+  "suggestedFormat": "Individual" or "Small Group" or "Whole Class",
+  "estimatedDurationMinutes": 20,
+  "rationale": "Clear, reassuring explanation grounded in actual evidence.",
+  "supportingEvidence": [
+    {
+      "sourceId": "UUID string from evidence",
+      "sourceType": "child_journey_entries" or "child_stories" or "experience_participations" or "experience_feedbacks",
+      "summary": "Brief reference phrase, e.g., 'Observed interest in building blocks on Oct 8'"
+    }
+  ],
+  "materials": ["Material 1", "Material 2"],
+  "isEvidenceLimited": false
+}
+"""
+
+class RecommendationCandidate(BaseModel):
+    id: str
+    title: str
+    description: str | None = None
+    category: str | None = None
+    ageRange: str | None = None
+    materials: list[str] = []
+
+class EvidenceMemoryItem(BaseModel):
+    id: str
+    sourceId: str
+    sourceType: str
+    eventType: str
+    title: str
+    description: str | None = None
+    eventDate: str | None = None
+
+class RecommendationPreferences(BaseModel):
+    preferredDurationMinutes: int | None = None
+    environment: str | None = None # Indoor, Outdoor, Any
+    format: str | None = None # Individual, Small Group, Whole Class
+    category: str | None = None
+    additionalNotes: str | None = None
+
+class RecommendationRequest(BaseModel):
+    scope: str # "Classroom" or "Child"
+    targetName: str
+    candidateExperiences: list[RecommendationCandidate]
+    evidenceMemories: list[EvidenceMemoryItem]
+    preferences: RecommendationPreferences | None = None
+
+@app.post("/api/recommendations")
+async def get_recommendations(req: RecommendationRequest, x_tenant_api_key: str | None = Header(default=None)):
     if not x_tenant_api_key:
         raise HTTPException(status_code=401, detail="X-Tenant-Api-Key header is missing. Please configure your AI API key in Settings.")
 
+    if not req.candidateExperiences:
+        return {"recommendations": []}
+
     try:
         genai.configure(api_key=x_tenant_api_key)
-        model = genai.GenerativeModel("gemini-3.5-flash", system_instruction=MATERIALS_INSTRUCTION)
-        
-        prompt = f"Experience DNA:\n{json.dumps(req.experienceDna, indent=2)}"
+        model = genai.GenerativeModel("gemini-3.5-flash", system_instruction=RECOMMENDATIONS_INSTRUCTION)
+
+        context_payload = {
+            "scope": req.scope,
+            "targetName": req.targetName,
+            "preferences": req.preferences.dict() if req.preferences else {},
+            "evidenceMemories": [m.dict() for m in req.evidenceMemories[:30]], # Top relevant memories
+            "candidateExperiences": [c.dict() for c in req.candidateExperiences[:25]] # Eligible candidates
+        }
+
+        prompt = f"Please recommend suitable experiences using this context and evidence:\n{json.dumps(context_payload, indent=2)}"
         response = model.generate_content(prompt)
-        text = response.text
-        
+        text = response.text.strip()
+
         if text.startswith("```json"):
             text = text[7:]
         if text.startswith("```"):
             text = text[3:]
         if text.endswith("```"):
             text = text[:-3]
-            
-        materials = json.loads(text.strip())
-        if not isinstance(materials, list):
-            if isinstance(materials, dict) and "materials" in materials:
-                materials = materials["materials"]
-            elif isinstance(materials, dict) and "Materials" in materials:
-                materials = materials["Materials"]
-            else:
-                materials = []
-                
-        return {"Materials": materials}
+
+        recs = json.loads(text.strip())
+        if not isinstance(recs, list):
+            recs = recs.get("recommendations", [])
+
+        # Post-validation: ensure all recommended IDs actually exist in candidates
+        valid_ids = {c.id for c in req.candidateExperiences}
+        valid_recs = [r for r in recs if isinstance(r, dict) and r.get("experienceId") in valid_ids]
+
+        return {"recommendations": valid_recs}
     except Exception as e:
-        print(f"Error suggesting materials: {e}")
-        return {"Materials": []}
+        print(f"Error generating recommendations: {e}")
+        # Deterministic grounded fallback
+        fallback = []
+        for c in req.candidateExperiences[:3]:
+            fallback.append({
+                "experienceId": c.id,
+                "experienceTitle": c.title,
+                "suggestedFormat": "Whole Class" if req.scope == "Classroom" else "Individual",
+                "estimatedDurationMinutes": 20,
+                "rationale": f"Suggested experience from your active catalog suitable for {req.targetName}.",
+                "supportingEvidence": [],
+                "materials": c.materials,
+                "isEvidenceLimited": True
+            })
+        return {"recommendations": fallback}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
