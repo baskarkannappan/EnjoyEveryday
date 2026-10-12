@@ -1,0 +1,330 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IWeeklyPlanningAssistantService PlanningAssistantService
+@inject ExperienceService ExperienceService
+
+<div class="weekly-assistant-container">
+    <div class="assistant-header">
+        <div class="header-left">
+            <div class="sparkle-badge">✦</div>
+            <div>
+                <h3 class="header-title">AI Weekly Planning Assistant</h3>
+                <div class="header-sub">Generate a balanced, editable Monday–Friday curriculum draft from your Experience Library.</div>
+            </div>
+        </div>
+
+        <div class="header-actions">
+            @if (_currentDraft != null && _currentDraft.Status != "Approved")
+            {
+                <button type="button" class="btn-secondary" @onclick="GeneratePlanDraftAsync" disabled="@_isGenerating">
+                    ↻ Re-generate
+                </button>
+                <button type="button" class="btn-primary" @onclick="SavePlanToCalendarAsync" disabled="@_isSaving">
+                    @if (_isSaving)
+                    {
+                        <span>Scheduling...</span>
+                    }
+                    else
+                    {
+                        <span>✓ Approve & Add to Calendar</span>
+                    }
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn-primary" @onclick="GeneratePlanDraftAsync" disabled="@_isGenerating">
+                    @if (_isGenerating)
+                    {
+                        <span class="spinner-small"></span>
+                        <span>Balancing Curriculum...</span>
+                    }
+                    else
+                    {
+                        <span>✦ Generate Weekly Draft</span>
+                    }
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Preferences Bar -->
+    <div class="preferences-bar">
+        <div class="pref-item">
+            <label>Focus Areas (Optional)</label>
+            <input type="text" class="pref-input" placeholder="e.g. Building, Nature, Storytelling" @bind="_focusAreas" />
+        </div>
+
+        <div class="pref-item">
+            <label>Environment</label>
+            <select class="pref-select" @bind="_indoorOutdoorPreference">
+                <option value="Balanced">Balanced (Indoor & Outdoor)</option>
+                <option value="Indoor">Indoor Focus</option>
+                <option value="Outdoor">Outdoor / Nature Focus</option>
+            </select>
+        </div>
+
+        <div class="pref-item" style="flex: 1.5;">
+            <label>Available Materials Notes</label>
+            <input type="text" class="pref-input" placeholder="e.g. Cardboard boxes, clay, autumn leaves" @bind="_materialsNotes" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-banner error-banner">
+            ⚠️ @_errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="alert-banner success-banner">
+            ✅ @_successMessage
+        </div>
+    }
+
+    @if (_isGenerating)
+    {
+        <div class="loading-state">
+            <div class="pulse-icon">✦</div>
+            <p>Evaluating classroom history, avoiding recent repetition, and balancing curriculum areas...</p>
+        </div>
+    }
+    else if (_currentDraft != null && _currentDraft.Items.Any())
+    {
+        <div class="draft-cards-grid">
+            @foreach (var item in _currentDraft.Items.OrderBy(i => i.ScheduledDate))
+            {
+                var isEditingThis = _editingItemId == item.Id;
+                <div class="day-card @(item.ValidationStatus == "Warning" ? "has-warning" : "")">
+                    <div class="day-header">
+                        <div>
+                            <span class="day-title">@item.DayOfWeek</span>
+                            <span class="date-badge">@item.ScheduledDate.ToString("MMM d")</span>
+                        </div>
+                        <span class="time-badge">@item.TimeOfDay • @item.EstimatedDurationMinutes m</span>
+                    </div>
+
+                    @if (isEditingThis)
+                    {
+                        <div class="edit-mode-form">
+                            <label class="edit-label">Replace Experience</label>
+                            <select class="edit-select" @bind="item.ExperienceId" @bind:after="() => OnExperienceSelected(item)">
+                                @foreach (var exp in _availableExperiences)
+                                {
+                                    <option value="@exp.Id">@exp.Title</option>
+                                }
+                            </select>
+
+                            <label class="edit-label">Time of Day</label>
+                            <select class="edit-select" @bind="item.TimeOfDay">
+                                <option value="Morning">Morning</option>
+                                <option value="Afternoon">Afternoon</option>
+                            </select>
+
+                            <label class="edit-label">Learning Goal</label>
+                            <input type="text" class="edit-input" @bind="item.LearningGoal" />
+
+                            <div class="edit-btn-row">
+                                <button type="button" class="btn-save-edit" @onclick="() => SaveItemEdit(item)">Done Editing</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="card-content">
+                            <h4 class="exp-title">@item.ExperienceTitle</h4>
+                            <p class="goal-text">@item.LearningGoal</p>
+
+                            <div class="rationale-box">
+                                <small>✦ Why this: @item.Rationale</small>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(item.ValidationNotes))
+                            {
+                                <div class="warning-tag">
+                                    ⚠️ @item.ValidationNotes
+                                </div>
+                            }
+
+                            <div class="card-footer-actions">
+                                <button type="button" class="btn-card-action" @onclick="() => _editingItemId = item.Id">
+                                    ✎ Edit / Replace
+                                </button>
+                                @if (item.ResultingScheduleId.HasValue)
+                                {
+                                    <span class="scheduled-tag">✓ Scheduled</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-assistant-state">
+            <div class="empty-sparkle">✦</div>
+            <h4>Ready to shape this week's rhythm?</h4>
+            <p>Click <strong>✦ Generate Weekly Draft</strong> to generate a five-day balanced curriculum draft matching your active Experience Library.</p>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid ClassroomId { get; set; }
+    [Parameter] public DateOnly WeekStartDate { get; set; }
+    [Parameter] public EventCallback OnPlanScheduled { get; set; }
+
+    private string? _focusAreas;
+    private string _indoorOutdoorPreference = "Balanced";
+    private string? _materialsNotes;
+
+    private WeeklyPlanningDraftRequest? _currentDraft;
+    private List<Experience> _availableExperiences = new();
+    private bool _isGenerating = false;
+    private bool _isSaving = false;
+    private string? _errorMessage;
+    private string? _successMessage;
+    private Guid? _editingItemId;
+    private Guid _lastLoadedClassroomId = Guid.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ClassroomId != Guid.Empty && ClassroomId != _lastLoadedClassroomId)
+        {
+            _lastLoadedClassroomId = ClassroomId;
+            _errorMessage = null;
+            _successMessage = null;
+            await LoadAvailableExperiencesAsync();
+            await LoadExistingDraftAsync();
+        }
+    }
+
+    private async Task LoadAvailableExperiencesAsync()
+    {
+        try
+        {
+            var list = await ExperienceService.GetExperiencesAsync();
+            _availableExperiences = list.Where(e => e.Status == "Active" || e.Status == "Published").ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading experiences: {ex.Message}");
+        }
+    }
+
+    private async Task LoadExistingDraftAsync()
+    {
+        if (ClassroomId == Guid.Empty) return;
+
+        try
+        {
+            var monday = WeekStartDate;
+            while (monday.DayOfWeek != DayOfWeek.Monday)
+            {
+                monday = monday.AddDays(-1);
+            }
+
+            _currentDraft = await PlanningAssistantService.GetLatestDraftForWeekAsync(ClassroomId, monday);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading existing draft: {ex.Message}");
+        }
+    }
+
+    private async Task GeneratePlanDraftAsync()
+    {
+        if (ClassroomId == Guid.Empty) return;
+
+        _isGenerating = true;
+        _errorMessage = null;
+        _successMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var monday = WeekStartDate;
+            while (monday.DayOfWeek != DayOfWeek.Monday)
+            {
+                monday = monday.AddDays(-1);
+            }
+
+            var input = new GenerateWeeklyPlanInput
+            {
+                ClassroomId = ClassroomId,
+                WeekStartDate = monday,
+                FocusAreas = _focusAreas,
+                IndoorOutdoorPreference = _indoorOutdoorPreference,
+                AvailableMaterialsNotes = _materialsNotes
+            };
+
+            _currentDraft = await PlanningAssistantService.GenerateWeeklyPlanDraftAsync(input);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnExperienceSelected(WeeklyPlanningDraftItem item)
+    {
+        var matched = _availableExperiences.FirstOrDefault(e => e.Id == item.ExperienceId);
+        if (matched != null)
+        {
+            item.ExperienceTitle = matched.Title;
+        }
+    }
+
+    private async Task SaveItemEdit(WeeklyPlanningDraftItem item)
+    {
+        _editingItemId = null;
+        try
+        {
+            await PlanningAssistantService.UpdateDraftItemAsync(item);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save edit: {ex.Message}";
+        }
+    }
+
+    private async Task SavePlanToCalendarAsync()
+    {
+        if (_currentDraft == null || !_currentDraft.Items.Any()) return;
+
+        _isSaving = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var input = new SubmitWeeklyPlanInput
+            {
+                DraftRequestId = _currentDraft.Id,
+                ConfirmedItems = _currentDraft.Items,
+                AutoConfirmSchedules = true
+            };
+
+            _currentDraft = await PlanningAssistantService.SavePlanToExperiencePlanningAsync(input);
+            _successMessage = "Weekly experiences scheduled into classroom calendar successfully!";
+            await OnPlanScheduled.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to schedule plan: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+}

@@ -491,6 +491,152 @@ async def get_journey_insights(req: JourneyInsightRequest, x_tenant_api_key: str
             "items": fallback_items
         }
 
+WEEKLY_PLAN_INSTRUCTION = """You are an expert early childhood curriculum coordinator and planning assistant.
+Your goal is to suggest a balanced, engaging weekly activity plan draft (Monday through Friday) for a specific classroom.
+
+CRITICAL INSTRUCTIONS & SAFEGUARDS:
+1. ONLY USE CANDIDATE EXPERIENCES: Every proposed daily activity MUST use an 'id' and 'title' from the supplied 'candidateExperiences'. Absolutely DO NOT invent experience IDs or create new master activities.
+2. AVOID REPETITION: Check 'recentExperiences' and do NOT suggest activities that were already conducted in the last 14 days unless specifically requested.
+3. LEARNING VARIETY: Balance experiences across the week:
+   - Monday: Welcoming, constructive, or creative (e.g., building, tactile materials).
+   - Tuesday: Storytelling, language, or communication.
+   - Wednesday: Nature, sensory, discovery, or STEM.
+   - Thursday: Music, movement, rhythm, or physical coordination.
+   - Friday: Collaborative group art, celebration, or reflective play.
+4. GROUNDED RATIONALE: State clearly why each activity fits the classroom age group, stated focus areas, and available materials.
+5. RESPECT CONSTRAINTS: Respect indoor/outdoor preferences and material notes provided in 'preferences'.
+6. FORMAT & TIMING: Default to Morning time slots (e.g. 20-30 min) and 'Small Group' or 'Whole Class' formats appropriate for daycare rhythm.
+7. Tone: Encouraging, practical, respectful, and flexible for educators.
+
+Return the result EXACTLY as a JSON object matching this schema:
+{
+  "weekSummary": "A brief 1-2 sentence overview of the pedagogical theme or focus for the week.",
+  "dailyPlans": [
+    {
+      "dayOfWeek": "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday",
+      "experienceId": "UUID string matching candidate experience",
+      "experienceTitle": "Exact title matching candidate experience",
+      "learningGoal": "Clear, developmentally appropriate objective",
+      "groupFormat": "Small Group" | "Whole Class" | "Individual",
+      "estimatedDurationMinutes": 25,
+      "timeOfDay": "Morning" | "Afternoon",
+      "requiredMaterials": "Key materials needed",
+      "rationale": "Evidence-grounded reason for selecting this activity for this day"
+    }
+  ]
+}
+Do NOT use markdown code blocks (```json). Return only raw JSON.
+"""
+
+class WeeklyPlanPreferences(BaseModel):
+    focusAreas: str | None = None
+    indoorOutdoorPreference: str = "Balanced"
+    materialsNotes: str | None = None
+
+class WeeklyPlanRequest(BaseModel):
+    classroomId: str
+    classroomName: str
+    ageGroup: str | None = None
+    weekStartDate: str
+    weekEndDate: str
+    candidateExperiences: list[RecommendationCandidate]
+    recentExperiences: list[str] = [] # Titles or IDs recently completed
+    preferences: WeeklyPlanPreferences | None = None
+
+@app.post("/api/weekly-plan")
+async def get_weekly_plan(req: WeeklyPlanRequest, x_tenant_api_key: str | None = Header(default=None)):
+    if not x_tenant_api_key:
+        raise HTTPException(status_code=401, detail="X-Tenant-Api-Key header is missing. Please configure your AI API key in Settings.")
+
+    if not req.candidateExperiences:
+        return {"weekSummary": "No candidate experiences available.", "dailyPlans": []}
+
+    try:
+        genai.configure(api_key=x_tenant_api_key)
+        model = genai.GenerativeModel("gemini-3.5-flash", system_instruction=WEEKLY_PLAN_INSTRUCTION)
+
+        context_payload = {
+            "classroomName": req.classroomName,
+            "ageGroup": req.ageGroup or "Toddler / Pre-K",
+            "weekStartDate": req.weekStartDate,
+            "weekEndDate": req.weekEndDate,
+            "preferences": req.preferences.dict() if req.preferences else {},
+            "recentExperiences": req.recentExperiences[:15],
+            "candidateExperiences": [c.dict() for c in req.candidateExperiences[:30]]
+        }
+
+        prompt = f"Please generate a balanced Monday-Friday weekly plan draft using these candidate experiences:\n{json.dumps(context_payload, indent=2)}"
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        parsed = json.loads(text.strip())
+
+        # Post-validation: ensure all proposed experienceIds exist in candidates
+        valid_map = {c.id: c.title for c in req.candidateExperiences}
+        valid_plans = []
+        days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+
+        for item in parsed.get("dailyPlans", []):
+            exp_id = item.get("experienceId")
+            if exp_id in valid_map:
+                item["experienceTitle"] = valid_map[exp_id]
+                valid_plans.append(item)
+
+        # If model returned fewer than 5 days, backfill missing days deterministically
+        seen_days = {p.get("dayOfWeek") for p in valid_plans}
+        cand_idx = 0
+        for day in days_order:
+            if day not in seen_days:
+                # Find an unused candidate
+                cand = req.candidateExperiences[cand_idx % len(req.candidateExperiences)]
+                cand_idx += 1
+                valid_plans.append({
+                    "dayOfWeek": day,
+                    "experienceId": cand.id,
+                    "experienceTitle": cand.title,
+                    "learningGoal": f"Exploration and engagement in {cand.category or 'hands-on discovery'}.",
+                    "groupFormat": "Small Group",
+                    "estimatedDurationMinutes": 25,
+                    "timeOfDay": "Morning",
+                    "requiredMaterials": ", ".join(cand.materials) if cand.materials else "Standard classroom materials",
+                    "rationale": f"Suggested experience from your library suitable for {req.classroomName}."
+                })
+
+        return {
+            "weekSummary": parsed.get("weekSummary", f"Weekly theme for {req.classroomName} balancing creative play, movement, and discovery."),
+            "dailyPlans": valid_plans
+        }
+    except Exception as e:
+        print(f"Error generating weekly plan: {e}")
+        # Deterministic grounded fallback
+        days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+        fallback_plans = []
+        for i, day in enumerate(days_order):
+            cand = req.candidateExperiences[i % len(req.candidateExperiences)]
+            fallback_plans.append({
+                "dayOfWeek": day,
+                "experienceId": cand.id,
+                "experienceTitle": cand.title,
+                "learningGoal": f"Hands-on exploration in {cand.category or 'learning and play'}.",
+                "groupFormat": "Small Group",
+                "estimatedDurationMinutes": 25,
+                "timeOfDay": "Morning",
+                "requiredMaterials": ", ".join(cand.materials) if cand.materials else "Classroom learning materials",
+                "rationale": f"Candidate experience matching age group {req.ageGroup or 'active classroom'}."
+            })
+
+        return {
+            "weekSummary": f"Balanced weekly plan draft for {req.classroomName} focusing on play and exploration.",
+            "dailyPlans": fallback_plans
+        }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
 

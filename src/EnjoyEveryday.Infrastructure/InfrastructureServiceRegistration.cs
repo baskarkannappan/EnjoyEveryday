@@ -57,6 +57,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IChildDailyCareRepository, ChildDailyCareRepository>();
         services.AddScoped<IActivityRecommendationRepository, ActivityRecommendationRepository>();
         services.AddScoped<IChildJourneyInsightRepository, ChildJourneyInsightRepository>();
+        services.AddScoped<IWeeklyPlanningRepository, WeeklyPlanningRepository>();
 
         return services;
     }

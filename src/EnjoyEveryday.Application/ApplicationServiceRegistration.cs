@@ -47,6 +47,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ActivityRecommendationService>();
         services.AddHttpClient<IChildJourneyInsightService, ChildJourneyInsightService>();
         services.AddScoped<ChildJourneyInsightService>();
+        services.AddHttpClient<IWeeklyPlanningAssistantService, WeeklyPlanningAssistantService>();
+        services.AddScoped<WeeklyPlanningAssistantService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>();
