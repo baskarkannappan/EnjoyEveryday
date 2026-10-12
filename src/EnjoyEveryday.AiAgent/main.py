@@ -777,6 +777,131 @@ def generate_parent_communication(req: ParentCommunicationRequest, x_tenant_api_
         print(f"Error in parent communication AI: {e}")
         return build_grounded_fallback()
 
+ORGANIZATION_INTELLIGENCE_INSTRUCTION = """You are a senior operational and pedagogical advisor for early childhood daycare management in the EnjoyEveryday SaaS.
+You receive structured aggregate operational metrics (attendance rate, planned vs completed experiences, curriculum domain distribution, planning gaps, data completeness score).
+
+CRITICAL GROUNDING AND SAFETY RULES:
+1. Ground every statement STRICTLY in the provided numbers. NEVER invent metrics, percentages, or statistics.
+2. NEVER diagnose children, rank teachers or children, or make disciplinary/employment recommendations.
+3. Distinguish between actual operational patterns and data limitations (e.g. if records were not logged).
+4. Provide structured, actionable, evidence-based insights with:
+   - "title": Concise, informative title
+   - "category": One of OperationalOverview, CurriculumVariety, PlanningGaps, DataQuality, Engagement
+   - "observation": What the data shows (factual statement)
+   - "possibleExplanation": Why this might be happening (clearly marked as an interpretation)
+   - "suggestedNextStep": Practical action for daycare management or pedagogical director
+   - "dataLimitations": Any gaps in the data sample
+
+Return the result EXACTLY as a JSON array of objects:
+[
+  {
+    "title": "...",
+    "category": "...",
+    "observation": "...",
+    "possibleExplanation": "...",
+    "suggestedNextStep": "...",
+    "dataLimitations": "..."
+  }
+]
+Do NOT use markdown code blocks (```json) in your response. Just output the raw JSON array.
+"""
+
+class OrganizationIntelligenceRequest(BaseModel):
+    scopeName: str = "Organization"
+    reportingPeriod: str = "Last7Days"
+    attendanceRate: float = 100.0
+    planningCoverage: float = 0.0
+    completedExperiences: int = 0
+    upcomingExperiences: int = 0
+    uniqueExperiences: int = 0
+    varietyDiversityRate: float = 100.0
+    domainBreakdown: dict[str, int] = {}
+    classroomsNeedingPlansCount: int = 0
+    classroomsNeedingPlans: list[str] = []
+    missingDeparturesCount: int = 0
+    pendingDraftsCount: int = 0
+    dataCompletenessScore: float = 0.0
+
+@app.post("/api/organization-intelligence")
+def generate_organization_intelligence(req: OrganizationIntelligenceRequest, x_tenant_api_key: str = Header(None)):
+    def build_grounded_fallback():
+        insights = []
+        # Insight 1: Operational Attendance & Activity
+        att_obs = f"Attendance rate is currently {req.attendanceRate}%, with {req.completedExperiences} completed experiences and {req.upcomingExperiences} planned across {req.scopeName}."
+        insights.append({
+            "title": "Operational Rhythm & Attendance Health",
+            "category": "OperationalOverview",
+            "observation": att_obs,
+            "possibleExplanation": "Stable attendance indicates predictable classroom routine and reliable family engagement.",
+            "suggestedNextStep": "Continue reviewing morning arrival peaks to optimize staffing and classroom welcome moments.",
+            "dataLimitations": "Data reflects records logged during the active reporting period."
+        })
+
+        # Insight 2: Curriculum Variety
+        top_domain = max(req.domainBreakdown, key=req.domainBreakdown.get) if req.domainBreakdown else "Hands-On Play"
+        var_obs = f"Classrooms engaged in {req.uniqueExperiences} distinct learning experiences with a diversity score of {req.varietyDiversityRate}%. The most active area is {top_domain}."
+        insights.append({
+            "title": "Curriculum Balance & Learning Domains",
+            "category": "CurriculumVariety",
+            "observation": var_obs,
+            "possibleExplanation": "Educators have maintained an active repertoire with strong emphasis on creative and cognitive exploration.",
+            "suggestedNextStep": "Encourage teachers to incorporate more outdoor nature and movement activities into next week's schedule.",
+            "dataLimitations": "Domain distribution is calculated based on planned experience tags."
+        })
+
+        # Insight 3: Planning Gaps
+        if req.classroomsNeedingPlansCount > 0:
+            cls_names = ", ".join(req.classroomsNeedingPlans[:3])
+            gap_obs = f"{req.classroomsNeedingPlansCount} classroom(s) ({cls_names}) have fewer than 2 experiences scheduled for the upcoming week."
+            insights.append({
+                "title": "Advance Planning Readiness",
+                "category": "PlanningGaps",
+                "observation": gap_obs,
+                "possibleExplanation": "Teachers may still be finalizing lesson choices or drafting routines manually.",
+                "suggestedNextStep": "Prompt classroom lead educators to use the AI Weekly Planning Assistant to draft balanced 5-day schedules.",
+                "dataLimitations": "Does not account for unrecorded informal daily play or seasonal closures."
+            })
+
+        # Insight 4: Data Quality & Operational Hygiene
+        act_obs = f"Identified {req.missingDeparturesCount} departure checks without checkout timestamps and {req.pendingDraftsCount} parent communications awaiting review."
+        insights.append({
+            "title": "Operational Record Completeness",
+            "category": "DataQuality",
+            "observation": act_obs,
+            "possibleExplanation": "Busy afternoon transitions can sometimes lead to deferred departure sign-outs or delayed draft approvals.",
+            "suggestedNextStep": "Brief classroom teams during afternoon handover to ensure children are signed out and parent communications reviewed.",
+            "dataLimitations": "Calculated based on attendance check-in timestamps and parent draft workflow statuses."
+        })
+
+        return insights
+
+    try:
+        if not x_tenant_api_key:
+            return build_grounded_fallback()
+
+        genai.configure(api_key=x_tenant_api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=ORGANIZATION_INTELLIGENCE_INSTRUCTION)
+
+        context_payload = req.dict()
+        prompt = f"Please provide executive-level organization intelligence insights based strictly on these metrics:\n{json.dumps(context_payload, indent=2)}"
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        parsed = json.loads(text.strip())
+        if isinstance(parsed, list) and len(parsed) > 0:
+            return parsed
+        return build_grounded_fallback()
+    except Exception as e:
+        print(f"Error in organization intelligence AI: {e}")
+        return build_grounded_fallback()
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
 

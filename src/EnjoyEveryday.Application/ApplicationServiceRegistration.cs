@@ -51,6 +51,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<WeeklyPlanningAssistantService>();
         services.AddHttpClient<IParentCommunicationAssistantService, ParentCommunicationAssistantService>();
         services.AddScoped<ParentCommunicationAssistantService>();
+        services.AddHttpClient<IOrganizationIntelligenceService, OrganizationIntelligenceService>();
+        services.AddScoped<OrganizationIntelligenceService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>();

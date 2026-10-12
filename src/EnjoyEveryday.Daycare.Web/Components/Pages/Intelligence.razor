@@ -1,8 +1,447 @@
 @page "/intelligence"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IOrganizationIntelligenceService IntelService
+@inject OrganizationService OrgService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject NavigationManager NavigationManager
 
-@* <PageTopbar Breadcrumb="Understand" Title="Intelligence" /> *@
+<div class="intel-page-container">
+    <!-- Header -->
+    <div class="intel-header">
+        <div class="header-content">
+            <div class="eyebrow">EXECUTIVE INTELLIGENCE</div>
+            <h1 class="page-title">Organization Intelligence</h1>
+            <p class="page-subtitle">
+                Operational patterns, curriculum balance, advance planning readiness, and record health across your daycare organization.
+            </p>
+        </div>
 
-<section class="content" style="max-width: 1380px; margin: auto; padding: 34px;">
-    <h2>Intelligence</h2>
-    <p>This page is under construction.</p>
-</section>
+        <div class="header-actions">
+            <button type="button" class="btn-refresh" @onclick="GenerateFreshInsightsAsync" disabled="@_isLoading">
+                @if (_isLoading)
+                {
+                    <span class="spinner-small"></span>
+                    <span>Analyzing Operations...</span>
+                }
+                else
+                {
+                    <span>↻ Refresh AI Insights</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="intel-filter-bar">
+        <div class="filter-group">
+            <label>Organization</label>
+            <select class="filter-select" @bind="_selectedOrgId" @bind:after="OnOrgChangedAsync">
+                @foreach (var org in _organizations)
+                {
+                    <option value="@org.Id">@org.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Branch</label>
+            <select class="filter-select" @bind="_selectedBranchId" @bind:after="OnBranchChangedAsync">
+                <option value="">All Branches</option>
+                @foreach (var branch in _branches)
+                {
+                    <option value="@branch.Id">@branch.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Classroom</label>
+            <select class="filter-select" @bind="_selectedClassroomId" @bind:after="LoadReportAsync">
+                <option value="">All Classrooms</option>
+                @foreach (var cls in _filteredClassrooms)
+                {
+                    <option value="@cls.Id">@cls.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Reporting Period</label>
+            <select class="filter-select" @bind="_reportingPeriod" @bind:after="LoadReportAsync">
+                <option value="@IntelligenceReportingPeriod.Last7Days">Last 7 Days</option>
+                <option value="@IntelligenceReportingPeriod.Last30Days">Last 30 Days</option>
+                <option value="@IntelligenceReportingPeriod.ThisMonth">This Month</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Category Filter</label>
+            <select class="filter-select" @bind="_selectedCategory" @bind:after="LoadReportAsync">
+                <option value="">All Categories</option>
+                <option value="@OrganizationIntelligenceCategory.OperationalOverview">Operational Overview</option>
+                <option value="@OrganizationIntelligenceCategory.CurriculumVariety">Curriculum Variety</option>
+                <option value="@OrganizationIntelligenceCategory.PlanningGaps">Planning Gaps</option>
+                <option value="@OrganizationIntelligenceCategory.DataQuality">Data Quality</option>
+            </select>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-error">
+            ⚠️ @_errorMessage
+        </div>
+    }
+
+    @if (_report != null)
+    {
+        <!-- Section A: Operational Overview Metrics Grid -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Attendance Health</div>
+                <div class="metric-value">@_report.OperationalOverview.AttendanceRatePercentage%</div>
+                <div class="metric-sub">
+                    @_report.OperationalOverview.ActualPresentCount present · @_report.OperationalOverview.AbsentCount absent
+                </div>
+                <div class="metric-indicator positive">✓ Stable Daily Rhythm</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Classroom Planning Coverage</div>
+                <div class="metric-value">@_report.OperationalOverview.PlanningCoveragePercentage%</div>
+                <div class="metric-sub">
+                    @_report.OperationalOverview.PlannedClassroomsCount of @_report.OperationalOverview.TotalClassrooms classrooms with active plans
+                </div>
+                <div class="metric-indicator @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "positive" : "warning")">
+                    @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "✓ Good Coverage" : "Needs Attention")
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Experience Rhythm</div>
+                <div class="metric-value">@_report.OperationalOverview.CompletedExperiencesCount</div>
+                <div class="metric-sub">
+                    Completed experiences · @_report.OperationalOverview.UpcomingExperiencesCount upcoming
+                </div>
+                <div class="metric-indicator neutral">🗓️ Active Calendar</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">Operational Record Completeness</div>
+                <div class="metric-value">@_report.OperationalOverview.DataCompletenessScorePercentage%</div>
+                <div class="metric-sub">
+                    @_report.OperationalOverview.LoggedMomentsCount moments &amp; @_report.OperationalOverview.LoggedCareEventsCount care logs
+                </div>
+                <div class="metric-indicator @(_report.OperationalOverview.DataCompletenessScorePercentage >= 70 ? "positive" : "neutral")">
+                    Completeness Index
+                </div>
+            </div>
+        </div>
+
+        <!-- Section B: Organization-Level AI Insights -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">✦ Executive AI Insights</h2>
+                    <p class="section-desc">Evidence-grounded observations and suggested management actions based strictly on recorded daycare operations.</p>
+                </div>
+            </div>
+
+            <div class="insights-grid">
+                @if (_report.Insights.Any())
+                {
+                    @foreach (var insight in _report.Insights)
+                    {
+                        <div class="insight-card">
+                            <div class="insight-top">
+                                <span class="category-pill">@insight.Category</span>
+                                <span class="strength-pill strength-@insight.EvidenceStrength.ToLower()">
+                                    ● Evidence: @insight.EvidenceStrength
+                                </span>
+                            </div>
+
+                            <h3 class="insight-title">@insight.Title</h3>
+
+                            <div class="insight-observation">
+                                <span class="obs-icon">🔍</span>
+                                <p>@insight.Observation</p>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(insight.PossibleExplanation))
+                            {
+                                <div class="insight-explanation">
+                                    <strong>Interpretation:</strong> @insight.PossibleExplanation
+                                </div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(insight.SuggestedNextStep))
+                            {
+                                <div class="insight-action">
+                                    <strong>Suggested Next Step:</strong> @insight.SuggestedNextStep
+                                </div>
+                            }
+
+                            <div class="insight-limitations">
+                                <em>Data limitations:</em> @insight.DataLimitations
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-insights">
+                        <p>No insights generated for this filter. Click <strong>↻ Refresh AI Insights</strong> above to analyze the selected period.</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Section C: Curriculum & Learning Areas Variety -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">Curriculum Variety &amp; Domain Coverage</h2>
+                    <p class="section-desc">Distribution of learning domains across conducted experiences.</p>
+                </div>
+                <div class="section-actions">
+                    <a href="/studio" class="drill-link">Explore Experience Studio →</a>
+                    <a href="/experiences" class="drill-link" style="margin-left: 8px;">Experience Library →</a>
+                </div>
+            </div>
+
+            <div class="curriculum-grid">
+                <div class="diversity-card">
+                    <div class="diversity-rate">@_report.CurriculumVariety.VarietyDiversityPercentage%</div>
+                    <div class="diversity-label">Curriculum Diversity Score</div>
+                    <div class="diversity-meta">
+                        @_report.CurriculumVariety.UniqueExperienceTitlesCount unique activities across @_report.CurriculumVariety.TotalExperiencesConducted total sessions.
+                    </div>
+                </div>
+
+                <div class="domains-card">
+                    <h4 class="domains-title">Learning Domains Breakdown</h4>
+                    @foreach (var kvp in _report.CurriculumVariety.DomainDistribution)
+                    {
+                        <div class="domain-row">
+                            <div class="domain-name">@kvp.Key</div>
+                            <div class="domain-bar-wrapper">
+                                <div class="domain-bar" style="width: @Math.Min(100, kvp.Value * 15)%"></div>
+                            </div>
+                            <div class="domain-count">@kvp.Value</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Section D: Advance Planning Readiness & Gaps -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">Advance Planning Readiness</h2>
+                    <p class="section-desc">Classrooms requiring upcoming activity schedules for next week.</p>
+                </div>
+                <div class="section-actions">
+                    <a href="/planning" class="drill-link">Open Experience Planning →</a>
+                </div>
+            </div>
+
+            @if (_report.PlanningGaps.ClassroomsWithFewOrNoPlans.Any())
+            {
+                <div class="gaps-list">
+                    @foreach (var gap in _report.PlanningGaps.ClassroomsWithFewOrNoPlans)
+                    {
+                        <div class="gap-card">
+                            <div class="gap-info">
+                                <div class="gap-classroom">@gap.ClassroomName</div>
+                                <div class="gap-branch">@gap.BranchName</div>
+                            </div>
+
+                            <div class="gap-status">
+                                <span class="gap-badge @(gap.UpcomingPlansCount == 0 ? "badge-danger" : "badge-warning")">
+                                    @gap.UpcomingPlansCount plans scheduled
+                                </span>
+                            </div>
+
+                            <div class="gap-action">
+                                <a href="/planning" class="btn-plan-drill">Plan Week ✦</a>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="planning-healthy-banner">
+                    ✓ All classrooms have active upcoming experience schedules for next week.
+                </div>
+            }
+        </div>
+
+        <!-- Section E: Operational Data Quality & Action Items -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">Operational Data Quality &amp; Action Items</h2>
+                    <p class="section-desc">Records awaiting teacher sign-off or departure checkouts.</p>
+                </div>
+            </div>
+
+            <div class="action-items-grid">
+                <div class="action-card">
+                    <div class="action-count">@_report.DataQuality.MissingDepartureTimesCount</div>
+                    <div class="action-label">Unrecorded Departure Checks</div>
+                    <p class="action-desc">Children marked Present without checkout time before today.</p>
+                    <a href="/management/attendance" class="action-link">Review Attendance →</a>
+                </div>
+
+                <div class="action-card">
+                    <div class="action-count">@_report.DataQuality.DraftsAwaitingReviewCount</div>
+                    <div class="action-label">Parent Communication Drafts Awaiting Review</div>
+                    <p class="action-desc">Teacher drafts awaiting approval before sending to parents.</p>
+                    <a href="/stories" class="action-link">Review Parent Stories &amp; Updates →</a>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Organization> _organizations = new();
+    private List<Branch> _branches = new();
+    private List<Classroom> _allClassrooms = new();
+    private List<Classroom> _filteredClassrooms = new();
+
+    private Guid _selectedOrgId;
+    private string? _selectedBranchId;
+    private string? _selectedClassroomId;
+    private string _reportingPeriod = IntelligenceReportingPeriod.Last7Days;
+    private string? _selectedCategory;
+
+    private OrganizationIntelligenceReport? _report;
+    private bool _isLoading;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var orgs = (await OrgService.GetOrganizationsAsync()).ToList();
+            _organizations = orgs;
+            var defaultOrg = orgs.FirstOrDefault();
+            if (defaultOrg != null)
+            {
+                _selectedOrgId = defaultOrg.Id;
+                await LoadBranchesAndClassroomsAsync();
+                await LoadReportAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task OnOrgChangedAsync()
+    {
+        _selectedBranchId = null;
+        _selectedClassroomId = null;
+        await LoadBranchesAndClassroomsAsync();
+        await LoadReportAsync();
+    }
+
+    private Task OnBranchChangedAsync()
+    {
+        _selectedClassroomId = null;
+        FilterClassrooms();
+        return LoadReportAsync();
+    }
+
+    private async Task LoadBranchesAndClassroomsAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+
+        var branchList = (await BranchService.GetBranchesAsync(_selectedOrgId)).ToList();
+        _branches = branchList;
+
+        var classList = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        _allClassrooms = classList;
+        FilterClassrooms();
+    }
+
+    private void FilterClassrooms()
+    {
+        if (Guid.TryParse(_selectedBranchId, out var bId))
+        {
+            _filteredClassrooms = _allClassrooms.Where(c => c.BranchId == bId).ToList();
+        }
+        else
+        {
+            var orgBranchIds = _branches.Select(b => b.Id).ToHashSet();
+            _filteredClassrooms = _allClassrooms.Where(c => orgBranchIds.Contains(c.BranchId)).ToList();
+        }
+    }
+
+    private async Task LoadReportAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var filter = new OrganizationIntelligenceFilter
+            {
+                OrganizationId = _selectedOrgId,
+                BranchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null,
+                ClassroomId = Guid.TryParse(_selectedClassroomId, out var cId) ? cId : null,
+                ReportingPeriod = _reportingPeriod,
+                Category = string.IsNullOrWhiteSpace(_selectedCategory) ? null : _selectedCategory
+            };
+
+            _report = await IntelService.GetIntelligenceReportAsync(filter);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task GenerateFreshInsightsAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var filter = new OrganizationIntelligenceFilter
+            {
+                OrganizationId = _selectedOrgId,
+                BranchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null,
+                ClassroomId = Guid.TryParse(_selectedClassroomId, out var cId) ? cId : null,
+                ReportingPeriod = _reportingPeriod,
+                Category = string.IsNullOrWhiteSpace(_selectedCategory) ? null : _selectedCategory
+            };
+
+            _report = await IntelService.GenerateInsightsAsync(filter);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}
