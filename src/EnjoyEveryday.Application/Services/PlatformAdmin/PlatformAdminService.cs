@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Data;
@@ -13,6 +14,7 @@ public class PlatformAdminService : IPlatformAdminService
     private readonly IBranchRepository _branchRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
+    private readonly IDbConnectionFactory? _dbConnectionFactory;
     private readonly ILogger<PlatformAdminService> _logger;
 
     // Synchronized stores for commercial, lifecycle, billing, and audit records
@@ -35,14 +37,17 @@ public class PlatformAdminService : IPlatformAdminService
         IBranchRepository branchRepository,
         ITenantContext tenantContext,
         IUserContext userContext,
-        ILogger<PlatformAdminService> logger)
+        ILogger<PlatformAdminService> logger,
+        IDbConnectionFactory? dbConnectionFactory = null)
     {
         _organizationRepository = organizationRepository;
         _branchRepository = branchRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _logger = logger;
+        _dbConnectionFactory = dbConnectionFactory;
     }
+
 
     #region Overview & Telemetry
 
@@ -138,7 +143,7 @@ public class PlatformAdminService : IPlatformAdminService
 
     #region Organization CRUD
 
-    public Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(
+    public async Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(
         string name,
         string location,
         Guid planId,
@@ -182,10 +187,54 @@ public class PlatformAdminService : IPlatformAdminService
 
         _organizations[id] = dto;
 
+        // Persist to relational database so Daycare Web and Api can discover and select this organization
+        if (_dbConnectionFactory != null)
+        {
+            try
+            {
+                using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+                var rawSlug = System.Text.RegularExpressions.Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+                var slug = string.IsNullOrWhiteSpace(rawSlug) ? $"org-{id.ToString()[..8]}" : rawSlug;
+
+                var existingSlugCount = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM tenants WHERE slug = @Slug", 
+                    new { Slug = slug });
+
+                if (existingSlugCount > 0)
+                {
+                    slug = $"{slug}-{id.ToString()[..4]}";
+                }
+
+                await conn.ExecuteAsync(@"
+                    INSERT INTO tenants (id, name, slug) 
+                    VALUES (@TenantId, @Name, @Slug) 
+                    ON CONFLICT (id) DO NOTHING",
+                    new { TenantId = id, Name = name, Slug = slug });
+
+                await conn.ExecuteAsync(@"
+                    INSERT INTO organizations (id, tenant_id, name, location, is_active)
+                    VALUES (@Id, @TenantId, @Name, @Location, TRUE)
+                    ON CONFLICT (id) DO NOTHING",
+                    new { Id = id, TenantId = id, Name = name, Location = location });
+
+                var branchId = Guid.NewGuid();
+                await conn.ExecuteAsync(@"
+                    INSERT INTO branches (id, tenant_id, organization_id, name, location, is_active)
+                    VALUES (@BranchId, @TenantId, @OrgId, 'Main Campus', @Location, TRUE)
+                    ON CONFLICT (id) DO NOTHING",
+                    new { BranchId = branchId, TenantId = id, OrgId = id, Location = location });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not persist new organization to database; continuing with platform in-memory store.");
+            }
+        }
+
         AddAuditLog("Organization Registered", $"New daycare organization '{name}' provisioned with plan '{plan.Name}' ({monthlyRate:C0}/mo).", "Info", id);
 
-        return Task.FromResult(dto);
+        return dto;
     }
+
 
     public Task<bool> UpdateOrganizationAsync(
         Guid id,
