@@ -119,3 +119,9 @@ When listing people (teachers, children, users, parents):
 ### D. Badges & Tags
 - Active status: `background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); border: 1px solid #c8dacd; border-radius: 6px; font-weight: 700;`
 - Inactive status: `background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 6px; font-weight: 700;`
+
+---
+
+## 6. Testing Policy
+
+- **CRITICAL**: Do NOT run automated tests (`dotnet test`, unit tests, integration tests, test projects, or test runner scripts) unless the user explicitly instructs you to do so.

@@ -1,0 +1,260 @@
+@page "/platform-marketplace"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject IExperienceMarketplaceRepository MarketplaceRepo
+@inject ExperienceCurationService CurationService
+@inject IUserContext UserContext
+
+<PageTitle>Platform Experience Library — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="PLATFORM CATALOG"
+              Title="Platform Experience Library &amp; Marketplace"
+              Subtitle="Manage curated, versioned platform experiences, set commercial pricing models, and publish items to all daycares.">
+        <RightContent>
+            <button class="secondary" @onclick="LoadExperiencesAsync">Refresh Catalog</button>
+        </RightContent>
+    </PageHero>
+
+    <!-- Filter Tabs -->
+    <div class="tabs" style="display: flex; gap: 8px; margin: 20px 0;">
+        <button class="tab @(selectedFilter == "All" ? "active" : "")" @onclick='() => SetFilter("All")'>All (@experiences.Count)</button>
+        <button class="tab @(selectedFilter == PlatformPublicationStatus.Published ? "active" : "")" @onclick='() => SetFilter(PlatformPublicationStatus.Published)'>
+            Published (@experiences.Count(e => e.PublicationStatus == PlatformPublicationStatus.Published))
+        </button>
+        <button class="tab @(selectedFilter == PlatformPublicationStatus.Draft ? "active" : "")" @onclick='() => SetFilter(PlatformPublicationStatus.Draft)'>
+            Drafts (@experiences.Count(e => e.PublicationStatus == PlatformPublicationStatus.Draft))
+        </button>
+        <button class="tab @(selectedFilter == PlatformPublicationStatus.Suspended ? "active" : "")" @onclick='() => SetFilter(PlatformPublicationStatus.Suspended)'>
+            Suspended (@experiences.Count(e => e.PublicationStatus == PlatformPublicationStatus.Suspended))
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="padding: 40px; text-align: center; color: var(--muted);">Loading platform library...</div>
+    }
+    else if (!FilteredExperiences.Any())
+    {
+        <div class="empty-state" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center;">
+            <div style="font-size: 32px; margin-bottom: 12px;">📚</div>
+            <h3 style="margin: 0 0 8px; color: var(--text);">No experiences in this category</h3>
+            <p style="color: var(--muted); margin: 0;">Approve submissions from the Curation Queue to add them here.</p>
+        </div>
+    }
+    else
+    {
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
+            @foreach (var exp in FilteredExperiences)
+            {
+                <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 10px;">
+                            <span style="font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px;">@exp.Category</span>
+                            <span style="@GetPublicationBadgeStyle(exp.PublicationStatus)">@exp.PublicationStatus</span>
+                        </div>
+
+                        <h3 style="margin: 0 0 8px; font-size: 17px; font-weight: 750; color: var(--text);">@exp.Title</h3>
+                        <p style="font-size: 13.5px; color: var(--muted); margin: 0 0 14px; line-height: 1.4;">@exp.Description</p>
+                    </div>
+
+                    <div style="border-top: 1px solid var(--border); padding-top: 14px; margin-top: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 12.5px;">
+                            <span style="color: var(--muted);">Version <strong>v@(exp.CurrentVersion)</strong></span>
+                            <span style="font-weight: 750; color: var(--accent-dark);">
+                                @(exp.PricingModel == ExperiencePricingModel.IncludedInSubscription ? "Included in Sub" : $"${exp.PriceAmount:0.00} One-Time")
+                            </span>
+                        </div>
+
+                        @if (exp.SourceExperienceId.HasValue)
+                        {
+                            <div style="font-size: 11.5px; color: var(--muted); margin-bottom: 12px;">
+                                Provenance: <code>@exp.SourceExperienceId.Value.ToString()[..8]</code> &bull; @(exp.CreatorAttribution ?? "Daycare Partner")
+                            </div>
+                        }
+
+                        <div style="display: flex; gap: 8px;">
+                            @if (exp.PublicationStatus == PlatformPublicationStatus.Published)
+                            {
+                                <button class="secondary" style="flex: 1; color: #9b2c2c; border-color: #fed7d7;" @onclick="() => SuspendItem(exp.Id)">Suspend</button>
+                            }
+                            else
+                            {
+                                <button class="primary" style="flex: 1;" @onclick="() => OpenPublishModal(exp)">Publish to Market</button>
+                            }
+                            <button class="secondary" @onclick="() => OpenPublishModal(exp)">Edit Terms</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* PUBLISH / PRICING MODAL *@
+    @if (activeModalExp != null)
+    {
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+            <div style="background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 550px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="margin: 0; font-size: 19px; font-weight: 800; color: var(--text);">Publish Experience to Marketplace</h2>
+                    <button class="secondary" style="padding: 4px 10px;" @onclick="ClosePublishModal">&times;</button>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Activity Title</label>
+                    <input type="text" class="search" style="width: 100%;" @bind="publishTitle" />
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Category</label>
+                    <input type="text" class="search" style="width: 100%;" @bind="publishCategory" placeholder="e.g. STEM, Sensory, Art, Nature" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                    <div>
+                        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Commercial Pricing Model</label>
+                        <select class="filter" style="width: 100%;" @bind="publishPricingModel">
+                            <option value="@ExperiencePricingModel.IncludedInSubscription">Included in Subscription</option>
+                            <option value="@ExperiencePricingModel.OneTimePurchase">One-Time Purchase</option>
+                            <option value="@ExperiencePricingModel.Free">Free Public Sample</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Price ($ USD)</label>
+                        <input type="number" step="0.50" class="search" style="width: 100%;" @bind="publishPrice" disabled="@(publishPricingModel == ExperiencePricingModel.IncludedInSubscription || publishPricingModel == ExperiencePricingModel.Free)" />
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Public Creator Attribution (Optional)</label>
+                    <input type="text" class="search" style="width: 100%;" @bind="publishAttribution" placeholder="e.g. Created by Little Stars Early Childhood Team" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px; margin-bottom: 16px; font-size: 13px;">
+                        @errorMessage
+                    </div>
+                }
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="secondary" @onclick="ClosePublishModal">Cancel</button>
+                    <button class="primary" @onclick="SaveAndPublishAsync">Publish to Marketplace</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<PlatformExperience> experiences = new();
+    private string selectedFilter = "All";
+    private bool isLoading = true;
+
+    private PlatformExperience? activeModalExp;
+    private string publishTitle = string.Empty;
+    private string publishCategory = "General";
+    private string publishPricingModel = ExperiencePricingModel.IncludedInSubscription;
+    private decimal publishPrice = 0.00m;
+    private string? publishAttribution;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExperiencesAsync();
+    }
+
+    private async Task LoadExperiencesAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            var res = await MarketplaceRepo.GetAllPlatformExperiencesAsync();
+            experiences = res.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private IEnumerable<PlatformExperience> FilteredExperiences =>
+        selectedFilter == "All" ? experiences : experiences.Where(e => e.PublicationStatus == selectedFilter);
+
+    private void SetFilter(string filter)
+    {
+        selectedFilter = filter;
+    }
+
+    private void OpenPublishModal(PlatformExperience exp)
+    {
+        activeModalExp = exp;
+        publishTitle = exp.Title;
+        publishCategory = exp.Category;
+        publishPricingModel = exp.PricingModel;
+        publishPrice = exp.PriceAmount;
+        publishAttribution = exp.CreatorAttribution;
+        errorMessage = null;
+    }
+
+    private void ClosePublishModal()
+    {
+        activeModalExp = null;
+        errorMessage = null;
+    }
+
+    private async Task SaveAndPublishAsync()
+    {
+        if (activeModalExp == null) return;
+        errorMessage = null;
+
+        try
+        {
+            var price = publishPricingModel == ExperiencePricingModel.IncludedInSubscription ? 0.00m : publishPrice;
+            await CurationService.PublishToMarketplaceAsync(
+                activeModalExp.Id,
+                publishPricingModel,
+                price,
+                publishCategory,
+                publishAttribution);
+
+            ClosePublishModal();
+            await LoadExperiencesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SuspendItem(Guid id)
+    {
+        try
+        {
+            await CurationService.SuspendMarketplaceItemAsync(id, "Administrative suspension");
+            await LoadExperiencesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private static string GetPublicationBadgeStyle(string status) => status switch
+    {
+        PlatformPublicationStatus.Published => "background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); border: 1px solid #c8dacd; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        PlatformPublicationStatus.Draft => "background: #fffaf0; color: #b7791f; border: 1px solid #feebc8; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        PlatformPublicationStatus.Suspended => "background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        _ => "background: var(--surface-soft); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;"
+    };
+}

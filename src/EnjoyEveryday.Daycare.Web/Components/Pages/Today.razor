@@ -897,30 +897,10 @@
             _userFirstName = currentUser.FirstName;
         }
 
-        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-        using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = TimeProvider.GetLocalNow().Date;
-        var tenantId = TenantContext.TenantId;
-        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date AND tenant_id = @TenantId ORDER BY time_of_day";
-        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId })).ToList();
-        
-        var statsSql = @"
-            SELECT 
-                (SELECT COUNT(1) FROM children WHERE tenant_id = @TenantId AND is_active = true) as ExpectedChildren,
-                (SELECT COUNT(1) FROM child_attendance WHERE tenant_id = @TenantId AND attendance_date = @Date AND status = 'Present') as ChildrenHere,
-                (SELECT COUNT(1) FROM classrooms WHERE tenant_id = @TenantId AND is_active = true) as TotalClassrooms,
-                (SELECT COUNT(1) FROM teachers WHERE tenant_id = @TenantId AND status != 'Inactive') as TotalTeachers
-        ";
-        var stats = await connection.QuerySingleAsync<dynamic>(statsSql, new { Date = today, TenantId = tenantId });
-        _expectedChildren = (int)stats.expectedchildren;
-        _childrenHere = (int)stats.childrenhere;
-        _totalClassrooms = (int)stats.totalclassrooms;
-        _totalExperiences = _todaySchedules.Count;
-        _activeExperiences = _todaySchedules.Count(s => s.Status == "Started" || s.Status == "Active");
-        _totalTeachers = (int)stats.totalteachers;
-        
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
+        var activeOrgId = org?.Id ?? UserContext.OrganizationId;
+
         if (org != null) {
             _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
             try {
@@ -928,9 +908,59 @@
             } catch { }
         }
 
+        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        using var connection = await DbConnectionFactory.CreateConnectionAsync();
+        var today = TimeProvider.GetLocalNow().Date;
+        var tenantId = TenantContext.TenantId;
+        var sql = @"
+            SELECT es.id, es.tenant_id as TenantId, es.experience_id as ExperienceId, 
+                   es.classroom_id as ClassroomId, es.scheduled_date as ScheduledDate, 
+                   es.time_of_day as TimeOfDay, es.status as Status, 
+                   es.primary_teacher_id as PrimaryTeacherId, es.planned_start_time as PlannedStartTime, 
+                   es.planned_end_time as PlannedEndTime, es.preparation_notes as PreparationNotes 
+            FROM experience_schedules es
+            JOIN classrooms cl ON es.classroom_id = cl.id
+            JOIN branches b ON cl.branch_id = b.id
+            WHERE es.scheduled_date = @Date AND es.tenant_id = @TenantId
+              AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)
+            ORDER BY es.time_of_day";
+        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId, OrganizationId = activeOrgId })).ToList();
+        
+        var statsSql = @"
+            SELECT 
+                (SELECT COUNT(1) FROM children c
+                 LEFT JOIN classrooms cl ON c.classroom_id = cl.id
+                 LEFT JOIN branches b ON cl.branch_id = b.id
+                 WHERE c.tenant_id = @TenantId AND c.is_active = true
+                   AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)) as ExpectedChildren,
+                (SELECT COUNT(1) FROM child_attendance ca
+                 JOIN classrooms cl ON ca.classroom_id = cl.id
+                 JOIN branches b ON cl.branch_id = b.id
+                 WHERE ca.tenant_id = @TenantId AND ca.attendance_date = @Date AND ca.status = 'Present'
+                   AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)) as ChildrenHere,
+                (SELECT COUNT(1) FROM classrooms cl
+                 JOIN branches b ON cl.branch_id = b.id
+                 WHERE cl.tenant_id = @TenantId AND cl.is_active = true
+                   AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)) as TotalClassrooms,
+                (SELECT COUNT(1) FROM teachers t
+                 WHERE t.tenant_id = @TenantId AND t.status != 'Inactive'
+                   AND (@OrganizationId IS NULL OR EXISTS (
+                       SELECT 1 FROM organization_memberships om
+                       WHERE om.user_id = t.user_id AND om.organization_id = @OrganizationId AND om.status = 'Active'
+                   ))) as TotalTeachers
+        ";
+        var stats = await connection.QuerySingleAsync<dynamic>(statsSql, new { Date = today, TenantId = tenantId, OrganizationId = activeOrgId });
+        _expectedChildren = (int)stats.expectedchildren;
+        _childrenHere = (int)stats.childrenhere;
+        _totalClassrooms = (int)stats.totalclassrooms;
+        _totalExperiences = _todaySchedules.Count;
+        _activeExperiences = _todaySchedules.Count(s => s.Status == "Started" || s.Status == "Active");
+        _totalTeachers = (int)stats.totalteachers;
+
         try
         {
-            _todayEvents = (await EventService.GetEventsForDateAsync(DateOnly.FromDateTime(today))).ToList();
+            var branchIdFilter = _branches.FirstOrDefault()?.Id;
+            _todayEvents = (await EventService.GetEventsForDateAsync(DateOnly.FromDateTime(today), branchIdFilter)).ToList();
             _eventClassroomsMap.Clear();
             foreach (var ev in _todayEvents.Where(e => e.Scope == "Classroom"))
             {
@@ -952,13 +982,15 @@
             FROM child_stories cs
             JOIN children c ON cs.child_id = c.id
             JOIN classrooms cl ON c.classroom_id = cl.id
+            JOIN branches b ON cl.branch_id = b.id
             JOIN users u ON cs.teacher_id = u.id
             WHERE cs.tenant_id = @TenantId
+              AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)
             ORDER BY cs.created_at DESC
             LIMIT 3
         ";
         try {
-            _recentMemories = (await connection.QueryAsync<dynamic>(momentsSql, new { TenantId = tenantId })).ToList();
+            _recentMemories = (await connection.QueryAsync<dynamic>(momentsSql, new { TenantId = tenantId, OrganizationId = activeOrgId })).ToList();
         } catch { }
     }
 

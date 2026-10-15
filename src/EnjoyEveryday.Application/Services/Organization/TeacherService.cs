@@ -1,5 +1,6 @@
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.Application.Services;
@@ -8,11 +9,13 @@ public class TeacherService : ITeacherService
 {
     private readonly ITeacherRepository _teacherRepository;
     private readonly ILogger<TeacherService> _logger;
+    private readonly IUserContext _userContext;
 
-    public TeacherService(ITeacherRepository teacherRepository, ILogger<TeacherService> logger)
+    public TeacherService(ITeacherRepository teacherRepository, ILogger<TeacherService> logger, IUserContext userContext)
     {
         _teacherRepository = teacherRepository;
         _logger = logger;
+        _userContext = userContext;
     }
 
     public async Task<Teacher?> GetTeacherByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
@@ -20,9 +23,13 @@ public class TeacherService : ITeacherService
         return await _teacherRepository.GetByIdAsync(tenantId, id, cancellationToken);
     }
 
-    public async Task<IEnumerable<Teacher>> GetAllTeachersAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    public Task<IEnumerable<Teacher>> GetAllTeachersAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => GetAllTeachersAsync(tenantId, _userContext.OrganizationId, cancellationToken);
+
+    public async Task<IEnumerable<Teacher>> GetAllTeachersAsync(Guid tenantId, Guid? organizationId, CancellationToken cancellationToken = default)
     {
-        return await _teacherRepository.GetAllAsync(tenantId, cancellationToken);
+        var targetOrgId = organizationId ?? _userContext.OrganizationId;
+        return await _teacherRepository.GetAllAsync(tenantId, targetOrgId, cancellationToken);
     }
 
     public async Task<Teacher> CreateTeacherAsync(Teacher teacher, CancellationToken cancellationToken = default)

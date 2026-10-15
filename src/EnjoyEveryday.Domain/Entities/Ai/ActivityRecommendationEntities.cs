@@ -56,6 +56,8 @@ public class RecommendationPreferencesDto
     public string? Environment { get; set; }
     public string? Format { get; set; }
     public string? Category { get; set; }
+    public string? LearningObjective { get; set; }
+    public string? AvailableMaterials { get; set; }
     public string? AdditionalNotes { get; set; }
 }
 

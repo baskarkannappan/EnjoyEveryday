@@ -25,6 +25,7 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
     private readonly IUserContext _userContext;
     private readonly HttpClient _httpClient;
     private readonly ILogger<WeeklyPlanningAssistantService> _logger;
+    private readonly ITeacherRepository? _teacherRepository;
 
     public WeeklyPlanningAssistantService(
         IWeeklyPlanningRepository repository,
@@ -36,7 +37,8 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
         ITenantContext tenantContext,
         IUserContext userContext,
         HttpClient httpClient,
-        ILogger<WeeklyPlanningAssistantService> logger)
+        ILogger<WeeklyPlanningAssistantService> logger,
+        ITeacherRepository? teacherRepository = null)
     {
         _repository = repository;
         _classroomRepository = classroomRepository;
@@ -48,6 +50,7 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
         _userContext = userContext;
         _httpClient = httpClient;
         _logger = logger;
+        _teacherRepository = teacherRepository;
     }
 
     public async Task<WeeklyPlanningDraftRequest?> GetLatestDraftForWeekAsync(Guid classroomId, DateOnly weekStartDate, CancellationToken cancellationToken = default)
@@ -298,13 +301,29 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
                 }
             }
 
+            // Resolve valid Teacher ID if current user is in teachers table; otherwise null (FK constraint)
+            Guid? teacherId = null;
+            if (_teacherRepository != null)
+            {
+                try
+                {
+                    var teachers = await _teacherRepository.GetAllAsync(_tenantContext.TenantId, cancellationToken);
+                    var teacher = teachers.FirstOrDefault(t => t.UserId == _userContext.UserId || t.Id == _userContext.UserId);
+                    teacherId = teacher?.Id;
+                }
+                catch
+                {
+                    // Leave teacherId as null if resolution fails
+                }
+            }
+
             // Schedule via existing PlannerService
             var schedule = await _plannerService.ScheduleExperienceAsync(
                 experienceId: item.ExperienceId,
                 classroomId: draft.ClassroomId,
                 scheduledDate: item.ScheduledDate,
                 timeOfDay: item.TimeOfDay,
-                primaryTeacherId: _userContext.UserId,
+                primaryTeacherId: teacherId,
                 notes: $"{item.LearningGoal} [Weekly Assistant Rationale: {item.Rationale}]"
             );
 

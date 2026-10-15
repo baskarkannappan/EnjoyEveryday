@@ -1,0 +1,278 @@
+@page "/marketplace"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject ExperienceMarketplaceService MarketplaceService
+@inject IUserContext UserContext
+@inject NavigationManager Navigation
+
+<PageTitle>Experience Marketplace — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="CURATED CURRICULUM"
+              Title="Platform Experience Marketplace"
+              Subtitle="Discover expertly crafted, developmental activities. Acquire entitlements and add them directly to your organization's private library.">
+        <RightContent>
+            <a href="/experiences" class="btn secondary">&larr; My Organization Library</a>
+            <button class="primary" @onclick="LoadCatalogAsync">Refresh Marketplace</button>
+        </RightContent>
+    </PageHero>
+
+    <!-- Search & Filter Row -->
+    <div class="search-row" style="display: flex; gap: 12px; margin: 20px 0 16px;">
+        <input class="search" style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 11px; font-family: inherit; font-size: 14px;"
+               @bind="searchQuery" @bind:event="oninput" placeholder="Search curated platform activities..." />
+        <select class="filter" style="padding: 10px 14px; border: 1px solid var(--border); border-radius: 11px; font-family: inherit; font-size: 14px;"
+                @bind="selectedCategory">
+            <option value="All">All Categories</option>
+            <option value="STEM">STEM</option>
+            <option value="Sensory">Sensory &amp; Tactile</option>
+            <option value="Nature">Nature &amp; Outdoors</option>
+            <option value="Art">Creative Arts</option>
+            <option value="Social">Social-Emotional</option>
+        </select>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="tabs" style="display: flex; gap: 8px; margin-bottom: 24px;">
+        <button class="tab @(activeTab == "All" ? "active" : "")" @onclick='() => SetTab("All")'>All Activities (@catalog.Count)</button>
+        <button class="tab @(activeTab == "Entitled" ? "active" : "")" @onclick='() => SetTab("Entitled")'>
+            My Entitlements (@catalog.Count(c => c.IsPurchasedOrEntitled))
+        </button>
+        <button class="tab @(activeTab == "Available" ? "active" : "")" @onclick='() => SetTab("Available")'>
+            Available to Acquire (@catalog.Count(c => !c.IsPurchasedOrEntitled))
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div style="background: var(--accent-light); color: var(--accent-dark); border: 1px solid #c8dacd; border-radius: 11px; padding: 12px 18px; margin-bottom: 20px; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+            <span>🌿 @statusMessage</span>
+            <button class="secondary" style="padding: 2px 8px; font-size: 12px;" @onclick='() => statusMessage = null'>Dismiss</button>
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div style="padding: 40px; text-align: center; color: var(--muted);">Loading marketplace activities...</div>
+    }
+    else if (!FilteredCatalog.Any())
+    {
+        <div class="empty-state" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center;">
+            <div style="font-size: 32px; margin-bottom: 12px;">🌱</div>
+            <h3 style="margin: 0 0 8px; color: var(--text);">No activities found</h3>
+            <p style="color: var(--muted); margin: 0;">Try adjusting your search terms or category filter.</p>
+        </div>
+    }
+    else
+    {
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
+            @foreach (var item in FilteredCatalog)
+            {
+                <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <span style="font-size: 11.5px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px;">
+                                @item.Category
+                            </span>
+                            @if (item.IsPurchasedOrEntitled)
+                            {
+                                <span style="background: var(--accent-light); color: var(--accent-dark); border: 1px solid #c8dacd; border-radius: 6px; font-size: 11px; font-weight: 750; padding: 2px 8px;">
+                                    ✓ Entitled
+                                </span>
+                            }
+                            else if (item.PricingModel == ExperiencePricingModel.IncludedInSubscription)
+                            {
+                                <span style="background: #ebf8ff; color: #2b6cb0; border: 1px solid #bee3f8; border-radius: 6px; font-size: 11px; font-weight: 750; padding: 2px 8px;">
+                                    Plan Included
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="background: var(--surface-soft); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 11.5px; font-weight: 800; padding: 2px 8px;">
+                                    $@item.PriceAmount.ToString("N2")
+                                </span>
+                            }
+                        </div>
+
+                        <h3 style="margin: 0 0 8px; font-size: 17.5px; font-weight: 750; color: var(--text); line-height: 1.3;">@item.Title</h3>
+                        <p style="font-size: 13.5px; color: var(--muted); margin: 0 0 16px; line-height: 1.45;">@item.Description</p>
+                    </div>
+
+                    <div style="border-top: 1px solid var(--border); padding-top: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--muted); margin-bottom: 14px;">
+                            <span>Platform Version <strong>v@(item.CurrentVersion)</strong></span>
+                            @if (!string.IsNullOrWhiteSpace(item.CreatorAttribution))
+                            {
+                                <span>Curated from @item.CreatorAttribution</span>
+                            }
+                        </div>
+
+                        <div style="display: flex; gap: 8px;">
+                            @if (item.IsPurchasedOrEntitled)
+                            {
+                                <button class="primary" style="flex: 1;" @onclick="() => ImportToLibraryAsync(item)">
+                                    + Add to My Library
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="primary" style="flex: 1;" @onclick="() => AcquireExperienceAsync(item)">
+                                    @(item.PricingModel == ExperiencePricingModel.IncludedInSubscription ? "Redeem Access" : $"Acquire (${item.PriceAmount:0.00})")
+                                </button>
+                            }
+                            <button class="secondary" @onclick="() => ViewCurriculum(item)">Details</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* DETAILS MODAL *@
+    @if (selectedModalItem != null)
+    {
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+            <div style="background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 600px; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div>
+                        <span style="font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase;">@selectedModalItem.Category</span>
+                        <h2 style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: var(--text);">@selectedModalItem.Title</h2>
+                    </div>
+                    <button class="secondary" style="padding: 4px 10px;" @onclick='() => selectedModalItem = null'>&times;</button>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 20px; font-size: 13.5px; line-height: 1.5; color: var(--text);">
+                    @selectedModalItem.Description
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Pricing Terms</div>
+                        <div style="font-size: 14px; font-weight: 750; color: var(--text); margin-top: 4px;">
+                            @(selectedModalItem.PricingModel == ExperiencePricingModel.IncludedInSubscription ? "Included with Daycare Subscription" : $"${selectedModalItem.PriceAmount:0.00} USD (One-time)")
+                        </div>
+                    </div>
+                    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Curated Version</div>
+                        <div style="font-size: 14px; font-weight: 750; color: var(--text); margin-top: 4px;">v@(selectedModalItem.CurrentVersion) Canonical Platform Copy</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="secondary" @onclick='() => selectedModalItem = null'>Close</button>
+                    @if (selectedModalItem.IsPurchasedOrEntitled)
+                    {
+                        <button class="primary" @onclick="() => ImportToLibraryAsync(selectedModalItem)">+ Add to My Library</button>
+                    }
+                    else
+                    {
+                        <button class="primary" @onclick="() => AcquireExperienceAsync(selectedModalItem)">
+                            @(selectedModalItem.PricingModel == ExperiencePricingModel.IncludedInSubscription ? "Redeem Access" : $"Acquire (${selectedModalItem.PriceAmount:0.00})")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<PlatformExperience> catalog = new();
+    private string searchQuery = string.Empty;
+    private string selectedCategory = "All";
+    private string activeTab = "All";
+    private bool isLoading = true;
+    private string? statusMessage;
+    private PlatformExperience? selectedModalItem;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCatalogAsync();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var res = await MarketplaceService.GetMarketplaceCatalogAsync();
+            catalog = res.ToList();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private IEnumerable<PlatformExperience> FilteredCatalog
+    {
+        get
+        {
+            var result = catalog.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                result = result.Where(c => c.Title.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                                           c.Description.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (selectedCategory != "All")
+            {
+                result = result.Where(c => c.Category.Equals(selectedCategory, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (activeTab == "Entitled")
+            {
+                result = result.Where(c => c.IsPurchasedOrEntitled);
+            }
+            else if (activeTab == "Available")
+            {
+                result = result.Where(c => !c.IsPurchasedOrEntitled);
+            }
+
+            return result;
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private void ViewCurriculum(PlatformExperience item)
+    {
+        selectedModalItem = item;
+    }
+
+    private async Task AcquireExperienceAsync(PlatformExperience item)
+    {
+        try
+        {
+            await MarketplaceService.AcquireEntitlementAsync(item.Id);
+            item.IsPurchasedOrEntitled = true;
+            statusMessage = $"Successfully acquired entitlement for \"{item.Title}\"! You can now add it to your library.";
+            selectedModalItem = null;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error acquiring experience: {ex.Message}";
+        }
+    }
+
+    private async Task ImportToLibraryAsync(PlatformExperience item)
+    {
+        try
+        {
+            var cloned = await MarketplaceService.ImportToOrganizationLibraryAsync(item.Id);
+            statusMessage = $"\"{item.Title}\" has been imported into your private library! You can now customize and schedule it.";
+            selectedModalItem = null;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error importing experience: {ex.Message}";
+        }
+    }
+}

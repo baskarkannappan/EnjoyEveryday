@@ -165,7 +165,7 @@ public class AppIdentityContext : IUserContext, ITenantContext
         }
     }
     
-    public bool IsAuthenticated => HasValidAuthenticatedIdentity || (IsDevelopment() && UserId != Guid.Empty);
+    public bool IsAuthenticated => HasValidAuthenticatedIdentity;
 
     public IEnumerable<string> Roles
     {
@@ -175,9 +175,9 @@ public class AppIdentityContext : IUserContext, ITenantContext
             {
                 var roles = User!.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
                 if (roles.Count > 0) return roles;
+                if (IsDevelopment() || Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase))
+                    return new[] { "PlatformAdmin", "OrganizationOwner", "OrganizationAdmin", "BranchAdmin" };
             }
-            if (IsDevelopment() || Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase))
-                return new[] { "PlatformAdmin", "OrganizationOwner", "OrganizationAdmin", "BranchAdmin" };
 
             return Array.Empty<string>();
         }
@@ -187,6 +187,9 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get
         {
+            if (!IsAuthenticated)
+                return Array.Empty<string>();
+
             if (IsAdminUser)
             {
                 return EnjoyEveryday.Shared.Authorization.Permissions.All;
@@ -226,14 +229,14 @@ public class AppIdentityContext : IUserContext, ITenantContext
         if (string.IsNullOrWhiteSpace(permission))
             return false;
 
+        if (!IsAuthenticated)
+            return false;
+
         // admin@littlestars.com, PlatformAdmin, or OrganizationOwner has full permissions across the application
         if (IsAdminUser)
         {
             return true;
         }
-
-        if (!IsAuthenticated)
-            return false;
 
         return Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
     }

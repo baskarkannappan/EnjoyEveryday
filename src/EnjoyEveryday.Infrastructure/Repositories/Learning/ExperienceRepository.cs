@@ -18,40 +18,44 @@ public class ExperienceRepository : IExperienceRepository
     public async Task<Experience?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
+            SELECT e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
                    COALESCE(AVG(ef.stars), 0) AS AverageStars
             FROM experiences e
             LEFT JOIN experience_schedules es ON e.id = es.experience_id
             LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
             WHERE e.id = @Id AND e.tenant_id = @TenantId
-            GROUP BY e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at";
+            GROUP BY e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         return await connection.QuerySingleOrDefaultAsync<Experience>(sql, new { Id = id, TenantId = tenantId });
     }
 
-    public async Task<IEnumerable<Experience>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    public Task<IEnumerable<Experience>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => GetAllAsync(tenantId, null, cancellationToken);
+
+    public async Task<IEnumerable<Experience>> GetAllAsync(Guid tenantId, Guid? organizationId, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
+            SELECT e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
                    COALESCE(AVG(ef.stars), 0) AS AverageStars
             FROM experiences e
             LEFT JOIN experience_schedules es ON e.id = es.experience_id
             LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
             WHERE e.tenant_id = @TenantId AND e.status != 'Archived'
-            GROUP BY e.id, e.tenant_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at
+              AND (@OrganizationId IS NULL OR e.organization_id = @OrganizationId)
+            GROUP BY e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at
             ORDER BY e.created_at DESC";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Experience>(sql, new { TenantId = tenantId });
+        return await connection.QueryAsync<Experience>(sql, new { TenantId = tenantId, OrganizationId = organizationId });
     }
 
     public async Task<Experience> AddAsync(Experience experience, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            INSERT INTO experiences (id, tenant_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at)
-            VALUES (@Id, @TenantId, @Title, @Description, @Status, @DnaPayload::jsonb, @CreatedByUserId, @CreatedAt, @UpdatedAt)
-            RETURNING id, tenant_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at";
+            INSERT INTO experiences (id, tenant_id, organization_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at)
+            VALUES (@Id, @TenantId, @OrganizationId, @Title, @Description, @Status, @DnaPayload::jsonb, @CreatedByUserId, @CreatedAt, @UpdatedAt)
+            RETURNING id, tenant_id, organization_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at";
 
         const string versionSql = @"
             INSERT INTO experience_versions (id, experience_id, version_number, title, description, dna_payload, change_reason, modified_by_user_id, created_at)

@@ -31,7 +31,8 @@ public class ChildService
     public async Task<IEnumerable<Child>> GetChildrenAsync(CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
-        var all = await _childRepository.GetAllAsync(tenantId, cancellationToken);
+        var orgId = _userContext.OrganizationId;
+        var all = await _childRepository.GetAllAsync(tenantId, orgId, cancellationToken);
         // Per-child scope check: org admin sees the org, branch admin assigned branches, teachers assigned classrooms.
         return await _authorizer.FilterAccessibleChildrenAsync(all, Permissions.ChildView, cancellationToken);
     }

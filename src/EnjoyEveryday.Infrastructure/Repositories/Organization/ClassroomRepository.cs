@@ -46,16 +46,28 @@ public class ClassroomRepository : IClassroomRepository
         return await connection.QueryAsync<Classroom>(sql, new { BranchId = branchId, TenantId = tenantId });
     }
 
-    public async Task<IEnumerable<Classroom>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    public Task<IEnumerable<Classroom>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => GetAllAsync(tenantId, null, cancellationToken);
+
+    public async Task<IEnumerable<Classroom>> GetAllAsync(Guid tenantId, Guid? organizationId, CancellationToken cancellationToken = default)
     {
-        string sql = $@"
-            SELECT {SelectFields}
-            FROM classrooms
-            WHERE tenant_id = @TenantId AND is_active = true
-            ORDER BY name";
+        string sql = @"
+            SELECT cl.id, cl.tenant_id as TenantId, cl.branch_id as BranchId, cl.name, cl.display_name as DisplayName, 
+                   cl.short_name as ShortName, cl.code, cl.description, cl.classroom_type as ClassroomType, 
+                   cl.status, cl.age_group as AgeGroup, cl.min_age_months as MinAgeMonths, 
+                   cl.max_age_months as MaxAgeMonths, cl.capacity, cl.current_enrollment as CurrentEnrollment, 
+                   cl.environment, cl.photo_url as PhotoUrl, cl.draft_data as DraftData, 
+                   cl.profile_completion_percentage as ProfileCompletionPercentage, 
+                   cl.is_active as IsActive, cl.created_at as CreatedAt, cl.created_by as CreatedBy, 
+                   cl.updated_at as UpdatedAt, cl.updated_by as UpdatedBy
+            FROM classrooms cl
+            JOIN branches b ON cl.branch_id = b.id AND cl.tenant_id = b.tenant_id
+            WHERE cl.tenant_id = @TenantId AND cl.is_active = true
+              AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)
+            ORDER BY cl.name";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Classroom>(sql, new { TenantId = tenantId });
+        return await connection.QueryAsync<Classroom>(sql, new { TenantId = tenantId, OrganizationId = organizationId });
     }
 
     public async Task<Classroom> AddAsync(Classroom classroom, CancellationToken cancellationToken = default)

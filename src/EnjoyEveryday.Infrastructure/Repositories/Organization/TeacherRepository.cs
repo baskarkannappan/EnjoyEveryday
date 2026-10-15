@@ -30,21 +30,35 @@ public class TeacherRepository : ITeacherRepository
         return await connection.QuerySingleOrDefaultAsync<Teacher>(sql, new { Id = id, TenantId = tenantId });
     }
 
-    public async Task<IEnumerable<Teacher>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    public Task<IEnumerable<Teacher>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => GetAllAsync(tenantId, null, cancellationToken);
+
+    public async Task<IEnumerable<Teacher>> GetAllAsync(Guid tenantId, Guid? organizationId, CancellationToken cancellationToken = default)
     {
         const string sql = @"
-            SELECT id, tenant_id as TenantId, person_id as PersonId, user_id as UserId, employee_number as EmployeeNumber, 
-                   first_name as FirstName, middle_name as MiddleName, last_name as LastName, preferred_name as PreferredName, 
-                   display_name as DisplayName, profile_photo_url as ProfilePhotoUrl, date_of_birth as DateOfBirth, gender as Gender, 
-                   preferred_language as PreferredLanguage, other_languages as OtherLanguages, pronouns as Pronouns, bio as Bio, 
-                   status as Status, draft_data as DraftData, profile_completion_percentage as ProfileCompletionPercentage, 
-                   created_at as CreatedAt, updated_at as UpdatedAt
-            FROM teachers
-            WHERE tenant_id = @TenantId AND status != 'Inactive'
-            ORDER BY first_name, last_name";
+            SELECT t.id, t.tenant_id as TenantId, t.person_id as PersonId, t.user_id as UserId, t.employee_number as EmployeeNumber, 
+                   t.first_name as FirstName, t.middle_name as MiddleName, t.last_name as LastName, t.preferred_name as PreferredName, 
+                   t.display_name as DisplayName, t.profile_photo_url as ProfilePhotoUrl, t.date_of_birth as DateOfBirth, t.gender as Gender, 
+                   t.preferred_language as PreferredLanguage, t.other_languages as OtherLanguages, t.pronouns as Pronouns, t.bio as Bio, 
+                   t.status as Status, t.draft_data as DraftData, t.profile_completion_percentage as ProfileCompletionPercentage, 
+                   t.created_at as CreatedAt, t.updated_at as UpdatedAt
+            FROM teachers t
+            WHERE t.tenant_id = @TenantId AND t.status != 'Inactive'
+              AND (@OrganizationId IS NULL OR (
+                  (t.user_id IS NOT NULL AND EXISTS (
+                      SELECT 1 FROM organization_memberships om 
+                      WHERE om.user_id = t.user_id AND om.organization_id = @OrganizationId AND om.status = 'Active'
+                  ))
+                  OR EXISTS (
+                      SELECT 1 FROM teacher_employments te
+                      JOIN branches tb ON te.branch_id = tb.id
+                      WHERE te.teacher_id = t.id AND tb.organization_id = @OrganizationId
+                  )
+              ))
+            ORDER BY t.first_name, t.last_name";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Teacher>(sql, new { TenantId = tenantId });
+        return await connection.QueryAsync<Teacher>(sql, new { TenantId = tenantId, OrganizationId = organizationId });
     }
 
     public async Task<Teacher> AddAsync(Teacher teacher, CancellationToken cancellationToken = default)

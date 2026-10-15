@@ -4,6 +4,7 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @using EnjoyEveryday.UI.Shared.Components
 @inject ExperienceService ExperienceService
+@inject ExperienceCurationService CurationService
 @inject UserService UserService
 @inject PlannerService PlannerService
 @inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
@@ -27,6 +28,10 @@
             <p class="hero-subtitle">Your daycare's growing collection. Every experience gets better with use.</p>
         </div>
         <div class="hero-actions">
+            <a href="/marketplace" class="btn-hero-secondary" style="text-decoration: none; display: flex; align-items: center; gap: 6px;">
+                <span>🛒</span>
+                <span>Experience Marketplace</span>
+            </a>
             <button class="btn-hero-secondary" @onclick='() => NavigationManager.NavigateTo("/studio")'>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
@@ -182,8 +187,54 @@
     OnDelete="DeleteExperienceAsync"
     ExperienceId="@_currentExperience?.Id"
     OnOpenStorybook="OpenStorybookPage"
+    OnSubmitForCuration="OpenCurationModal"
     Reviews="@_currentReviews"
     OnSubmitReview="HandleSubmitReview" />
+
+@if (_showCurationModal && _curationExperience != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 20px;">
+        <div style="background: var(--surface); border-radius: var(--radius); max-width: 550px; width: 100%; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.25);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 19px; font-weight: 800; color: var(--text);">Submit to Platform Experience Library</h3>
+                <button class="secondary" style="padding: 2px 8px;" @onclick="() => _showCurationModal = false">&times;</button>
+            </div>
+
+            <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+                <div style="font-weight: 750; color: var(--text);">@_curationExperience.Title</div>
+                <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">@_curationExperience.Description</div>
+            </div>
+
+            <div style="font-size: 13.5px; line-height: 1.5; color: var(--text); margin-bottom: 16px;">
+                <p style="margin: 0 0 10px;">By submitting this activity for consideration, you grant EnjoyEveryday a commercial content license to review, sanitize, reproduce, and distribute this activity in the Platform Marketplace.</p>
+                <div style="background: var(--accent-light); color: var(--accent-dark); border-radius: 8px; padding: 10px 14px; font-size: 12.5px; font-weight: 600;">
+                    🔒 <strong>Privacy Guarantee</strong>: Your organization's children, private observations, photos, and family records are never transferred. Only instructional and developmental content is curated.
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--muted); margin-bottom: 4px;">Content License Terms</label>
+                <select class="filter" style="width: 100%;" @bind="_curationLicenseType">
+                    <option value="CommercialRoyalty">Standard Commercial Distribution &amp; Royalty</option>
+                    <option value="PlatformExclusive">Platform Curated Exclusive</option>
+                    <option value="OpenEducation">Open Early Childhood License</option>
+                </select>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_curationStatus))
+            {
+                <div style="margin-bottom: 14px; font-size: 13px; color: var(--accent-dark); font-weight: 700;">
+                    @_curationStatus
+                </div>
+            }
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="secondary" @onclick="() => _showCurationModal = false">Cancel</button>
+                <button class="primary" @onclick="ConfirmCurationSubmissionAsync">Grant License &amp; Submit</button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (!_hideHistoryDialog)
 {
@@ -284,6 +335,37 @@
 
 @code {
     private IEnumerable<Experience>? _experiences;
+    private bool _showCurationModal;
+    private Experience? _curationExperience;
+    private string _curationLicenseType = "CommercialRoyalty";
+    private string? _curationStatus;
+
+    private void OpenCurationModal(Guid id)
+    {
+        _curationExperience = _experiences?.FirstOrDefault(e => e.Id == id);
+        if (_curationExperience != null)
+        {
+            _curationStatus = null;
+            _showCurationModal = true;
+        }
+    }
+
+    private async Task ConfirmCurationSubmissionAsync()
+    {
+        if (_curationExperience == null) return;
+        try
+        {
+            await CurationService.SubmitForReviewAsync(_curationExperience.Id, _curationLicenseType);
+            _curationStatus = "Submitted! The Platform Admin team will review your activity.";
+            StateHasChanged();
+            await Task.Delay(1500);
+            _showCurationModal = false;
+        }
+        catch (Exception ex)
+        {
+            _curationStatus = $"Error: {ex.Message}";
+        }
+    }
     
     private string ActiveFilter { get; set; } = "all";
     private string SearchText { get; set; } = "";
@@ -649,11 +731,6 @@
             _defaultUserId = newUser.Id;
         }
         await LoadExperiencesAsync();
-
-        if (_experiences != null && !_experiences.Any())
-        {
-            await InsertSampleDataAsync();
-        }
     }
 
     private Dictionary<Guid, (double Stars, int Count)> _ratings = new();
@@ -671,20 +748,6 @@
                 _ratings[exp.Id] = (avg, feedbacks.Count());
             }
         }
-    }
-
-    private async Task InsertSampleDataAsync()
-    {
-        await ExperienceService.CreateExperienceAsync("Finger Painting", "Messy fun with colors", "{\"type\": \"Create\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Story Time", "Reading The Hungry Caterpillar", "{\"type\": \"Explore\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Building Blocks", "Learn geometry and physics with wooden blocks", "{\"type\": \"Create\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Nature Walk", "Collecting leaves and bugs", "{\"type\": \"Explore\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Dance Party", "Moving to rhythm and music", "{\"type\": \"Move\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Sensory Bin", "Water and sand play for tactile development", "{\"type\": \"Explore\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Obstacle Course", "Climbing and jumping exercises", "{\"type\": \"Move\"}", _defaultUserId);
-        await ExperienceService.CreateExperienceAsync("Clay Modeling", "Sculpting animals out of soft clay", "{\"type\": \"Create\"}", _defaultUserId);
-        
-        await LoadExperiencesAsync();
     }
 
     private void OpenAddExperienceModal()

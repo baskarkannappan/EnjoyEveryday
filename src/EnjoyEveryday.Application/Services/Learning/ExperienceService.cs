@@ -21,12 +21,18 @@ public class ExperienceService
 
     public async Task<IEnumerable<Experience>> GetExperiencesAsync(CancellationToken cancellationToken = default)
     {
-        return await _experienceRepository.GetAllAsync(_tenantContext.TenantId, cancellationToken);
+        var orgId = _userContext.OrganizationId;
+        return await _experienceRepository.GetAllAsync(_tenantContext.TenantId, orgId, cancellationToken);
     }
 
     public async Task<Experience?> GetExperienceByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
+        var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
+        if (experience != null && _userContext.OrganizationId.HasValue && experience.OrganizationId.HasValue && experience.OrganizationId.Value != _userContext.OrganizationId.Value)
+        {
+            return null;
+        }
+        return experience;
     }
 
     public async Task<Experience> CreateExperienceAsync(string title, string description, string dnaPayload, Guid createdByUserId, string? status = null, CancellationToken cancellationToken = default)
@@ -36,6 +42,7 @@ public class ExperienceService
         {
             Id = Guid.NewGuid(),
             TenantId = _tenantContext.TenantId,
+            OrganizationId = _userContext.OrganizationId,
             Title = title,
             Description = description,
             Status = status ?? ExperienceStatus.Idea.ToString(),
@@ -50,9 +57,13 @@ public class ExperienceService
 
     public async Task UpdateExperienceAsync(Guid id, string title, string description, string dnaPayload, string status, string changeReason, Guid modifiedByUserId, CancellationToken cancellationToken = default)
     {
-        // if (!_userContext.HasPermission("experience.create")) throw new UnauthorizedAccessException("Requires experience.create permission.");
         var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
         if (experience == null) throw new InvalidOperationException("Experience not found.");
+
+        if (_userContext.OrganizationId.HasValue && experience.OrganizationId.HasValue && experience.OrganizationId.Value != _userContext.OrganizationId.Value)
+        {
+            throw new UnauthorizedAccessException("Cannot access or update experience belonging to another organization.");
+        }
 
         experience.Title = title;
         experience.Description = description;
@@ -65,7 +76,12 @@ public class ExperienceService
 
     public async Task DeleteExperienceAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        // if (!_userContext.HasPermission("experience.create")) throw new UnauthorizedAccessException("Requires experience.create permission.");
+        var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
+        if (experience != null && _userContext.OrganizationId.HasValue && experience.OrganizationId.HasValue && experience.OrganizationId.Value != _userContext.OrganizationId.Value)
+        {
+            throw new UnauthorizedAccessException("Cannot access or delete experience belonging to another organization.");
+        }
+
         await _experienceRepository.DeleteAsync(_tenantContext.TenantId, id, cancellationToken);
     }
 

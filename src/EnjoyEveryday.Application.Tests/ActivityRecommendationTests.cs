@@ -254,6 +254,39 @@ public class ActivityRecommendationTests
         Assert.That(decision.RejectionReason, Is.EqualTo("Materials not available this week"));
         Assert.That(_recommendationRepo.Decisions.Count, Is.EqualTo(1));
     }
+
+    [Test]
+    public async Task GenerateRecommendationsAsync_WithLearningObjective_PrioritizesMatchingActivities()
+    {
+        var preferences = new RecommendationPreferencesDto
+        {
+            LearningObjective = "Building",
+            PreferredDurationMinutes = 20
+        };
+
+        var result = await _service.GenerateRecommendationsAsync(_classroomId, preferences: preferences);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.Items.Count, Is.GreaterThan(0));
+
+        var topItem = result.Items.First();
+        Assert.That(topItem.Rationale, Does.Contain("Building").Or.Contain("Aligns directly"));
+    }
+
+    [Test]
+    public async Task GenerateRecommendationsAsync_WithAvailableMaterials_IncludesMaterialsInRationale()
+    {
+        var preferences = new RecommendationPreferencesDto
+        {
+            AvailableMaterials = "wooden blocks",
+            PreferredDurationMinutes = 15
+        };
+
+        var result = await _service.GenerateRecommendationsAsync(_classroomId, preferences: preferences);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.Items.Count, Is.GreaterThan(0));
+    }
 }
 
 // Local Mock Implementations for Tests

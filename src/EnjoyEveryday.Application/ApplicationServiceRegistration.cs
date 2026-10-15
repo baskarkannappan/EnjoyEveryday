@@ -15,6 +15,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<UserService>();
         services.AddScoped<ChildService>();
         services.AddScoped<ExperienceService>();
+        services.AddScoped<ExperienceCurationService>();
+        services.AddScoped<ExperienceMarketplaceService>();
         services.AddScoped<PlannerService>();
         services.AddScoped<ExecutionService>();
         services.AddScoped<EventService>();

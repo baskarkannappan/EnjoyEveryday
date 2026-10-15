@@ -20,7 +20,8 @@ public class ClassroomService : IClassroomService
     public async Task<IEnumerable<Classroom>> GetAllClassroomsAsync(CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
-        return await _classroomRepository.GetAllAsync(tenantId, cancellationToken);
+        var orgId = _userContext.OrganizationId;
+        return await _classroomRepository.GetAllAsync(tenantId, orgId, cancellationToken);
     }
 
     public async Task<IEnumerable<Classroom>> GetClassroomsAsync(Guid branchId, CancellationToken cancellationToken = default)

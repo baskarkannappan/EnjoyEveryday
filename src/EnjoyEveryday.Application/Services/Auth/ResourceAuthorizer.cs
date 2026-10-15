@@ -208,16 +208,20 @@ public class ResourceAuthorizer : IResourceAuthorizer
         // Tenant isolation: the resource must live in the caller's tenant.
         if (scope.TenantId != _tenant.TenantId) return new Decision(false);
 
-        // Full application permissions for admin@littlestars.com, PlatformAdmin, or OrganizationOwner
+        var activeOrg = _user.OrganizationId;
+        // Organization isolation: if an active organization is selected, resources tied to a different organization are not accessible
+        if (activeOrg.HasValue && scope.OrganizationId.HasValue && scope.OrganizationId.Value != activeOrg.Value)
+        {
+            return new Decision(false);
+        }
+
+        // Full application permissions within the active organization for admin@littlestars.com or OrganizationOwner
         if (_user.Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase) ||
             _user.UserId == Guid.Parse("50000000-0000-0000-0000-000000000002") ||
-            _user.Roles.Contains(RoleTemplates.PlatformAdmin, StringComparer.OrdinalIgnoreCase) ||
             _user.Roles.Contains(RoleTemplates.OrganizationOwner, StringComparer.OrdinalIgnoreCase))
         {
             return new Decision(true);
         }
-
-        var activeOrg = _user.OrganizationId;
         var membershipActive = activeOrg.HasValue
             && await _scopes.HasActiveMembershipAsync(_tenant.TenantId, activeOrg.Value, _user.UserId, ct);
 

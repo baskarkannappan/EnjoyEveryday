@@ -24,6 +24,7 @@ public class ActivityRecommendationService : IActivityRecommendationService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly HttpClient _httpClient;
+    private readonly ITeacherRepository? _teacherRepository;
 
     public ActivityRecommendationService(
         IActivityRecommendationRepository recommendationRepository,
@@ -35,7 +36,8 @@ public class ActivityRecommendationService : IActivityRecommendationService
         TenantSettingsService settingsService,
         ITenantContext tenantContext,
         IUserContext userContext,
-        HttpClient httpClient)
+        HttpClient httpClient,
+        ITeacherRepository? teacherRepository = null)
     {
         _recommendationRepository = recommendationRepository;
         _memoryService = memoryService;
@@ -47,6 +49,7 @@ public class ActivityRecommendationService : IActivityRecommendationService
         _tenantContext = tenantContext;
         _userContext = userContext;
         _httpClient = httpClient;
+        _teacherRepository = teacherRepository;
     }
 
     public async Task<ActivityRecommendationResult> GenerateRecommendationsAsync(
@@ -190,12 +193,29 @@ public class ActivityRecommendationService : IActivityRecommendationService
 
         // Flow directly into existing Experience Planning engine
         var prepNotes = !string.IsNullOrWhiteSpace(notes) ? notes : $"Recommended based on evidence: {item.Rationale}";
+
+        // Resolve valid Teacher ID if the current user is a registered teacher; otherwise null (FK constraint)
+        Guid? teacherId = null;
+        if (_teacherRepository != null)
+        {
+            try
+            {
+                var teachers = await _teacherRepository.GetAllAsync(_tenantContext.TenantId, cancellationToken);
+                var teacher = teachers.FirstOrDefault(t => t.UserId == _userContext.UserId || t.Id == _userContext.UserId);
+                teacherId = teacher?.Id;
+            }
+            catch
+            {
+                // Leave teacherId as null if resolution fails
+            }
+        }
+
         var schedule = await _plannerService.ScheduleExperienceAsync(
             item.ExperienceId,
             request.ClassroomId,
             scheduledDate,
             timeOfDay,
-            _userContext.UserId,
+            teacherId,
             startTime,
             endTime,
             prepNotes);
@@ -307,29 +327,86 @@ public class ActivityRecommendationService : IActivityRecommendationService
         var results = new List<RecommendationItemDto>();
         bool hasEvidence = memories.Any();
 
-        foreach (var exp in candidates.Take(4))
+        // 1. Score candidates based on objective, materials, variety, and memories
+        var scoredCandidates = candidates.Select(exp =>
         {
+            int score = 0;
+            string matchReason = "";
+
+            // Objective match
+            if (!string.IsNullOrWhiteSpace(preferences?.LearningObjective))
+            {
+                var obj = preferences.LearningObjective.Trim();
+                if ((!string.IsNullOrEmpty(exp.Description) && exp.Description.Contains(obj, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(exp.Title) && exp.Title.Contains(obj, StringComparison.OrdinalIgnoreCase)))
+                {
+                    score += 15;
+                    matchReason = $"Aligns directly with target objective '{obj}'. ";
+                }
+            }
+
+            // Material match
+            if (!string.IsNullOrWhiteSpace(preferences?.AvailableMaterials))
+            {
+                var mat = preferences.AvailableMaterials.Trim();
+                if ((!string.IsNullOrEmpty(exp.Description) && exp.Description.Contains(mat, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(exp.DnaPayload) && exp.DnaPayload.Contains(mat, StringComparison.OrdinalIgnoreCase)))
+                {
+                    score += 10;
+                    matchReason += $"Utilizes requested materials ({mat}). ";
+                }
+            }
+
+            // Category match
+            if (!string.IsNullOrWhiteSpace(preferences?.Category) && preferences.Category != "All")
+            {
+                if ((!string.IsNullOrEmpty(exp.Description) && exp.Description.Contains(preferences.Category, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(exp.Title) && exp.Title.Contains(preferences.Category, StringComparison.OrdinalIgnoreCase)))
+                {
+                    score += 8;
+                }
+            }
+
+            // Related memory check
             var relatedMemory = memories.FirstOrDefault(m =>
                 (!string.IsNullOrEmpty(m.Description) && exp.Title.Split(' ').Any(w => w.Length > 3 && m.Description.Contains(w, StringComparison.OrdinalIgnoreCase))) ||
                 (!string.IsNullOrEmpty(m.Title) && exp.Title.Contains(m.Title, StringComparison.OrdinalIgnoreCase)));
 
+            if (relatedMemory != null)
+            {
+                score += 12;
+            }
+
+            return new { Experience = exp, Score = score, MatchReason = matchReason, RelatedMemory = relatedMemory };
+        })
+        .OrderByDescending(x => x.Score)
+        .ThenBy(x => x.Experience.Title)
+        .ToList();
+
+        foreach (var item in scoredCandidates.Take(5))
+        {
+            var exp = item.Experience;
             string rationale;
             var supportingEvidence = new List<SupportingEvidenceCitationDto>();
 
-            if (relatedMemory != null)
+            if (!string.IsNullOrEmpty(item.MatchReason))
             {
-                rationale = $"Connects with observed interest in {relatedMemory.Title} recorded on {relatedMemory.EventDate:MMM dd}.";
+                rationale = $"{item.MatchReason}Suitable for {targetName}.";
+            }
+            else if (item.RelatedMemory != null)
+            {
+                rationale = $"Connects with observed interest in {item.RelatedMemory.Title} recorded on {item.RelatedMemory.EventDate:MMM dd}.";
                 supportingEvidence.Add(new SupportingEvidenceCitationDto
                 {
-                    SourceId = relatedMemory.SourceId.ToString(),
-                    SourceType = relatedMemory.SourceType,
-                    Summary = $"{relatedMemory.EventType}: {relatedMemory.Title} ({relatedMemory.EventDate:MMM dd})"
+                    SourceId = item.RelatedMemory.SourceId.ToString(),
+                    SourceType = item.RelatedMemory.SourceType,
+                    Summary = $"{item.RelatedMemory.EventType}: {item.RelatedMemory.Title} ({item.RelatedMemory.EventDate:MMM dd})"
                 });
             }
             else if (hasEvidence)
             {
                 var topMemory = memories.First();
-                rationale = $"Supports active learning rhythm observed in recent activities (last recorded: {topMemory.EventDate:MMM dd}).";
+                rationale = $"Introduces engaging variety to complement recent sessions (last recorded: {topMemory.EventDate:MMM dd}).";
                 supportingEvidence.Add(new SupportingEvidenceCitationDto
                 {
                     SourceId = topMemory.SourceId.ToString(),
@@ -346,12 +423,12 @@ public class ActivityRecommendationService : IActivityRecommendationService
             {
                 ExperienceId = exp.Id,
                 ExperienceTitle = exp.Title,
-                SuggestedFormat = scope == "Classroom" ? "Whole Class" : "Individual",
+                SuggestedFormat = scope == "Classroom" ? (preferences?.Format ?? "Whole Class") : "Individual",
                 EstimatedDurationMinutes = preferences?.PreferredDurationMinutes ?? 20,
                 Rationale = rationale,
                 SupportingEvidence = supportingEvidence,
                 Materials = new List<string> { "Standard classroom craft & learning supplies" },
-                IsEvidenceLimited = !hasEvidence
+                IsEvidenceLimited = !hasEvidence && string.IsNullOrEmpty(item.MatchReason)
             });
         }
 

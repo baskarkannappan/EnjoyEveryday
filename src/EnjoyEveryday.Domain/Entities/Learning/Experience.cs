@@ -9,6 +9,7 @@ public class Experience
     public string Status { get; set; } = ExperienceStatus.Idea.ToString();
     public string DnaPayload { get; set; } = "{}";
     public Guid CreatedByUserId { get; set; }
+    public Guid? OrganizationId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     

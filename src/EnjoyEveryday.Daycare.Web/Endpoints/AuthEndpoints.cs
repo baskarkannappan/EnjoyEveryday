@@ -156,7 +156,7 @@ public static class AuthEndpoints
             return Results.Redirect(returnUrl ?? "/");
         });
 
-        group.MapPost("/set-organization", async (HttpContext context, IDbConnectionFactory db, [FromForm] Guid? organizationId, [FromQuery] string? returnUrl) =>
+        group.MapPost("/set-organization", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
         {
             var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var email = context.User.FindFirst(ClaimTypes.Email)?.Value;
@@ -164,6 +164,16 @@ public static class AuthEndpoints
 
             if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId)) 
                 return Results.Redirect("/auth/login");
+
+            Guid? organizationId = null;
+            if (context.Request.HasFormContentType)
+            {
+                var form = await context.Request.ReadFormAsync();
+                if (Guid.TryParse(form["organizationId"], out var parsedOrgId))
+                {
+                    organizationId = parsedOrgId;
+                }
+            }
 
             using var conn = await db.CreateConnectionAsync();
             
@@ -199,7 +209,7 @@ public static class AuthEndpoints
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
 
             return Results.Redirect(returnUrl ?? "/");
-        });
+        }).DisableAntiforgery();
 
         group.MapGet("/logout", async (HttpContext context) =>
         {

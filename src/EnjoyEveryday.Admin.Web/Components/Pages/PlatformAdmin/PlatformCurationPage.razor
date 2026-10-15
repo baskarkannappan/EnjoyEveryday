@@ -1,0 +1,397 @@
+@page "/platform-curation"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject ExperienceCurationService CurationService
+@inject EnjoyEveryday.Domain.Repositories.IExperienceRepository ExperienceRepo
+@inject EnjoyEveryday.Domain.Repositories.IOrganizationRepository OrgRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+
+<PageTitle>Experience Curation — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="PLATFORM CURATION"
+              Title="Experience Harvesting & Review"
+              Subtitle="Review submitted daycare activities, verify licensing and safety, and curate into the Platform Experience Library.">
+        <RightContent>
+            <button class="primary" @onclick="OpenInitiateHarvestModal">+ Harvest from Daycare</button>
+            <button class="secondary" @onclick="LoadRequestsAsync">Refresh Queue</button>
+        </RightContent>
+    </PageHero>
+
+    <!-- Filters & Tabs -->
+    <div class="tabs" style="display: flex; gap: 8px; margin: 20px 0;">
+        <button class="tab @(selectedTab == "All" ? "active" : "")" @onclick='() => SetTab("All")'>All (@requests.Count)</button>
+        <button class="tab @(selectedTab == HarvestRequestStatus.Submitted ? "active" : "")" @onclick='() => SetTab(HarvestRequestStatus.Submitted)'>
+            Submitted (@requests.Count(r => r.Status == HarvestRequestStatus.Submitted))
+        </button>
+        <button class="tab @(selectedTab == HarvestRequestStatus.Approved ? "active" : "")" @onclick='() => SetTab(HarvestRequestStatus.Approved)'>
+            Approved (@requests.Count(r => r.Status == HarvestRequestStatus.Approved))
+        </button>
+        <button class="tab @(selectedTab == HarvestRequestStatus.ChangesRequested ? "active" : "")" @onclick='() => SetTab(HarvestRequestStatus.ChangesRequested)'>
+            Changes Requested (@requests.Count(r => r.Status == HarvestRequestStatus.ChangesRequested))
+        </button>
+        <button class="tab @(selectedTab == HarvestRequestStatus.Rejected ? "active" : "")" @onclick='() => SetTab(HarvestRequestStatus.Rejected)'>
+            Rejected (@requests.Count(r => r.Status == HarvestRequestStatus.Rejected))
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="padding: 40px; text-align: center; color: var(--muted);">Loading curation queue...</div>
+    }
+    else if (!FilteredRequests.Any())
+    {
+        <div class="empty-state" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center;">
+            <div style="font-size: 32px; margin-bottom: 12px;">🌿</div>
+            <h3 style="margin: 0 0 8px; color: var(--text);">No requests in this queue</h3>
+            <p style="color: var(--muted); margin: 0;">There are no experience harvest requests matching "@selectedTab".</p>
+        </div>
+    }
+    else
+    {
+        <div style="display: grid; gap: 16px;">
+            @foreach (var req in FilteredRequests)
+            {
+                <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px;">
+                        <div>
+                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
+                                <h3 style="margin: 0; font-size: 18px; font-weight: 750; color: var(--text);">
+                                    @(string.IsNullOrWhiteSpace(req.SourceExperienceTitle) ? "Activity Submission" : req.SourceExperienceTitle)
+                                </h3>
+                                <span style="@GetStatusBadgeStyle(req.Status)">@req.Status</span>
+                            </div>
+                            <div style="font-size: 13px; color: var(--muted);">
+                                Organization: <strong>@(req.OrganizationName ?? req.OrganizationId.ToString()[..8])</strong> &bull; 
+                                Submitter: @(req.SubmitterEmail ?? "Staff") &bull; 
+                                Submitted: @req.SubmittedAt.ToString("MMM dd, yyyy HH:mm")
+                            </div>
+                        </div>
+
+                        <div>
+                            @if (req.Status == HarvestRequestStatus.Submitted || req.Status == HarvestRequestStatus.UnderReview)
+                            {
+                                <button class="primary" @onclick="() => OpenReviewModal(req)">Review &amp; Curate</button>
+                            }
+                            else
+                            {
+                                <button class="secondary" @onclick="() => OpenReviewModal(req)">View Details</button>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(req.ReviewNotes))
+                    {
+                        <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-top: 10px; font-size: 13px;">
+                            <strong>Reviewer Note:</strong> @req.ReviewNotes
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @* REVIEW MODAL *@
+    @if (activeModalRequest != null)
+    {
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+            <div style="background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 650px; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: var(--text);">Review Activity for Platform Library</h2>
+                    <button class="secondary" style="padding: 4px 10px;" @onclick="CloseReviewModal">&times;</button>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
+                    <div style="font-weight: 750; color: var(--text); font-size: 16px; margin-bottom: 4px;">@activeModalRequest.SourceExperienceTitle</div>
+                    <div style="font-size: 12.5px; color: var(--muted);">
+                        Source Experience ID: <code>@activeModalRequest.SourceExperienceId</code> (Provenance strictly confidential)
+                    </div>
+                </div>
+
+                <h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 750; color: var(--text);">Curation Verification Checklist</h4>
+                <div style="display: grid; gap: 8px; margin-bottom: 20px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text);">
+                        <input type="checkbox" @bind="safetyVerified" />
+                        <span><strong>Safety Suitability</strong> — Activity is safe, hazard-free, and appropriate for toddlers/preschoolers.</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text);">
+                        <input type="checkbox" @bind="objectivesVerified" />
+                        <span><strong>Learning Objectives</strong> — Objectives are clear, age-appropriate, and developmental.</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text);">
+                        <input type="checkbox" @bind="instructionsVerified" />
+                        <span><strong>Instructions &amp; Materials</strong> — Clear teacher setup notes and standard safe materials.</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text);">
+                        <input type="checkbox" @bind="mediaRightsVerified" />
+                        <span><strong>Media Rights &amp; Consent</strong> — No unauthorized photos, child identities, or restricted assets.</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text);">
+                        <input type="checkbox" @bind="commercialRightsVerified" />
+                        <span><strong>Commercial Licensing</strong> — Explicit permission granted to curate, reproduce, distribute, and monetize.</span>
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;">Review Notes / Feedback</label>
+                    <textarea @bind="reviewNotes" rows="3" style="width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px; font-family: inherit; font-size: 13.5px;" placeholder="Add feedback or justification for this decision..."></textarea>
+                </div>
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px; margin-bottom: 16px; font-size: 13px;">
+                        @errorMessage
+                    </div>
+                }
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="secondary" @onclick="CloseReviewModal">Cancel</button>
+                    <button class="secondary" style="color: #9b2c2c; border-color: #fed7d7;" @onclick='() => ProcessDecision(HarvestRequestStatus.Rejected)'>Reject</button>
+                    <button class="secondary" style="color: #b7791f; border-color: #fefcbf;" @onclick='() => ProcessDecision(HarvestRequestStatus.ChangesRequested)'>Request Changes</button>
+                    <button class="primary" @onclick='() => ProcessDecision(HarvestRequestStatus.Approved)'>Approve &amp; Create Platform Copy</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* INITIATE HARVEST FROM DAYCARE MODAL *@
+    @if (showInitiateModal)
+    {
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+            <div style="background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 600px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: var(--text);">Harvest Activity from Daycare Library</h2>
+                    <button class="secondary" style="padding: 4px 10px;" @onclick="() => showInitiateModal = false">&times;</button>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Select Daycare Organization</label>
+                    <select class="filter" style="width: 100%;" @onchange="OnOrganizationSelected">
+                        <option value="">-- Choose an Organization --</option>
+                        @foreach (var org in organizations)
+                        {
+                            <option value="@org.Id">@org.Name</option>
+                        }
+                    </select>
+                </div>
+
+                @if (selectedOrgId.HasValue)
+                {
+                    <div style="margin-bottom: 14px;">
+                        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Select Activity to Harvest</label>
+                        @if (isLoadingOrgExperiences)
+                        {
+                            <div style="font-size: 13px; color: var(--muted);">Loading activities from library...</div>
+                        }
+                        else if (!orgExperiences.Any())
+                        {
+                            <div style="font-size: 13px; color: var(--muted);">No experiences found in this daycare library.</div>
+                        }
+                        else
+                        {
+                            <select class="filter" style="width: 100%;" @bind="selectedExperienceId">
+                                <option value="">-- Select an Activity --</option>
+                                @foreach (var exp in orgExperiences)
+                                {
+                                    <option value="@exp.Id">@exp.Title (@exp.Status)</option>
+                                }
+                            </select>
+                        }
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Commercial Content License</label>
+                        <select class="filter" style="width: 100%;" @bind="initiateLicenseType">
+                            <option value="CommercialRoyalty">Standard Commercial Distribution &amp; Royalty</option>
+                            <option value="PlatformExclusive">Platform Curated Exclusive</option>
+                            <option value="OpenEducation">Open Early Childhood License</option>
+                        </select>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px; margin-bottom: 16px; font-size: 13px;">
+                        @errorMessage
+                    </div>
+                }
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="secondary" @onclick="() => showInitiateModal = false">Cancel</button>
+                    <button class="primary" disabled="@(!selectedExperienceId.HasValue)" @onclick="StartHarvestAsync">Pull into Review Queue</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<ExperienceHarvestRequest> requests = new();
+    private List<Organization> organizations = new();
+    private List<Experience> orgExperiences = new();
+    private string selectedTab = "All";
+    private bool isLoading = true;
+    private bool showInitiateModal = false;
+    private bool isLoadingOrgExperiences = false;
+    private Guid? selectedOrgId;
+    private Guid? selectedExperienceId;
+    private string initiateLicenseType = "CommercialRoyalty";
+
+    private ExperienceHarvestRequest? activeModalRequest;
+    private bool safetyVerified = true;
+    private bool objectivesVerified = true;
+    private bool instructionsVerified = true;
+    private bool materialsVerified = true;
+    private bool mediaRightsVerified = true;
+    private bool commercialRightsVerified = true;
+    private string reviewNotes = string.Empty;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRequestsAsync();
+        try
+        {
+            var orgs = await OrgRepo.GetAllAsync(TenantContext.TenantId);
+            organizations = orgs.ToList();
+        }
+        catch {}
+    }
+
+    private void OpenInitiateHarvestModal()
+    {
+        showInitiateModal = true;
+        selectedOrgId = null;
+        selectedExperienceId = null;
+        orgExperiences.Clear();
+        errorMessage = null;
+    }
+
+    private async Task OnOrganizationSelected(ChangeEventArgs e)
+    {
+        selectedExperienceId = null;
+        orgExperiences.Clear();
+        if (Guid.TryParse(e.Value?.ToString(), out var orgId))
+        {
+            selectedOrgId = orgId;
+            isLoadingOrgExperiences = true;
+            try
+            {
+                var exps = await ExperienceRepo.GetAllAsync(TenantContext.TenantId, orgId);
+                orgExperiences = exps.ToList();
+            }
+            finally
+            {
+                isLoadingOrgExperiences = false;
+            }
+        }
+        else
+        {
+            selectedOrgId = null;
+        }
+    }
+
+    private async Task StartHarvestAsync()
+    {
+        if (!selectedOrgId.HasValue || !selectedExperienceId.HasValue) return;
+        errorMessage = null;
+
+        try
+        {
+            var req = await CurationService.InitiatePlatformHarvestAsync(selectedOrgId.Value, selectedExperienceId.Value, initiateLicenseType);
+            showInitiateModal = false;
+            await LoadRequestsAsync();
+            OpenReviewModal(req);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadRequestsAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            var res = await CurationService.GetPendingHarvestRequestsAsync();
+            requests = res.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private IEnumerable<ExperienceHarvestRequest> FilteredRequests =>
+        selectedTab == "All" ? requests : requests.Where(r => r.Status == selectedTab);
+
+    private void SetTab(string tab)
+    {
+        selectedTab = tab;
+    }
+
+    private void OpenReviewModal(ExperienceHarvestRequest req)
+    {
+        activeModalRequest = req;
+        safetyVerified = req.SafetySuitabilityVerified || req.Status == HarvestRequestStatus.Submitted;
+        objectivesVerified = req.LearningObjectivesVerified || req.Status == HarvestRequestStatus.Submitted;
+        instructionsVerified = req.InstructionsVerified || req.Status == HarvestRequestStatus.Submitted;
+        materialsVerified = req.MaterialsVerified || req.Status == HarvestRequestStatus.Submitted;
+        mediaRightsVerified = req.MediaRightsVerified || req.Status == HarvestRequestStatus.Submitted;
+        commercialRightsVerified = req.CommercialRightsVerified || req.Status == HarvestRequestStatus.Submitted;
+        reviewNotes = req.ReviewNotes ?? string.Empty;
+        errorMessage = null;
+    }
+
+    private void CloseReviewModal()
+    {
+        activeModalRequest = null;
+        errorMessage = null;
+    }
+
+    private async Task ProcessDecision(string decision)
+    {
+        if (activeModalRequest == null) return;
+        errorMessage = null;
+
+        try
+        {
+            await CurationService.ReviewHarvestRequestAsync(
+                activeModalRequest.Id,
+                decision,
+                reviewNotes,
+                safetyVerified,
+                objectivesVerified,
+                instructionsVerified,
+                materialsVerified,
+                mediaRightsVerified,
+                commercialRightsVerified);
+
+            CloseReviewModal();
+            await LoadRequestsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private static string GetStatusBadgeStyle(string status) => status switch
+    {
+        HarvestRequestStatus.Approved => "background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); border: 1px solid #c8dacd; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        HarvestRequestStatus.Submitted => "background: #ebf8ff; color: #2b6cb0; border: 1px solid #bee3f8; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        HarvestRequestStatus.ChangesRequested => "background: #fffaf0; color: #b7791f; border: 1px solid #feebc8; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        HarvestRequestStatus.Rejected => "background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;",
+        _ => "background: var(--surface-soft); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-weight: 700; padding: 2px 8px; font-size: 11.5px;"
+    };
+}
