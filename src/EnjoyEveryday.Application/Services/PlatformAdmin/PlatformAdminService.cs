@@ -222,7 +222,7 @@ public class PlatformAdminService : IPlatformAdminService
         if (_payments.TryGetValue(paymentId, out var payment))
         {
             payment.IsVerified = true;
-            payment.VerifiedBy = _userContext.UserId ?? "Platform Admin";
+            payment.VerifiedBy = _userContext.UserId != Guid.Empty ? _userContext.UserId.ToString() : "Platform Admin";
             payment.VerifiedAt = DateTimeOffset.UtcNow;
 
             if (payment.InvoiceId.HasValue && _invoices.TryGetValue(payment.InvoiceId.Value, out var invoice))
