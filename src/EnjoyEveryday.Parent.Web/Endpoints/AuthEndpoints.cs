@@ -165,11 +165,11 @@ public static class AuthEndpoints
                 ", new { ProviderKey = providerKey, UserId = userId });
             }
 
-            var user = await conn.QuerySingleOrDefaultAsync(
-                "SELECT id, tenant_id, is_active FROM users WHERE id = @UserId", 
+            var user = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId, bool IsActive)?>(
+                "SELECT id as Id, tenant_id as TenantId, is_active as IsActive FROM users WHERE id = @UserId", 
                 new { UserId = userId });
 
-            if (user == null || !user.is_active)
+            if (user == null || !user.Value.IsActive)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                 return Results.Redirect("/auth/access-denied?reason=account_disabled");
@@ -178,7 +178,7 @@ public static class AuthEndpoints
             // Verify they have a current, VERIFIED, non-revoked parent relationship in this tenant
             var isParent = await conn.ExecuteScalarAsync<bool>(
                 "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId AND tenant_id = @TenantId AND status = 'Verified' AND revoked_at IS NULL)",
-                new { UserId = user.id, TenantId = user.tenant_id });
+                new { UserId = user.Value.Id, TenantId = user.Value.TenantId });
 
             if (!isParent)
             {
@@ -188,9 +188,9 @@ public static class AuthEndpoints
 
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
-                new Claim(ClaimTypes.Email, email),
-                new Claim("TenantId", user.tenant_id.ToString()),
+                new Claim(ClaimTypes.NameIdentifier, user.Value.Id.ToString()),
+                new Claim(ClaimTypes.Email, email ?? string.Empty),
+                new Claim("TenantId", user.Value.TenantId.ToString()),
                 new Claim(ClaimTypes.Role, "Parent"),
                 new Claim("Permission", "family.view")
             };

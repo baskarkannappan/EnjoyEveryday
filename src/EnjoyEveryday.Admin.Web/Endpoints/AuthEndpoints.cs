@@ -102,11 +102,11 @@ public static class AuthEndpoints
             }
 
             // 2. We have a linked user ID. Ensure the account is active.
-            var user = await conn.QuerySingleOrDefaultAsync(
-                "SELECT id, tenant_id, is_active FROM users WHERE id = @UserId", 
+            var user = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId, bool IsActive)?>(
+                "SELECT id as Id, tenant_id as TenantId, is_active as IsActive FROM users WHERE id = @UserId", 
                 new { UserId = userId });
 
-            if (user == null || !user.is_active)
+            if (user == null || !user.Value.IsActive)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                 return Results.Redirect("/auth/access-denied?reason=account_disabled");
@@ -115,14 +115,14 @@ public static class AuthEndpoints
             // 3. Rebuild the claims explicitly from our trusted DB
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
-                new Claim(ClaimTypes.Email, email),
-                new Claim("TenantId", user.tenant_id.ToString())
+                new Claim(ClaimTypes.NameIdentifier, user.Value.Id.ToString()),
+                new Claim(ClaimTypes.Email, email ?? string.Empty),
+                new Claim("TenantId", user.Value.TenantId.ToString())
             };
 
             var memberships = (await conn.QueryAsync<Guid>(
                 "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                new { UserId = user.id })).ToList();
+                new { UserId = user.Value.Id })).ToList();
 
             if (memberships.Count == 0)
             {
@@ -132,7 +132,7 @@ public static class AuthEndpoints
 
             Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : null;
 
-            await BuildAuthClaimsAsync(conn, claims, user.id, activeOrgId);
+            await BuildAuthClaimsAsync(conn, claims, user.Value.Id, activeOrgId);
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var properties = new AuthenticationProperties { IsPersistent = true };

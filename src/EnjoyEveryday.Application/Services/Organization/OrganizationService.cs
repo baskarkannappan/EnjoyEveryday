@@ -17,11 +17,35 @@ public class OrganizationService
         _userContext = userContext;
     }
 
-    public async Task<IEnumerable<Organization>> GetOrganizationsAsync(CancellationToken cancellationToken = default)
+    public Task<IEnumerable<Organization>> GetOrganizationsAsync(CancellationToken cancellationToken = default)
+    {
+        return GetOrganizationsAsync(scopeToActiveOrg: true, cancellationToken);
+    }
+
+    public async Task<IEnumerable<Organization>> GetOrganizationsAsync(bool scopeToActiveOrg, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
-        return await _organizationRepository.GetAllAsync(tenantId, cancellationToken);
+        var orgs = (await _organizationRepository.GetAllAsync(tenantId, cancellationToken)).ToList();
+
+        if (_userContext.OrganizationId.HasValue)
+        {
+            if (scopeToActiveOrg)
+            {
+                var activeOrg = orgs.Where(o => o.Id == _userContext.OrganizationId.Value).ToList();
+                if (activeOrg.Count > 0)
+                {
+                    return activeOrg;
+                }
+            }
+
+            // Always prioritize the active organization at the top of the collection
+            return orgs.OrderByDescending(o => o.Id == _userContext.OrganizationId.Value).ThenBy(o => o.Name).ToList();
+        }
+
+        return orgs;
     }
+
+
 
     public async Task<Organization?> GetOrganizationByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
