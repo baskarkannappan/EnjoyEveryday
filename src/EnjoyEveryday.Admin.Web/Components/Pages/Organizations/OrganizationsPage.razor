@@ -3,28 +3,49 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.UI.Shared.Components
 @inject IPlatformAdminService PlatformService
+@inject NavigationManager Navigation
 @rendermode InteractiveServer
 
 <PageTitle>Organizations — Platform Admin</PageTitle>
 
 <div class="content">
     <PageHero Eyebrow="ORGANIZATION MANAGEMENT"
-              Title="Daycare Organizations"
-              Subtitle="Create, configure, and monitor multi-tenant daycare organizations and branches.">
+              Title="Daycare Organizations Directory"
+              Subtitle="Create, configure, monitor multi-branch daycare organizations and lifecycle states.">
         <RightContent>
             <a href="/" class="btn secondary">← Back to Dashboard</a>
+            <button class="btn primary" @onclick="OpenCreateModal">+ New Organization</button>
         </RightContent>
     </PageHero>
 
+    @if (!string.IsNullOrEmpty(_notificationMessage))
+    {
+        <div class="alert-banner">
+            <span>✓ @_notificationMessage</span>
+            <button class="close-alert" @onclick="() => _notificationMessage = null">✕</button>
+        </div>
+    }
+
     <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
-        <SearchFilterRow SearchPlaceholder="Search organizations..." SearchQuery="@_search" SearchQueryChanged="OnSearch">
+        <SearchFilterRow SearchPlaceholder="Search organizations by name, location, or admin email..." 
+                         SearchQuery="@_search" 
+                         SearchQueryChanged="OnSearch">
             <Filters>
                 <select class="filter" @bind="_statusFilter">
-                    <option value="All">All Statuses</option>
+                    <option value="All">All Account States</option>
                     <option value="Active">Active</option>
                     <option value="Onboarding">Onboarding</option>
                     <option value="Trial">Trial</option>
                     <option value="Suspended">Suspended</option>
+                </select>
+
+                <select class="filter" @bind="_financialFilter">
+                    <option value="All">All Financial States</option>
+                    <option value="Reconciled">Reconciled</option>
+                    <option value="InvoiceDue">Invoice Due</option>
+                    <option value="PaymentAwaitingVerification">Payment Verification</option>
+                    <option value="Overdue">Overdue</option>
+                    <option value="Unbilled">Unbilled</option>
                 </select>
             </Filters>
         </SearchFilterRow>
@@ -33,9 +54,9 @@
         {
             <LoadingState Text="Loading organizations..." />
         }
-        else if (_orgs.Count == 0)
+        else if (FilteredOrgs.Count == 0)
         {
-            <EmptyState Title="No organizations found" Message="Try adjusting your search criteria." />
+            <EmptyState Title="No organizations found" Description="Try adjusting your search criteria or register a new daycare organization." />
         }
         else
         {
@@ -43,26 +64,62 @@
                 <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
                     <thead>
                         <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
-                            <th style="padding: 12px 14px; text-align: left;">Name</th>
-                            <th style="padding: 12px 14px; text-align: left;">Location</th>
+                            <th style="padding: 12px 14px; text-align: left;">Organization</th>
                             <th style="padding: 12px 14px; text-align: left;">Branches</th>
                             <th style="padding: 12px 14px; text-align: left;">Account Status</th>
                             <th style="padding: 12px 14px; text-align: left;">Financial Status</th>
-                            <th style="padding: 12px 14px; text-align: left;">Plan</th>
-                            <th style="padding: 12px 14px; text-align: left;">Admin</th>
+                            <th style="padding: 12px 14px; text-align: left;">Plan &amp; Tariff</th>
+                            <th style="padding: 12px 14px; text-align: left;">Rate</th>
+                            <th style="padding: 12px 14px; text-align: right;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var org in FilteredOrgs)
                         {
                             <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
-                                <td style="padding: 14px; font-weight: 700; color: var(--text);">@org.Name</td>
-                                <td style="padding: 14px; color: var(--muted);">@(org.Location ?? "—")</td>
-                                <td style="padding: 14px;"><span style="background: #f0f4ed; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 650;">@org.BranchCount branches</span></td>
-                                <td style="padding: 14px;"><StatusBadge Status="@org.AccountStatus.ToString()" /></td>
-                                <td style="padding: 14px;"><StatusBadge Status="@org.FinancialStatus.ToString()" /></td>
-                                <td style="padding: 14px; font-weight: 650;">@org.PlanName</td>
-                                <td style="padding: 14px; font-size: 12px; color: var(--muted);">@org.AdminEmail</td>
+                                <td style="padding: 14px;">
+                                    <div style="font-weight: 750; color: var(--text);">@org.Name</div>
+                                    <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                                        @(org.Location ?? "Location unspecified") · @org.AdminEmail
+                                    </div>
+                                </td>
+                                <td style="padding: 14px;">
+                                    <span style="background: #f0f4ed; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 650; color: #435449;">
+                                        @org.BranchCount @(org.BranchCount == 1 ? "branch" : "branches")
+                                    </span>
+                                </td>
+                                <td style="padding: 14px;">
+                                    <StatusBadge Status="@org.AccountStatus.ToString()" />
+                                </td>
+                                <td style="padding: 14px;">
+                                    <StatusBadge Status="@org.FinancialStatus.ToString()" />
+                                </td>
+                                <td style="padding: 14px;">
+                                    <div style="font-weight: 700; color: var(--text);">@org.PlanName</div>
+                                    <div style="font-size: 11.5px; color: var(--muted);">@org.TariffName</div>
+                                </td>
+                                <td style="padding: 14px; font-weight: 750; color: var(--text);">
+                                    @org.MonthlyRate.ToString("C0")/mo
+                                </td>
+                                <td style="padding: 14px; text-align: right;">
+                                    <div style="display: inline-flex; gap: 6px;">
+                                        <button class="action-btn" title="Edit Organization" @onclick="() => OpenEditModal(org)">
+                                            Edit
+                                        </button>
+                                        <button class="action-btn" title="Change Lifecycle Status" @onclick="() => OpenStatusModal(org)">
+                                            Status
+                                        </button>
+                                        <button class="action-btn" title="Change Plan & Tariff" @onclick="() => OpenPlanTariffModal(org)">
+                                            Plan
+                                        </button>
+                                        @if (org.AccountStatus != AccountStatus.Suspended)
+                                        {
+                                            <button class="action-btn delete-btn" title="Suspend Organization" @onclick="() => OpenDeactivateModal(org)">
+                                                Suspend
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -72,20 +129,429 @@
     </div>
 </div>
 
+<!-- CREATE ORGANIZATION MODAL -->
+@if (_showCreateModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">NEW DAYCARE ACCOUNT</div>
+                    <h3 class="modal-title">Register Organization</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Organization Name *</label>
+                    <input class="form-input" @bind="_createName" placeholder="e.g. Maple Leaf Forest Academy" />
+                </div>
+                <div class="form-group">
+                    <label>City &amp; State / Location *</label>
+                    <input class="form-input" @bind="_createLocation" placeholder="e.g. Minneapolis, MN" />
+                </div>
+                <div class="form-group">
+                    <label>Primary Administrator Email *</label>
+                    <input class="form-input" type="email" @bind="_createAdminEmail" placeholder="director@mapleleaf.org" />
+                </div>
+                <div class="form-group">
+                    <label>Initial Branch Count</label>
+                    <input class="form-input" type="number" min="1" max="20" @bind="_createBranchCount" />
+                </div>
+                <div class="form-group">
+                    <label>Assigned Subscription Plan *</label>
+                    <select class="form-input" value="@_createPlanId" @onchange="OnCreatePlanSelectionChanged">
+                        @foreach (var plan in _availablePlans)
+                        {
+                            <option value="@plan.Id">@plan.Name — @plan.BasePrice.ToString("C0")/mo</option>
+                        }
+                    </select>
+                </div>
+                @if (_availableTariffs.Count > 0)
+                {
+                    <div class="form-group">
+                        <label>Billing Tariff Schedule</label>
+                        <select class="form-input" @bind="_createTariffId">
+                            @foreach (var t in _availableTariffs)
+                            {
+                                <option value="@t.Id">@t.Name — @t.Price.ToString("C0") (@t.Frequency)</option>
+                            }
+                        </select>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitCreateOrganization" disabled="@(string.IsNullOrWhiteSpace(_createName) || string.IsNullOrWhiteSpace(_createAdminEmail))">
+                    Create &amp; Provision
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- EDIT ORGANIZATION MODAL -->
+@if (_showEditModal && _selectedOrg != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">UPDATE ORGANIZATION</div>
+                    <h3 class="modal-title">Edit Organization Details</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Organization Name *</label>
+                    <input class="form-input" @bind="_editName" />
+                </div>
+                <div class="form-group">
+                    <label>Location *</label>
+                    <input class="form-input" @bind="_editLocation" />
+                </div>
+                <div class="form-group">
+                    <label>Administrator Email *</label>
+                    <input class="form-input" type="email" @bind="_editAdminEmail" />
+                </div>
+                <div class="form-group">
+                    <label>Branch Count</label>
+                    <input class="form-input" type="number" min="1" max="25" @bind="_editBranchCount" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitEditOrganization" disabled="@(string.IsNullOrWhiteSpace(_editName))">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- STATUS TRANSITION MODAL -->
+@if (_showStatusModal && _selectedOrg != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">ACCOUNT LIFECYCLE GOVERNANCE</div>
+                    <h3 class="modal-title">Change Account Status</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: var(--muted); margin: 0;">
+                    Updating account status for <strong>@_selectedOrg.Name</strong>. Current state: <strong>@_selectedOrg.AccountStatus</strong>.
+                </p>
+                <div class="form-group">
+                    <label>Target Account Status *</label>
+                    <select class="form-input" @bind="_targetStatus">
+                        <option value="@AccountStatus.Active">Active (Fully operational)</option>
+                        <option value="@AccountStatus.Onboarding">Onboarding (Setup in progress)</option>
+                        <option value="@AccountStatus.Trial">Trial (Evaluation period)</option>
+                        <option value="@AccountStatus.PendingApproval">Pending Approval (KYC verification)</option>
+                        <option value="@AccountStatus.Suspended">Suspended (Access restricted)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Mandatory Audit Reason *</label>
+                    <textarea class="form-input" rows="3" @bind="_statusReason" placeholder="State reason for compliance and audit trail..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitStatusChange" disabled="@(string.IsNullOrWhiteSpace(_statusReason))">
+                    Update &amp; Record Audit
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- PLAN & TARIFF ASSIGNMENT MODAL -->
+@if (_showPlanTariffModal && _selectedOrg != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">COMMERCIAL MANAGEMENT</div>
+                    <h3 class="modal-title">Assign Plan &amp; Tariff</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: var(--muted); margin: 0;">
+                    Updating plan for <strong>@_selectedOrg.Name</strong>. Current: <strong>@_selectedOrg.PlanName (@_selectedOrg.TariffName)</strong>.
+                </p>
+                <div class="form-group">
+                    <label>Select Plan *</label>
+                    <select class="form-input" value="@_assignPlanId" @onchange="OnAssignPlanSelectionChanged">
+                        @foreach (var p in _availablePlans)
+                        {
+                            <option value="@p.Id">@p.Name — @p.BasePrice.ToString("C0")/mo</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Select Tariff Schedule</label>
+                    <select class="form-input" @bind="_assignTariffId">
+                        @foreach (var t in _assignTariffs)
+                        {
+                            <option value="@t.Id">@t.Name — @t.Price.ToString("C0") (@t.Frequency)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitPlanTariffChange">
+                    Apply Plan Change
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- SUSPEND / DEACTIVATE CONFIRMATION MODAL -->
+@if (_showDeactivateModal && _selectedOrg != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow" style="color: #9b2c2c;">SECURITY ACTION</div>
+                    <h3 class="modal-title">Suspend Daycare Organization</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: var(--text); line-height: 1.4;">
+                    Are you sure you want to suspend <strong>@_selectedOrg.Name</strong>? Daycare teachers and admins will be temporarily locked out from classroom operations until reinstated.
+                </p>
+                <div class="form-group">
+                    <label>Reason for Suspension *</label>
+                    <input class="form-input" @bind="_deactivateReason" placeholder="e.g. Non-payment, regulatory review, or customer request..." />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn" style="background: #9b2c2c; color: white; border: none;" @onclick="SubmitDeactivate" disabled="@(string.IsNullOrWhiteSpace(_deactivateReason))">
+                    Confirm Suspension
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<PlatformOrganizationDto>? _orgs;
+    private List<SubscriptionPlan> _availablePlans = new();
+    private List<Tariff> _availableTariffs = new();
+    private List<Tariff> _assignTariffs = new();
+
     private string _search = "";
     private string _statusFilter = "All";
+    private string _financialFilter = "All";
+    private string? _notificationMessage = null;
+
+    // Modals state
+    private PlatformOrganizationDto? _selectedOrg;
+    private bool _showCreateModal = false;
+    private bool _showEditModal = false;
+    private bool _showStatusModal = false;
+    private bool _showPlanTariffModal = false;
+    private bool _showDeactivateModal = false;
+
+    // Create inputs
+    private string _createName = "";
+    private string _createLocation = "";
+    private string _createAdminEmail = "";
+    private int _createBranchCount = 1;
+    private Guid _createPlanId;
+    private Guid? _createTariffId;
+
+    // Edit inputs
+    private string _editName = "";
+    private string _editLocation = "";
+    private string _editAdminEmail = "";
+    private int _editBranchCount = 1;
+
+    // Status inputs
+    private AccountStatus _targetStatus = AccountStatus.Active;
+    private string _statusReason = "";
+
+    // Plan & Tariff inputs
+    private Guid _assignPlanId;
+    private Guid? _assignTariffId;
+
+    // Deactivate input
+    private string _deactivateReason = "";
 
     protected override async Task OnInitializedAsync()
     {
-        _orgs = await PlatformService.GetOrganizationsOverviewAsync();
+        await LoadDataAsync();
     }
 
-    private IEnumerable<PlatformOrganizationDto> FilteredOrgs =>
+    private async Task LoadDataAsync()
+    {
+        _orgs = await PlatformService.GetOrganizationsOverviewAsync();
+        _availablePlans = await PlatformService.GetPlansAsync();
+
+        if (_availablePlans.Count > 0)
+        {
+            if (_createPlanId == Guid.Empty)
+            {
+                _createPlanId = _availablePlans[0].Id;
+                await RefreshAvailableTariffsAsync(_createPlanId);
+            }
+        }
+    }
+
+    private List<PlatformOrganizationDto> FilteredOrgs =>
         (_orgs ?? new List<PlatformOrganizationDto>())
-        .Where(o => (string.IsNullOrWhiteSpace(_search) || o.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
-                 && (_statusFilter == "All" || o.AccountStatus.ToString() == _statusFilter));
+        .Where(o => (string.IsNullOrWhiteSpace(_search) || o.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) || (o.Location != null && o.Location.Contains(_search, StringComparison.OrdinalIgnoreCase)) || o.AdminEmail.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                 && (_statusFilter == "All" || o.AccountStatus.ToString() == _statusFilter)
+                 && (_financialFilter == "All" || o.FinancialStatus.ToString() == _financialFilter))
+        .ToList();
 
     private void OnSearch(string val) => _search = val;
+
+    private async Task RefreshAvailableTariffsAsync(Guid planId)
+    {
+        _availableTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
+        _createTariffId = _availableTariffs.FirstOrDefault()?.Id;
+    }
+
+    private async Task OnCreatePlanSelectionChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var planId))
+        {
+            _createPlanId = planId;
+            await RefreshAvailableTariffsAsync(planId);
+        }
+    }
+
+    private async Task OnAssignPlanSelectionChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var planId))
+        {
+            _assignPlanId = planId;
+            _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
+            _assignTariffId = _assignTariffs.FirstOrDefault()?.Id;
+        }
+    }
+
+    private void OpenCreateModal()
+    {
+        _createName = "";
+        _createLocation = "";
+        _createAdminEmail = "";
+        _createBranchCount = 1;
+        _showCreateModal = true;
+    }
+
+    private void OpenEditModal(PlatformOrganizationDto org)
+    {
+        _selectedOrg = org;
+        _editName = org.Name;
+        _editLocation = org.Location ?? "";
+        _editAdminEmail = org.AdminEmail;
+        _editBranchCount = org.BranchCount;
+        _showEditModal = true;
+    }
+
+    private void OpenStatusModal(PlatformOrganizationDto org)
+    {
+        _selectedOrg = org;
+        _targetStatus = org.AccountStatus;
+        _statusReason = "";
+        _showStatusModal = true;
+    }
+
+    private async Task OpenPlanTariffModal(PlatformOrganizationDto org)
+    {
+        _selectedOrg = org;
+        _assignPlanId = org.PlanId;
+        _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(org.PlanId);
+        _assignTariffId = org.TariffId ?? _assignTariffs.FirstOrDefault()?.Id;
+        _showPlanTariffModal = true;
+    }
+
+    private void OpenDeactivateModal(PlatformOrganizationDto org)
+    {
+        _selectedOrg = org;
+        _deactivateReason = "";
+        _showDeactivateModal = true;
+    }
+
+    private void CloseModals()
+    {
+        _showCreateModal = false;
+        _showEditModal = false;
+        _showStatusModal = false;
+        _showPlanTariffModal = false;
+        _showDeactivateModal = false;
+        _selectedOrg = null;
+    }
+
+    private async Task SubmitCreateOrganization()
+    {
+        if (string.IsNullOrWhiteSpace(_createName) || string.IsNullOrWhiteSpace(_createAdminEmail)) return;
+        var created = await PlatformService.CreateOrganizationWorkflowAsync(_createName, _createLocation, _createPlanId, _createAdminEmail, _createBranchCount, _createTariffId);
+        _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully.";
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private async Task SubmitEditOrganization()
+    {
+        if (_selectedOrg == null || string.IsNullOrWhiteSpace(_editName)) return;
+        var ok = await PlatformService.UpdateOrganizationAsync(_selectedOrg.Id, _editName, _editLocation, _editAdminEmail, _editBranchCount);
+        if (ok)
+        {
+            _notificationMessage = $"Organization '{_editName}' details updated.";
+        }
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private async Task SubmitStatusChange()
+    {
+        if (_selectedOrg == null || string.IsNullOrWhiteSpace(_statusReason)) return;
+        var ok = await PlatformService.UpdateAccountStatusAsync(_selectedOrg.Id, _targetStatus, _statusReason);
+        if (ok)
+        {
+            _notificationMessage = $"Organization status transitioned to '{_targetStatus}'.";
+        }
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private async Task SubmitPlanTariffChange()
+    {
+        if (_selectedOrg == null) return;
+        var ok = await PlatformService.AssignPlanAndTariffToOrganizationAsync(_selectedOrg.Id, _assignPlanId, _assignTariffId);
+        if (ok)
+        {
+            _notificationMessage = $"Plan and tariff updated for '{_selectedOrg.Name}'.";
+        }
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private async Task SubmitDeactivate()
+    {
+        if (_selectedOrg == null || string.IsNullOrWhiteSpace(_deactivateReason)) return;
+        var ok = await PlatformService.DeactivateOrganizationAsync(_selectedOrg.Id, _deactivateReason);
+        if (ok)
+        {
+            _notificationMessage = $"Organization '{_selectedOrg.Name}' suspended.";
+        }
+        CloseModals();
+        await LoadDataAsync();
+    }
 }

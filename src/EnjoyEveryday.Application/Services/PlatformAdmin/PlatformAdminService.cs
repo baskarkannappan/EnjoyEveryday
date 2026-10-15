@@ -17,9 +17,11 @@ public class PlatformAdminService : IPlatformAdminService
 
     // Synchronized stores for commercial, lifecycle, billing, and audit records
     private static readonly ConcurrentDictionary<Guid, SubscriptionPlan> _plans = new();
+    private static readonly ConcurrentDictionary<Guid, Tariff> _tariffs = new();
     private static readonly ConcurrentDictionary<Guid, PlatformOrganizationDto> _organizations = new();
     private static readonly ConcurrentDictionary<Guid, Invoice> _invoices = new();
     private static readonly ConcurrentDictionary<Guid, Payment> _payments = new();
+    private static readonly ConcurrentDictionary<Guid, ParentCommunication> _communications = new();
     private static readonly List<PlatformAuditLog> _auditLogs = new();
     private static readonly object _lock = new();
 
@@ -42,6 +44,8 @@ public class PlatformAdminService : IPlatformAdminService
         _logger = logger;
     }
 
+    #region Overview & Telemetry
+
     public Task<PlatformDashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken = default)
     {
         var orgs = _organizations.Values.ToList();
@@ -58,7 +62,7 @@ public class PlatformAdminService : IPlatformAdminService
             PendingApprovals = orgs.Count(o => o.AccountStatus == AccountStatus.PendingApproval || o.AccountStatus == AccountStatus.Onboarding),
             SuspendedOrganizations = orgs.Count(o => o.AccountStatus == AccountStatus.Suspended),
             ActiveSubscriptions = orgs.Count(o => o.AccountStatus == AccountStatus.Active || o.AccountStatus == AccountStatus.Trial),
-            AvailablePlansCount = _plans.Count,
+            AvailablePlansCount = _plans.Values.Count(p => p.IsActive),
             OutstandingBalance = invoices.Where(i => i.Status != FinancialStatus.Reconciled).Sum(i => i.BalanceDue),
             OverdueInvoicesCount = overdueInvoices.Count,
             OverdueAmount = overdueInvoices.Sum(i => i.BalanceDue),
@@ -117,10 +121,358 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(org);
     }
 
-    public Task<List<SubscriptionPlan>> GetPlansAsync(CancellationToken cancellationToken = default)
+    public Task<PlatformHealthStatus> GetHealthStatusAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(_plans.Values.OrderBy(p => p.BasePrice).ToList());
+        return Task.FromResult(new PlatformHealthStatus());
     }
+
+    public Task<List<PlatformAuditLog>> GetAuditLogsAsync(int limit = 20, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            return Task.FromResult(_auditLogs.OrderByDescending(a => a.Timestamp).Take(limit).ToList());
+        }
+    }
+
+    #endregion
+
+    #region Organization CRUD
+
+    public Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(
+        string name,
+        string location,
+        Guid planId,
+        string adminEmail,
+        int branchCount = 1,
+        Guid? tariffId = null,
+        CancellationToken cancellationToken = default)
+    {
+        _plans.TryGetValue(planId, out var plan);
+        plan ??= _plans.Values.First();
+
+        Tariff? tariff = null;
+        if (tariffId.HasValue)
+        {
+            _tariffs.TryGetValue(tariffId.Value, out tariff);
+        }
+        tariff ??= plan.Tariffs.FirstOrDefault();
+
+        var id = Guid.NewGuid();
+        var monthlyRate = tariff != null ? tariff.Price : plan.BasePrice;
+
+        var dto = new PlatformOrganizationDto
+        {
+            Id = id,
+            TenantId = id,
+            Name = name,
+            Location = location,
+            BranchCount = branchCount > 0 ? branchCount : 1,
+            AccountStatus = AccountStatus.Onboarding,
+            FinancialStatus = FinancialStatus.Unbilled,
+            PlanId = plan.Id,
+            PlanName = plan.Name,
+            TariffId = tariff?.Id,
+            TariffName = tariff?.Name ?? "Standard Monthly",
+            MonthlyRate = monthlyRate,
+            NextBillingDate = DateTimeOffset.UtcNow.AddDays(30),
+            AdminEmail = adminEmail,
+            LifecycleStageKey = "Onboarding",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        _organizations[id] = dto;
+
+        AddAuditLog("Organization Registered", $"New daycare organization '{name}' provisioned with plan '{plan.Name}' ({monthlyRate:C0}/mo).", "Info", id);
+
+        return Task.FromResult(dto);
+    }
+
+    public Task<bool> UpdateOrganizationAsync(
+        Guid id,
+        string name,
+        string? location,
+        string adminEmail,
+        int branchCount,
+        CancellationToken cancellationToken = default)
+    {
+        if (_organizations.TryGetValue(id, out var org))
+        {
+            var oldName = org.Name;
+            org.Name = name;
+            org.Location = location;
+            org.AdminEmail = adminEmail;
+            org.BranchCount = branchCount > 0 ? branchCount : 1;
+
+            AddAuditLog("Organization Updated", $"Organization '{oldName}' updated (Name: '{name}', Location: '{location}', Branches: {branchCount}).", "Info", id);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> UpdateAccountStatusAsync(Guid organizationId, AccountStatus newStatus, string reason, CancellationToken cancellationToken = default)
+    {
+        if (_organizations.TryGetValue(organizationId, out var org))
+        {
+            var oldStatus = org.AccountStatus;
+            org.AccountStatus = newStatus;
+
+            // Sync lifecycle stage key
+            org.LifecycleStageKey = newStatus switch
+            {
+                AccountStatus.Onboarding => "Onboarding",
+                AccountStatus.PendingApproval => "Onboarding",
+                AccountStatus.Trial => "Active",
+                AccountStatus.Active => "Active",
+                AccountStatus.Suspended => "Invoiced",
+                AccountStatus.Deactivated => "Invoiced",
+                _ => "Active"
+            };
+
+            AddAuditLog("Account Status Changed", $"Organization '{org.Name}' transitioned from {oldStatus} to {newStatus}. Reason: {reason}", "Info", organizationId);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> DeactivateOrganizationAsync(Guid organizationId, string reason, CancellationToken cancellationToken = default)
+    {
+        return UpdateAccountStatusAsync(organizationId, AccountStatus.Suspended, $"Deactivated by platform administrator: {reason}", cancellationToken);
+    }
+
+    #endregion
+
+    #region Plan CRUD
+
+    public Task<List<SubscriptionPlan>> GetPlansAsync(bool includeInactive = false, CancellationToken cancellationToken = default)
+    {
+        var plans = _plans.Values.AsEnumerable();
+        if (!includeInactive)
+        {
+            plans = plans.Where(p => p.IsActive);
+        }
+
+        foreach (var p in plans)
+        {
+            p.Tariffs = _tariffs.Values.Where(t => t.PlanId == p.Id && t.IsActive).OrderBy(t => t.Price).ToList();
+        }
+
+        return Task.FromResult(plans.OrderBy(p => p.BasePrice).ToList());
+    }
+
+    public Task<SubscriptionPlan?> GetPlanByIdAsync(Guid planId, CancellationToken cancellationToken = default)
+    {
+        if (_plans.TryGetValue(planId, out var plan))
+        {
+            plan.Tariffs = _tariffs.Values.Where(t => t.PlanId == plan.Id && t.IsActive).OrderBy(t => t.Price).ToList();
+            return Task.FromResult<SubscriptionPlan?>(plan);
+        }
+        return Task.FromResult<SubscriptionPlan?>(null);
+    }
+
+    public Task<SubscriptionPlan> CreatePlanAsync(
+        string name,
+        string code,
+        string description,
+        decimal basePrice,
+        int maxBranches,
+        int maxClassrooms,
+        int maxChildren,
+        bool includesAi,
+        CancellationToken cancellationToken = default)
+    {
+        var id = Guid.NewGuid();
+        var plan = new SubscriptionPlan
+        {
+            Id = id,
+            Name = name,
+            Code = code.ToUpperInvariant().Trim(),
+            Description = description,
+            BasePrice = basePrice,
+            MaxBranches = maxBranches,
+            MaxClassrooms = maxClassrooms,
+            MaxChildren = maxChildren,
+            IncludesAiFeatures = includesAi,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        // Create a default monthly tariff for this plan
+        var tariffId = Guid.NewGuid();
+        var defaultTariff = new Tariff
+        {
+            Id = tariffId,
+            PlanId = id,
+            Name = "Standard Monthly",
+            Frequency = BillingFrequency.Monthly,
+            Price = basePrice,
+            DiscountPercentage = 0,
+            EffectiveDate = DateTimeOffset.UtcNow,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        _tariffs[tariffId] = defaultTariff;
+        plan.Tariffs.Add(defaultTariff);
+        _plans[id] = plan;
+
+        AddAuditLog("Plan Created", $"New subscription plan '{name}' ({code}) created at {basePrice:C0}/mo.", "Info", id);
+
+        return Task.FromResult(plan);
+    }
+
+    public Task<bool> UpdatePlanAsync(
+        Guid planId,
+        string name,
+        string description,
+        decimal basePrice,
+        int maxBranches,
+        int maxClassrooms,
+        int maxChildren,
+        bool includesAi,
+        CancellationToken cancellationToken = default)
+    {
+        if (_plans.TryGetValue(planId, out var plan))
+        {
+            plan.Name = name;
+            plan.Description = description;
+            plan.BasePrice = basePrice;
+            plan.MaxBranches = maxBranches;
+            plan.MaxClassrooms = maxClassrooms;
+            plan.MaxChildren = maxChildren;
+            plan.IncludesAiFeatures = includesAi;
+            plan.UpdatedAt = DateTimeOffset.UtcNow;
+
+            AddAuditLog("Plan Updated", $"Subscription plan '{name}' updated (Price: {basePrice:C0}, AI: {includesAi}).", "Info", planId);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> DeactivatePlanAsync(Guid planId, CancellationToken cancellationToken = default)
+    {
+        if (_plans.TryGetValue(planId, out var plan))
+        {
+            plan.IsActive = false;
+            plan.UpdatedAt = DateTimeOffset.UtcNow;
+
+            AddAuditLog("Plan Deactivated", $"Subscription plan '{plan.Name}' archived/deactivated.", "Warning", planId);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    #endregion
+
+    #region Tariff CRUD
+
+    public Task<List<Tariff>> GetTariffsByPlanIdAsync(Guid planId, CancellationToken cancellationToken = default)
+    {
+        var tariffs = _tariffs.Values.Where(t => t.PlanId == planId && t.IsActive).OrderBy(t => t.Price).ToList();
+        return Task.FromResult(tariffs);
+    }
+
+    public Task<Tariff> CreateTariffAsync(
+        Guid planId,
+        string name,
+        BillingFrequency frequency,
+        decimal price,
+        decimal discountPercentage,
+        CancellationToken cancellationToken = default)
+    {
+        var id = Guid.NewGuid();
+        var tariff = new Tariff
+        {
+            Id = id,
+            PlanId = planId,
+            Name = name,
+            Frequency = frequency,
+            Price = price,
+            DiscountPercentage = discountPercentage,
+            EffectiveDate = DateTimeOffset.UtcNow,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        _tariffs[id] = tariff;
+
+        if (_plans.TryGetValue(planId, out var plan))
+        {
+            plan.Tariffs.Add(tariff);
+            AddAuditLog("Tariff Created", $"New tariff '{name}' ({frequency}: {price:C0}) added to plan '{plan.Name}'.", "Info", id);
+        }
+
+        return Task.FromResult(tariff);
+    }
+
+    public Task<bool> UpdateTariffAsync(
+        Guid tariffId,
+        string name,
+        BillingFrequency frequency,
+        decimal price,
+        decimal discountPercentage,
+        CancellationToken cancellationToken = default)
+    {
+        if (_tariffs.TryGetValue(tariffId, out var tariff))
+        {
+            tariff.Name = name;
+            tariff.Frequency = frequency;
+            tariff.Price = price;
+            tariff.DiscountPercentage = discountPercentage;
+            tariff.UpdatedAt = DateTimeOffset.UtcNow;
+
+            AddAuditLog("Tariff Updated", $"Tariff '{name}' updated to {price:C0} ({frequency}).", "Info", tariffId);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> DeactivateTariffAsync(Guid tariffId, CancellationToken cancellationToken = default)
+    {
+        if (_tariffs.TryGetValue(tariffId, out var tariff))
+        {
+            tariff.IsActive = false;
+            tariff.UpdatedAt = DateTimeOffset.UtcNow;
+
+            AddAuditLog("Tariff Deactivated", $"Tariff '{tariff.Name}' deactivated.", "Warning", tariffId);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> AssignPlanAndTariffToOrganizationAsync(
+        Guid organizationId,
+        Guid planId,
+        Guid? tariffId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_organizations.TryGetValue(organizationId, out var org) && _plans.TryGetValue(planId, out var plan))
+        {
+            Tariff? tariff = null;
+            if (tariffId.HasValue)
+            {
+                _tariffs.TryGetValue(tariffId.Value, out tariff);
+            }
+            tariff ??= _tariffs.Values.FirstOrDefault(t => t.PlanId == planId && t.IsActive);
+
+            var oldPlan = org.PlanName;
+            org.PlanId = plan.Id;
+            org.PlanName = plan.Name;
+            org.TariffId = tariff?.Id;
+            org.TariffName = tariff?.Name ?? "Standard";
+            org.MonthlyRate = tariff != null ? tariff.Price : plan.BasePrice;
+
+            AddAuditLog("Plan/Tariff Changed", $"Organization '{org.Name}' changed from '{oldPlan}' to '{plan.Name}' ({org.TariffName} - {org.MonthlyRate:C0}).", "Info", organizationId);
+            return Task.FromResult(true);
+        }
+        return Task.FromResult(false);
+    }
+
+    #endregion
+
+    #region Commercial & Billing Operations
 
     public Task<List<Invoice>> GetInvoicesAsync(string? status = null, CancellationToken cancellationToken = default)
     {
@@ -145,78 +497,6 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(query.OrderByDescending(p => p.PaymentDate).ToList());
     }
 
-    public Task<List<PlatformAuditLog>> GetAuditLogsAsync(int limit = 10, CancellationToken cancellationToken = default)
-    {
-        lock (_lock)
-        {
-            return Task.FromResult(_auditLogs.OrderByDescending(a => a.Timestamp).Take(limit).ToList());
-        }
-    }
-
-    public Task<PlatformHealthStatus> GetHealthStatusAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(new PlatformHealthStatus());
-    }
-
-    public Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(
-        string name,
-        string location,
-        Guid planId,
-        string adminEmail,
-        CancellationToken cancellationToken = default)
-    {
-        _plans.TryGetValue(planId, out var plan);
-        plan ??= _plans.Values.First();
-
-        var id = Guid.NewGuid();
-        var dto = new PlatformOrganizationDto
-        {
-            Id = id,
-            TenantId = id,
-            Name = name,
-            Location = location,
-            BranchCount = 1,
-            AccountStatus = AccountStatus.Onboarding,
-            FinancialStatus = FinancialStatus.Unbilled,
-            PlanName = plan.Name,
-            MonthlyRate = plan.BasePrice,
-            NextBillingDate = DateTimeOffset.UtcNow.AddDays(30),
-            AdminEmail = adminEmail,
-            LifecycleStageKey = "Onboarding",
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-
-        _organizations[id] = dto;
-
-        AddAuditLog("Organization Registered", $"New daycare organization '{name}' added to onboarding pipeline with plan '{plan.Name}'.", "Info", id);
-
-        return Task.FromResult(dto);
-    }
-
-    public Task<bool> UpdateAccountStatusAsync(Guid organizationId, AccountStatus newStatus, string reason, CancellationToken cancellationToken = default)
-    {
-        if (_organizations.TryGetValue(organizationId, out var org))
-        {
-            var oldStatus = org.AccountStatus;
-            org.AccountStatus = newStatus;
-
-            // Sync lifecycle stage key
-            org.LifecycleStageKey = newStatus switch
-            {
-                AccountStatus.Onboarding => "Onboarding",
-                AccountStatus.PendingApproval => "Onboarding",
-                AccountStatus.Trial => "Active",
-                AccountStatus.Active => "Active",
-                AccountStatus.Suspended => "Invoiced",
-                _ => "Active"
-            };
-
-            AddAuditLog("Account Status Changed", $"Organization '{org.Name}' status transitioned from {oldStatus} to {newStatus}. Reason: {reason}", "Info", organizationId);
-            return Task.FromResult(true);
-        }
-        return Task.FromResult(false);
-    }
-
     public Task<bool> VerifyPaymentWorkflowAsync(Guid paymentId, CancellationToken cancellationToken = default)
     {
         if (_payments.TryGetValue(paymentId, out var payment))
@@ -238,7 +518,7 @@ public class PlatformAdminService : IPlatformAdminService
                     invoice.Status = FinancialStatus.PartiallyPaid;
                 }
 
-                // Update organization financial status if no other invoices overdue
+                // Update organization financial status
                 if (_organizations.TryGetValue(payment.OrganizationId, out var org))
                 {
                     org.FinancialStatus = invoice.Status;
@@ -288,6 +568,14 @@ public class PlatformAdminService : IPlatformAdminService
 
         return Task.FromResult(invoice);
     }
+
+    public Task<List<ParentCommunication>> GetRecentParentCommunicationsAsync(int limit = 20, CancellationToken cancellationToken = default)
+    {
+        var list = _communications.Values.OrderByDescending(c => c.CreatedAt).Take(limit).ToList();
+        return Task.FromResult(list);
+    }
+
+    #endregion
 
     private static void AddAuditLog(string action, string details, string severity, Guid? entityId = null)
     {
@@ -360,6 +648,70 @@ public class PlatformAdminService : IPlatformAdminService
         _plans[growthPlan.Id] = growthPlan;
         _plans[canopyPlan.Id] = canopyPlan;
 
+        // Tariffs
+        var t1 = new Tariff
+        {
+            Id = Guid.NewGuid(),
+            PlanId = starterPlan.Id,
+            Name = "Starter Monthly",
+            Frequency = BillingFrequency.Monthly,
+            Price = 149.00m,
+            DiscountPercentage = 0,
+            IsActive = true
+        };
+        var t2 = new Tariff
+        {
+            Id = Guid.NewGuid(),
+            PlanId = starterPlan.Id,
+            Name = "Starter Annual (Save 15%)",
+            Frequency = BillingFrequency.Annual,
+            Price = 126.00m,
+            DiscountPercentage = 15,
+            IsActive = true
+        };
+
+        var t3 = new Tariff
+        {
+            Id = Guid.NewGuid(),
+            PlanId = growthPlan.Id,
+            Name = "Growth Monthly",
+            Frequency = BillingFrequency.Monthly,
+            Price = 299.00m,
+            DiscountPercentage = 0,
+            IsActive = true
+        };
+        var t4 = new Tariff
+        {
+            Id = Guid.NewGuid(),
+            PlanId = growthPlan.Id,
+            Name = "Growth Annual (Save 20%)",
+            Frequency = BillingFrequency.Annual,
+            Price = 239.00m,
+            DiscountPercentage = 20,
+            IsActive = true
+        };
+
+        var t5 = new Tariff
+        {
+            Id = Guid.NewGuid(),
+            PlanId = canopyPlan.Id,
+            Name = "Canopy Monthly",
+            Frequency = BillingFrequency.Monthly,
+            Price = 599.00m,
+            DiscountPercentage = 0,
+            IsActive = true
+        };
+
+        _tariffs[t1.Id] = t1;
+        _tariffs[t2.Id] = t2;
+        _tariffs[t3.Id] = t3;
+        _tariffs[t4.Id] = t4;
+        _tariffs[t5.Id] = t5;
+
+        starterPlan.Tariffs.AddRange(new[] { t1, t2 });
+        growthPlan.Tariffs.AddRange(new[] { t3, t4 });
+        canopyPlan.Tariffs.Add(t5);
+
         // Seed Organizations
         var org1Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var org1 = new PlatformOrganizationDto
@@ -371,7 +723,10 @@ public class PlatformAdminService : IPlatformAdminService
             BranchCount = 2,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.Reconciled,
+            PlanId = growthPlan.Id,
             PlanName = "Bloom (Growth)",
+            TariffId = t3.Id,
+            TariffName = "Growth Monthly",
             MonthlyRate = 299.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(18),
             AdminEmail = "director@littlestars.org",
@@ -389,7 +744,10 @@ public class PlatformAdminService : IPlatformAdminService
             BranchCount = 1,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.Reconciled,
+            PlanId = starterPlan.Id,
             PlanName = "Sprout (Starter)",
+            TariffId = t1.Id,
+            TariffName = "Starter Monthly",
             MonthlyRate = 149.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(22),
             AdminEmail = "karin@nordicpine.edu",
@@ -407,7 +765,10 @@ public class PlatformAdminService : IPlatformAdminService
             BranchCount = 4,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.InvoiceDue,
+            PlanId = canopyPlan.Id,
             PlanName = "Canopy (Multi-Branch)",
+            TariffId = t5.Id,
+            TariffName = "Canopy Monthly",
             MonthlyRate = 599.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(5),
             AdminEmail = "finance@cedargrove.com",
@@ -425,7 +786,10 @@ public class PlatformAdminService : IPlatformAdminService
             BranchCount = 1,
             AccountStatus = AccountStatus.Onboarding,
             FinancialStatus = FinancialStatus.Unbilled,
+            PlanId = growthPlan.Id,
             PlanName = "Bloom (Growth)",
+            TariffId = t3.Id,
+            TariffName = "Growth Monthly",
             MonthlyRate = 299.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(30),
             AdminEmail = "onboarding@sunnyhollow.org",
@@ -443,7 +807,10 @@ public class PlatformAdminService : IPlatformAdminService
             BranchCount = 1,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.Overdue,
+            PlanId = starterPlan.Id,
             PlanName = "Sprout (Starter)",
+            TariffId = t1.Id,
+            TariffName = "Starter Monthly",
             MonthlyRate = 149.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(-8),
             AdminEmail = "treasurer@meadowlark.org",
@@ -461,7 +828,10 @@ public class PlatformAdminService : IPlatformAdminService
             BranchCount = 2,
             AccountStatus = AccountStatus.Trial,
             FinancialStatus = FinancialStatus.PaymentAwaitingVerification,
+            PlanId = growthPlan.Id,
             PlanName = "Bloom (Growth)",
+            TariffId = t3.Id,
+            TariffName = "Growth Monthly",
             MonthlyRate = 299.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(12),
             AdminEmail = "contact@evergreendiscovery.com",
@@ -527,9 +897,65 @@ public class PlatformAdminService : IPlatformAdminService
             TransactionId = "txn_ach_88319041"
         };
 
+        // Seed AI Parent Communications (Grounded, Teacher-Approved)
+        var comm1Id = Guid.NewGuid();
+        _communications[comm1Id] = new ParentCommunication
+        {
+            Id = comm1Id,
+            TenantId = org1Id,
+            OrganizationId = org1Id,
+            ChildId = Guid.NewGuid(),
+            ChildName = "Aarav Patel",
+            ClassroomName = "Bluebirds",
+            RecipientName = "Sunita Patel",
+            RecipientRelationship = "Mother",
+            RecipientEmail = "sunita.patel@test.com",
+            CommunicationType = ParentCommunicationTypes.DailyUpdate,
+            Title = "Aarav's Day in Bluebirds — Oct 14",
+            ContentDraft = "Dear Sunita,\n\nAarav had a wonderful morning of cooperative play. He gently observed a ladybug during our outdoor nature walk and helped his friends build a bridge with wooden blocks.\n\nWarmly,\nRachel",
+            ContentFinal = "Dear Sunita,\n\nAarav had a wonderful morning of cooperative play. He gently observed a ladybug during our outdoor nature walk and helped his friends build a bridge with wooden blocks.\n\nWarmly,\nRachel",
+            FamilyConversationStarter = "Ask Aarav how the ladybug crawled across the leaf today!",
+            Status = ParentCommunicationStatus.Sent,
+            TeacherName = "Rachel Green",
+            ConsentVerified = true,
+            ApprovedAt = DateTimeOffset.UtcNow.AddHours(-3),
+            SentAt = DateTimeOffset.UtcNow.AddHours(-3),
+            DeliveryChannel = "PortalAndEmail",
+            DeliveryStatus = "Delivered",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-4)
+        };
+
+        var comm2Id = Guid.NewGuid();
+        _communications[comm2Id] = new ParentCommunication
+        {
+            Id = comm2Id,
+            TenantId = org2Id,
+            OrganizationId = org2Id,
+            ChildId = Guid.NewGuid(),
+            ChildName = "Ella Lindqvist",
+            ClassroomName = "Pinecones",
+            RecipientName = "Karin Lindqvist",
+            RecipientRelationship = "Mother",
+            RecipientEmail = "karin@nordicpine.edu",
+            CommunicationType = ParentCommunicationTypes.WeeklySummary,
+            Title = "Ella's Weekly Learning Journey in Pinecones",
+            ContentDraft = "Dear Karin,\n\nElla showed great focus this week exploring textures and autumn leaves in our sensory tray. She enjoyed singing rhythmic songs with her peers.\n\nWarmly,\nTeacher Sarah",
+            ContentFinal = "Dear Karin,\n\nElla showed great focus this week exploring textures and autumn leaves in our sensory tray. She enjoyed singing rhythmic songs with her peers.\n\nWarmly,\nTeacher Sarah",
+            FamilyConversationStarter = "Ask Ella about the crunchy brown leaf she collected yesterday!",
+            Status = ParentCommunicationStatus.PendingReview,
+            TeacherName = "Sarah Connor",
+            ConsentVerified = true,
+            ApprovedAt = null,
+            SentAt = null,
+            DeliveryChannel = "PortalOnly",
+            DeliveryStatus = "Pending",
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1)
+        };
+
         // Audit Logs
         AddAuditLog("System Boot", "EnjoyEveryday Platform Administration services initialized.", "Info");
         AddAuditLog("Organization Created", "Sunny Hollow Montessori initiated registration and onboarding.", "Info", org4Id);
         AddAuditLog("Payment Submitted", "ACH payment PAY-ACH-99410 for $299.00 awaiting administrative reconciliation.", "Warning", pay1Id);
+        AddAuditLog("AI Parent Communication Sent", "Daily update draft approved by Teacher Rachel Green and dispatched to parent Sunita Patel.", "Info", comm1Id);
     }
 }

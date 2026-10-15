@@ -42,6 +42,23 @@ public class SubscriptionPlan
     public int MaxChildren { get; set; } = 50;
     public bool IncludesAiFeatures { get; set; } = true;
     public bool IsActive { get; set; } = true;
+    public List<Tariff> Tariffs { get; set; } = new();
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public class Tariff
+{
+    public Guid Id { get; set; }
+    public Guid PlanId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public BillingFrequency Frequency { get; set; } = BillingFrequency.Monthly;
+    public decimal Price { get; set; }
+    public string Currency { get; set; } = "USD";
+    public decimal DiscountPercentage { get; set; }
+    public DateTimeOffset EffectiveDate { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ExpiryDate { get; set; }
+    public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

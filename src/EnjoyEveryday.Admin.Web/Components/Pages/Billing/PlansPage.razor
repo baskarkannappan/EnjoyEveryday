@@ -10,11 +10,20 @@
 <div class="content">
     <PageHero Eyebrow="COMMERCIAL MANAGEMENT"
               Title="Subscription Plans &amp; Tariffs"
-              Subtitle="Maintain global SaaS subscription plans, classroom/branch limits, and feature tiers.">
+              Subtitle="Create and maintain global SaaS plans, classroom/branch limits, and commercial tariff pricing schedules.">
         <RightContent>
             <a href="/" class="btn secondary">← Back to Dashboard</a>
+            <button class="btn primary" @onclick="OpenCreatePlanModal">+ New Plan</button>
         </RightContent>
     </PageHero>
+
+    @if (!string.IsNullOrEmpty(_notificationMessage))
+    {
+        <div class="alert-banner">
+            <span>✓ @_notificationMessage</span>
+            <button class="close-alert" @onclick="() => _notificationMessage = null">✕</button>
+        </div>
+    }
 
     @if (_plans == null)
     {
@@ -22,29 +31,71 @@
     }
     else
     {
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
             @foreach (var plan in _plans)
             {
-                <div style="background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px;">
+                <div class="plan-card @(!plan.IsActive ? "plan-inactive" : "")" style="background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <div>
                             <div style="font-size: 11px; font-weight: 800; color: var(--accent); letter-spacing: 0.8px; text-transform: uppercase;">@plan.Code</div>
                             <h3 style="font-size: 20px; font-weight: 750; color: var(--text); margin: 4px 0 0 0;">@plan.Name</h3>
                         </div>
-                        <StatusBadge Status="Active" />
+                        <StatusBadge Status="@(plan.IsActive ? "Active" : "Archived")" />
                     </div>
 
-                    <div style="font-size: 30px; font-weight: 800; color: var(--text);">
-                        @plan.BasePrice.ToString("C0")<span style="font-size: 14px; font-weight: 600; color: var(--muted);">/month</span>
+                    <div style="font-size: 32px; font-weight: 800; color: var(--text); letter-spacing: -0.6px;">
+                        @plan.BasePrice.ToString("C0")<span style="font-size: 14px; font-weight: 600; color: var(--muted);">/month base</span>
                     </div>
 
-                    <p style="font-size: 13.5px; color: var(--muted); line-height: 1.4; margin: 0;">@plan.Description</p>
+                    <p style="font-size: 13.5px; color: var(--muted); line-height: 1.45; margin: 0; min-height: 40px;">@plan.Description</p>
 
-                    <div style="background: var(--surface-soft); border-radius: 12px; padding: 14px; font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
-                        <div>🏢 <strong>@plan.MaxBranches</strong> @(plan.MaxBranches == 1 ? "branch" : "branches included")</div>
+                    <!-- Limits & Entitlements -->
+                    <div style="background: var(--surface-soft); border-radius: 12px; padding: 14px; font-size: 13px; display: flex; flex-direction: column; gap: 8px;">
+                        <div>🏢 <strong>@plan.MaxBranches</strong> @(plan.MaxBranches == 1 ? "branch included" : "branches included")</div>
                         <div>🏫 <strong>@plan.MaxClassrooms</strong> classrooms allowed</div>
                         <div>👶 <strong>@plan.MaxChildren</strong> active child profiles</div>
-                        <div>✦ <strong>@(plan.IncludesAiFeatures ? "AI Assistants Included" : "Standard Features")</strong></div>
+                        <div>✦ <strong>@(plan.IncludesAiFeatures ? "AI Communication & Intelligence Included" : "Standard Care Tools Only")</strong></div>
+                    </div>
+
+                    <!-- Available Tariffs -->
+                    <div style="margin-top: 4px;">
+                        <div style="font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.6px;">
+                            Active Tariffs (@plan.Tariffs.Count)
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            @foreach (var t in plan.Tariffs)
+                            {
+                                <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; font-size: 12.5px;">
+                                    <div>
+                                        <strong>@t.Name</strong>
+                                        <span style="color: var(--muted); margin-left: 4px;">(@t.Frequency)</span>
+                                    </div>
+                                    <div style="font-weight: 750; color: var(--accent-dark);">
+                                        @t.Price.ToString("C0")
+                                        @if (t.DiscountPercentage > 0)
+                                        {
+                                            <span style="background: var(--accent-light); color: var(--accent-dark); font-size: 10px; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">-@t.DiscountPercentage%</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div style="display: flex; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid #edf1ec;">
+                        <button class="btn secondary" style="flex: 1; font-size: 12.5px;" @onclick="() => OpenEditPlanModal(plan)">
+                            Edit Plan
+                        </button>
+                        <button class="btn secondary" style="flex: 1; font-size: 12.5px;" @onclick="() => OpenTariffsModal(plan)">
+                            Manage Tariffs
+                        </button>
+                        @if (plan.IsActive)
+                        {
+                            <button class="action-btn delete-btn" title="Archive Plan" @onclick="() => DeactivatePlan(plan)">
+                                Archive
+                            </button>
+                        }
                     </div>
                 </div>
             }
@@ -52,11 +103,359 @@
     }
 </div>
 
+<!-- CREATE PLAN MODAL -->
+@if (_showCreatePlanModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">NEW COMMERCIAL TIER</div>
+                    <h3 class="modal-title">Create Subscription Plan</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Plan Name *</label>
+                    <input class="form-input" @bind="_newPlanName" placeholder="e.g. Forest Canopy Tier" />
+                </div>
+                <div class="form-group">
+                    <label>Plan Code *</label>
+                    <input class="form-input" @bind="_newPlanCode" placeholder="e.g. PLAN-CANOPY-PRO" />
+                </div>
+                <div class="form-group">
+                    <label>Base Price ($ USD / month) *</label>
+                    <input class="form-input" type="number" step="1" @bind="_newPlanBasePrice" />
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea class="form-input" rows="2" @bind="_newPlanDescription" placeholder="Concise overview of target daycares..."></textarea>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                    <div class="form-group">
+                        <label>Max Branches</label>
+                        <input class="form-input" type="number" min="1" @bind="_newPlanBranches" />
+                    </div>
+                    <div class="form-group">
+                        <label>Max Classrooms</label>
+                        <input class="form-input" type="number" min="1" @bind="_newPlanClassrooms" />
+                    </div>
+                    <div class="form-group">
+                        <label>Max Children</label>
+                        <input class="form-input" type="number" min="1" @bind="_newPlanChildren" />
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                    <input type="checkbox" id="aiFeaturesToggle" @bind="_newPlanIncludesAi" />
+                    <label for="aiFeaturesToggle" style="font-size: 13px; font-weight: 650; color: var(--text); cursor: pointer;">
+                        Include Google ADK &amp; Parent Communication AI
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitCreatePlan" disabled="@(string.IsNullOrWhiteSpace(_newPlanName) || string.IsNullOrWhiteSpace(_newPlanCode) || _newPlanBasePrice <= 0)">
+                    Create Plan
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- EDIT PLAN MODAL -->
+@if (_showEditPlanModal && _selectedPlan != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">UPDATE COMMERCIAL TIER</div>
+                    <h3 class="modal-title">Edit Subscription Plan</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Plan Name *</label>
+                    <input class="form-input" @bind="_editPlanName" />
+                </div>
+                <div class="form-group">
+                    <label>Base Price ($ USD / month) *</label>
+                    <input class="form-input" type="number" step="1" @bind="_editPlanBasePrice" />
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea class="form-input" rows="2" @bind="_editPlanDescription"></textarea>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                    <div class="form-group">
+                        <label>Max Branches</label>
+                        <input class="form-input" type="number" min="1" @bind="_editPlanBranches" />
+                    </div>
+                    <div class="form-group">
+                        <label>Max Classrooms</label>
+                        <input class="form-input" type="number" min="1" @bind="_editPlanClassrooms" />
+                    </div>
+                    <div class="form-group">
+                        <label>Max Children</label>
+                        <input class="form-input" type="number" min="1" @bind="_editPlanChildren" />
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                    <input type="checkbox" id="editAiToggle" @bind="_editPlanIncludesAi" />
+                    <label for="editAiToggle" style="font-size: 13px; font-weight: 650; color: var(--text); cursor: pointer;">
+                        Include Google ADK &amp; Parent Communication AI
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitEditPlan" disabled="@(string.IsNullOrWhiteSpace(_editPlanName) || _editPlanBasePrice <= 0)">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MANAGE TARIFFS MODAL -->
+@if (_showTariffsModal && _selectedPlan != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card modal-large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">PRICING SCHEDULES</div>
+                    <h3 class="modal-title">Tariffs for @_selectedPlan.Name</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Tariff List -->
+                <div style="margin-bottom: 20px;">
+                    <h4 style="font-size: 14px; font-weight: 750; color: var(--text); margin: 0 0 10px 0;">Existing Tariffs</h4>
+                    <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px;">
+                        <thead>
+                            <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800;">
+                                <th style="padding: 8px 10px; text-align: left;">Tariff Name</th>
+                                <th style="padding: 8px 10px; text-align: left;">Frequency</th>
+                                <th style="padding: 8px 10px; text-align: left;">Rate</th>
+                                <th style="padding: 8px 10px; text-align: left;">Discount</th>
+                                <th style="padding: 8px 10px; text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in _selectedPlan.Tariffs)
+                            {
+                                <tr style="border-bottom: 1px solid #edf1ec;">
+                                    <td style="padding: 10px; font-weight: 700;">@t.Name</td>
+                                    <td style="padding: 10px; color: var(--muted);">@t.Frequency</td>
+                                    <td style="padding: 10px; font-weight: 750;">@t.Price.ToString("C0")</td>
+                                    <td style="padding: 10px;">
+                                        @if (t.DiscountPercentage > 0)
+                                        {
+                                            <span style="background: var(--accent-light); color: var(--accent-dark); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">
+                                                -@t.DiscountPercentage%
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--muted);">Standard</span>
+                                        }
+                                    </td>
+                                    <td style="padding: 10px; text-align: right;">
+                                        <button class="action-btn delete-btn" style="font-size: 11px; padding: 3px 8px;" @onclick="() => DeactivateTariff(t.Id)">
+                                            Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Add New Tariff Form -->
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+                    <h4 style="font-size: 13.5px; font-weight: 750; color: var(--text); margin: 0 0 12px 0;">+ Add New Tariff Schedule</h4>
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px;">
+                        <div class="form-group">
+                            <label>Tariff Name *</label>
+                            <input class="form-input" @bind="_newTariffName" placeholder="e.g. Annual Pre-pay (Save 20%)" />
+                        </div>
+                        <div class="form-group">
+                            <label>Frequency</label>
+                            <select class="form-input" @bind="_newTariffFrequency">
+                                <option value="@BillingFrequency.Monthly">Monthly</option>
+                                <option value="@BillingFrequency.Quarterly">Quarterly</option>
+                                <option value="@BillingFrequency.Annual">Annual</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Price ($ USD) *</label>
+                            <input class="form-input" type="number" step="1" @bind="_newTariffPrice" />
+                        </div>
+                        <div class="form-group">
+                            <label>Discount %</label>
+                            <input class="form-input" type="number" min="0" max="100" @bind="_newTariffDiscount" />
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                        <button class="btn primary" style="font-size: 12.5px; padding: 8px 16px;" @onclick="SubmitCreateTariff" disabled="@(string.IsNullOrWhiteSpace(_newTariffName) || _newTariffPrice <= 0)">
+                            + Add Tariff
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<SubscriptionPlan>? _plans;
+    private SubscriptionPlan? _selectedPlan;
+    private string? _notificationMessage = null;
+
+    // Modals
+    private bool _showCreatePlanModal = false;
+    private bool _showEditPlanModal = false;
+    private bool _showTariffsModal = false;
+
+    // Create plan form
+    private string _newPlanName = "";
+    private string _newPlanCode = "";
+    private string _newPlanDescription = "";
+    private decimal _newPlanBasePrice = 199.00m;
+    private int _newPlanBranches = 1;
+    private int _newPlanClassrooms = 5;
+    private int _newPlanChildren = 50;
+    private bool _newPlanIncludesAi = true;
+
+    // Edit plan form
+    private string _editPlanName = "";
+    private string _editPlanDescription = "";
+    private decimal _editPlanBasePrice = 199.00m;
+    private int _editPlanBranches = 1;
+    private int _editPlanClassrooms = 5;
+    private int _editPlanChildren = 50;
+    private bool _editPlanIncludesAi = true;
+
+    // Tariff form
+    private string _newTariffName = "";
+    private BillingFrequency _newTariffFrequency = BillingFrequency.Monthly;
+    private decimal _newTariffPrice = 199.00m;
+    private decimal _newTariffDiscount = 0;
 
     protected override async Task OnInitializedAsync()
     {
-        _plans = await PlatformService.GetPlansAsync();
+        await LoadPlansAsync();
+    }
+
+    private async Task LoadPlansAsync()
+    {
+        _plans = await PlatformService.GetPlansAsync(includeInactive: true);
+        if (_selectedPlan != null)
+        {
+            _selectedPlan = _plans.FirstOrDefault(p => p.Id == _selectedPlan.Id);
+        }
+    }
+
+    private void OpenCreatePlanModal()
+    {
+        _newPlanName = "";
+        _newPlanCode = "";
+        _newPlanDescription = "";
+        _newPlanBasePrice = 199.00m;
+        _newPlanBranches = 1;
+        _newPlanClassrooms = 5;
+        _newPlanChildren = 50;
+        _newPlanIncludesAi = true;
+        _showCreatePlanModal = true;
+    }
+
+    private void OpenEditPlanModal(SubscriptionPlan plan)
+    {
+        _selectedPlan = plan;
+        _editPlanName = plan.Name;
+        _editPlanDescription = plan.Description;
+        _editPlanBasePrice = plan.BasePrice;
+        _editPlanBranches = plan.MaxBranches;
+        _editPlanClassrooms = plan.MaxClassrooms;
+        _editPlanChildren = plan.MaxChildren;
+        _editPlanIncludesAi = plan.IncludesAiFeatures;
+        _showEditPlanModal = true;
+    }
+
+    private void OpenTariffsModal(SubscriptionPlan plan)
+    {
+        _selectedPlan = plan;
+        _newTariffName = "";
+        _newTariffFrequency = BillingFrequency.Annual;
+        _newTariffPrice = plan.BasePrice * 0.85m;
+        _newTariffDiscount = 15;
+        _showTariffsModal = true;
+    }
+
+    private void CloseModals()
+    {
+        _showCreatePlanModal = false;
+        _showEditPlanModal = false;
+        _showTariffsModal = false;
+        _selectedPlan = null;
+    }
+
+    private async Task SubmitCreatePlan()
+    {
+        if (string.IsNullOrWhiteSpace(_newPlanName) || string.IsNullOrWhiteSpace(_newPlanCode) || _newPlanBasePrice <= 0) return;
+        var p = await PlatformService.CreatePlanAsync(
+            _newPlanName, _newPlanCode, _newPlanDescription, _newPlanBasePrice,
+            _newPlanBranches, _newPlanClassrooms, _newPlanChildren, _newPlanIncludesAi);
+        _notificationMessage = $"Plan '{p.Name}' ({p.Code}) created successfully.";
+        CloseModals();
+        await LoadPlansAsync();
+    }
+
+    private async Task SubmitEditPlan()
+    {
+        if (_selectedPlan == null || string.IsNullOrWhiteSpace(_editPlanName) || _editPlanBasePrice <= 0) return;
+        var ok = await PlatformService.UpdatePlanAsync(
+            _selectedPlan.Id, _editPlanName, _editPlanDescription, _editPlanBasePrice,
+            _editPlanBranches, _editPlanClassrooms, _editPlanChildren, _editPlanIncludesAi);
+        if (ok)
+        {
+            _notificationMessage = $"Plan '{_editPlanName}' updated successfully.";
+        }
+        CloseModals();
+        await LoadPlansAsync();
+    }
+
+    private async Task DeactivatePlan(SubscriptionPlan plan)
+    {
+        var ok = await PlatformService.DeactivatePlanAsync(plan.Id);
+        if (ok)
+        {
+            _notificationMessage = $"Plan '{plan.Name}' archived.";
+        }
+        await LoadPlansAsync();
+    }
+
+    private async Task SubmitCreateTariff()
+    {
+        if (_selectedPlan == null || string.IsNullOrWhiteSpace(_newTariffName) || _newTariffPrice <= 0) return;
+        await PlatformService.CreateTariffAsync(
+            _selectedPlan.Id, _newTariffName, _newTariffFrequency, _newTariffPrice, _newTariffDiscount);
+        _newTariffName = "";
+        _notificationMessage = "New tariff schedule added.";
+        await LoadPlansAsync();
+    }
+
+    private async Task DeactivateTariff(Guid tariffId)
+    {
+        await PlatformService.DeactivateTariffAsync(tariffId);
+        _notificationMessage = "Tariff deactivated.";
+        await LoadPlansAsync();
     }
 }
