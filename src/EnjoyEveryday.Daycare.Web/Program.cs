@@ -37,6 +37,7 @@ builder.Services.AddAuthorization();
 // Application and Infrastructure services
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.StorybookStorageService>();
 
 var app = builder.Build();
 
@@ -75,6 +76,7 @@ app.MapStaticAssets();
 
 app.MapAuthEndpoints();
 app.MapFloorMapEndpoints();
+app.MapStorybookEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

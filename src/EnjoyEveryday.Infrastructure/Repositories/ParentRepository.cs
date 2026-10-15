@@ -38,6 +38,7 @@ public class ParentRepository : IParentRepository
             LEFT JOIN organizations o ON b.organization_id = o.id
             WHERE fr.user_id = @UserId 
               AND fr.tenant_id = @TenantId
+              AND fr.status = 'Verified' AND fr.revoked_at IS NULL
               AND c.is_active = true
             ORDER BY c.first_name, c.last_name";
 
@@ -55,6 +56,7 @@ public class ParentRepository : IParentRepository
                 WHERE fr.tenant_id = @TenantId 
                   AND fr.user_id = @UserId 
                   AND fr.child_id = @ChildId
+                  AND fr.status = 'Verified' AND fr.revoked_at IS NULL
                   AND c.is_active = true
             )";
 

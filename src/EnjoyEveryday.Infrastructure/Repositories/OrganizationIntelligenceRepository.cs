@@ -36,9 +36,9 @@ public class OrganizationIntelligenceRepository : IOrganizationIntelligenceRepos
             -- 1. Attendance
             SELECT 
                 COUNT(*) AS TotalRecords,
-                COUNT(*) FILTER (WHERE status = 'Present') AS PresentCount,
-                COUNT(*) FILTER (WHERE status = 'Absent') AS AbsentCount,
-                COUNT(*) FILTER (WHERE status = 'Late') AS LateCount
+                COUNT(*) FILTER (WHERE ca.status = 'Present') AS PresentCount,
+                COUNT(*) FILTER (WHERE ca.status = 'Absent') AS AbsentCount,
+                COUNT(*) FILTER (WHERE ca.status = 'Late') AS LateCount
             FROM child_attendance ca
             JOIN classrooms cl ON ca.classroom_id = cl.id
             JOIN branches b ON cl.branch_id = b.id

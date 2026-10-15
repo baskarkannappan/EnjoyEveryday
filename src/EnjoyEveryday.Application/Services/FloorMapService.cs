@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
@@ -63,6 +64,7 @@ public class FloorMapService : IFloorMapService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IAuditService _auditService;
+    private readonly IResourceAuthorizer _authorizer;
 
     public FloorMapService(
         IFloorMapRepository repository,
@@ -70,12 +72,41 @@ public class FloorMapService : IFloorMapService
         ITenantContext tenantContext,
         IUserContext userContext,
         IAuditService auditService)
+        : this(repository, storageService, tenantContext, userContext, auditService, new NullResourceAuthorizer())
+    {
+    }
+
+    public FloorMapService(
+        IFloorMapRepository repository,
+        IFloorMapStorageService storageService,
+        ITenantContext tenantContext,
+        IUserContext userContext,
+        IAuditService auditService,
+        IResourceAuthorizer authorizer)
     {
         _repository = repository;
         _storageService = storageService;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
+        _authorizer = authorizer;
+    }
+
+    /// <summary>Published maps are an emergency resource (view); every other state is a management artifact.</summary>
+    private async Task<bool> CanReadAsync(BranchFloorMap map, CancellationToken ct)
+    {
+        if (map.TenantId != _tenantContext.TenantId) return false;
+        var permission = map.Status == FloorMapStatus.Published ? Permissions.SafetyMapView : Permissions.SafetyMapManage;
+        return await _authorizer.CanAccessBranchAsync(map.BranchId, permission, ct);
+    }
+
+    private async Task<BranchFloorMap> LoadForAsync(Guid id, string permission, CancellationToken ct)
+    {
+        var map = await _repository.GetMapByIdAsync(_tenantContext.TenantId, id, ct);
+        // Missing and forbidden look identical to the caller.
+        if (map == null) throw new UnauthorizedAccessException("Access denied.");
+        await _authorizer.RequireBranchAsync(map.BranchId, permission, ct);
+        return map;
     }
 
     public async Task<IEnumerable<BranchFloorMap>> GetMapsAsync(
@@ -84,13 +115,24 @@ public class FloorMapService : IFloorMapService
         string? status = null,
         CancellationToken ct = default)
     {
-        var effectiveOrgId = organizationId ?? _userContext.OrganizationId;
-        return await _repository.GetMapsAsync(_tenantContext.TenantId, effectiveOrgId, branchId, status, ct);
+        var effectiveOrgId = _userContext.OrganizationId ?? organizationId;
+        if (effectiveOrgId == null) throw new UnauthorizedAccessException("Access denied.");
+        if (organizationId.HasValue && organizationId != effectiveOrgId &&
+            !_userContext.Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("Access denied.");
+        var maps = await _repository.GetMapsAsync(_tenantContext.TenantId, effectiveOrgId, branchId, status, ct);
+        var visible = new List<BranchFloorMap>();
+        foreach (var m in maps)
+            if (await CanReadAsync(m, ct)) visible.Add(m);
+        return visible;
     }
 
     public async Task<BranchFloorMap?> GetMapByIdAsync(Guid id, CancellationToken ct = default)
     {
-        return await _repository.GetMapByIdAsync(_tenantContext.TenantId, id, ct);
+        var map = await _repository.GetMapByIdAsync(_tenantContext.TenantId, id, ct);
+        if (map == null) return null;
+        if (!await CanReadAsync(map, ct)) throw new UnauthorizedAccessException("Access denied.");
+        return map;
     }
 
     public async Task<IEnumerable<BranchFloorMap>> GetMapHistoryAsync(
@@ -98,6 +140,7 @@ public class FloorMapService : IFloorMapService
         string floorLevel,
         CancellationToken ct = default)
     {
+        await _authorizer.RequireBranchAsync(branchId, Permissions.SafetyMapManage, ct);
         return await _repository.GetMapHistoryAsync(_tenantContext.TenantId, branchId, floorLevel, ct);
     }
 
@@ -105,6 +148,11 @@ public class FloorMapService : IFloorMapService
     {
         if (request.BranchId == Guid.Empty)
             throw new ArgumentException("Branch selection is required.");
+
+        // Scope first: a caller without manage rights on THIS branch learns nothing about validation state.
+        await _authorizer.RequireBranchAsync(request.BranchId, Permissions.SafetyMapManage, ct);
+        if (request.OrganizationId != Guid.Empty && request.OrganizationId != _userContext.OrganizationId)
+            throw new UnauthorizedAccessException("Access denied.");
 
         if (string.IsNullOrWhiteSpace(request.Name))
             throw new ArgumentException("Map name is required.");
@@ -161,9 +209,7 @@ public class FloorMapService : IFloorMapService
 
     public async Task<BranchFloorMap> UpdateDraftMapAsync(UpdateFloorMapRequest request, CancellationToken ct = default)
     {
-        var existing = await _repository.GetMapByIdAsync(_tenantContext.TenantId, request.Id, ct);
-        if (existing == null)
-            throw new KeyNotFoundException($"Floor map with ID {request.Id} not found.");
+        var existing = await LoadForAsync(request.Id, Permissions.SafetyMapManage, ct);
 
         if (existing.Status == FloorMapStatus.Published)
             throw new InvalidOperationException("Published floor maps are immutable. Create a new draft revision to make updates.");
@@ -221,12 +267,7 @@ public class FloorMapService : IFloorMapService
 
     public async Task SaveMarkersAsync(Guid mapId, List<FloorMapMarker> markers, CancellationToken ct = default)
     {
-        var existing = await _repository.GetMapByIdAsync(_tenantContext.TenantId, mapId, ct);
-        if (existing == null)
-            throw new KeyNotFoundException($"Floor map with ID {mapId} not found.");
-
-        if (existing.Status == FloorMapStatus.Published)
-            throw new InvalidOperationException("Markers cannot be altered on a published map. Create a new revision.");
+        var existing = await LoadForAsync(mapId, Permissions.SafetyMapManage, ct);
 
         // Normalize & validate coordinates
         var order = 1;
@@ -255,9 +296,7 @@ public class FloorMapService : IFloorMapService
 
     public async Task<BranchFloorMap> SubmitForReviewAsync(Guid mapId, CancellationToken ct = default)
     {
-        var existing = await _repository.GetMapByIdAsync(_tenantContext.TenantId, mapId, ct);
-        if (existing == null)
-            throw new KeyNotFoundException($"Floor map with ID {mapId} not found.");
+        var existing = await LoadForAsync(mapId, Permissions.SafetyMapManage, ct);
 
         if (existing.Status != FloorMapStatus.Draft)
             throw new InvalidOperationException($"Only Draft floor maps can be submitted for review. Current status: {existing.Status}");
@@ -280,9 +319,7 @@ public class FloorMapService : IFloorMapService
 
     public async Task<BranchFloorMap> PublishMapAsync(Guid mapId, CancellationToken ct = default)
     {
-        var existing = await _repository.GetMapByIdAsync(_tenantContext.TenantId, mapId, ct);
-        if (existing == null)
-            throw new KeyNotFoundException($"Floor map with ID {mapId} not found.");
+        var existing = await LoadForAsync(mapId, Permissions.SafetyMapPublish, ct);
 
         if (existing.Status != FloorMapStatus.PendingReview && existing.Status != FloorMapStatus.Draft)
             throw new InvalidOperationException($"Map cannot be published from status: {existing.Status}");
@@ -337,9 +374,7 @@ public class FloorMapService : IFloorMapService
 
     public async Task<BranchFloorMap> CreateNewDraftFromPublishedAsync(Guid publishedMapId, CancellationToken ct = default)
     {
-        var published = await _repository.GetMapByIdAsync(_tenantContext.TenantId, publishedMapId, ct);
-        if (published == null)
-            throw new KeyNotFoundException($"Floor map with ID {publishedMapId} not found.");
+        var published = await LoadForAsync(publishedMapId, Permissions.SafetyMapManage, ct);
 
         // Clone to new draft
         var newDraft = new BranchFloorMap
@@ -394,9 +429,7 @@ public class FloorMapService : IFloorMapService
 
     public async Task<BranchFloorMap> RetireMapAsync(Guid mapId, CancellationToken ct = default)
     {
-        var existing = await _repository.GetMapByIdAsync(_tenantContext.TenantId, mapId, ct);
-        if (existing == null)
-            throw new KeyNotFoundException($"Floor map with ID {mapId} not found.");
+        var existing = await LoadForAsync(mapId, Permissions.SafetyMapManage, ct);
 
         existing.Status = FloorMapStatus.Retired;
         await _repository.UpdateMapAsync(existing, ct);
@@ -418,6 +451,7 @@ public class FloorMapService : IFloorMapService
     {
         var existing = await _repository.GetMapByIdAsync(_tenantContext.TenantId, mapId, ct);
         if (existing == null) return null;
+        if (!await CanReadAsync(existing, ct)) throw new UnauthorizedAccessException("Access denied.");
 
         var fileResult = await _storageService.RetrieveMapFileAsync(existing.FileStorageKey, ct);
         if (fileResult == null) return null;

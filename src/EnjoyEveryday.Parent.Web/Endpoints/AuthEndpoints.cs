@@ -57,8 +57,8 @@ public static class AuthEndpoints
 
                     // 3. Ensure family relationship links Sunita Patel to Aarav Patel
                     await conn.ExecuteAsync(@"
-                        INSERT INTO family_relationships (id, tenant_id, child_id, user_id, relationship, is_primary, created_at)
-                        VALUES ('f0000000-0000-0000-0000-000000000001', @TenantId, @ChildId, @UserId, 'Mother', TRUE, NOW())
+                        INSERT INTO family_relationships (id, tenant_id, child_id, user_id, relationship, is_primary, created_at, status, verified_at)
+                        VALUES ('f0000000-0000-0000-0000-000000000001', @TenantId, @ChildId, @UserId, 'Mother', TRUE, NOW(), 'Verified', NOW())
                         ON CONFLICT (child_id, user_id) DO NOTHING;
                     ", new { TenantId = tenantId, ChildId = childId, UserId = userId });
 
@@ -175,9 +175,9 @@ public static class AuthEndpoints
                 return Results.Redirect("/auth/access-denied?reason=account_disabled");
             }
 
-            // Verify they have an active parent relationship in this tenant
+            // Verify they have a current, VERIFIED, non-revoked parent relationship in this tenant
             var isParent = await conn.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId AND tenant_id = @TenantId)",
+                "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId AND tenant_id = @TenantId AND status = 'Verified' AND revoked_at IS NULL)",
                 new { UserId = user.id, TenantId = user.tenant_id });
 
             if (!isParent)

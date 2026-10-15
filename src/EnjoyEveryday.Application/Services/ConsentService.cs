@@ -178,6 +178,9 @@ public class ConsentService : IConsentService
 
     public async Task<ChildConsentDocument> CreateDraftAsync(CreateConsentDraftRequest request, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("consent.create") && !_userContext.HasPermission("consent.manage"))
+            throw new UnauthorizedAccessException("Requires consent.create or consent.manage permission.");
+
         var child = await _childRepository.GetByIdAsync(_tenantContext.TenantId, request.ChildId, ct)
             ?? throw new ArgumentException($"Child {request.ChildId} not found.");
 
@@ -324,6 +327,9 @@ public class ConsentService : IConsentService
 
     public async Task<ChildConsentDocument> AdminReviewAsync(AdminReviewRequest request, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("consent.approve") && !_userContext.HasPermission("consent.manage"))
+            throw new UnauthorizedAccessException("Requires consent.approve or consent.manage permission.");
+
         var doc = await _repository.GetDocumentByIdAsync(_tenantContext.TenantId, request.DocumentId, ct)
             ?? throw new ArgumentException("Document not found.");
 
@@ -693,6 +699,9 @@ public class ConsentService : IConsentService
 
     public async Task<ChildConsentDocument> WithdrawConsentAsync(Guid documentId, string reason, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("consent.manage"))
+            throw new UnauthorizedAccessException("Requires consent.manage permission.");
+
         var doc = await _repository.GetDocumentByIdAsync(_tenantContext.TenantId, documentId, ct)
             ?? throw new ArgumentException("Document not found.");
 

@@ -124,11 +124,90 @@
     .view-experience:hover {
         color: #10b981;
     }
+    .card-top-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .status-chip.status-published {
+        background: #e6eee9;
+        color: #3e6253;
+        border-color: #c8dacd;
+    }
+    .storybook-icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: #ffffff;
+        border: 1px solid #d9e2db;
+        color: #3e6253;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        padding: 0;
+        text-decoration: none;
+    }
+    .storybook-icon-btn:hover {
+        background: #e6eee9;
+        border-color: #557c6c;
+        color: #26332d;
+        transform: scale(1.12);
+        box-shadow: 0 2px 8px rgba(62, 98, 83, 0.15);
+    }
+    .storybook-bottom-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 9px;
+        border-radius: 7px;
+        background: #f4f8f5;
+        border: 1px solid #d4e2d8;
+        color: #3e6253;
+        font-size: 0.75rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-decoration: none;
+    }
+    .storybook-bottom-btn:hover {
+        background: #e6eee9;
+        border-color: #557c6c;
+        color: #26332d;
+    }
 </style>
 <article class="experience-card" @onclick="OnClick">
     <div class="card-top">
         <span class="type-chip">@Type</span>
-        <span class="status-chip">@Status</span>
+        <div class="card-top-right">
+            @if (IsPublished)
+            {
+                <a href="/api/experiences/@Id/storybook" target="_blank" class="storybook-icon-btn" 
+                   title="Open Storybook in separate tab" 
+                   @onclick:stopPropagation="true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                </a>
+                @if (OnDownloadStorybook.HasDelegate)
+                {
+                    <button class="storybook-icon-btn" 
+                            title="Download Storybook (.html)" 
+                            @onclick="HandleDownloadStorybook" 
+                            @onclick:stopPropagation="true">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </button>
+                }
+            }
+            <span class="status-chip @(IsPublished ? "status-published" : "")">@Status</span>
+        </div>
     </div>
 
     <h3>@Title</h3>
@@ -150,9 +229,38 @@
         <span class="usage">
             @Uses uses &middot; v@(Version) &middot; @CreatedDate &middot; @CreatedBy
         </span>
-        <button class="card-action view-experience">
-            View &rarr;
-        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            @if (IsPublished)
+            {
+                <a href="/api/experiences/@Id/storybook" target="_blank" class="storybook-bottom-btn" 
+                   title="Open Storybook in separate tab" 
+                   @onclick:stopPropagation="true">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                    <span>Read</span>
+                </a>
+                @if (OnDownloadStorybook.HasDelegate)
+                {
+                    <button class="storybook-bottom-btn" 
+                            title="Download Storybook (.html)" 
+                            @onclick="HandleDownloadStorybook" 
+                            @onclick:stopPropagation="true">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>Download</span>
+                    </button>
+                }
+            }
+            <button class="card-action view-experience">
+                View &rarr;
+            </button>
+        </div>
     </div>
 </article>
 
@@ -172,4 +280,15 @@
     [Parameter] public string CreatedDate { get; set; } = "";
     [Parameter] public string Id { get; set; } = "";
     [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public EventCallback<string> OnDownloadStorybook { get; set; }
+
+    private bool IsPublished => string.Equals(Status, "Published", StringComparison.OrdinalIgnoreCase);
+
+    private async Task HandleDownloadStorybook()
+    {
+        if (OnDownloadStorybook.HasDelegate)
+        {
+            await OnDownloadStorybook.InvokeAsync(Id);
+        }
+    }
 }

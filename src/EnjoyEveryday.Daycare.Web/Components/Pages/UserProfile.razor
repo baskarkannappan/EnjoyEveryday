@@ -1,104 +1,165 @@
 @page "/profile"
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
+@using Dapper
+@using EnjoyEveryday.Shared.Data
+@using EnjoyEveryday.Shared.Authorization
 @inject AuthenticationStateProvider AuthStateProvider
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject IDbConnectionFactory DbConnectionFactory
 
-<PageTitle>User Profile</PageTitle>
+<PageTitle>User Profile — EnjoyEveryday</PageTitle>
 
-<div style="padding: 24px; max-width: 800px; margin: 0 auto;">
-    <h1 style="font-family: 'Inter', sans-serif; font-size: 28px; font-weight: 700; color: var(--neutral-foreground-rest); margin-bottom: 24px;">
-        My Profile
-    </h1>
+<div class="content">
+    <PageHero Eyebrow="ACCOUNT &amp; SECURITY"
+              Title="My Profile"
+              Subtitle="Manage your identity, active organization credentials, and role permissions.">
+        <RightContent>
+            <a href="/users-by-role" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+                <FluentIcon Value="@(new Icons.Regular.Size16.PeopleTeam())" Color="Color.Default" />
+                <span>View All Users by Role Hierarchy &rarr;</span>
+            </a>
+        </RightContent>
+    </PageHero>
 
-    @if (Claims != null)
+    @if (_isLoading)
     {
-        <!-- Identity Summary -->
-        <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--elevation-shadow-16); margin-bottom: 24px; border: 1px solid var(--neutral-layer-3);">
-            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 24px;">
-                <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--accent-fill-rest); color: white; display: grid; place-items: center; font-size: 24px; font-weight: bold;">
-                    @(UserContext.Email?.FirstOrDefault().ToString().ToUpper() ?? "?")
+        <LoadingState Message="Loading profile and security credentials..." />
+    }
+    else
+    {
+        <!-- Identity Summary Card -->
+        <div style="background: var(--surface, #ffffff); border-radius: var(--radius, 18px); padding: 28px; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06)); margin-bottom: 24px; border: 1px solid var(--border, #e4e7df);">
+            <div style="display: flex; gap: 22px; align-items: center; margin-bottom: 24px;">
+                <div style="width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, var(--accent, #557c6c), var(--accent-dark, #3e6253)); color: white; display: grid; place-items: center; font-size: 28px; font-weight: 750; box-shadow: 0 4px 14px rgba(85, 124, 108, 0.35); flex-shrink: 0;">
+                    @(UserEmail?.FirstOrDefault().ToString().ToUpper() ?? "?")
                 </div>
                 <div>
-                    <h2 style="margin: 0; font-size: 20px; font-weight: 600;">@UserContext.Email</h2>
-                    <p style="margin: 4px 0 0 0; color: var(--neutral-foreground-hint); font-size: 14px;">User ID: @UserContext.UserId</p>
+                    <h2 style="margin: 0; font-size: 22px; font-weight: 750; color: var(--text, #26332d); letter-spacing: -0.3px;">
+                        @(UserDisplayName.Length > 0 ? UserDisplayName : UserEmail)
+                    </h2>
+                    <p style="margin: 4px 0 0 0; color: var(--muted, #6c7870); font-size: 14px; font-weight: 500;">@UserEmail</p>
+                    <div style="margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); font-family: monospace; font-size: 11px; color: var(--muted, #6c7870);">
+                        <span>User ID:</span>
+                        <span style="color: var(--text, #26332d); font-weight: 600;">@UserId</span>
+                    </div>
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                <div style="padding: 12px; background: var(--neutral-layer-1); border-radius: 8px;">
-                    <div style="font-size: 12px; font-weight: 700; color: var(--neutral-foreground-hint); text-transform: uppercase;">Tenant ID</div>
-                    <div style="font-family: monospace; font-size: 13px; margin-top: 4px;">@(Claims?.FirstOrDefault(c => c.Type == "TenantId")?.Value ?? "None")</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+                <div style="padding: 16px; background: var(--surface-soft, #f8f9f5); border-radius: 12px; border: 1px solid var(--border, #e4e7df);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--muted, #6c7870); text-transform: uppercase; letter-spacing: 0.6px;">Tenant ID</div>
+                    <div style="font-family: monospace; font-size: 13px; font-weight: 600; color: var(--text, #26332d); margin-top: 4px; word-break: break-all;">@TenantId</div>
                 </div>
-                <div style="padding: 12px; background: var(--neutral-layer-1); border-radius: 8px;">
-                    <div style="font-size: 12px; font-weight: 700; color: var(--neutral-foreground-hint); text-transform: uppercase;">Active Organization ID</div>
-                    <div style="font-family: monospace; font-size: 13px; margin-top: 4px;">@(UserContext.OrganizationId?.ToString() ?? "None")</div>
+                <div style="padding: 16px; background: var(--surface-soft, #f8f9f5); border-radius: 12px; border: 1px solid var(--border, #e4e7df);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--muted, #6c7870); text-transform: uppercase; letter-spacing: 0.6px;">Active Organization</div>
+                    <div style="font-family: monospace; font-size: 13px; font-weight: 600; color: var(--text, #26332d); margin-top: 4px; word-break: break-all;">@(ActiveOrgId ?? "None / Platform Default")</div>
                 </div>
             </div>
         </div>
 
-        <!-- Roles & Permissions -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
-            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
-                <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--neutral-foreground-rest);">Active Roles</h3>
-                @if (Roles.Any())
-                {
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                        @foreach (var role in Roles)
-                        {
-                            <span style="background: #e6f4ea; color: #1e8e3e; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">
-                                @role
-                            </span>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <p style="color: var(--neutral-foreground-hint); font-size: 14px; margin: 0;">No active roles</p>
-                }
+        <!-- Assigned Roles & Hierarchy Section -->
+        <div style="background: var(--surface, #ffffff); border-radius: var(--radius, 18px); padding: 28px; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06)); margin-bottom: 24px; border: 1px solid var(--border, #e4e7df);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border, #e4e7df); padding-bottom: 14px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 750; color: var(--text, #26332d); letter-spacing: -0.3px;">Assigned Roles &amp; Hierarchy</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--muted, #6c7870);">Roles determine your access scope and operational privileges across EnjoyEveryday.</p>
+                </div>
+                <span style="font-size: 12px; font-weight: 700; padding: 4px 12px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); border-radius: 20px; border: 1px solid #d0ded6;">
+                    @RoleItems.Count Active Role@(RoleItems.Count == 1 ? "" : "s")
+                </span>
             </div>
 
-            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
-                <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: var(--neutral-foreground-rest);">Permissions</h3>
-                @if (Permissions.Any())
-                {
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                        @foreach (var perm in Permissions)
-                        {
-                            <span style="background: #f1f3f4; color: #3c4043; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">
-                                @perm
-                            </span>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <p style="color: var(--neutral-foreground-hint); font-size: 14px; margin: 0;">No specific permissions granted</p>
-                }
-            </div>
+            @if (RoleItems.Any())
+            {
+                <div style="display: grid; gap: 14px;">
+                    @foreach (var role in RoleItems.OrderBy(r => r.HierarchyRank))
+                    {
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-radius: 14px; border: 1px solid @role.BorderColor; background: @role.BgColor; transition: transform 0.15s, box-shadow 0.15s;">
+                            <div style="display: flex; gap: 16px; align-items: center;">
+                                <div style="width: 48px; height: 48px; border-radius: 12px; background: white; color: @role.TextColor; display: grid; place-items: center; font-size: 22px; box-shadow: 0 2px 6px rgba(40, 55, 47, 0.06); border: 1px solid @role.BorderColor; flex-shrink: 0;">
+                                    @role.HierarchyIcon
+                                </div>
+                                <div>
+                                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                        <strong style="font-size: 16px; font-weight: 750; color: var(--text, #26332d);">@role.DisplayName</strong>
+                                        <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: white; color: @role.TextColor; border: 1px solid @role.BorderColor;">
+                                            Hierarchy Rank @role.HierarchyRank
+                                        </span>
+                                    </div>
+                                    <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--muted, #6c7870); line-height: 1.4;">@role.Description</p>
+                                </div>
+                            </div>
+                            <div style="text-align: right; flex-shrink: 0; margin-left: 16px;">
+                                <span style="font-size: 12px; font-weight: 650; padding: 5px 12px; border-radius: 8px; background: white; color: var(--text, #26332d); border: 1px solid var(--border, #e4e7df); box-shadow: 0 1px 2px rgba(40,55,47,0.04);">
+                                    @role.Scope Scope
+                                </span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div style="padding: 24px; text-align: center; background: #fff5f5; border: 1px solid #fed7d7; border-radius: 12px;">
+                    <p style="color: #9b2c2c; font-size: 14px; margin: 0; font-weight: 600;">
+                        No active roles detected. If you believe this is an error, please contact your Daycare Administrator.
+                    </p>
+                </div>
+            }
         </div>
 
-        <!-- Raw Claims (Advanced) -->
-        <details style="background: white; border-radius: 12px; padding: 16px 24px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
-            <summary style="font-weight: 600; cursor: pointer; color: var(--neutral-foreground-hint); user-select: none;">
-                View Raw Security Claims (Advanced)
+        <!-- Effective Permissions -->
+        <div style="background: var(--surface, #ffffff); border-radius: var(--radius, 18px); padding: 28px; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06)); margin-bottom: 24px; border: 1px solid var(--border, #e4e7df);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid var(--border, #e4e7df); padding-bottom: 14px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 750; color: var(--text, #26332d); letter-spacing: -0.3px;">Effective Permissions</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--muted, #6c7870);">Granular access controls granted by your active role membership.</p>
+                </div>
+                <span style="font-size: 12px; font-weight: 700; padding: 4px 12px; background: var(--surface-soft, #f8f9f5); color: var(--text, #26332d); border-radius: 20px; border: 1px solid var(--border, #e4e7df);">
+                    @Permissions.Count Permission@(Permissions.Count == 1 ? "" : "s")
+                </span>
+            </div>
+
+            @if (Permissions.Any())
+            {
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    @foreach (var perm in Permissions)
+                    {
+                        <span style="background: var(--surface-soft, #f8f9f5); color: var(--text, #26332d); padding: 5px 12px; border-radius: 8px; font-size: 12px; font-family: monospace; border: 1px solid var(--border, #e4e7df); font-weight: 550;">
+                            @perm
+                        </span>
+                    }
+                </div>
+            }
+            else
+            {
+                <p style="color: var(--muted, #6c7870); font-size: 14px; margin: 0;">No specific permissions granted.</p>
+            }
+        </div>
+
+        <!-- Raw Security Claims (Collapsible) -->
+        <details style="background: var(--surface, #ffffff); border-radius: var(--radius, 18px); padding: 20px 28px; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06)); border: 1px solid var(--border, #e4e7df);">
+            <summary style="font-weight: 700; cursor: pointer; color: var(--text, #26332d); user-select: none; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                <span>🔐</span>
+                <span>View Raw Security Claims Token</span>
             </summary>
-            <div style="margin-top: 16px; overflow-x: auto;">
+            <div style="margin-top: 18px; overflow-x: auto;">
                 <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                     <thead>
-                        <tr style="border-bottom: 2px solid var(--neutral-layer-3); text-align: left;">
-                            <th style="padding: 8px; font-weight: 600;">Type</th>
-                            <th style="padding: 8px; font-weight: 600;">Value</th>
+                        <tr style="border-bottom: 2px solid var(--border, #e4e7df); text-align: left;">
+                            <th style="padding: 10px 8px; font-weight: 700; color: var(--text, #26332d); font-size: 12px; text-transform: uppercase;">Claim Type</th>
+                            <th style="padding: 10px 8px; font-weight: 700; color: var(--text, #26332d); font-size: 12px; text-transform: uppercase;">Value</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var claim in Claims)
                         {
-                            <tr style="border-bottom: 1px solid var(--neutral-layer-3);">
-                                <td style="padding: 8px; font-family: monospace; color: var(--accent-fill-rest);">
+                            <tr style="border-bottom: 1px solid var(--border, #e4e7df);">
+                                <td style="padding: 9px 8px; font-family: monospace; color: var(--accent-dark, #3e6253); font-weight: 600;">
                                     @(claim.Type.Split('/').Last())
                                 </td>
-                                <td style="padding: 8px; font-family: monospace;">@claim.Value</td>
+                                <td style="padding: 9px 8px; font-family: monospace; color: var(--text, #26332d);">@claim.Value</td>
                             </tr>
                         }
                     </tbody>
@@ -106,37 +167,281 @@
             </div>
         </details>
     }
-    else
-    {
-        <p>Loading profile...</p>
-    }
 </div>
 
 @code {
-    private IEnumerable<Claim>? Claims;
-    private List<string> Roles = new();
+    private bool _isLoading = true;
+    private IEnumerable<Claim> Claims = Enumerable.Empty<Claim>();
+    private List<UserRoleDetail> RoleItems = new();
     private List<string> Permissions = new();
+    private string UserDisplayName = "";
+    private string UserEmail = "";
+    private string UserId = "";
+    private string TenantId = "";
+    private string? ActiveOrgId;
+
+    public class UserRoleDetail
+    {
+        public string RoleName { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string CanonicalRole { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Scope { get; set; } = string.Empty;
+        public int HierarchyRank { get; set; } = 99;
+        public string HierarchyIcon { get; set; } = "👤";
+        public string BgColor { get; set; } = "#f9fafb";
+        public string BorderColor { get; set; } = "#e5e7eb";
+        public string TextColor { get; set; } = "#1f2937";
+    }
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-
-        if (user.Identity?.IsAuthenticated == true)
+        try
         {
-            Claims = user.Claims;
-            
-            Roles = user.Claims
-                .Where(c => c.Type == ClaimTypes.Role)
-                .Select(c => c.Value)
-                .OrderBy(r => r)
-                .ToList();
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
 
-            Permissions = user.Claims
-                .Where(c => c.Type == "Permission")
-                .Select(c => c.Value)
-                .OrderBy(p => p)
-                .ToList();
+            if (user.Identity?.IsAuthenticated == true)
+            {
+                Claims = user.Claims.ToList();
+
+                UserEmail = user.FindFirst(ClaimTypes.Email)?.Value 
+                    ?? user.FindFirst("email")?.Value 
+                    ?? UserContext.Email 
+                    ?? "user@example.com";
+
+                UserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                    ?? user.FindFirst("sub")?.Value 
+                    ?? UserContext.UserId.ToString();
+
+                TenantId = user.FindFirst("TenantId")?.Value ?? "Default";
+                ActiveOrgId = user.FindFirst("ActiveOrganizationId")?.Value ?? UserContext.OrganizationId?.ToString();
+
+                // 1. Gather all roles from claims (case-insensitive and format-tolerant)
+                var rawRoleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var claim in user.Claims)
+                {
+                    if (claim.Type == ClaimTypes.Role || 
+                        claim.Type.Equals("role", StringComparison.OrdinalIgnoreCase) || 
+                        claim.Type.Equals("roles", StringComparison.OrdinalIgnoreCase) ||
+                        claim.Type.EndsWith("/role", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!string.IsNullOrWhiteSpace(claim.Value))
+                            rawRoleNames.Add(claim.Value.Trim());
+                    }
+                }
+
+                foreach (var r in UserContext.Roles)
+                {
+                    if (!string.IsNullOrWhiteSpace(r))
+                        rawRoleNames.Add(r.Trim());
+                }
+
+                // 2. Query direct DB roles if user ID is a valid GUID
+                if (Guid.TryParse(UserId, out var parsedUserId))
+                {
+                    try
+                    {
+                        using var conn = await DbConnectionFactory.CreateConnectionAsync();
+                        
+                        var dbUser = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                            "SELECT display_name, first_name, last_name FROM users WHERE id = @Id",
+                            new { Id = parsedUserId });
+                        if (dbUser != null)
+                        {
+                            UserDisplayName = (string?)dbUser.display_name ?? $"{dbUser.first_name} {dbUser.last_name}".Trim();
+                        }
+
+                        var dbRoles = await conn.QueryAsync<string>(
+                            @"SELECT r.name 
+                              FROM user_roles ur JOIN roles r ON ur.role_id = r.id 
+                              WHERE ur.user_id = @UserId AND r.scope_type = 'Platform' AND r.tenant_id IS NULL
+                              UNION
+                              SELECT r.name 
+                              FROM user_organization_roles uor JOIN roles r ON uor.role_id = r.id 
+                              WHERE uor.user_id = @UserId",
+                            new { UserId = parsedUserId });
+
+                        foreach (var dr in dbRoles)
+                        {
+                            if (!string.IsNullOrWhiteSpace(dr))
+                                rawRoleNames.Add(dr.Trim());
+                        }
+
+                        // Also check if user is in classroom_teachers
+                        var isTeacher = await conn.ExecuteScalarAsync<bool>(
+                            "SELECT EXISTS(SELECT 1 FROM classroom_teachers WHERE teacher_id = @UserId)",
+                            new { UserId = parsedUserId });
+                        if (isTeacher)
+                            rawRoleNames.Add(RoleTemplates.ClassroomTeacher);
+
+                        // Also check if user is in family_relationships
+                        var isParent = await conn.ExecuteScalarAsync<bool>(
+                            "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId)",
+                            new { UserId = parsedUserId });
+                        if (isParent)
+                            rawRoleNames.Add(RoleTemplates.Parent);
+                    }
+                    catch
+                    {
+                        // Database query failed, gracefully rely on claims
+                    }
+                }
+
+                // Map roles to rich hierarchy descriptors
+                RoleItems = rawRoleNames
+                    .Select(BuildRoleDetail)
+                    .OrderBy(r => r.HierarchyRank)
+                    .ToList();
+
+                // 3. Permissions collection
+                var rawPerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var claim in user.Claims)
+                {
+                    if (claim.Type.Equals("Permission", StringComparison.OrdinalIgnoreCase) ||
+                        claim.Type.EndsWith("/permission", StringComparison.OrdinalIgnoreCase))
+                    {
+                        rawPerms.Add(claim.Value);
+                    }
+                }
+                foreach (var p in UserContext.Permissions)
+                {
+                    rawPerms.Add(p);
+                }
+
+                // If claims had no permissions, resolve template permissions from roles
+                if (!rawPerms.Any())
+                {
+                    foreach (var role in RoleItems)
+                    {
+                        foreach (var perm in RoleTemplates.PermissionsOf(role.CanonicalRole))
+                        {
+                            rawPerms.Add(perm);
+                        }
+                    }
+                }
+
+                Permissions = rawPerms.OrderBy(p => p).ToList();
+            }
         }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static UserRoleDetail BuildRoleDetail(string roleName)
+    {
+        var canonical = RoleTemplates.Resolve(roleName);
+        var scope = RoleTemplates.ScopeOf(canonical)?.ToString() ?? "Organization";
+
+        return canonical switch
+        {
+            RoleTemplates.PlatformAdmin => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Platform Administrator",
+                CanonicalRole = canonical,
+                Description = "Full platform governance, tenant configuration, plans, and system observability.",
+                Scope = "Platform",
+                HierarchyRank = 1,
+                HierarchyIcon = "🛡️",
+                BgColor = "#f4f0f7",
+                BorderColor = "#ddd4e8",
+                TextColor = "#594273"
+            },
+            RoleTemplates.OrganizationOwner => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Organization Owner",
+                CanonicalRole = canonical,
+                Description = "Full ownership authority over daycare operations, finances, branches, staff, and policies.",
+                Scope = "Organization",
+                HierarchyRank = 2,
+                HierarchyIcon = "👑",
+                BgColor = "#fdf8ee",
+                BorderColor = "#ecd9b5",
+                TextColor = "#8a6224"
+            },
+            RoleTemplates.OrganizationAdmin => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Daycare Administrator",
+                CanonicalRole = canonical,
+                Description = "Operations director managing classrooms, staff assignments, curriculum approval, and parent updates.",
+                Scope = "Organization",
+                HierarchyRank = 3,
+                HierarchyIcon = "🏢",
+                BgColor = "#e6eee9",
+                BorderColor = "#c8dacd",
+                TextColor = "#3e6253"
+            },
+            RoleTemplates.BranchAdmin => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Branch Director",
+                CanonicalRole = canonical,
+                Description = "Directorial management for assigned daycare center branches, facilities, and local teams.",
+                Scope = "Branch",
+                HierarchyRank = 4,
+                HierarchyIcon = "🏛️",
+                BgColor = "#f8f4ee",
+                BorderColor = "#ded2c0",
+                TextColor = "#7c5936"
+            },
+            RoleTemplates.ClassroomTeacher => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Lead Classroom Educator",
+                CanonicalRole = canonical,
+                Description = "Educational planning, experience execution, observation logging, and child journey documentation.",
+                Scope = "Classroom",
+                HierarchyRank = 5,
+                HierarchyIcon = "🎓",
+                BgColor = "#eef4f1",
+                BorderColor = "#cbe0d5",
+                TextColor = "#346a54"
+            },
+            RoleTemplates.DaycareTeacher => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Daycare Educator / Assistant",
+                CanonicalRole = canonical,
+                Description = "Assisting in classroom rhythm, recording care activities, and supporting learning experiences.",
+                Scope = "Classroom",
+                HierarchyRank = 6,
+                HierarchyIcon = "✏️",
+                BgColor = "#f4f6f4",
+                BorderColor = "#d5ded6",
+                TextColor = "#475e50"
+            },
+            RoleTemplates.Parent => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = "Parent / Guardian",
+                CanonicalRole = canonical,
+                Description = "Family access to child journey highlights, milestone updates, daily care logs, and communications.",
+                Scope = "Family",
+                HierarchyRank = 7,
+                HierarchyIcon = "👨‍👩‍👧",
+                BgColor = "#fcf1f0",
+                BorderColor = "#edd1cf",
+                TextColor = "#98433e"
+            },
+            _ => new UserRoleDetail
+            {
+                RoleName = roleName,
+                DisplayName = roleName,
+                CanonicalRole = canonical,
+                Description = $"Custom organization role with specialized assigned permissions.",
+                Scope = scope,
+                HierarchyRank = 8,
+                HierarchyIcon = "📋",
+                BgColor = "#f8f9f5",
+                BorderColor = "#e4e7df",
+                TextColor = "#26332d"
+            }
+        };
     }
 }

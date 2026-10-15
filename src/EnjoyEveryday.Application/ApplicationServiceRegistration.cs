@@ -55,9 +55,13 @@ public static class ApplicationServiceRegistration
         services.AddScoped<OrganizationIntelligenceService>();
 
         // Register the dynamic IdentityContext for both abstractions
-        services.AddScoped<AppIdentityContext>();
+        services.AddScoped<AppIdentityContext>(sp => new AppIdentityContext(
+            sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+            sp,
+            sp.GetService<Microsoft.AspNetCore.Http.IHttpContextAccessor>()));
         services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<AppIdentityContext>());
         services.AddScoped<IUserContext>(sp => sp.GetRequiredService<AppIdentityContext>());
+        services.AddScoped<IResourceAuthorizer, ResourceAuthorizer>();
 
         return services;
     }

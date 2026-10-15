@@ -53,6 +53,7 @@ namespace EnjoyEveryday.Application.Tests
             public Task<User?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default) => Task.FromResult<User?>(new User { Id = id, TenantId = tenantId });
             public Task<IEnumerable<User>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default) => Task.FromResult<IEnumerable<User>>(Array.Empty<User>());
             public Task AssignRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+            public Task AssignOrganizationRoleAsync(Guid tenantId, Guid organizationId, Guid userId, string roleName, CancellationToken cancellationToken = default) => Task.CompletedTask;
             public Task<IEnumerable<User>> GetUsersByRoleAsync(Guid tenantId, string roleName, CancellationToken cancellationToken = default) => Task.FromResult<IEnumerable<User>>(Array.Empty<User>());
         }
 

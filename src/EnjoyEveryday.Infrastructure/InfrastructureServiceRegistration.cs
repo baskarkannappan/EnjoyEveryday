@@ -51,6 +51,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<ITenantSettingsRepository, TenantSettingsRepository>();
         services.AddScoped<IAttendanceRepository, AttendanceRepository>();
         services.AddScoped<IParentRepository, ParentRepository>();
+        services.AddScoped<IAccessScopeRepository, AccessScopeRepository>();
         services.AddScoped<IConsentRepository, ConsentRepository>();
         services.AddScoped<IFloorMapRepository, FloorMapRepository>();
         services.AddScoped<IEmergencyContactRepository, EmergencyContactRepository>();

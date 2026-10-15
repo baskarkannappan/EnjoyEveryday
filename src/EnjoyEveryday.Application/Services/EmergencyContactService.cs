@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
@@ -43,6 +44,8 @@ public class EmergencyContactService : IEmergencyContactService
     private readonly IUserContext _userContext;
     private readonly IAuditService _auditService;
 
+    private readonly IResourceAuthorizer _authorizer;
+
     public EmergencyContactService(
         IEmergencyContactRepository repository,
         IBranchRepository branchRepository,
@@ -50,6 +53,18 @@ public class EmergencyContactService : IEmergencyContactService
         ITenantContext tenantContext,
         IUserContext userContext,
         IAuditService auditService)
+        : this(repository, branchRepository, organizationRepository, tenantContext, userContext, auditService, new NullResourceAuthorizer())
+    {
+    }
+
+    public EmergencyContactService(
+        IEmergencyContactRepository repository,
+        IBranchRepository branchRepository,
+        IOrganizationRepository organizationRepository,
+        ITenantContext tenantContext,
+        IUserContext userContext,
+        IAuditService auditService,
+        IResourceAuthorizer authorizer)
     {
         _repository = repository;
         _branchRepository = branchRepository;
@@ -57,6 +72,7 @@ public class EmergencyContactService : IEmergencyContactService
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
+        _authorizer = authorizer;
     }
 
     public async Task<IEnumerable<EmergencyContact>> GetContactsAsync(
@@ -76,6 +92,12 @@ public class EmergencyContactService : IEmergencyContactService
 
     public async Task<EmergencyContact> CreateContactAsync(EmergencyContact contact, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("safety.manage") && !_userContext.HasPermission("safety.emergency.manage"))
+            throw new UnauthorizedAccessException("Requires safety.manage or safety.emergency.manage permission.");
+
+        if (contact.BranchId.HasValue)
+            await _authorizer.RequireBranchAsync(contact.BranchId.Value, Permissions.SafetyManage, ct);
+
         if (string.IsNullOrWhiteSpace(contact.Name))
             throw new ArgumentException("Contact name is required.");
 
@@ -111,6 +133,12 @@ public class EmergencyContactService : IEmergencyContactService
 
     public async Task UpdateContactAsync(EmergencyContact contact, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("safety.manage") && !_userContext.HasPermission("safety.emergency.manage"))
+            throw new UnauthorizedAccessException("Requires safety.manage or safety.emergency.manage permission.");
+
+        if (contact.BranchId.HasValue)
+            await _authorizer.RequireBranchAsync(contact.BranchId.Value, Permissions.SafetyManage, ct);
+
         var existing = await _repository.GetContactByIdAsync(_tenantContext.TenantId, contact.Id, ct);
         if (existing == null)
             throw new KeyNotFoundException($"Emergency contact with ID {contact.Id} not found.");
@@ -122,7 +150,7 @@ public class EmergencyContactService : IEmergencyContactService
                              !string.Equals(existing.Instructions, contact.Instructions?.Trim(), StringComparison.OrdinalIgnoreCase);
 
         existing.Scope = contact.Scope;
-        existing.PhoneNumber = contact.PhoneNumber.Trim();
+        existing.PhoneNumber = contact.PhoneNumber?.Trim() ?? string.Empty;
         existing.AlternatePhoneNumber = contact.AlternatePhoneNumber?.Trim();
         existing.CountryRegion = contact.CountryRegion?.Trim();
         existing.Address = contact.Address?.Trim();
@@ -154,9 +182,15 @@ public class EmergencyContactService : IEmergencyContactService
 
     public async Task DeleteContactAsync(Guid id, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("safety.manage") && !_userContext.HasPermission("safety.emergency.manage"))
+            throw new UnauthorizedAccessException("Requires safety.manage or safety.emergency.manage permission.");
+
         var existing = await _repository.GetContactByIdAsync(_tenantContext.TenantId, id, ct);
         if (existing == null)
             throw new KeyNotFoundException($"Emergency contact with ID {id} not found.");
+
+        if (existing.BranchId.HasValue)
+            await _authorizer.RequireBranchAsync(existing.BranchId.Value, Permissions.SafetyManage, ct);
 
         await _repository.DeleteContactAsync(_tenantContext.TenantId, id, ct);
 
@@ -173,9 +207,15 @@ public class EmergencyContactService : IEmergencyContactService
 
     public async Task VerifyContactAsync(Guid id, string verifiedBy, DateTime? reviewDueAt = null, CancellationToken ct = default)
     {
+        if (!_userContext.HasPermission("safety.manage") && !_userContext.HasPermission("safety.emergency.verify") && !_userContext.HasPermission("safety.emergency.manage"))
+            throw new UnauthorizedAccessException("Requires safety.manage or safety.emergency.verify permission.");
+
         var existing = await _repository.GetContactByIdAsync(_tenantContext.TenantId, id, ct);
         if (existing == null)
             throw new KeyNotFoundException($"Emergency contact with ID {id} not found.");
+
+        if (existing.BranchId.HasValue)
+            await _authorizer.RequireBranchAsync(existing.BranchId.Value, Permissions.EmergencyContactsManage, ct);
 
         var verifiedAt = DateTime.UtcNow;
         var due = reviewDueAt ?? verifiedAt.AddMonths(6);

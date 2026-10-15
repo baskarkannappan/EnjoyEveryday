@@ -52,13 +52,32 @@
   - Completed events show with a checkmark badge (`✓`), strikethrough title, and styled soft-sage theme pill.
   - Clicking a completed event opens the quick modal in **Read-Only Mode** (banner notice, disabled inputs and checklist, direct link to full details).
 
+### F. Role and Permission Matrix Implementation & Security Hardening
+1. **Core Matrix Abstractions**:
+   - `Permissions.cs` ([src/EnjoyEveryday.Shared/Authorization/Permissions.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Shared/Authorization/Permissions.cs)): Standardized permission catalog covering all domains (Platform, Organization, Staff, Child, Learning/Experience, Care/Attendance, Safety/Consent, Events, Comms).
+   - `RoleTemplates.cs` ([src/EnjoyEveryday.Shared/Authorization/RoleTemplates.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Shared/Authorization/RoleTemplates.cs)): Six canonical persona templates (Platform Admin, Organization Admin, Branch Admin, Daycare Teacher, Classroom Teacher, Parent / Guardian) with `RoleScope` definitions (`Platform`, `Organization`, `Branch`, `Classroom`, `Family`) and alias resolution.
+   - `IAccessScopeRepository` & `AccessScopeRepository` ([src/EnjoyEveryday.Infrastructure/Repositories/AccessScopeRepository.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Infrastructure/Repositories/AccessScopeRepository.cs)): Live, tenant-isolated lookups for active org memberships, assigned branches (`user_branch_assignments`), assigned classrooms, verified guardian relationships, and active support grants (`support_access_grants`).
+   - `IResourceAuthorizer` & `ResourceAuthorizer` ([src/EnjoyEveryday.Application/Services/ResourceAuthorizer.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Application/Services/ResourceAuthorizer.cs)): Strict server-side resource-level authorization enforcing multi-tenant isolation, organization boundaries, branch/classroom scope, verified guardian relationships, and anti-privilege escalation checks.
+2. **Services & Endpoints Secured**:
+   - `AppIdentityContext`: Hardened permission resolution removing dev bypasses; permissions tied to active organization claims.
+   - `ChildService`: Per-child and classroom-level scoping via `IResourceAuthorizer`.
+   - `FloorMapService`: All draft, update, marker, review, publish, and file download operations guarded with branch-level authorization.
+   - `EmergencyContactService`: Enforced `Permissions.SafetyManage` and `RequireBranchAsync`.
+   - `ConsentService`: Enforced `Permissions.ConsentApprove`, `ConsentManage`, and `ConsentCreate`.
+   - `ExecutionService`: Enforced teacher classroom assignments and experience execute permissions.
+   - `ParentRepository` & `ParentCommunicationRepository`: Enforced `status = 'Verified' AND revoked_at IS NULL`.
+   - Web Endpoints (`Admin.Web`, `Daycare.Web`, `Parent.Web`): Hardened JWT issuance to enforce active organization membership and verified guardian status.
+3. **Database Migration**:
+   - `044_role_permission_matrix.sql` ([database/migrations/044_role_permission_matrix.sql](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/database/migrations/044_role_permission_matrix.sql)): Seeds all catalog permissions, synchronizes tenant roles/permissions, adds `user_branch_assignments`, `support_access_grants`, `family_relationships` verification fields, migrates legacy global role assignments into organization roles, and creates append-only audit trigger.
+4. **Security Verification**:
+   - `RoleAndPermissionMatrixSecurityTests.cs` ([src/EnjoyEveryday.Application.Tests/RoleAndPermissionMatrixSecurityTests.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Application.Tests/RoleAndPermissionMatrixSecurityTests.cs)): Automated test suite verifying all 6 personas, support grants, immediate revocation, relationship-based guardian access, cross-tenant/cross-org denial, and privilege escalation prevention (all 87 tests passing in application test suite).
+
 ---
 
 ## 2. Git Status
 - Branch: `master`
-- Tracking / Pushed: `origin/develop`
-- Commit: `e38d4c2`
-- Clean working directory (0 uncommitted files).
+- Tracking: `origin/develop`
+- Clean compilation and 100% passing test suite (87 tests passing).
 
 ---
 
@@ -68,8 +87,8 @@
    ```powershell
    dotnet run --project src/EnjoyEveryday.Daycare.Web/EnjoyEveryday.Daycare.Web.csproj
    ```
-3. Check the recent commit logs:
+3. Run the test suite:
    ```powershell
-   git log -n 3
+   dotnet test src/EnjoyEveryday.Application.Tests/EnjoyEveryday.Application.Tests.csproj
    ```
-4. All code and styling changes are preserved in the repository and in `PROJECT_STATE.md`.
+4. All code, migrations, and test suites are preserved in the repository and in `PROJECT_STATE.md`.

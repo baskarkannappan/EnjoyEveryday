@@ -1,0 +1,433 @@
+@page "/users-by-role"
+@page "/management/users-by-role"
+@using Dapper
+@using EnjoyEveryday.Shared.Data
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@inject IDbConnectionFactory DbConnectionFactory
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+
+<PageTitle>Users by Role Hierarchy — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <!-- HEADER -->
+    <PageHero Eyebrow="PEOPLE"
+              Title="Users by Role"
+              Subtitle="All daycare team members, educators, administrators, and families organized by role hierarchy.">
+        <RightContent>
+            <a href="/profile" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+                <FluentIcon Value="@(new Icons.Regular.Size16.Person())" Color="Color.Default" />
+                <span>My Profile</span>
+            </a>
+            <a href="/management/roles" class="btn primary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+                <FluentIcon Value="@(new Icons.Regular.Size16.Shield())" Color="Color.Default" />
+                <span>Manage Roles</span>
+            </a>
+        </RightContent>
+    </PageHero>
+
+    <!-- SEARCH & FILTER ROW (Native EnjoyEveryday Style) -->
+    <div class="search-row" style="margin-bottom: 14px;">
+        <input class="search" 
+               @bind="_searchTerm" 
+               @bind:event="oninput" 
+               placeholder="Search team members by name, email, or role..." />
+               
+        <select class="filter" @bind="_selectedFilter" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-weight: 650; color: var(--text, #26332d); background: white; font-size: 13px; cursor: pointer;">
+            <option value="All">All Roles (@_allUsers.Count)</option>
+            <option value="Admin">Leadership &amp; Admins</option>
+            <option value="Teacher">Educators &amp; Teachers</option>
+            <option value="Parent">Families &amp; Parents</option>
+        </select>
+    </div>
+
+    <!-- FILTER TABS (Native EnjoyEveryday Style) -->
+    <div class="tabs" style="margin-bottom: 28px;">
+        <button class="tab @(_selectedFilter == "All" ? "active" : "")" @onclick='() => _selectedFilter = "All"'>
+            All Users (@_allUsers.Count)
+        </button>
+        <button class="tab @(_selectedFilter == "Admin" ? "active" : "")" @onclick='() => _selectedFilter = "Admin"'>
+            Leadership &amp; Admins
+        </button>
+        <button class="tab @(_selectedFilter == "Teacher" ? "active" : "")" @onclick='() => _selectedFilter = "Teacher"'>
+            Educators &amp; Teachers
+        </button>
+        <button class="tab @(_selectedFilter == "Parent" ? "active" : "")" @onclick='() => _selectedFilter = "Parent"'>
+            Families &amp; Parents
+        </button>
+    </div>
+
+    <!-- HIERARCHY GROUPS -->
+    @if (_isLoading)
+    {
+        <LoadingState Message="Loading team members and resolving role hierarchy..." />
+    }
+    else if (!_groupedRoles.Any())
+    {
+        <EmptyState Icon="👥"
+                    Title="No team members found"
+                    Description="No users matched your search criteria." />
+    }
+    else
+    {
+        <div style="display: flex; flex-direction: column; gap: 36px;">
+            @foreach (var group in _groupedRoles)
+            {
+                <div>
+                    <!-- GROUP HEADER -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border, #e1e6df); flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 36px; height: 36px; border-radius: 11px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); display: grid; place-items: center; font-size: 18px;">
+                                @group.HierarchyIcon
+                            </div>
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <h2 style="font-size: 18px; font-weight: 750; color: var(--text, #26332d); margin: 0; letter-spacing: -0.3px;">
+                                        @group.RoleDisplayName
+                                    </h2>
+                                    <span style="background: #eef2ed; color: var(--accent-dark, #3e6253); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                        Rank @group.HierarchyRank
+                                    </span>
+                                    <span style="background: white; border: 1px solid var(--border, #e4e7df); color: var(--muted, #6c7870); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px;">
+                                        @group.Scope Scope
+                                    </span>
+                                </div>
+                                <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--muted, #6c7870);">@group.Description</p>
+                            </div>
+                        </div>
+
+                        <span style="font-size: 12px; font-weight: 700; color: var(--muted, #6c7870); background: white; border: 1px solid var(--border, #e4e7df); padding: 4px 12px; border-radius: 12px;">
+                            @group.Users.Count member@(group.Users.Count == 1 ? "" : "s")
+                        </span>
+                    </div>
+
+                    <!-- PEOPLE GRID (Native EnjoyEveryday Grid Layout) -->
+                    <div class="people-grid">
+                        @foreach (var user in group.Users)
+                        {
+                            <PersonCard AvatarInitials="@(user.DisplayName.Length > 0 ? user.DisplayName.Substring(0, 1).ToUpper() : (user.Email.Length > 0 ? user.Email.Substring(0, 1).ToUpper() : "?"))"
+                                        Name="@user.DisplayName"
+                                        Subtitle="@user.Email"
+                                        Status="@(user.IsActive ? "Active" : "Inactive")"
+                                        HighlightTitle="@(user.ClassroomName != null ? "Classroom Assignment" : (user.AssociatedChildrenCount > 0 ? "Enrolled Children" : (!string.IsNullOrEmpty(user.OrganizationName) ? "Organization" : "Authority Scope")))"
+                                        HighlightText="@(user.ClassroomName ?? (user.AssociatedChildrenCount > 0 ? $"{user.AssociatedChildrenCount} child(ren) enrolled" : (!string.IsNullOrEmpty(user.OrganizationName) ? user.OrganizationName : $"{group.Scope} Level Permissions")))" />
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _isLoading = true;
+    private string _searchTerm = "";
+    private string _selectedFilter = "All";
+    private List<UserRecord> _allUsers = new();
+    private List<RoleGroup> _groupedRoles = new();
+
+    public class UserRecord
+    {
+        public Guid UserId { get; set; }
+        public string Email { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+        public DateTimeOffset CreatedAt { get; set; }
+        public string? OrganizationName { get; set; }
+        public string? ClassroomName { get; set; }
+        public int AssociatedChildrenCount { get; set; }
+        public List<string> AssignedRoles { get; set; } = new();
+        public List<string> CanonicalRoles { get; set; } = new();
+    }
+
+    public class RoleGroup
+    {
+        public string RoleKey { get; set; } = string.Empty;
+        public string RoleDisplayName { get; set; } = string.Empty;
+        public int HierarchyRank { get; set; }
+        public string HierarchyIcon { get; set; } = "👤";
+        public string Scope { get; set; } = "Organization";
+        public string Description { get; set; } = string.Empty;
+        public string BgColor { get; set; } = "#f9fafb";
+        public string BorderColor { get; set; } = "#e5e7eb";
+        public string TextColor { get; set; } = "#1f2937";
+        public List<UserRecord> Users { get; set; } = new();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsersAndRolesAsync();
+    }
+
+    private async Task LoadUsersAndRolesAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+
+            using var conn = await DbConnectionFactory.CreateConnectionAsync();
+
+            // 1. Fetch all users in tenant
+            var sqlUsers = @"
+                SELECT 
+                    u.id AS UserId,
+                    u.email AS Email,
+                    COALESCE(NULLIF(TRIM(u.display_name), ''), NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS DisplayName,
+                    u.is_active AS IsActive,
+                    u.created_at AS CreatedAt
+                FROM users u
+                WHERE @TenantId = '00000000-0000-0000-0000-000000000000'::uuid OR u.tenant_id = @TenantId
+                ORDER BY u.first_name, u.last_name";
+
+            var usersData = (await conn.QueryAsync<UserRecord>(sqlUsers, new { TenantId = tenantId })).ToList();
+            var userMap = usersData.ToDictionary(u => u.UserId);
+
+            // 2. Fetch platform and organization roles
+            var sqlRoles = @"
+                SELECT ur.user_id AS UserId, r.name AS RoleName, NULL AS OrganizationName
+                FROM user_roles ur
+                JOIN roles r ON ur.role_id = r.id
+                UNION ALL
+                SELECT uor.user_id AS UserId, r.name AS RoleName, o.name AS OrganizationName
+                FROM user_organization_roles uor
+                JOIN roles r ON uor.role_id = r.id
+                LEFT JOIN organizations o ON o.id = uor.organization_id";
+
+            var roleRows = await conn.QueryAsync<dynamic>(sqlRoles);
+            foreach (var row in roleRows)
+            {
+                Guid uId = row.userid;
+                string rName = row.rolename;
+                string? orgName = row.organizationname;
+
+                if (userMap.TryGetValue(uId, out var user))
+                {
+                    if (!user.AssignedRoles.Contains(rName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        user.AssignedRoles.Add(rName);
+                        user.CanonicalRoles.Add(RoleTemplates.Resolve(rName));
+                    }
+                    if (!string.IsNullOrEmpty(orgName) && string.IsNullOrEmpty(user.OrganizationName))
+                    {
+                        user.OrganizationName = orgName;
+                    }
+                }
+            }
+
+            // 3. Fetch classroom teacher assignments
+            try
+            {
+                var sqlTeachers = @"
+                    SELECT ct.teacher_id AS UserId, c.name AS ClassroomName
+                    FROM classroom_teachers ct
+                    JOIN classrooms c ON c.id = ct.classroom_id";
+                var teacherRows = await conn.QueryAsync<dynamic>(sqlTeachers);
+                foreach (var tr in teacherRows)
+                {
+                    Guid uId = tr.userid;
+                    string cName = tr.classroomname;
+                    if (userMap.TryGetValue(uId, out var user))
+                    {
+                        user.ClassroomName = cName;
+                        if (!user.CanonicalRoles.Contains(RoleTemplates.ClassroomTeacher))
+                        {
+                            user.AssignedRoles.Add("Teacher");
+                            user.CanonicalRoles.Add(RoleTemplates.ClassroomTeacher);
+                        }
+                    }
+                }
+            }
+            catch { /* table check safe */ }
+
+            // 4. Fetch family relationships (parents)
+            try
+            {
+                var sqlParents = @"
+                    SELECT fr.user_id AS UserId, COUNT(fr.child_id) AS ChildrenCount
+                    FROM family_relationships fr
+                    GROUP BY fr.user_id";
+                var parentRows = await conn.QueryAsync<dynamic>(sqlParents);
+                foreach (var pr in parentRows)
+                {
+                    Guid uId = pr.userid;
+                    int count = (int)pr.childrencount;
+                    if (userMap.TryGetValue(uId, out var user))
+                    {
+                        user.AssociatedChildrenCount = count;
+                        if (!user.CanonicalRoles.Contains(RoleTemplates.Parent))
+                        {
+                            user.AssignedRoles.Add("Parent");
+                            user.CanonicalRoles.Add(RoleTemplates.Parent);
+                        }
+                    }
+                }
+            }
+            catch { /* table check safe */ }
+
+            _allUsers = usersData;
+            RecomputeGroups();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void RecomputeGroups()
+    {
+        // Defined Role Hierarchy Tiers (High to Low)
+        var hierarchyDefinitions = new List<RoleGroup>
+        {
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.PlatformAdmin,
+                RoleDisplayName = "Platform Administrators",
+                HierarchyRank = 1,
+                HierarchyIcon = "🛡️",
+                Scope = "Platform",
+                Description = "Platform system governors with cross-tenant management and infrastructure access.",
+                BgColor = "#f4f0f7",
+                BorderColor = "#ddd4e8",
+                TextColor = "#594273"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.OrganizationOwner,
+                RoleDisplayName = "Organization Owners",
+                HierarchyRank = 2,
+                HierarchyIcon = "👑",
+                Scope = "Organization",
+                Description = "Owners with legal, financial, and overall executive authority over the daycare organization.",
+                BgColor = "#fdf8ee",
+                BorderColor = "#ecd9b5",
+                TextColor = "#8a6224"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.OrganizationAdmin,
+                RoleDisplayName = "Daycare Administrators",
+                HierarchyRank = 3,
+                HierarchyIcon = "🏢",
+                Scope = "Organization",
+                Description = "Operations directors overseeing classrooms, educators, enrollments, curriculum approval, and parent updates.",
+                BgColor = "#e6eee9",
+                BorderColor = "#c8dacd",
+                TextColor = "#3e6253"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.BranchAdmin,
+                RoleDisplayName = "Branch Directors",
+                HierarchyRank = 4,
+                HierarchyIcon = "🏛️",
+                Scope = "Branch",
+                Description = "Center directors managing specific physical daycare branch locations and on-site staff.",
+                BgColor = "#f8f4ee",
+                BorderColor = "#ded2c0",
+                TextColor = "#7c5936"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.ClassroomTeacher,
+                RoleDisplayName = "Lead Classroom Educators",
+                HierarchyRank = 5,
+                HierarchyIcon = "🎓",
+                Scope = "Classroom",
+                Description = "Educators leading daily pedagogical planning, experience delivery, and child journey observations.",
+                BgColor = "#eef4f1",
+                BorderColor = "#cbe0d5",
+                TextColor = "#346a54"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.DaycareTeacher,
+                RoleDisplayName = "Daycare Educators & Assistants",
+                HierarchyRank = 6,
+                HierarchyIcon = "✏️",
+                Scope = "Classroom",
+                Description = "Educators assisting in daily routines, recording care activities, and supporting child development.",
+                BgColor = "#f4f6f4",
+                BorderColor = "#d5ded6",
+                TextColor = "#475e50"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.Parent,
+                RoleDisplayName = "Parents & Guardians",
+                HierarchyRank = 7,
+                HierarchyIcon = "👨‍👩‍👧",
+                Scope = "Family",
+                Description = "Family members with access to child milestones, daily care summaries, and classroom announcements.",
+                BgColor = "#fcf1f0",
+                BorderColor = "#edd1cf",
+                TextColor = "#98433e"
+            },
+            new RoleGroup
+            {
+                RoleKey = "Unassigned",
+                RoleDisplayName = "Unassigned Members & Staff",
+                HierarchyRank = 8,
+                HierarchyIcon = "👤",
+                Scope = "Member",
+                Description = "Registered team accounts awaiting specific role or classroom assignment.",
+                BgColor = "#f8f9f5",
+                BorderColor = "#e4e7df",
+                TextColor = "#26332d"
+            }
+        };
+
+        // Filter users
+        var filtered = _allUsers.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_searchTerm))
+        {
+            var term = _searchTerm.Trim();
+            filtered = filtered.Where(u => 
+                u.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                u.Email.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                u.AssignedRoles.Any(r => r.Contains(term, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        if (_selectedFilter == "Admin")
+        {
+            filtered = filtered.Where(u => u.CanonicalRoles.Any(r => 
+                r == RoleTemplates.PlatformAdmin || 
+                r == RoleTemplates.OrganizationOwner || 
+                r == RoleTemplates.OrganizationAdmin || 
+                r == RoleTemplates.BranchAdmin));
+        }
+        else if (_selectedFilter == "Teacher")
+        {
+            filtered = filtered.Where(u => u.CanonicalRoles.Any(r => 
+                r == RoleTemplates.ClassroomTeacher || 
+                r == RoleTemplates.DaycareTeacher));
+        }
+        else if (_selectedFilter == "Parent")
+        {
+            filtered = filtered.Where(u => u.CanonicalRoles.Any(r => r == RoleTemplates.Parent));
+        }
+
+        var userList = filtered.ToList();
+
+        // Assign users into role groups
+        foreach (var group in hierarchyDefinitions)
+        {
+            if (group.RoleKey == "Unassigned")
+            {
+                group.Users = userList.Where(u => !u.CanonicalRoles.Any()).ToList();
+            }
+            else
+            {
+                group.Users = userList.Where(u => u.CanonicalRoles.Contains(group.RoleKey, StringComparer.OrdinalIgnoreCase)).ToList();
+            }
+        }
+
+        // Only show groups that have members (or all if no search query)
+        _groupedRoles = hierarchyDefinitions
+            .Where(g => g.Users.Any())
+            .OrderBy(g => g.HierarchyRank)
+            .ToList();
+    }
+}

@@ -37,8 +37,8 @@ public class ExecutionService
 
     public async Task<Guid> StartExperienceAsync(Guid scheduleId, Guid teacherId, CancellationToken cancellationToken = default)
     {
-        // Permission check bypassed for now; relies on Teacher authorization logic
-        // if (!_userContext.HasPermission("experience.execute")) throw new UnauthorizedAccessException("Requires experience.execute permission.");
+        if (!_userContext.HasPermission("experience.execute") && !_userContext.HasPermission("classroom.execute")) 
+            throw new UnauthorizedAccessException("Requires experience.execute permission.");
         var tenantId = _tenantContext.TenantId;
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
         if (schedule == null || schedule.TenantId != tenantId)
@@ -60,9 +60,8 @@ public class ExecutionService
             if (teacherCount > 0) isAuthorized = true;
         }
 
-        // Development bypass
-        // if (!isAuthorized)
-        //     throw new UnauthorizedAccessException("Teacher is not authorized to start this experience session in this classroom.");
+        if (!isAuthorized)
+            throw new UnauthorizedAccessException("Teacher is not authorized to start this experience session in this classroom.");
 
         schedule.Status = "Started";
         await _scheduleRepository.UpdateAsync(schedule);
@@ -99,7 +98,8 @@ public class ExecutionService
 
     public async Task CompleteExperienceAsync(Guid scheduleId, Guid teacherId, int stars, string rating, string? notes, CancellationToken cancellationToken = default)
     {
-        // if (!_userContext.HasPermission("experience.execute")) throw new UnauthorizedAccessException("Requires experience.execute permission.");
+        if (!_userContext.HasPermission("experience.execute") && !_userContext.HasPermission("classroom.execute")) 
+            throw new UnauthorizedAccessException("Requires experience.execute permission.");
         var tenantId = _tenantContext.TenantId;
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
         if (schedule == null || schedule.TenantId != tenantId)

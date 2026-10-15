@@ -1,5 +1,7 @@
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Shared.Audit;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
@@ -9,12 +11,47 @@ public class UserService
     private readonly IUserRepository _userRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
+    private readonly IResourceAuthorizer _authorizer;
+    private readonly IAuditService _auditService;
 
     public UserService(IUserRepository userRepository, ITenantContext tenantContext, IUserContext userContext)
+        : this(userRepository, tenantContext, userContext, new NullResourceAuthorizer(), new NullAuditService())
+    {
+    }
+
+    public UserService(IUserRepository userRepository, ITenantContext tenantContext, IUserContext userContext,
+        IResourceAuthorizer authorizer, IAuditService auditService)
     {
         _userRepository = userRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
+        _authorizer = authorizer;
+        _auditService = auditService;
+    }
+
+    /// <summary>
+    /// Assigns a role to an existing user in the ACTIVE organization. Blocks self-grants, unknown roles,
+    /// platform roles via the org path and any role that exceeds the caller's own permissions. Audited.
+    /// </summary>
+    public async Task AssignOrganizationRoleAsync(Guid targetUserId, string roleName, CancellationToken cancellationToken = default)
+    {
+        await _authorizer.RequireCanGrantRoleAsync(roleName, targetUserId, cancellationToken);
+
+        var target = await _userRepository.GetByIdAsync(_tenantContext.TenantId, targetUserId, cancellationToken);
+        if (target == null) throw new UnauthorizedAccessException("Access denied.");
+
+        var canonical = RoleTemplates.Resolve(roleName);
+        await _userRepository.AssignOrganizationRoleAsync(_tenantContext.TenantId, _userContext.OrganizationId!.Value, targetUserId, canonical, cancellationToken);
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = _tenantContext.TenantId,
+            UserId = _userContext.UserId,
+            Action = "Role.Assigned",
+            EntityType = "User",
+            EntityId = targetUserId,
+            Details = new { Role = canonical, OrganizationId = _userContext.OrganizationId }
+        }, cancellationToken);
     }
 
     public async Task<IEnumerable<User>> GetUsersAsync(CancellationToken cancellationToken = default)
@@ -46,9 +83,17 @@ public class UserService
     {
         if (!_userContext.HasPermission("user.manage")) throw new UnauthorizedAccessException("Requires user.manage permission.");
         var tenantId = _tenantContext.TenantId;
+        var newUserId = Guid.NewGuid();
+
+        // Vet the requested role BEFORE creating anything, so a denied grant leaves no account behind.
+        if (!string.IsNullOrEmpty(roleName))
+        {
+            await _authorizer.RequireCanGrantRoleAsync(roleName, newUserId, cancellationToken);
+        }
+
         var user = new User
         {
-            Id = Guid.NewGuid(),
+            Id = newUserId,
             TenantId = tenantId,
             Email = email,
             FirstName = firstName,
@@ -63,7 +108,16 @@ public class UserService
 
         if (!string.IsNullOrEmpty(roleName))
         {
-            await _userRepository.AssignRoleAsync(createdUser.Id, roleName, cancellationToken);
+            await _userRepository.AssignOrganizationRoleAsync(tenantId, _userContext.OrganizationId!.Value, createdUser.Id, RoleTemplates.Resolve(roleName), cancellationToken);
+            await _auditService.LogAsync(new AuditEntry
+            {
+                TenantId = tenantId,
+                UserId = _userContext.UserId,
+                Action = "Role.Assigned",
+                EntityType = "User",
+                EntityId = createdUser.Id,
+                Details = new { Role = RoleTemplates.Resolve(roleName), OrganizationId = _userContext.OrganizationId }
+            }, cancellationToken);
         }
 
         return createdUser;

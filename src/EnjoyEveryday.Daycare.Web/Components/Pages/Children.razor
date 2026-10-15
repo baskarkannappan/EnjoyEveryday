@@ -39,10 +39,21 @@
         </select>
     </div>
 
-    <div id="childrenGrid" class="people-grid">
-
-        @if (FilteredChildren != null && FilteredChildren.Any())
-        {
+    @if (FilteredChildren == null)
+    {
+        <LoadingState Message="Loading children directory..." />
+    }
+    else if (!FilteredChildren.Any())
+    {
+        <EmptyState Icon="👶"
+                    Title="No children found"
+                    Description="No children match the selected branch or classroom filters."
+                    ActionText="+ Add child"
+                    OnAction="OpenAddChildModal" />
+    }
+    else
+    {
+        <div id="childrenGrid" class="people-grid">
             @foreach (var child in FilteredChildren)
             {
                 var className = "Unassigned";
@@ -66,13 +77,8 @@
                                 Status="@child.EnrollmentStatus" />
                 </div>
             }
-        }
-        else if (FilteredChildren != null && !FilteredChildren.Any())
-        {
-            <p>No children found matching the selected filters.</p>
-        }
-
-    </div>
+        </div>
+    }
 
     <ChildFormModal IsOpen="_isModalOpen"
                     IsEditing="_isEditing"
@@ -173,11 +179,17 @@
 
     private async Task InsertSampleDataAsync()
     {
-        await ChildService.CreateChildAsync("Aarav", "Patel", new DateTime(2022, 5, 12), null);
-        await ChildService.CreateChildAsync("Maya", "Johnson", new DateTime(2023, 2, 20), null);
-        await ChildService.CreateChildAsync("Leo", "Smith", new DateTime(2022, 11, 5), null);
-
-        await LoadChildrenAsync();
+        try
+        {
+            await ChildService.CreateChildAsync("Aarav", "Patel", new DateTime(2022, 5, 12), null);
+            await ChildService.CreateChildAsync("Maya", "Johnson", new DateTime(2023, 2, 20), null);
+            await ChildService.CreateChildAsync("Leo", "Smith", new DateTime(2022, 11, 5), null);
+            await LoadChildrenAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error inserting sample children: {ex.Message}");
+        }
     }
 
     private void OpenAddChildModal()

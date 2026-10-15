@@ -7,6 +7,7 @@
 @inject UserService UserService
 @inject PlannerService PlannerService
 @inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@inject EnjoyEveryday.Daycare.Web.Services.StorybookStorageService StorybookStorageService
 @using Dapper
 @using System.Text.Json
 @inject NavigationManager NavigationManager
@@ -87,7 +88,8 @@
                     CreatedBy="Teacher"
                     CreatedDate="@exp.CreatedAt.ToString("MMM dd, yyyy")"
                     Id="@exp.Id.ToString()"
-                    OnClick="() => OpenViewExperienceModal(exp)" />
+                    OnClick="() => OpenViewExperienceModal(exp)"
+                    OnDownloadStorybook="DownloadCardStorybookAsync" />
             }
         }
     </div>
@@ -122,6 +124,8 @@
     OnImprove="ImproveExperience"
     OnCompare="OpenHistoryDialog"
     OnDelete="DeleteExperienceAsync"
+    ExperienceId="@_currentExperience?.Id"
+    OnOpenStorybook="OpenStorybookPage"
     Reviews="@_currentReviews"
     OnSubmitReview="HandleSubmitReview" />
 
@@ -432,6 +436,33 @@
     {
         CloseViewDialog();
         NavigationManager.NavigateTo($"/studio/{_currentExperience.Id}");
+    }
+
+    private void OpenStorybookPage(Guid expId)
+    {
+        CloseViewDialog();
+        NavigationManager.NavigateTo($"/experiences/{expId}/story");
+    }
+
+    private async Task DownloadCardStorybookAsync(string experienceIdStr)
+    {
+        if (Guid.TryParse(experienceIdStr, out var expId))
+        {
+            var html = await StorybookStorageService.GetOrGeneratePublishedStorybookAsync(expId);
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                await JS.InvokeVoidAsync("alert", "This storybook is only downloadable once the experience is published.");
+                return;
+            }
+
+            var exp = _experiences?.FirstOrDefault(e => e.Id == expId);
+            var safeFileName = (exp?.Title ?? "Experience")
+                .Replace(" ", "_")
+                .Replace("/", "_")
+                .Replace("\\", "_") + "_Storybook.html";
+
+            await JS.InvokeVoidAsync("window.downloadStandaloneHtml", safeFileName, html);
+        }
     }
 
     private bool _isEditing = false;

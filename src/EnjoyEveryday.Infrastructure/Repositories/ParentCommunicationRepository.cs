@@ -177,7 +177,8 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
             LEFT JOIN family_relationships fr ON fr.user_id = p.user_id AND fr.child_id = @ChildId
             LEFT JOIN users u ON p.user_id = u.id
             WHERE p.tenant_id = @TenantId
-              AND (cg.child_id = @ChildId OR fr.child_id = @ChildId);";
+              AND (cg.child_id = @ChildId OR fr.child_id = @ChildId)
+              AND (fr.id IS NULL OR (fr.status = 'Verified' AND fr.revoked_at IS NULL));";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         return await connection.QueryAsync<ParentCommunicationRecipientInfo>(sql, new { TenantId = tenantId, ChildId = childId });
