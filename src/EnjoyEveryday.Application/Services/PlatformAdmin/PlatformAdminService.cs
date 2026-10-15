@@ -193,36 +193,91 @@ public class PlatformAdminService : IPlatformAdminService
             try
             {
                 using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-                var rawSlug = System.Text.RegularExpressions.Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
-                var slug = string.IsNullOrWhiteSpace(rawSlug) ? $"org-{id.ToString()[..8]}" : rawSlug;
+                
+                // Check if admin email belongs to an existing user
+                var existingUser = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId)?>(
+                    "SELECT id as Id, tenant_id as TenantId FROM users WHERE LOWER(email) = LOWER(@Email) OR normalized_email = UPPER(@Email) LIMIT 1",
+                    new { Email = adminEmail.Trim() });
 
-                var existingSlugCount = await conn.ExecuteScalarAsync<int>(
-                    "SELECT COUNT(1) FROM tenants WHERE slug = @Slug", 
-                    new { Slug = slug });
+                Guid orgTenantId;
+                Guid? adminUserId = null;
 
-                if (existingSlugCount > 0)
+                if (existingUser.HasValue)
                 {
-                    slug = $"{slug}-{id.ToString()[..4]}";
+                    orgTenantId = existingUser.Value.TenantId;
+                    adminUserId = existingUser.Value.Id;
+                }
+                else
+                {
+                    orgTenantId = id;
+                    var rawSlug = System.Text.RegularExpressions.Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+                    var slug = string.IsNullOrWhiteSpace(rawSlug) ? $"org-{id.ToString()[..8]}" : rawSlug;
+
+                    var existingSlugCount = await conn.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(1) FROM tenants WHERE slug = @Slug", 
+                        new { Slug = slug });
+
+                    if (existingSlugCount > 0)
+                    {
+                        slug = $"{slug}-{id.ToString()[..4]}";
+                    }
+
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO tenants (id, name, slug) 
+                        VALUES (@TenantId, @Name, @Slug) 
+                        ON CONFLICT (id) DO NOTHING",
+                        new { TenantId = orgTenantId, Name = name, Slug = slug });
+
+                    // Create new admin user
+                    adminUserId = Guid.NewGuid();
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO users (id, tenant_id, email, normalized_email, email_confirmed, first_name, last_name, display_name, is_active)
+                        VALUES (@UserId, @TenantId, @Email, UPPER(@Email), TRUE, 'Admin', @OrgName, @OrgName, TRUE)
+                        ON CONFLICT (normalized_email) DO NOTHING",
+                        new { UserId = adminUserId.Value, TenantId = orgTenantId, Email = adminEmail.Trim(), OrgName = name });
                 }
 
-                await conn.ExecuteAsync(@"
-                    INSERT INTO tenants (id, name, slug) 
-                    VALUES (@TenantId, @Name, @Slug) 
-                    ON CONFLICT (id) DO NOTHING",
-                    new { TenantId = id, Name = name, Slug = slug });
-
+                // Insert Organization
                 await conn.ExecuteAsync(@"
                     INSERT INTO organizations (id, tenant_id, name, location, is_active)
                     VALUES (@Id, @TenantId, @Name, @Location, TRUE)
                     ON CONFLICT (id) DO NOTHING",
-                    new { Id = id, TenantId = id, Name = name, Location = location });
+                    new { Id = id, TenantId = orgTenantId, Name = name, Location = location });
 
+                // Insert Default Main Campus Branch
                 var branchId = Guid.NewGuid();
                 await conn.ExecuteAsync(@"
                     INSERT INTO branches (id, tenant_id, organization_id, name, location, is_active)
                     VALUES (@BranchId, @TenantId, @OrgId, 'Main Campus', @Location, TRUE)
                     ON CONFLICT (id) DO NOTHING",
-                    new { BranchId = branchId, TenantId = id, OrgId = id, Location = location });
+                    new { BranchId = branchId, TenantId = orgTenantId, OrgId = id, Location = location });
+
+                // Link admin user membership to this organization
+                if (adminUserId.HasValue)
+                {
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status)
+                        VALUES (@UserId, @OrgId, @TenantId, 'Active')
+                        ON CONFLICT (user_id, organization_id) DO NOTHING",
+                        new { UserId = adminUserId.Value, OrgId = id, TenantId = orgTenantId });
+
+                    // Assign OrganizationAdmin role
+                    var roleId = await conn.ExecuteScalarAsync<Guid?>(
+                        @"SELECT id FROM roles 
+                          WHERE name IN ('OrganizationAdmin', 'OrganizationOwner') 
+                            AND (tenant_id = @TenantId OR tenant_id IS NULL) 
+                          ORDER BY tenant_id NULLS LAST LIMIT 1",
+                        new { TenantId = orgTenantId });
+
+                    if (roleId.HasValue)
+                    {
+                        await conn.ExecuteAsync(@"
+                            INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
+                            VALUES (@UserId, @RoleId, @OrgId, @TenantId)
+                            ON CONFLICT (user_id, role_id, organization_id) DO NOTHING",
+                            new { UserId = adminUserId.Value, RoleId = roleId.Value, OrgId = id, TenantId = orgTenantId });
+                    }
+                }
             }
             catch (Exception ex)
             {
