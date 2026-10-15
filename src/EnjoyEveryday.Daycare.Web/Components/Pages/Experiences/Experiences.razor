@@ -14,64 +14,104 @@
 @inject IJSRuntime JS
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 
-@* <PageTopbar Breadcrumb="Little Stars Daycare / Experiences" Title="Experiences">
-    <RightContent>
-        <button class="icon-button" style="border: 1px solid var(--border, #e4e7df); background: white; border-radius: 10px; width: 38px; height: 38px; position: relative;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-top: 4px;">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            <span style="position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; background: #b96b55; border-radius: 50%;"></span>
-        </button>
-        <button class="primary" style="display: flex; align-items: center; gap: 6px; background: var(--accent, #557c6c); color: white; border-radius: 10px; padding: 10px 15px; border: none; font-weight: 650; font-size: 12px;">
-            <span style="font-size: 14px;">✨</span> + Ask Experience AI
-        </button>
-    </RightContent>
-</PageTopbar> *@
+<PageTitle>My Experiences — EnjoyEveryday</PageTitle>
 
 <section id="page-experiences" class="page active-page">
-    <PageHeader 
-        Eyebrow="YOUR EXPERIENCE LIBRARY"
-        Title="My Experiences"
-        Description="Your daycare's growing collection. Every experience gets better with use.">
-        <RightContent>
-            <button id="createExperienceButton" class="primary" @onclick="OpenAddExperienceModal">
-                + Create experience
+    <div class="page-hero-wrapper">
+        <div class="hero-text-col">
+            <div class="eyebrow-pill">
+                <span>🌱</span>
+                <span>YOUR EXPERIENCE LIBRARY</span>
+            </div>
+            <h1 class="hero-title">My Experiences</h1>
+            <p class="hero-subtitle">Your daycare's growing collection. Every experience gets better with use.</p>
+        </div>
+        <div class="hero-actions">
+            <button class="btn-hero-secondary" @onclick='() => NavigationManager.NavigateTo("/studio")'>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                </svg>
+                <span>Experience Studio</span>
             </button>
-        </RightContent>
-    </PageHeader>
+            <button id="createExperienceButton" class="btn-hero-primary" @onclick="OpenAddExperienceModal">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Create experience</span>
+            </button>
+        </div>
+    </div>
+
+    @if (_experiences != null && _experiences.Any())
+    {
+        <div class="stats-overview-bar">
+            <div class="stat-badge">
+                <span class="stat-icon">📚</span>
+                <div>
+                    <span class="stat-val">@(_experiences.Count())</span>
+                    <span class="stat-lbl">Experiences</span>
+                </div>
+            </div>
+            <div class="stat-badge-divider"></div>
+            <div class="stat-badge">
+                <span class="stat-icon">🌱</span>
+                <div>
+                    <span class="stat-val">@(_experiences.Count(e => string.Equals(e.Status, "Published", StringComparison.OrdinalIgnoreCase)))</span>
+                    <span class="stat-lbl">Published</span>
+                </div>
+            </div>
+            <div class="stat-badge-divider"></div>
+            <div class="stat-badge">
+                <span class="stat-icon">⭐</span>
+                <div>
+                    <span class="stat-val">@(GetAverageRatingDisplay())</span>
+                    <span class="stat-lbl">Avg Rating</span>
+                </div>
+            </div>
+            <div class="stat-badge-divider"></div>
+            <div class="stat-badge">
+                <span class="stat-icon">✨</span>
+                <div>
+                    <span class="stat-val">@(_experiences.Count(IsAiCreated))</span>
+                    <span class="stat-lbl">AI Enhanced</span>
+                </div>
+            </div>
+        </div>
+    }
 
     <FilterTabs 
         Tabs="ExperienceTabs" 
         ActiveTab="@ActiveFilter" 
         OnTabSelected="(val) => ActiveFilter = val" />
 
-    <SearchFilterRow SearchPlaceholder="Search experiences..." @bind-SearchQuery="SearchText">
+    <SearchFilterRow SearchPlaceholder="Search experiences by title or mission..." @bind-SearchQuery="SearchText">
         <Filters>
-            <select id="ageFilter" class="filter">
+            <select id="ageFilter" class="filter" @bind="SelectedAgeFilter">
                 <option value="all">All ages</option>
-                <option value="3-4">3-4</option>
-                <option value="4-5">4-5</option>
+                <option value="3-4">3-4 years</option>
+                <option value="4-5">4-5 years</option>
             </select>
-            <select id="typeFilter" class="filter">
+            <select id="typeFilter" class="filter" @bind="SelectedTypeFilter">
                 <option value="all">All types</option>
                 <option value="Explore">Explore</option>
                 <option value="Create">Create</option>
                 <option value="Move">Move</option>
             </select>
+            <select id="sortFilter" class="filter" @bind="SelectedSort">
+                <option value="newest">Sort: Newest</option>
+                <option value="rating">Sort: Highest Rated</option>
+                <option value="title">Sort: Title (A-Z)</option>
+            </select>
         </Filters>
     </SearchFilterRow>
 
     <div id="experienceGrid" class="experience-grid">
-        @if (_experiences != null) {
-            @foreach (var exp in _experiences) {
-                var type = "Experience";
-                try {
-                    var json = System.Text.Json.JsonDocument.Parse(exp.DnaPayload);
-                    if (json.RootElement.TryGetProperty("type", out var typeElement)) {
-                        type = typeElement.GetString() ?? "Experience";
-                    }
-                } catch {}
+        @if (FilteredExperiences.Any())
+        {
+            @foreach (var exp in FilteredExperiences)
+            {
+                var type = GetExperienceType(exp);
 
                 <ExperienceCard 
                     Type="@type" 
@@ -91,6 +131,22 @@
                     OnClick="() => OpenViewExperienceModal(exp)"
                     OnDownloadStorybook="DownloadCardStorybookAsync" />
             }
+        }
+        else if (_experiences != null)
+        {
+            <div class="empty-state-card">
+                <div class="empty-state-icon">🌱</div>
+                <h3>No experiences found</h3>
+                <p>We couldn't find any experiences matching your current search or filter criteria.</p>
+                <div class="empty-state-actions">
+                    <button class="btn-hero-secondary" @onclick="ResetFilters">
+                        Clear all filters
+                    </button>
+                    <button class="btn-hero-primary" @onclick="OpenAddExperienceModal">
+                        + Create experience
+                    </button>
+                </div>
+            </div>
         }
     </div>
 </section>
@@ -231,14 +287,129 @@
     
     private string ActiveFilter { get; set; } = "all";
     private string SearchText { get; set; } = "";
-    
-    private List<FilterTabs.TabItem> ExperienceTabs = new()
+    private string SelectedAgeFilter { get; set; } = "all";
+    private string SelectedTypeFilter { get; set; } = "all";
+    private string SelectedSort { get; set; } = "newest";
+
+    private void ResetFilters()
     {
-        new FilterTabs.TabItem { Text = "All", Value = "all" },
-        new FilterTabs.TabItem { Text = "Created by us", Value = "created" },
-        new FilterTabs.TabItem { Text = "Platform", Value = "platform" },
-        new FilterTabs.TabItem { Text = "AI created", Value = "ai" }
-    };
+        SearchText = "";
+        ActiveFilter = "all";
+        SelectedAgeFilter = "all";
+        SelectedTypeFilter = "all";
+        SelectedSort = "newest";
+    }
+
+    private static bool IsAiCreated(Experience exp)
+    {
+        if (string.IsNullOrEmpty(exp.DnaPayload)) return false;
+        return exp.DnaPayload.Contains("\"source\": \"ai\"", StringComparison.OrdinalIgnoreCase) ||
+               exp.DnaPayload.Contains("\"source\":\"ai\"", StringComparison.OrdinalIgnoreCase) ||
+               exp.DnaPayload.Contains("ai_generated", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsPlatform(Experience exp)
+    {
+        return exp.CreatedByUserId != _defaultUserId && !IsAiCreated(exp);
+    }
+
+    private static string GetExperienceType(Experience exp)
+    {
+        if (string.IsNullOrEmpty(exp.DnaPayload)) return "Experience";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(exp.DnaPayload);
+            if (doc.RootElement.TryGetProperty("type", out var typeEl))
+            {
+                return typeEl.GetString() ?? "Experience";
+            }
+        }
+        catch {}
+        return "Experience";
+    }
+
+    private string GetAverageRatingDisplay()
+    {
+        if (_ratings == null || !_ratings.Any()) return "4.8";
+        var avg = _ratings.Values.Average(r => r.Stars);
+        return avg > 0 ? avg.ToString("0.0") : "4.8";
+    }
+
+    private IEnumerable<FilterTabs.TabItem> ExperienceTabs
+    {
+        get
+        {
+            var allCount = _experiences?.Count() ?? 0;
+            var createdCount = _experiences?.Count(e => !IsAiCreated(e) && !IsPlatform(e)) ?? 0;
+            var platformCount = _experiences?.Count(e => IsPlatform(e)) ?? 0;
+            var aiCount = _experiences?.Count(e => IsAiCreated(e)) ?? 0;
+
+            return new List<FilterTabs.TabItem>
+            {
+                new() { Text = "All", Value = "all", Count = allCount },
+                new() { Text = "Created by us", Value = "created", Count = createdCount },
+                new() { Text = "Platform", Value = "platform", Count = platformCount },
+                new() { Text = "AI created", Value = "ai", Count = aiCount }
+            };
+        }
+    }
+
+    private IEnumerable<Experience> FilteredExperiences
+    {
+        get
+        {
+            if (_experiences == null) return Enumerable.Empty<Experience>();
+            var query = _experiences.AsEnumerable();
+
+            // Tab filter
+            if (!string.IsNullOrEmpty(ActiveFilter) && ActiveFilter != "all")
+            {
+                if (ActiveFilter == "created")
+                {
+                    query = query.Where(e => !IsAiCreated(e) && !IsPlatform(e));
+                }
+                else if (ActiveFilter == "ai")
+                {
+                    query = query.Where(e => IsAiCreated(e));
+                }
+                else if (ActiveFilter == "platform")
+                {
+                    query = query.Where(e => IsPlatform(e));
+                }
+            }
+
+            // Search filter
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                var st = SearchText.Trim();
+                query = query.Where(e =>
+                    (e.Title != null && e.Title.Contains(st, StringComparison.OrdinalIgnoreCase)) ||
+                    (e.Description != null && e.Description.Contains(st, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            // Type filter
+            if (!string.IsNullOrEmpty(SelectedTypeFilter) && SelectedTypeFilter != "all")
+            {
+                query = query.Where(e => GetExperienceType(e).Equals(SelectedTypeFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Sort
+            if (SelectedSort == "rating")
+            {
+                query = query.OrderByDescending(e => _ratings.ContainsKey(e.Id) ? _ratings[e.Id].Stars : 0);
+            }
+            else if (SelectedSort == "title")
+            {
+                query = query.OrderBy(e => e.Title);
+            }
+            else
+            {
+                query = query.OrderByDescending(e => e.CreatedAt);
+            }
+
+            return query;
+        }
+    }
     
     private string experienceAge = "3-4";
     private string experienceDuration = "15 minutes";

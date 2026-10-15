@@ -1,19 +1,35 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
 <div class="search-row">
-    <input class="search" placeholder="@SearchPlaceholder" value="@SearchQuery" @oninput="OnSearchInput" />
+    <div class="search-input-wrapper">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input class="search" 
+               placeholder="@SearchPlaceholder" 
+               value="@SearchQuery" 
+               @oninput="OnSearchInput" />
+        @if (!string.IsNullOrEmpty(SearchQuery))
+        {
+            <button type="button" class="clear-search-btn" title="Clear search" @onclick="ClearSearch">
+                ✕
+            </button>
+        }
+    </div>
     @if (Filters != null)
     {
-        @Filters
+        <div class="filters-group">
+            @Filters
+        </div>
     }
 </div>
 
 @code {
     [Parameter] public string SearchPlaceholder { get; set; } = "Search...";
-    
     [Parameter] public string SearchQuery { get; set; } = "";
-    
     [Parameter] public EventCallback<string> SearchQueryChanged { get; set; }
+    [Parameter] public RenderFragment? Filters { get; set; }
 
     private async Task OnSearchInput(ChangeEventArgs e)
     {
@@ -24,6 +40,10 @@
             await SearchQueryChanged.InvokeAsync(value);
         }
     }
-    
-    [Parameter] public RenderFragment? Filters { get; set; }
+
+    private async Task ClearSearch()
+    {
+        SearchQuery = "";
+        await SearchQueryChanged.InvokeAsync("");
+    }
 }
