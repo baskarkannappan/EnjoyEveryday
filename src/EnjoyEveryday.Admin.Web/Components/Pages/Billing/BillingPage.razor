@@ -1,0 +1,62 @@
+@page "/billing"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IPlatformAdminService PlatformService
+@rendermode InteractiveServer
+
+<PageTitle>Billing &amp; Invoices — Platform Admin</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="COMMERCIAL MANAGEMENT"
+              Title="Billing &amp; Invoices"
+              Subtitle="Track issued invoices, due dates, outstanding balances, and financial states.">
+        <RightContent>
+            <a href="/" class="btn secondary">← Back to Dashboard</a>
+        </RightContent>
+    </PageHero>
+
+    @if (_invoices == null)
+    {
+        <LoadingState Text="Loading invoices..." />
+    }
+    else
+    {
+        <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
+            <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                <thead>
+                    <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
+                        <th style="padding: 12px 14px; text-align: left;">Invoice #</th>
+                        <th style="padding: 12px 14px; text-align: left;">Description</th>
+                        <th style="padding: 12px 14px; text-align: left;">Issue Date</th>
+                        <th style="padding: 12px 14px; text-align: left;">Due Date</th>
+                        <th style="padding: 12px 14px; text-align: left;">Total</th>
+                        <th style="padding: 12px 14px; text-align: left;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var inv in _invoices)
+                    {
+                        <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
+                            <td style="padding: 14px; font-weight: 750; color: var(--text);">@inv.InvoiceNumber</td>
+                            <td style="padding: 14px; color: var(--text);">@inv.Description</td>
+                            <td style="padding: 14px; color: var(--muted);">@inv.IssueDate.ToString("MMM dd, yyyy")</td>
+                            <td style="padding: 14px; color: var(--muted);">@inv.DueDate.ToString("MMM dd, yyyy")</td>
+                            <td style="padding: 14px; font-weight: 800; color: var(--text);">@inv.TotalAmount.ToString("C0")</td>
+                            <td style="padding: 14px;"><StatusBadge Status="@inv.Status.ToString()" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Invoice>? _invoices;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _invoices = await PlatformService.GetInvoicesAsync();
+    }
+}

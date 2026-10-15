@@ -1,0 +1,62 @@
+@page "/plans"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IPlatformAdminService PlatformService
+@rendermode InteractiveServer
+
+<PageTitle>Plans &amp; Tariffs — Platform Admin</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="COMMERCIAL MANAGEMENT"
+              Title="Subscription Plans &amp; Tariffs"
+              Subtitle="Maintain global SaaS subscription plans, classroom/branch limits, and feature tiers.">
+        <RightContent>
+            <a href="/" class="btn secondary">← Back to Dashboard</a>
+        </RightContent>
+    </PageHero>
+
+    @if (_plans == null)
+    {
+        <LoadingState Text="Loading plans & tariffs..." />
+    }
+    else
+    {
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            @foreach (var plan in _plans)
+            {
+                <div style="background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div>
+                            <div style="font-size: 11px; font-weight: 800; color: var(--accent); letter-spacing: 0.8px; text-transform: uppercase;">@plan.Code</div>
+                            <h3 style="font-size: 20px; font-weight: 750; color: var(--text); margin: 4px 0 0 0;">@plan.Name</h3>
+                        </div>
+                        <StatusBadge Status="Active" />
+                    </div>
+
+                    <div style="font-size: 30px; font-weight: 800; color: var(--text);">
+                        @plan.BasePrice.ToString("C0")<span style="font-size: 14px; font-weight: 600; color: var(--muted);">/month</span>
+                    </div>
+
+                    <p style="font-size: 13.5px; color: var(--muted); line-height: 1.4; margin: 0;">@plan.Description</p>
+
+                    <div style="background: var(--surface-soft); border-radius: 12px; padding: 14px; font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
+                        <div>🏢 <strong>@plan.MaxBranches</strong> @(plan.MaxBranches == 1 ? "branch" : "branches included")</div>
+                        <div>🏫 <strong>@plan.MaxClassrooms</strong> classrooms allowed</div>
+                        <div>👶 <strong>@plan.MaxChildren</strong> active child profiles</div>
+                        <div>✦ <strong>@(plan.IncludesAiFeatures ? "AI Assistants Included" : "Standard Features")</strong></div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<SubscriptionPlan>? _plans;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _plans = await PlatformService.GetPlansAsync();
+    }
+}

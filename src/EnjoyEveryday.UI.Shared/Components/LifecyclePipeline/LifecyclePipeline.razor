@@ -1,0 +1,134 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+
+<div class="lifecycle-pipeline-card">
+    <div class="pipeline-header">
+        <div>
+            <div class="pipeline-eyebrow">OPERATIONAL PIPELINE</div>
+            <h3 class="pipeline-title">Daycare Organization Lifecycle</h3>
+        </div>
+        <div class="pipeline-legend">
+            <span class="legend-item"><span class="legend-dot active"></span> In Progress / Active</span>
+            <span class="legend-item"><span class="legend-dot completed"></span> Completed</span>
+        </div>
+    </div>
+
+    <div class="pipeline-stages" role="tablist">
+        @for (int i = 0; i < Stages.Count; i++)
+        {
+            var stageIndex = i;
+            var stage = Stages[i];
+            var isSelected = SelectedStageIndex == stageIndex;
+            var isPassed = SelectedStageIndex > stageIndex;
+
+            <div class="pipeline-stage @(isSelected ? "selected" : "") @(isPassed ? "passed" : "")"
+                 role="tab"
+                 tabindex="0"
+                 aria-selected="@(isSelected ? "true" : "false")"
+                 @onclick="() => SelectStage(stageIndex)">
+                
+                <div class="stage-top">
+                    <div class="stage-indicator">
+                        @if (isPassed)
+                        {
+                            <svg class="check-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                        }
+                        else
+                        {
+                            <span>@(stageIndex + 1)</span>
+                        }
+                    </div>
+                    @if (stage.Count.HasValue)
+                    {
+                        <span class="stage-count @(isSelected ? "count-active" : "")">
+                            @stage.Count.Value @(stage.Count.Value == 1 ? "org" : "orgs")
+                        </span>
+                    }
+                </div>
+
+                <div class="stage-content">
+                    <div class="stage-name">@stage.Name</div>
+                    <div class="stage-desc">@stage.Description</div>
+                </div>
+
+                @if (stageIndex < Stages.Count - 1)
+                {
+                    <div class="stage-connector"></div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    public class StageItem
+    {
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public int? Count { get; set; }
+        public string? FilterKey { get; set; }
+    }
+
+    [Parameter] public List<StageItem> Stages { get; set; } = GetDefaultStages();
+    [Parameter] public int SelectedStageIndex { get; set; } = -1;
+    [Parameter] public EventCallback<int> SelectedStageIndexChanged { get; set; }
+    [Parameter] public EventCallback<StageItem> OnStageSelected { get; set; }
+
+    public static List<StageItem> GetDefaultStages() => new()
+    {
+        new StageItem 
+        { 
+            Name = "1. Registration", 
+            Description = "KYC, branch setup & admin assignment", 
+            Count = 4,
+            FilterKey = "Onboarding"
+        },
+        new StageItem 
+        { 
+            Name = "2. Plan Selection", 
+            Description = "Tier pricing, tariffs & contract terms", 
+            Count = 2,
+            FilterKey = "PlanSelection"
+        },
+        new StageItem 
+        { 
+            Name = "3. Invoicing", 
+            Description = "Scheduled generation & due date tracking", 
+            Count = 5,
+            FilterKey = "Invoiced"
+        },
+        new StageItem 
+        { 
+            Name = "4. Reconciliation", 
+            Description = "Payment verification & audit confirmation", 
+            Count = 3,
+            FilterKey = "PaymentVerification"
+        },
+        new StageItem 
+        { 
+            Name = "5. Active & Monitored", 
+            Description = "Active operations & retention telemetry", 
+            Count = 142,
+            FilterKey = "Active"
+        }
+    };
+
+    private async Task SelectStage(int index)
+    {
+        if (SelectedStageIndex == index)
+        {
+            SelectedStageIndex = -1; // Toggle off filter
+        }
+        else
+        {
+            SelectedStageIndex = index;
+        }
+
+        await SelectedStageIndexChanged.InvokeAsync(SelectedStageIndex);
+        if (SelectedStageIndex >= 0 && SelectedStageIndex < Stages.Count)
+        {
+            await OnStageSelected.InvokeAsync(Stages[SelectedStageIndex]);
+        }
+    }
+}

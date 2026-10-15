@@ -53,6 +53,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ParentCommunicationAssistantService>();
         services.AddHttpClient<IOrganizationIntelligenceService, OrganizationIntelligenceService>();
         services.AddScoped<OrganizationIntelligenceService>();
+        services.AddScoped<IPlatformAdminService, PlatformAdminService>();
+        services.AddScoped<PlatformAdminService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>(sp => new AppIdentityContext(

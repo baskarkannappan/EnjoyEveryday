@@ -1,0 +1,93 @@
+@page "/payments"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IPlatformAdminService PlatformService
+@rendermode InteractiveServer
+
+<PageTitle>Payments &amp; Reconciliation — Platform Admin</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="COMMERCIAL MANAGEMENT"
+              Title="Payments &amp; Reconciliation"
+              Subtitle="Review recorded payments, verify transactions, and reconcile ledger balances.">
+        <RightContent>
+            <a href="/" class="btn secondary">← Back to Dashboard</a>
+        </RightContent>
+    </PageHero>
+
+    @if (_payments == null)
+    {
+        <LoadingState Text="Loading payment records..." />
+    }
+    else
+    {
+        <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
+            <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                <thead>
+                    <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
+                        <th style="padding: 12px 14px; text-align: left;">Reference</th>
+                        <th style="padding: 12px 14px; text-align: left;">Method</th>
+                        <th style="padding: 12px 14px; text-align: left;">Date</th>
+                        <th style="padding: 12px 14px; text-align: left;">Amount</th>
+                        <th style="padding: 12px 14px; text-align: left;">Verification</th>
+                        <th style="padding: 12px 14px; text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _payments)
+                    {
+                        <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
+                            <td style="padding: 14px; font-weight: 750; color: var(--text);">@p.PaymentReference</td>
+                            <td style="padding: 14px; color: var(--muted);"><span style="background: #edf1ec; padding: 2px 8px; border-radius: 6px; font-size: 12px;">@p.Method</span></td>
+                            <td style="padding: 14px; color: var(--muted);">@p.PaymentDate.ToString("MMM dd, yyyy")</td>
+                            <td style="padding: 14px; font-weight: 800; color: var(--text);">@p.Amount.ToString("C0")</td>
+                            <td style="padding: 14px;">
+                                @if (p.IsVerified)
+                                {
+                                    <StatusBadge Status="Verified" />
+                                }
+                                else
+                                {
+                                    <StatusBadge Status="PaymentAwaitingVerification" Label="Awaiting Verification" />
+                                }
+                            </td>
+                            <td style="padding: 14px; text-align: right;">
+                                @if (!p.IsVerified)
+                                {
+                                    <button class="btn secondary" style="font-size: 12px; padding: 4px 10px;" @onclick="() => VerifyPayment(p.Id)">
+                                        Verify &amp; Reconcile
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span style="font-size: 12px; color: var(--muted);">Reconciled</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Payment>? _payments;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPayments();
+    }
+
+    private async Task LoadPayments()
+    {
+        _payments = await PlatformService.GetPaymentsAsync();
+    }
+
+    private async Task VerifyPayment(Guid id)
+    {
+        await PlatformService.VerifyPaymentWorkflowAsync(id);
+        await LoadPayments();
+    }
+}

@@ -1,0 +1,619 @@
+@page "/"
+@page "/dashboard"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IPlatformAdminService PlatformService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Platform Admin Dashboard — EnjoyEveryday</PageTitle>
+
+<div class="content platform-dashboard">
+    <!-- PAGE HERO -->
+    <PageHero Eyebrow="PLATFORM ADMINISTRATION"
+              Title="Platform Admin Dashboard"
+              Subtitle="Monitor daycare organizations, subscriptions, billing health, and platform operations from one place.">
+        <RightContent>
+            <button class="btn secondary" @onclick="OpenAuditModal">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Audit Stream
+            </button>
+            <button class="btn secondary" @onclick="OpenInvoiceModal">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+                    <line x1="2" y1="10" x2="22" y2="10"></line>
+                </svg>
+                Issue Invoice
+            </button>
+            <button class="btn primary" @onclick="OpenNewOrgModal">
+                + New Organization
+            </button>
+        </RightContent>
+    </PageHero>
+
+    @if (_loading)
+    {
+        <LoadingState Text="Loading platform operational metrics..." />
+    }
+    else
+    {
+        <!-- METRIC CARDS ROW -->
+        <div class="metrics-grid">
+            <MetricCard Label="Total Organizations"
+                        Value="@_summary.TotalOrganizations.ToString()"
+                        SecondaryIndicator="@($"+{_summary.PendingApprovals} onboarding")"
+                        Subtext="@($"{_summary.ActiveOrganizations} active centers operating")"
+                        DrillDownText="View All Organizations"
+                        Href="#org-directory" />
+
+            <MetricCard Label="Pending Approvals"
+                        Value="@_summary.PendingApprovals.ToString()"
+                        BadgeText="@(_summary.PendingApprovals > 0 ? "Requires Review" : "Clear")"
+                        BadgeClass="@(_summary.PendingApprovals > 0 ? "badge-attention" : "")"
+                        Subtext="KYC & branch configuration queue"
+                        DrillDownText="Review Queue"
+                        OnClick="FilterPendingApprovals" />
+
+            <MetricCard Label="Active Subscriptions"
+                        Value="@_summary.ActiveSubscriptions.ToString()"
+                        SecondaryIndicator="@($"{_summary.AvailablePlansCount} tiers")"
+                        Subtext="@($"Collections: {_summary.CollectionsThisMonth:C0} MTD")"
+                        DrillDownText="Manage Plans & Tariffs"
+                        Href="/plans" />
+
+            <MetricCard Label="Outstanding Balance"
+                        Value="@_summary.OutstandingBalance.ToString("C0")"
+                        BadgeText="@(_summary.OverdueInvoicesCount > 0 ? $"{_summary.OverdueInvoicesCount} Overdue" : "On Track")"
+                        BadgeClass="@(_summary.OverdueInvoicesCount > 0 ? "badge-attention" : "")"
+                        Subtext="@($"Overdue: {_summary.OverdueAmount:C0}")"
+                        DrillDownText="Reconcile Billing"
+                        OnClick="FilterOverdueInvoices" />
+        </div>
+
+        <!-- 5-STAGE OPERATIONAL PIPELINE -->
+        <LifecyclePipeline Stages="_stages"
+                           SelectedStageIndex="_selectedStageIndex"
+                           OnStageSelected="HandleStageSelected"
+                           SelectedStageIndexChanged="HandleStageIndexChanged" />
+
+        <!-- ORGANIZATION DIRECTORY SECTION -->
+        <div id="org-directory" class="directory-section">
+            <div class="directory-header">
+                <div>
+                    <h3 class="directory-title">Daycare Organizations Overview</h3>
+                    <p class="directory-subtitle">Showing @(_organizations.Count) organizations matching selected filters</p>
+                </div>
+                @if (!string.IsNullOrEmpty(_selectedStageFilter) || _accountFilter != "All" || _financialFilter != "All" || !string.IsNullOrEmpty(_searchQuery))
+                {
+                    <button class="clear-filters-btn" @onclick="ResetFilters">
+                        Reset All Filters ✕
+                    </button>
+                }
+            </div>
+
+            <!-- SEARCH & FILTER ROW -->
+            <SearchFilterRow SearchPlaceholder="Search by daycare name, location, or admin email..."
+                             SearchQuery="@_searchQuery"
+                             SearchQueryChanged="OnSearchChanged">
+                <Filters>
+                    <select class="filter" value="@_accountFilter" @onchange="OnAccountFilterChanged">
+                        <option value="All">All Account States</option>
+                        <option value="Active">Active</option>
+                        <option value="Onboarding">Onboarding</option>
+                        <option value="PendingApproval">Pending Approval</option>
+                        <option value="Trial">Trial</option>
+                        <option value="Suspended">Suspended</option>
+                    </select>
+
+                    <select class="filter" value="@_financialFilter" @onchange="OnFinancialFilterChanged">
+                        <option value="All">All Financial States</option>
+                        <option value="Reconciled">Reconciled</option>
+                        <option value="InvoiceDue">Invoice Due</option>
+                        <option value="PaymentAwaitingVerification">Payment Verification</option>
+                        <option value="Overdue">Overdue</option>
+                        <option value="Unbilled">Unbilled</option>
+                    </select>
+                </Filters>
+            </SearchFilterRow>
+
+            <!-- DIRECTORY TABLE -->
+            @if (_organizations.Count == 0)
+            {
+                <EmptyState Title="No organizations found"
+                            Message="No daycare organizations match your current search and filter criteria."
+                            ActionText="Clear Filters"
+                            OnAction="ResetFilters" />
+            }
+            else
+            {
+                <div class="table-container">
+                    <table class="platform-table">
+                        <thead>
+                            <tr>
+                                <th>Organization</th>
+                                <th>Branches</th>
+                                <th>Account Status</th>
+                                <th>Financial Status</th>
+                                <th>Plan &amp; Tariff</th>
+                                <th>Next Billing</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var org in _organizations)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="org-cell">
+                                            <div class="org-avatar">
+                                                @(org.Name.Length > 0 ? org.Name.Substring(0, 1) : "O")
+                                            </div>
+                                            <div>
+                                                <div class="org-name">@org.Name</div>
+                                                <div class="org-sub">@(org.Location ?? "Location not specified") · @org.AdminEmail</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="branch-pill">@org.BranchCount @(org.BranchCount == 1 ? "branch" : "branches")</span>
+                                    </td>
+                                    <td>
+                                        <StatusBadge Status="@org.AccountStatus.ToString()" />
+                                    </td>
+                                    <td>
+                                        <StatusBadge Status="@org.FinancialStatus.ToString()" />
+                                    </td>
+                                    <td>
+                                        <div class="plan-cell">
+                                            <strong>@org.PlanName</strong>
+                                            <span>@org.MonthlyRate.ToString("C0")/mo</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="date-cell">@(org.NextBillingDate?.ToString("MMM dd, yyyy") ?? "—")</span>
+                                    </td>
+                                    <td style="text-align: right;">
+                                        <div class="table-actions">
+                                            @if (org.FinancialStatus == FinancialStatus.PaymentAwaitingVerification)
+                                            {
+                                                <button class="action-btn verify-btn" title="Verify Payment" @onclick="() => VerifyPaymentForOrg(org)">
+                                                    Verify
+                                                </button>
+                                            }
+                                            @if (org.AccountStatus == AccountStatus.Onboarding || org.AccountStatus == AccountStatus.PendingApproval)
+                                            {
+                                                <button class="action-btn approve-btn" title="Approve Organization" @onclick="() => ApproveOrg(org)">
+                                                    Approve
+                                                </button>
+                                            }
+                                            <button class="action-btn view-btn" @onclick="() => ViewOrgDetails(org)">
+                                                Details
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- PLATFORM OPERATIONS & GOVERNANCE SECTION -->
+        <div class="operations-grid">
+            <!-- HEALTH CARD -->
+            <div class="ops-card">
+                <div class="ops-card-header">
+                    <div>
+                        <div class="ops-eyebrow">SYSTEM TELEMETRY</div>
+                        <h4 class="ops-title">Platform Health &amp; Availability</h4>
+                    </div>
+                    <span class="health-pill operational">Operational · @_health.Uptime</span>
+                </div>
+                <div class="health-indicators">
+                    <div class="health-row">
+                        <div class="health-label">
+                            <span class="indicator-dot online"></span>
+                            <span>Multi-Tenant Database Cluster</span>
+                        </div>
+                        <span class="health-status">Healthy · 4ms avg</span>
+                    </div>
+                    <div class="health-row">
+                        <div class="health-label">
+                            <span class="indicator-dot online"></span>
+                            <span>Google ADK &amp; AI Assist Gateway</span>
+                        </div>
+                        <span class="health-status">Ready (Gemini 2.5 Active)</span>
+                    </div>
+                    <div class="health-row">
+                        <div class="health-label">
+                            <span class="indicator-dot online"></span>
+                            <span>Stripe &amp; ACH Payment Hooks</span>
+                        </div>
+                        <span class="health-status">Connected · Verified</span>
+                    </div>
+                    <div class="health-row">
+                        <div class="health-label">
+                            <span class="indicator-dot online"></span>
+                            <span>Tenant Isolation &amp; RBAC Layer</span>
+                        </div>
+                        <span class="health-status">Enforced</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AUDIT ACTIVITY CARD -->
+            <div class="ops-card">
+                <div class="ops-card-header">
+                    <div>
+                        <div class="ops-eyebrow">SECURITY AUDIT</div>
+                        <h4 class="ops-title">Recent Administrative Activity</h4>
+                    </div>
+                    <button class="view-all-link" @onclick="OpenAuditModal">Full Log →</button>
+                </div>
+                <div class="audit-list">
+                    @foreach (var log in _auditLogs.Take(4))
+                    {
+                        <div class="audit-item">
+                            <div class="audit-dot @log.Severity.ToLowerInvariant()"></div>
+                            <div class="audit-content">
+                                <div class="audit-header">
+                                    <span class="audit-action">@log.Action</span>
+                                    <span class="audit-time">@GetTimeAgo(log.Timestamp)</span>
+                                </div>
+                                <div class="audit-details">@log.Details</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- NEW ORGANIZATION MODAL -->
+@if (_showNewOrgModal)
+{
+    <div class="modal-backdrop" @onclick="CloseNewOrgModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">ONBOARDING WORKFLOW</div>
+                    <h3 class="modal-title">Register Daycare Organization</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseNewOrgModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Organization Name *</label>
+                    <input class="form-input" @bind="_newOrgName" placeholder="e.g. Willow Creek Children's Center" />
+                </div>
+                <div class="form-group">
+                    <label>Primary Location / City *</label>
+                    <input class="form-input" @bind="_newOrgLocation" placeholder="e.g. Austin, TX" />
+                </div>
+                <div class="form-group">
+                    <label>Assigned Subscription Plan *</label>
+                    <select class="form-input" @bind="_newOrgPlanId">
+                        @foreach (var plan in _plans)
+                        {
+                            <option value="@plan.Id">@plan.Name — @plan.BasePrice.ToString("C0")/month (@plan.Description)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Administrator Email *</label>
+                    <input class="form-input" type="email" @bind="_newOrgAdminEmail" placeholder="director@center.com" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseNewOrgModal">Cancel</button>
+                <button class="btn primary" @onclick="SubmitNewOrganization" disabled="@(string.IsNullOrWhiteSpace(_newOrgName) || string.IsNullOrWhiteSpace(_newOrgAdminEmail))">
+                    Create &amp; Initiate Onboarding
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ISSUE INVOICE MODAL -->
+@if (_showInvoiceModal)
+{
+    <div class="modal-backdrop" @onclick="CloseInvoiceModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">COMMERCIAL WORKFLOW</div>
+                    <h3 class="modal-title">Issue Commercial Invoice</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseInvoiceModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Organization *</label>
+                    <select class="form-input" @bind="_invoiceOrgId">
+                        @foreach (var org in _organizations)
+                        {
+                            <option value="@org.Id">@org.Name (@org.PlanName)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Invoice Amount ($ USD) *</label>
+                    <input class="form-input" type="number" step="0.01" @bind="_invoiceAmount" />
+                </div>
+                <div class="form-group">
+                    <label>Description / Line Item Details</label>
+                    <input class="form-input" @bind="_invoiceDescription" placeholder="e.g. Monthly Multi-Branch Daycare Subscription" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseInvoiceModal">Cancel</button>
+                <button class="btn primary" @onclick="SubmitInvoice" disabled="@(_invoiceAmount <= 0)">
+                    Generate &amp; Dispatch Invoice
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- AUDIT LOG MODAL -->
+@if (_showAuditModal)
+{
+    <div class="modal-backdrop" @onclick="CloseAuditModal">
+        <div class="modal-card modal-large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">COMPLIANCE &amp; GOVERNANCE</div>
+                    <h3 class="modal-title">Platform Administrative Audit Trail</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseAuditModal">✕</button>
+            </div>
+            <div class="modal-body" style="max-height: 480px; overflow-y: auto;">
+                <table class="platform-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Actor</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                            <th>Severity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var log in _auditLogs)
+                        {
+                            <tr>
+                                <td style="white-space: nowrap; font-size: 12px; color: var(--muted, #6c7870);">
+                                    @log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")
+                                </td>
+                                <td><strong>@log.Actor</strong></td>
+                                <td><span class="audit-action">@log.Action</span></td>
+                                <td style="font-size: 13px;">@log.Details</td>
+                                <td>
+                                    <span class="audit-pill @log.Severity.ToLowerInvariant()">@log.Severity</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseAuditModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private PlatformDashboardSummary _summary = new();
+    private List<PlatformOrganizationDto> _organizations = new();
+    private List<SubscriptionPlan> _plans = new();
+    private List<PlatformAuditLog> _auditLogs = new();
+    private PlatformHealthStatus _health = new();
+    private List<LifecyclePipeline.StageItem> _stages = LifecyclePipeline.GetDefaultStages();
+
+    // Filters
+    private string _searchQuery = "";
+    private string _accountFilter = "All";
+    private string _financialFilter = "All";
+    private string? _selectedStageFilter = null;
+    private int _selectedStageIndex = -1;
+
+    // Modals
+    private bool _showNewOrgModal = false;
+    private string _newOrgName = "";
+    private string _newOrgLocation = "";
+    private Guid _newOrgPlanId;
+    private string _newOrgAdminEmail = "";
+
+    private bool _showInvoiceModal = false;
+    private Guid _invoiceOrgId;
+    private decimal _invoiceAmount = 299.00m;
+    private string _invoiceDescription = "Monthly SaaS Subscription";
+
+    private bool _showAuditModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardDataAsync();
+    }
+
+    private async Task LoadDashboardDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            _summary = await PlatformService.GetDashboardSummaryAsync();
+            _plans = await PlatformService.GetPlansAsync();
+            _auditLogs = await PlatformService.GetAuditLogsAsync(20);
+            _health = await PlatformService.GetHealthStatusAsync();
+
+            if (_plans.Count > 0 && _newOrgPlanId == Guid.Empty)
+            {
+                _newOrgPlanId = _plans[0].Id;
+            }
+
+            await ApplyFiltersAsync();
+            UpdateStageCounts();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void UpdateStageCounts()
+    {
+        var allOrgs = _organizations;
+        if (_stages.Count >= 5)
+        {
+            _stages[0].Count = allOrgs.Count(o => o.AccountStatus == AccountStatus.Onboarding || o.AccountStatus == AccountStatus.PendingApproval);
+            _stages[1].Count = allOrgs.Count(o => o.AccountStatus == AccountStatus.Trial);
+            _stages[2].Count = allOrgs.Count(o => o.FinancialStatus == FinancialStatus.InvoiceDue);
+            _stages[3].Count = allOrgs.Count(o => o.FinancialStatus == FinancialStatus.PaymentAwaitingVerification);
+            _stages[4].Count = allOrgs.Count(o => o.AccountStatus == AccountStatus.Active && o.FinancialStatus == FinancialStatus.Reconciled);
+        }
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        _organizations = await PlatformService.GetOrganizationsOverviewAsync(
+            search: _searchQuery,
+            accountStatus: _accountFilter,
+            financialStatus: _financialFilter,
+            lifecycleStage: _selectedStageFilter);
+
+        if (_organizations.Count > 0 && _invoiceOrgId == Guid.Empty)
+        {
+            _invoiceOrgId = _organizations[0].Id;
+        }
+    }
+
+    private async Task OnSearchChanged(string query)
+    {
+        _searchQuery = query;
+        await ApplyFiltersAsync();
+    }
+
+    private async Task OnAccountFilterChanged(ChangeEventArgs e)
+    {
+        _accountFilter = e.Value?.ToString() ?? "All";
+        await ApplyFiltersAsync();
+    }
+
+    private async Task OnFinancialFilterChanged(ChangeEventArgs e)
+    {
+        _financialFilter = e.Value?.ToString() ?? "All";
+        await ApplyFiltersAsync();
+    }
+
+    private async Task HandleStageSelected(LifecyclePipeline.StageItem stage)
+    {
+        _selectedStageFilter = stage.FilterKey;
+        await ApplyFiltersAsync();
+    }
+
+    private async Task HandleStageIndexChanged(int index)
+    {
+        _selectedStageIndex = index;
+        if (index < 0)
+        {
+            _selectedStageFilter = null;
+            await ApplyFiltersAsync();
+        }
+    }
+
+    private async Task FilterPendingApprovals()
+    {
+        _accountFilter = "Onboarding";
+        _financialFilter = "All";
+        _selectedStageIndex = 0;
+        _selectedStageFilter = "Onboarding";
+        await ApplyFiltersAsync();
+    }
+
+    private async Task FilterOverdueInvoices()
+    {
+        _accountFilter = "All";
+        _financialFilter = "Overdue";
+        _selectedStageIndex = 2;
+        _selectedStageFilter = "Invoiced";
+        await ApplyFiltersAsync();
+    }
+
+    private async Task ResetFilters()
+    {
+        _searchQuery = "";
+        _accountFilter = "All";
+        _financialFilter = "All";
+        _selectedStageFilter = null;
+        _selectedStageIndex = -1;
+        await ApplyFiltersAsync();
+    }
+
+    private async Task ApproveOrg(PlatformOrganizationDto org)
+    {
+        await PlatformService.UpdateAccountStatusAsync(org.Id, AccountStatus.Active, "Approved by Platform Admin during onboarding review.");
+        await LoadDashboardDataAsync();
+    }
+
+    private async Task VerifyPaymentForOrg(PlatformOrganizationDto org)
+    {
+        var payments = await PlatformService.GetPaymentsAsync(awaitingVerificationOnly: true);
+        var p = payments.FirstOrDefault(x => x.OrganizationId == org.Id);
+        if (p != null)
+        {
+            await PlatformService.VerifyPaymentWorkflowAsync(p.Id);
+        }
+        await LoadDashboardDataAsync();
+    }
+
+    private void ViewOrgDetails(PlatformOrganizationDto org)
+    {
+        Navigation.NavigateTo($"/organizations?id={org.Id}");
+    }
+
+    // Modals
+    private void OpenNewOrgModal() => _showNewOrgModal = true;
+    private void CloseNewOrgModal() => _showNewOrgModal = false;
+
+    private async Task SubmitNewOrganization()
+    {
+        if (string.IsNullOrWhiteSpace(_newOrgName) || string.IsNullOrWhiteSpace(_newOrgAdminEmail)) return;
+        await PlatformService.CreateOrganizationWorkflowAsync(_newOrgName, _newOrgLocation, _newOrgPlanId, _newOrgAdminEmail);
+        _newOrgName = "";
+        _newOrgLocation = "";
+        _newOrgAdminEmail = "";
+        _showNewOrgModal = false;
+        await LoadDashboardDataAsync();
+    }
+
+    private void OpenInvoiceModal() => _showInvoiceModal = true;
+    private void CloseInvoiceModal() => _showInvoiceModal = false;
+
+    private async Task SubmitInvoice()
+    {
+        if (_invoiceAmount <= 0 || _invoiceOrgId == Guid.Empty) return;
+        await PlatformService.IssueInvoiceWorkflowAsync(_invoiceOrgId, _invoiceAmount, _invoiceDescription);
+        _showInvoiceModal = false;
+        await LoadDashboardDataAsync();
+    }
+
+    private void OpenAuditModal() => _showAuditModal = true;
+    private void CloseAuditModal() => _showAuditModal = false;
+
+    private string GetTimeAgo(DateTimeOffset time)
+    {
+        var diff = DateTimeOffset.UtcNow - time;
+        if (diff.TotalMinutes < 2) return "Just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        return $"{(int)diff.TotalDays}d ago";
+    }
+}

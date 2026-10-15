@@ -1,13 +1,74 @@
-﻿@namespace EnjoyEveryday.UI.Shared.Components
+@namespace EnjoyEveryday.UI.Shared.Components
 
-<div class="metric">
-    <small>@Label</small>
-    <strong>@Value</strong>
-    <span>@Subtext</span>
-</div>
+@if (!string.IsNullOrEmpty(Href))
+{
+    <a href="@Href" class="metric metric-interactive @CustomClass">
+        @RenderContent()
+    </a>
+}
+else if (OnClick.HasDelegate)
+{
+    <button type="button" class="metric metric-interactive @CustomClass" @onclick="OnClick">
+        @RenderContent()
+    </button>
+}
+else
+{
+    <div class="metric @CustomClass">
+        @RenderContent()
+    </div>
+}
 
 @code {
     [Parameter] public string Label { get; set; } = "";
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public string Subtext { get; set; } = "";
+    [Parameter] public string? SecondaryIndicator { get; set; }
+    [Parameter] public string? BadgeText { get; set; }
+    [Parameter] public string? BadgeClass { get; set; }
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public string? DrillDownText { get; set; }
+    [Parameter] public RenderFragment? Icon { get; set; }
+    [Parameter] public string CustomClass { get; set; } = "";
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private RenderFragment RenderContent() => __builder =>
+    {
+        <div class="metric-top">
+            <div class="metric-label-group">
+                @if (Icon != null)
+                {
+                    <div class="metric-icon">@Icon</div>
+                }
+                <small>@Label</small>
+            </div>
+            @if (!string.IsNullOrEmpty(BadgeText))
+            {
+                <span class="metric-badge @(BadgeClass ?? "")">@BadgeText</span>
+            }
+        </div>
+
+        <div class="metric-value-row">
+            <strong>@Value</strong>
+            @if (!string.IsNullOrEmpty(SecondaryIndicator))
+            {
+                <span class="metric-secondary">@SecondaryIndicator</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(Subtext))
+        {
+            <span class="metric-subtext">@Subtext</span>
+        }
+
+        @if (!string.IsNullOrEmpty(DrillDownText))
+        {
+            <div class="metric-drilldown">
+                <span>@DrillDownText</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </div>
+        }
+    };
 }
