@@ -891,6 +891,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (UserContext.UserId != Guid.Empty)
+        {
+            _teacherId = UserContext.UserId;
+        }
+
         var currentUser = await UserService.GetUserByIdAsync(UserContext.UserId);
         if (currentUser != null && !string.IsNullOrWhiteSpace(currentUser.FirstName))
         {
@@ -1104,7 +1109,8 @@
 
     private async Task StartSession(Guid scheduleId)
     {
-        var sessionId = await ExecutionService.StartExperienceAsync(scheduleId, _teacherId);
+        var effectiveTeacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : _teacherId;
+        var sessionId = await ExecutionService.StartExperienceAsync(scheduleId, effectiveTeacherId);
         
         // Refresh schedules
         using var connection = await DbConnectionFactory.CreateConnectionAsync();

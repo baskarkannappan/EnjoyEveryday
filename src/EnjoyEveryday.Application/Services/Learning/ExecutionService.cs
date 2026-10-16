@@ -47,16 +47,30 @@ public class ExecutionService
         if (schedule.Status == "Started" || schedule.Status == "Active" || schedule.Status == "Completed")
             throw new InvalidOperationException($"Cannot start schedule in {schedule.Status} status.");
 
-        // Check if teacher is assigned to this schedule, or is assigned to this classroom
+        // Check if user is an admin / manager, or teacher assigned to this schedule, or teacher assigned to this classroom, or schedule has no primary teacher assigned
         bool isAuthorized = false;
-        if (schedule.PrimaryTeacherId == teacherId) 
+        if (_userContext.Roles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase) || 
+                                       r.Equals("DaycareAdmin", StringComparison.OrdinalIgnoreCase) || 
+                                       r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) || 
+                                       r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) || 
+                                       r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase)) ||
+            _userContext.HasPermission("organization.admin") ||
+            _userContext.HasPermission("experience.manage"))
+        {
+            isAuthorized = true;
+        }
+        else if (schedule.PrimaryTeacherId == teacherId || 
+                 schedule.PrimaryTeacherId == _userContext.UserId || 
+                 !schedule.PrimaryTeacherId.HasValue) 
         {
             isAuthorized = true;
         }
         else
         {
             using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-            var teacherCount = await conn.ExecuteScalarAsync<int>("SELECT COUNT(1) FROM classroom_teachers WHERE tenant_id = @TenantId AND classroom_id = @ClassroomId AND user_id = @TeacherId", new { TenantId = tenantId, ClassroomId = schedule.ClassroomId, TeacherId = teacherId });
+            var teacherCount = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM classroom_teachers WHERE tenant_id = @TenantId AND classroom_id = @ClassroomId AND (user_id = @TeacherId OR user_id = @UserId)", 
+                new { TenantId = tenantId, ClassroomId = schedule.ClassroomId, TeacherId = teacherId, UserId = _userContext.UserId });
             if (teacherCount > 0) isAuthorized = true;
         }
 
