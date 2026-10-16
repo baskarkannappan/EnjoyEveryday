@@ -20,34 +20,22 @@ public static class AuthEndpoints
     {
         var group = endpoints.MapGroup("/auth").WithTags("Authentication");
 
-        group.MapGet("/login", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl, [FromQuery] string? inviteToken) =>
+        group.MapGet("/login", (HttpContext context, [FromQuery] string? returnUrl, [FromQuery] string? inviteToken) =>
         {
-            var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
-            if (env.IsDevelopment())
+            var config = context.RequestServices.GetRequiredService<IConfiguration>();
+            var clientId = config["Authentication:Google:ClientId"]
+                        ?? config["Google:ClientId"]
+                        ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+
+            if (string.IsNullOrWhiteSpace(clientId) || clientId == "mock-client-id")
             {
-                using var conn = await db.CreateConnectionAsync();
-                var user = await conn.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT id, email, tenant_id FROM users WHERE email = 'admin@littlestars.com' UNION ALL SELECT id, email, tenant_id FROM users LIMIT 1");
-                if (user != null)
+                var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                if (env.IsDevelopment())
                 {
-                    var claims = new List<Claim>
-                    {
-                        new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
-                        new Claim(ClaimTypes.Email, user.email),
-                        new Claim("TenantId", user.tenant_id.ToString())
-                    };
-
-                    var memberships = (await conn.QueryAsync<Guid>(
-                        "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                        new { UserId = (Guid)user.id })).ToList();
-                    Guid? activeOrgId = memberships.FirstOrDefault();
-
-                    await BuildAuthClaimsAsync(conn, claims, (Guid)user.id, activeOrgId);
-
-                    var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-                    await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
-                    return Results.Redirect(returnUrl ?? "/");
+                    return Results.Redirect($"/auth/dev-login?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
                 }
+
+                return Results.Redirect("/auth/access-denied?reason=google_not_configured");
             }
 
             var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}" };
@@ -58,6 +46,41 @@ public static class AuthEndpoints
             }
 
             return Results.Challenge(properties, new[] { GoogleDefaults.AuthenticationScheme });
+        });
+
+        group.MapGet("/dev-login", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
+        {
+            var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+            if (!env.IsDevelopment())
+            {
+                return Results.Redirect("/login");
+            }
+
+            using var conn = await db.CreateConnectionAsync();
+            var user = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                "SELECT id, email, tenant_id FROM users WHERE email = 'admin@littlestars.com' UNION ALL SELECT id, email, tenant_id FROM users LIMIT 1");
+            if (user != null)
+            {
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
+                    new Claim(ClaimTypes.Email, user.email),
+                    new Claim("TenantId", user.tenant_id.ToString())
+                };
+
+                var memberships = (await conn.QueryAsync<Guid>(
+                    "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
+                    new { UserId = (Guid)user.id })).ToList();
+                Guid? activeOrgId = memberships.FirstOrDefault();
+
+                await BuildAuthClaimsAsync(conn, claims, (Guid)user.id, activeOrgId);
+
+                var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+                await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
+                return Results.Redirect(returnUrl ?? "/");
+            }
+
+            return Results.Redirect("/login");
         });
 
         group.MapGet("/callback", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
@@ -74,6 +97,13 @@ public static class AuthEndpoints
 
             var inviteToken = result.Properties?.Items.ContainsKey("InviteToken") == true ? result.Properties.Items["InviteToken"] : null;
 
+            var givenName = result.Principal.FindFirst(ClaimTypes.GivenName)?.Value 
+                         ?? result.Principal.FindFirst(ClaimTypes.Name)?.Value 
+                         ?? email.Split('@')[0];
+            var surname = result.Principal.FindFirst(ClaimTypes.Surname)?.Value ?? "";
+            var fullName = result.Principal.FindFirst(ClaimTypes.Name)?.Value ?? $"{givenName} {surname}".Trim();
+            if (string.IsNullOrWhiteSpace(fullName)) fullName = email;
+
             using var conn = await db.CreateConnectionAsync();
 
             // 1. Check if external login is already linked
@@ -83,34 +113,90 @@ public static class AuthEndpoints
 
             if (userId == null)
             {
-                // Not linked. Check if they have an invite token.
-                if (string.IsNullOrEmpty(inviteToken))
+                // 2. Check if user already exists with matching email
+                var existingUser = await conn.QuerySingleOrDefaultAsync<dynamic>(
+                    "SELECT id, tenant_id, is_active FROM users WHERE normalized_email = UPPER(@Email) LIMIT 1",
+                    new { Email = email });
+
+                if (existingUser != null)
                 {
-                    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    return Results.Redirect("/auth/access-denied?reason=not_linked");
+                    userId = (Guid)existingUser.id;
+
+                    // Atomically link account
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
+                        VALUES ('Google', @ProviderKey, @UserId, NOW())
+                        ON CONFLICT (provider, provider_key) DO NOTHING;
+                        UPDATE users SET email_confirmed = true, updated_at = NOW() WHERE id = @UserId;
+                    ", new { ProviderKey = providerKey, UserId = userId });
                 }
-
-                // Verify the invite token against the user table (we'll use security_stamp as the invite token for now)
-                var invitedUser = await conn.QuerySingleOrDefaultAsync<Guid?>(
-                    "SELECT id FROM users WHERE email = @Email AND security_stamp = @Token AND is_active = true",
-                    new { Email = email, Token = inviteToken });
-
-                if (invitedUser == null)
+                else
                 {
-                    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    return Results.Redirect("/auth/access-denied?reason=invalid_invite");
+                    // 3. User does not exist -> Auto-create user account
+                    var config = context.RequestServices.GetRequiredService<IConfiguration>();
+                    if (!Guid.TryParse(config["DevTenantId"], out var tenantId))
+                        tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+
+                    if (!Guid.TryParse(config["DevOrganizationId"], out var orgId))
+                        orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+
+                    userId = Guid.NewGuid();
+
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO users (
+                            id, tenant_id, email, normalized_email, email_confirmed,
+                            first_name, last_name, display_name, password_hash, security_stamp, is_active, created_at, updated_at
+                        ) VALUES (
+                            @UserId, @TenantId, @Email, UPPER(@Email), TRUE,
+                            @FirstName, @LastName, @DisplayName, '', encode(gen_random_bytes(32), 'hex'), TRUE, NOW(), NOW()
+                        );
+                        INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
+                        VALUES ('Google', @ProviderKey, @UserId, NOW())
+                        ON CONFLICT (provider, provider_key) DO NOTHING;
+                    ", new { 
+                        UserId = userId, 
+                        TenantId = tenantId, 
+                        Email = email, 
+                        FirstName = givenName, 
+                        LastName = surname, 
+                        DisplayName = fullName, 
+                        ProviderKey = providerKey 
+                    });
+
+                    // Ensure organization membership
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status, created_at, updated_at)
+                        VALUES (@UserId, @OrgId, @TenantId, 'Active', NOW(), NOW())
+                        ON CONFLICT (user_id, organization_id) DO UPDATE SET status = 'Active';
+                    ", new { UserId = userId, OrgId = orgId, TenantId = tenantId });
+
+                    // Assign teacher role in Daycare Web
+                    var teacherRoleId = await conn.ExecuteScalarAsync<Guid?>(@"
+                        SELECT id FROM roles 
+                        WHERE name IN ('DaycareTeacher', 'Teacher', 'ClassroomTeacher', 'OrganizationAdmin') 
+                          AND (tenant_id = @TenantId OR tenant_id IS NULL)
+                        ORDER BY CASE WHEN name = 'DaycareTeacher' THEN 1 WHEN name = 'Teacher' THEN 2 ELSE 3 END 
+                        LIMIT 1", new { TenantId = tenantId });
+
+                    if (teacherRoleId.HasValue)
+                    {
+                        await conn.ExecuteAsync(@"
+                            INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
+                            VALUES (@UserId, @RoleId, @OrgId, @TenantId)
+                            ON CONFLICT DO NOTHING;
+                        ", new { UserId = userId, RoleId = teacherRoleId.Value, OrgId = orgId, TenantId = tenantId });
+                    }
+
+                    // Ensure teacher profile exists
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, display_name, status, created_at, updated_at)
+                        SELECT gen_random_uuid(), @TenantId, @UserId, @FirstName, @LastName, @DisplayName, 'Active', NOW(), NOW()
+                        WHERE NOT EXISTS (SELECT 1 FROM teachers WHERE user_id = @UserId);
+                    ", new { TenantId = tenantId, UserId = userId, FirstName = givenName, LastName = surname, DisplayName = fullName });
                 }
-
-                userId = invitedUser.Value;
-
-                // Atomically link the account and clear the invite token
-                await conn.ExecuteAsync(@"
-                    INSERT INTO user_external_logins (provider, provider_key, user_id) VALUES ('Google', @ProviderKey, @UserId);
-                    UPDATE users SET security_stamp = encode(gen_random_bytes(32), 'hex'), email_confirmed = true WHERE id = @UserId;
-                ", new { ProviderKey = providerKey, UserId = userId });
             }
 
-            // 2. We have a linked user ID. Ensure the account is active.
+            // 4. We have a linked user ID. Ensure the account is active.
             var user = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId, bool IsActive)?>(
                 "SELECT id as Id, tenant_id as TenantId, is_active as IsActive FROM users WHERE id = @UserId", 
                 new { UserId = userId });
@@ -121,7 +207,7 @@ public static class AuthEndpoints
                 return Results.Redirect("/auth/access-denied?reason=account_disabled");
             }
 
-            // 3. Rebuild the claims explicitly from our trusted DB
+            // 5. Rebuild the claims explicitly from our trusted DB
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Value.Id.ToString()),
@@ -225,6 +311,7 @@ public static class AuthEndpoints
                 "invalid_invite" => "The invitation link is invalid or expired.",
                 "account_disabled" => "Your account is disabled. Contact your administrator.",
                 "no_organizations" => "You are not assigned to any active organizations.",
+                "google_not_configured" => "Google Authentication is not yet configured. Please set Authentication:Google:ClientId in appsettings.json or use dev login.",
                 "invalid_org" => "Invalid organization selection.",
                 _ => "Access Denied."
             };

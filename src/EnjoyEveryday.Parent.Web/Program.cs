@@ -28,7 +28,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>
 builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options => 
     {
-        options.LoginPath = "/auth/login";
+        options.LoginPath = "/login";
         options.LogoutPath = "/auth/logout";
         options.AccessDeniedPath = "/auth/access-denied";
         options.Cookie.HttpOnly = true;
@@ -39,8 +39,16 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.C
     })
     .AddGoogle(options =>
     {
-        options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "mock-client-id";
-        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "mock-client-secret";
+        var clientId = builder.Configuration["Authentication:Google:ClientId"] 
+                    ?? builder.Configuration["Google:ClientId"]
+                    ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+        var clientSecret = builder.Configuration["Authentication:Google:ClientSecret"] 
+                        ?? builder.Configuration["Google:ClientSecret"]
+                        ?? Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET");
+
+        options.ClientId = !string.IsNullOrWhiteSpace(clientId) ? clientId : "mock-client-id";
+        options.ClientSecret = !string.IsNullOrWhiteSpace(clientSecret) ? clientSecret : "mock-client-secret";
+        options.SignInScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
         options.SaveTokens = true;
     });
 
