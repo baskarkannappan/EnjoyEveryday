@@ -160,6 +160,8 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
                     periodType = input.PeriodType,
                     periodStartDate = startDate.ToString("yyyy-MM-dd"),
                     periodEndDate = endDate.ToString("yyyy-MM-dd"),
+                    focusArea = input.FocusArea,
+                    teacherQuestion = input.TeacherQuestion,
                     evidenceMemories = evidenceItems,
                     candidateExperiences = candidateItems
                 };
@@ -190,7 +192,7 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
         // 7. Grounded deterministic fallback if AI is unavailable
         if (aiResult == null || aiResult.Items == null || !aiResult.Items.Any())
         {
-            aiResult = GenerateDeterministicGroundedFallback(child, startDate, endDate, memoryList, activeExperiences);
+            aiResult = GenerateDeterministicGroundedFallback(child, startDate, endDate, memoryList, activeExperiences, input.FocusArea, input.TeacherQuestion);
         }
 
         // 8. Sanitize and post-validate evidence citations
@@ -207,6 +209,8 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
             PeriodType = input.PeriodType,
             PeriodStartDate = startDate,
             PeriodEndDate = endDate,
+            FocusArea = input.FocusArea,
+            TeacherQuestion = input.TeacherQuestion,
             EvidenceCount = memoryList.Count,
             OverallSummary = aiResult.OverallSummary,
             EvidenceGaps = aiResult.EvidenceGaps
@@ -276,6 +280,7 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
             "ParticipationPatterns" => "ParticipationPatterns",
             "LearningOpportunities" => "LearningOpportunities",
             "IdeasToConsider" => "IdeasToConsider",
+            "EvidenceLimitations" => "EvidenceLimitations",
             _ => "JourneySummary"
         };
     }
@@ -287,6 +292,7 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
             "RecordedFact" => "RecordedFact",
             "ObservedPattern" => "ObservedPattern",
             "EducationalSuggestion" => "EducationalSuggestion",
+            "EvidenceLimitations" => "EvidenceLimitations",
             _ => "RecordedFact"
         };
     }
@@ -296,7 +302,9 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
         DateOnly startDate, 
         DateOnly endDate, 
         List<MemoryEvent> memories, 
-        List<Experience> candidates)
+        List<Experience> candidates,
+        string? focusArea = null,
+        string? teacherQuestion = null)
     {
         var items = new List<AiJourneyInsightItemDto>();
         int rank = 1;
@@ -304,12 +312,14 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
         if (memories.Any())
         {
             var first = memories.First();
+            var strength = memories.Count > 1 ? "Pattern supported by multiple records" : "Single observation";
+
             items.Add(new AiJourneyInsightItemDto
             {
                 Category = "JourneySummary",
                 Classification = "RecordedFact",
                 Statement = $"{child.FirstName} has {memories.Count} recorded observations and experiences during this period.",
-                EvidenceStrength = "Supported",
+                EvidenceStrength = strength,
                 SupportingEvidence = new List<AiJourneyEvidenceCitationDto>
                 {
                     new()
@@ -323,6 +333,76 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
                 RankOrder = rank++
             });
 
+            // Specific teacher question reflection
+            if (!string.IsNullOrWhiteSpace(teacherQuestion))
+            {
+                var relevantMemories = memories.Where(m => 
+                    m.Title.Contains(teacherQuestion, StringComparison.OrdinalIgnoreCase) ||
+                    m.Description.Contains(teacherQuestion, StringComparison.OrdinalIgnoreCase) ||
+                    (m.Category != null && teacherQuestion.Contains(m.Category, StringComparison.OrdinalIgnoreCase))
+                ).ToList();
+
+                if (relevantMemories.Any())
+                {
+                    items.Add(new AiJourneyInsightItemDto
+                    {
+                        Category = "LearningOpportunities",
+                        Classification = "ObservedPattern",
+                        Statement = $"In response to teacher inquiry regarding '{teacherQuestion}': {relevantMemories.Count} matching record(s) confirm active engagement.",
+                        EvidenceStrength = relevantMemories.Count > 1 ? "Pattern supported by multiple records" : "Single observation",
+                        SupportingEvidence = relevantMemories.Take(3).Select(m => new AiJourneyEvidenceCitationDto
+                        {
+                            SourceId = m.SourceId.ToString(),
+                            SourceType = m.SourceType,
+                            Title = m.Title,
+                            Summary = m.Description
+                        }).ToList(),
+                        RankOrder = rank++
+                    });
+                }
+                else
+                {
+                    items.Add(new AiJourneyInsightItemDto
+                    {
+                        Category = "EvidenceLimitations",
+                        Classification = "EvidenceLimitations",
+                        Statement = $"In response to teacher inquiry regarding '{teacherQuestion}': No explicit observations directly address this inquiry in the selected timeframe.",
+                        EvidenceStrength = "Insufficient evidence",
+                        SupportingEvidence = new List<AiJourneyEvidenceCitationDto>(),
+                        RankOrder = rank++
+                    });
+                }
+            }
+
+            // Learning Opportunity / Focus Area
+            if (!string.IsNullOrWhiteSpace(focusArea) && focusArea != "All")
+            {
+                var focusMemories = memories.Where(m => 
+                    m.Title.Contains(focusArea, StringComparison.OrdinalIgnoreCase) ||
+                    m.Description.Contains(focusArea, StringComparison.OrdinalIgnoreCase) ||
+                    (m.Category != null && m.Category.Contains(focusArea, StringComparison.OrdinalIgnoreCase))
+                ).ToList();
+
+                if (focusMemories.Any())
+                {
+                    items.Add(new AiJourneyInsightItemDto
+                    {
+                        Category = "LearningOpportunities",
+                        Classification = "ObservedPattern",
+                        Statement = $"Focus on {focusArea}: Observed in {focusMemories.Count} moment(s), highlighting recorded progress and engagement.",
+                        EvidenceStrength = focusMemories.Count > 1 ? "Pattern supported by multiple records" : "Single observation",
+                        SupportingEvidence = focusMemories.Take(2).Select(m => new AiJourneyEvidenceCitationDto
+                        {
+                            SourceId = m.SourceId.ToString(),
+                            SourceType = m.SourceType,
+                            Title = m.Title,
+                            Summary = m.Description
+                        }).ToList(),
+                        RankOrder = rank++
+                    });
+                }
+            }
+
             // If there are observations about activities
             var story = memories.FirstOrDefault(m => m.SourceType == "child_stories" || m.SourceType == "child_journey_entries");
             if (story != null)
@@ -332,7 +412,7 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
                     Category = "RecordedInterests",
                     Classification = "RecordedFact",
                     Statement = $"Recorded observation reveals engagement in: {story.Title}.",
-                    EvidenceStrength = "Supported",
+                    EvidenceStrength = "Single observation",
                     SupportingEvidence = new List<AiJourneyEvidenceCitationDto>
                     {
                         new()
@@ -356,7 +436,7 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
                     Category = "ParticipationPatterns",
                     Classification = "ObservedPattern",
                     Statement = $"{child.FirstName} actively participated in {sessions.Count} guided classroom experience session(s).",
-                    EvidenceStrength = "Supported",
+                    EvidenceStrength = sessions.Count > 1 ? "Pattern supported by multiple records" : "Single observation",
                     SupportingEvidence = sessions.Take(2).Select(s => new AiJourneyEvidenceCitationDto
                     {
                         SourceId = s.SourceId.ToString(),
@@ -375,27 +455,48 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
                 Category = "JourneySummary",
                 Classification = "RecordedFact",
                 Statement = $"No observations or experience sessions were recorded for {child.FirstName} between {startDate} and {endDate}.",
-                EvidenceStrength = "Limited",
+                EvidenceStrength = "Limited evidence",
                 SupportingEvidence = new List<AiJourneyEvidenceCitationDto>(),
                 RankOrder = rank++
             });
         }
 
+        // Ideas to Consider (Next Steps)
         if (candidates.Any())
         {
-            var topCand = candidates.First();
+            Experience? chosenCand = null;
+            if (!string.IsNullOrWhiteSpace(focusArea) && focusArea != "All")
+            {
+                chosenCand = candidates.FirstOrDefault(c => 
+                    c.Title.Contains(focusArea, StringComparison.OrdinalIgnoreCase) ||
+                    (c.Description != null && c.Description.Contains(focusArea, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+            chosenCand ??= candidates.First();
+
             items.Add(new AiJourneyInsightItemDto
             {
                 Category = "IdeasToConsider",
                 Classification = "EducationalSuggestion",
-                Statement = $"Consider exploring '{topCand.Title}' to provide additional opportunities for creative and hands-on discovery.",
-                EvidenceStrength = "Emerging",
+                Statement = $"Consider exploring '{chosenCand.Title}' to provide additional opportunities for discovery and skill practice.",
+                EvidenceStrength = "Single observation",
                 SupportingEvidence = new List<AiJourneyEvidenceCitationDto>(),
-                SuggestedExperienceId = topCand.Id,
-                SuggestedExperienceTitle = topCand.Title,
+                SuggestedExperienceId = chosenCand.Id,
+                SuggestedExperienceTitle = chosenCand.Title,
                 RankOrder = rank++
             });
         }
+
+        // Evidence Limitations item
+        items.Add(new AiJourneyInsightItemDto
+        {
+            Category = "EvidenceLimitations",
+            Classification = "EvidenceLimitations",
+            Statement = "Administrative records (attendance and daily care) are tracked for wellbeing and are not interpreted as developmental mastery. Absence of observations in a learning domain indicates an opportunity for future observation rather than a child deficit.",
+            EvidenceStrength = "Limited evidence",
+            SupportingEvidence = new List<AiJourneyEvidenceCitationDto>(),
+            RankOrder = rank++
+        });
 
         return new AiJourneyInsightResult
         {

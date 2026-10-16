@@ -24,6 +24,19 @@
                 </select>
             </div>
 
+            <div class="period-select-wrap">
+                <select class="period-select" @bind="_selectedFocusArea" disabled="@_isLoading">
+                    <option value="All">All Learning Domains</option>
+                    <option value="Communication">Communication & Language</option>
+                    <option value="SocialInteraction">Social & Collaboration</option>
+                    <option value="Creativity">Creativity & Self-Expression</option>
+                    <option value="Movement">Movement & Physical Skills</option>
+                    <option value="EarlyMath">Early Mathematical Thinking</option>
+                    <option value="EmotionalExpression">Emotional Expression</option>
+                    <option value="Environment">Understanding Environment</option>
+                </select>
+            </div>
+
             @if (_selectedPeriodType == "Custom")
             {
                 <div class="custom-date-range">
@@ -33,11 +46,13 @@
                 </div>
             }
 
+            <input type="text" class="question-input" @bind="_teacherQuestion" placeholder="Optional reflection question (e.g. Which creative moments were recorded?)" disabled="@_isLoading" />
+
             <button type="button" class="btn-generate" @onclick="GenerateInsightsAsync" disabled="@_isLoading">
                 @if (_isLoading)
                 {
                     <span class="spinner-small"></span>
-                    <span>Analyzing Evidence...</span>
+                    <span>Synthesizing...</span>
                 }
                 else
                 {
@@ -66,9 +81,17 @@
         <div class="insight-body">
             <!-- Overall Summary Banner -->
             <div class="summary-card">
-                <div class="summary-period-pill">
-                    Period: @_currentRequest.PeriodStartDate.ToString("MMM d, yyyy") – @_currentRequest.PeriodEndDate.ToString("MMM d, yyyy")
-                    • @_currentRequest.EvidenceCount evidence items reviewed
+                <div class="summary-period-pill" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                    <span>Period: @_currentRequest.PeriodStartDate.ToString("MMM d, yyyy") – @_currentRequest.PeriodEndDate.ToString("MMM d, yyyy")</span>
+                    <span>• @_currentRequest.EvidenceCount evidence items</span>
+                    @if (!string.IsNullOrEmpty(_currentRequest.FocusArea))
+                    {
+                        <span style="background: #edf4ee; color: #31523c; padding: 2px 8px; border-radius: 4px; font-weight: 700;">Focus: @_currentRequest.FocusArea</span>
+                    }
+                    @if (!string.IsNullOrEmpty(_currentRequest.TeacherQuestion))
+                    {
+                        <span style="background: #fff8e1; color: #856404; padding: 2px 8px; border-radius: 4px; font-style: italic;">"@_currentRequest.TeacherQuestion"</span>
+                    }
                 </div>
                 <p class="summary-text">@_currentRequest.OverallSummary</p>
             </div>
@@ -81,6 +104,7 @@
                     var patternItems = _currentRequest.Items.Where(i => i.Category == "ParticipationPatterns").ToList();
                     var learningItems = _currentRequest.Items.Where(i => i.Category == "LearningOpportunities").ToList();
                     var ideaItems = _currentRequest.Items.Where(i => i.Category == "IdeasToConsider").ToList();
+                    var limitationItems = _currentRequest.Items.Where(i => i.Category == "EvidenceLimitations").ToList();
                 }
 
                 @if (interestItems.Any())
@@ -92,7 +116,10 @@
                             {
                                 <div class="insight-row">
                                     <div class="statement-wrap">
-                                        <div class="class-pill pill-fact">@item.Classification</div>
+                                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                            <div class="class-pill pill-fact">@item.Classification</div>
+                                            <div class="strength-pill">@item.EvidenceStrength</div>
+                                        </div>
                                         <p class="statement-text">@item.Statement</p>
                                     </div>
                                     @RenderEvidenceCitations(item)
@@ -111,7 +138,10 @@
                             {
                                 <div class="insight-row">
                                     <div class="statement-wrap">
-                                        <div class="class-pill pill-pattern">@item.Classification</div>
+                                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                            <div class="class-pill pill-pattern">@item.Classification</div>
+                                            <div class="strength-pill">@item.EvidenceStrength</div>
+                                        </div>
                                         <p class="statement-text">@item.Statement</p>
                                     </div>
                                     @RenderEvidenceCitations(item)
@@ -130,7 +160,10 @@
                             {
                                 <div class="insight-row">
                                     <div class="statement-wrap">
-                                        <div class="class-pill pill-learning">@item.Classification</div>
+                                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                            <div class="class-pill pill-learning">@item.Classification</div>
+                                            <div class="strength-pill">@item.EvidenceStrength</div>
+                                        </div>
                                         <p class="statement-text">@item.Statement</p>
                                     </div>
                                     @RenderEvidenceCitations(item)
@@ -149,19 +182,44 @@
                             {
                                 <div class="insight-row">
                                     <div class="statement-wrap">
-                                        <div class="class-pill pill-suggestion">@item.Classification</div>
+                                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                            <div class="class-pill pill-suggestion">@item.Classification</div>
+                                            <div class="strength-pill">@item.EvidenceStrength</div>
+                                        </div>
                                         <p class="statement-text">@item.Statement</p>
                                     </div>
 
                                     @if (!string.IsNullOrEmpty(item.SuggestedExperienceTitle))
                                     {
                                         <div class="action-handoff">
-                                            <span class="exp-title">Suggested: @item.SuggestedExperienceTitle</span>
-                                            <a href="/experiences" class="btn-explore-link">
-                                                Explore Related Activities →
-                                            </a>
+                                            <span class="exp-title">Suggested: <strong>@item.SuggestedExperienceTitle</strong></span>
+                                            <div style="display: flex; gap: 8px;">
+                                                <a href="/experiences" class="btn-explore-link">View in Library</a>
+                                                <a href="/planner" class="btn-plan-link">+ Plan Activity</a>
+                                            </div>
                                         </div>
                                     }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (limitationItems.Any())
+                {
+                    <div class="section-card limitation-card">
+                        <div class="section-badge badge-limitations">⚖️ Evidence Scope & Boundaries</div>
+                        <div class="items-list">
+                            @foreach (var item in limitationItems)
+                            {
+                                <div class="insight-row">
+                                    <div class="statement-wrap">
+                                        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                            <div class="class-pill pill-limitation">Scope Boundary</div>
+                                            <div class="strength-pill">@item.EvidenceStrength</div>
+                                        </div>
+                                        <p class="statement-text">@item.Statement</p>
+                                    </div>
                                 </div>
                             }
                         </div>
@@ -181,6 +239,15 @@
                 </div>
             }
 
+            <div class="feedback-row" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e1e6e0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <span style="font-size: 13px; color: #6e7973;">Was this progress reflection helpful?</span>
+                <div style="display: flex; gap: 6px;">
+                    <button type="button" class="feedback-btn @(_feedbackGiven == "Helpful" ? "active" : "")" @onclick='() => SetFeedback("Helpful")'>👍 Helpful</button>
+                    <button type="button" class="feedback-btn @(_feedbackGiven == "NotHelpful" ? "active" : "")" @onclick='() => SetFeedback("NotHelpful")'>👎 Not Helpful</button>
+                    <button type="button" class="feedback-btn @(_feedbackGiven == "NeedsReview" ? "active" : "")" @onclick='() => SetFeedback("NeedsReview")'>📝 Needs Review</button>
+                </div>
+            </div>
+
             <div class="generated-footer">
                 <span>Generated: @_currentRequest.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</span>
                 <span>• Strict Human-in-the-Loop review: Insights remain private to authorized educators until approved.</span>
@@ -192,7 +259,7 @@
         <div class="empty-state">
             <div class="empty-icon">✦</div>
             <h4>Explore @ChildName's Journey Insights</h4>
-            <p>Select a reporting period and click <strong>Generate Insights</strong> to synthesize recorded observations, experiences, and interests into a traceable reflection.</p>
+            <p>Select a reporting period, learning domain, or reflection question and click <strong>Generate Insights</strong> to synthesize recorded observations and experiences into a traceable reflection.</p>
         </div>
     }
 </div>
@@ -235,6 +302,9 @@
     [Parameter] public string ChildName { get; set; } = "Child";
 
     private string _selectedPeriodType = "Last30Days";
+    private string _selectedFocusArea = "All";
+    private string _teacherQuestion = string.Empty;
+    private string _feedbackGiven = string.Empty;
     private DateOnly? _customStartDate = DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
     private DateOnly? _customEndDate = DateOnly.FromDateTime(DateTime.Today);
 
@@ -250,6 +320,7 @@
         {
             _lastLoadedChildId = ChildId;
             _errorMessage = null;
+            _feedbackGiven = string.Empty;
             await LoadLatestInsightsAsync();
         }
     }
@@ -264,6 +335,14 @@
             if (_currentRequest != null)
             {
                 _selectedPeriodType = _currentRequest.PeriodType;
+                if (!string.IsNullOrEmpty(_currentRequest.FocusArea))
+                {
+                    _selectedFocusArea = _currentRequest.FocusArea;
+                }
+                if (!string.IsNullOrEmpty(_currentRequest.TeacherQuestion))
+                {
+                    _teacherQuestion = _currentRequest.TeacherQuestion;
+                }
             }
         }
         catch (Exception ex)
@@ -281,12 +360,18 @@
         }
     }
 
+    private void SetFeedback(string feedback)
+    {
+        _feedbackGiven = feedback;
+    }
+
     private async Task GenerateInsightsAsync()
     {
         if (ChildId == Guid.Empty) return;
 
         _isLoading = true;
         _errorMessage = null;
+        _feedbackGiven = string.Empty;
         StateHasChanged();
 
         try
@@ -296,7 +381,9 @@
                 ChildId = ChildId,
                 PeriodType = _selectedPeriodType,
                 CustomStartDate = _selectedPeriodType == "Custom" ? _customStartDate : null,
-                CustomEndDate = _selectedPeriodType == "Custom" ? _customEndDate : null
+                CustomEndDate = _selectedPeriodType == "Custom" ? _customEndDate : null,
+                FocusArea = _selectedFocusArea != "All" ? _selectedFocusArea : null,
+                TeacherQuestion = !string.IsNullOrWhiteSpace(_teacherQuestion) ? _teacherQuestion : null
             };
 
             _currentRequest = await InsightService.GenerateJourneyInsightsAsync(input);

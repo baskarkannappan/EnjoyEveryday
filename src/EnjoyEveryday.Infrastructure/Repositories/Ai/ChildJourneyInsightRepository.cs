@@ -27,11 +27,11 @@ public class ChildJourneyInsightRepository : IChildJourneyInsightRepository
             INSERT INTO child_journey_insight_requests (
                 id, tenant_id, organization_id, classroom_id, child_id, 
                 requested_by_user_id, period_type, period_start_date, period_end_date, 
-                evidence_count, overall_summary, evidence_gaps, created_at
+                focus_area, teacher_question, evidence_count, overall_summary, evidence_gaps, created_at
             ) VALUES (
                 @Id, @TenantId, @OrganizationId, @ClassroomId, @ChildId, 
                 @RequestedByUserId, @PeriodType, @PeriodStartDate, @PeriodEndDate, 
-                @EvidenceCount, @OverallSummary, @EvidenceGaps, @CreatedAt
+                @FocusArea, @TeacherQuestion, @EvidenceCount, @OverallSummary, @EvidenceGaps, @CreatedAt
             );";
 
         await conn.ExecuteAsync(insertRequestSql, request, tx);
@@ -72,6 +72,8 @@ public class ChildJourneyInsightRepository : IChildJourneyInsightRepository
                 period_type AS PeriodType,
                 period_start_date AS PeriodStartDate,
                 period_end_date AS PeriodEndDate,
+                focus_area AS FocusArea,
+                teacher_question AS TeacherQuestion,
                 evidence_count AS EvidenceCount,
                 overall_summary AS OverallSummary,
                 evidence_gaps AS EvidenceGaps,
@@ -104,6 +106,8 @@ public class ChildJourneyInsightRepository : IChildJourneyInsightRepository
                 period_type AS PeriodType,
                 period_start_date AS PeriodStartDate,
                 period_end_date AS PeriodEndDate,
+                focus_area AS FocusArea,
+                teacher_question AS TeacherQuestion,
                 evidence_count AS EvidenceCount,
                 overall_summary AS OverallSummary,
                 evidence_gaps AS EvidenceGaps,

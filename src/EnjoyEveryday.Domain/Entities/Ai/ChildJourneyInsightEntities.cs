@@ -14,6 +14,8 @@ public class ChildJourneyInsightRequest
     public string PeriodType { get; set; } = "Last30Days"; // Last7Days, Last30Days, CurrentMonth, Custom
     public DateOnly PeriodStartDate { get; set; }
     public DateOnly PeriodEndDate { get; set; }
+    public string? FocusArea { get; set; } // Communication, SocialInteraction, Collaboration, Creativity, EarlyMath, Movement, etc.
+    public string? TeacherQuestion { get; set; } // Optional teacher reflection inquiry
     public int EvidenceCount { get; set; }
     public string? OverallSummary { get; set; }
     public string? EvidenceGaps { get; set; }
@@ -53,4 +55,6 @@ public class GenerateJourneyInsightInput
     public string PeriodType { get; set; } = "Last30Days"; // Last7Days, Last30Days, CurrentMonth, Custom
     public DateOnly? CustomStartDate { get; set; }
     public DateOnly? CustomEndDate { get; set; }
+    public string? FocusArea { get; set; }
+    public string? TeacherQuestion { get; set; }
 }
