@@ -70,13 +70,14 @@ public static class AuthEndpoints
                 using var conn = await db.CreateConnectionAsync();
 
                 // 1. Ensure Sunita Patel exists in users
+                var devSecurityStamp = Guid.NewGuid().ToString("N");
                 await conn.ExecuteAsync(@"
                     INSERT INTO users (
                         id, tenant_id, email, normalized_email, email_confirmed, first_name, last_name, display_name, password_hash, security_stamp, is_active
                     ) VALUES (
-                        @UserId, @TenantId, @Email, UPPER(@Email), TRUE, 'Sunita', 'Patel', 'Sunita Patel', '', encode(gen_random_bytes(32), 'hex'), TRUE
+                        @UserId, @TenantId, @Email, UPPER(@Email), TRUE, 'Sunita', 'Patel', 'Sunita Patel', '', @SecurityStamp, TRUE
                     ) ON CONFLICT (id) DO UPDATE SET is_active = TRUE;
-                ", new { UserId = userId, TenantId = tenantId, Email = email });
+                ", new { UserId = userId, TenantId = tenantId, Email = email, SecurityStamp = devSecurityStamp });
 
                 // 2. Ensure mock child Aarav Patel exists
                 await conn.ExecuteAsync(@"
@@ -197,13 +198,15 @@ public static class AuthEndpoints
 
                     userId = Guid.NewGuid();
 
+                    var securityStamp = Guid.NewGuid().ToString("N");
+
                     await conn.ExecuteAsync(@"
                         INSERT INTO users (
                             id, tenant_id, email, normalized_email, email_confirmed,
                             first_name, last_name, display_name, password_hash, security_stamp, is_active, created_at, updated_at
                         ) VALUES (
                             @UserId, @TenantId, @Email, UPPER(@Email), TRUE,
-                            @FirstName, @LastName, @DisplayName, '', encode(gen_random_bytes(32), 'hex'), TRUE, NOW(), NOW()
+                            @FirstName, @LastName, @DisplayName, '', @SecurityStamp, TRUE, NOW(), NOW()
                         );
                         INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
                         VALUES ('Google', @ProviderKey, @UserId, NOW())
@@ -215,6 +218,7 @@ public static class AuthEndpoints
                         FirstName = givenName, 
                         LastName = surname, 
                         DisplayName = fullName, 
+                        SecurityStamp = securityStamp,
                         ProviderKey = providerKey 
                     });
 
@@ -228,7 +232,7 @@ public static class AuthEndpoints
                     // Assign Parent role
                     var parentRoleId = await conn.ExecuteScalarAsync<Guid?>(@"
                         SELECT id FROM roles 
-                        WHERE name = 'Parent' AND (tenant_id = @TenantId OR tenant_id IS NULL) 
+                        WHERE name = 'Parent' AND tenant_id = @TenantId 
                         LIMIT 1", new { TenantId = tenantId });
 
                     if (parentRoleId.HasValue)

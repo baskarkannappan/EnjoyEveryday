@@ -57,12 +57,21 @@ public static class AuthEndpoints
             }
 
             using var conn = await db.CreateConnectionAsync();
-            var user = await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, tenant_id FROM users LIMIT 1");
+            var user = await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users WHERE normalized_email = 'ADMIN@LITTLESTARS.COM' LIMIT 1")
+                ?? await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users LIMIT 1");
             if (user != null)
             {
+                string displayName = (string?)user.display_name;
+                if (string.IsNullOrWhiteSpace(displayName))
+                    displayName = $"{user.first_name} {user.last_name}".Trim();
+                if (string.IsNullOrWhiteSpace(displayName))
+                    displayName = (string)user.email;
+
                 var claims = new List<Claim>
                 {
                     new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
+                    new Claim(ClaimTypes.Name, displayName),
+                    new Claim("DisplayName", displayName),
                     new Claim(ClaimTypes.Email, user.email),
                     new Claim("TenantId", user.tenant_id.ToString())
                 };
@@ -117,98 +126,73 @@ public static class AuthEndpoints
                     "SELECT id, tenant_id, is_active FROM users WHERE normalized_email = UPPER(@Email) LIMIT 1",
                     new { Email = email });
 
-                if (existingUser != null)
+                if (existingUser == null)
                 {
-                    userId = (Guid)existingUser.id;
-
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
-                        VALUES ('Google', @ProviderKey, @UserId, NOW())
-                        ON CONFLICT (provider, provider_key) DO NOTHING;
-                        UPDATE users SET email_confirmed = true, updated_at = NOW() WHERE id = @UserId;
-                    ", new { ProviderKey = providerKey, UserId = userId });
+                    // For Platform Operations, only pre-registered administrators are allowed.
+                    // Unknown external accounts cannot auto-provision administrative access.
+                    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    return Results.Redirect("/access-denied?reason=not_registered");
                 }
-                else
-                {
-                    // 3. User does not exist -> Auto-create user account
-                    var config = context.RequestServices.GetRequiredService<IConfiguration>();
-                    if (!Guid.TryParse(config["DevTenantId"], out var tenantId))
-                        tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
-                    if (!Guid.TryParse(config["DevOrganizationId"], out var orgId))
-                        orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
-
-                    userId = Guid.NewGuid();
-
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO users (
-                            id, tenant_id, email, normalized_email, email_confirmed,
-                            first_name, last_name, display_name, password_hash, security_stamp, is_active, created_at, updated_at
-                        ) VALUES (
-                            @UserId, @TenantId, @Email, UPPER(@Email), TRUE,
-                            @FirstName, @LastName, @DisplayName, '', encode(gen_random_bytes(32), 'hex'), TRUE, NOW(), NOW()
-                        );
-                        INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
-                        VALUES ('Google', @ProviderKey, @UserId, NOW())
-                        ON CONFLICT (provider, provider_key) DO NOTHING;
-                    ", new { 
-                        UserId = userId, 
-                        TenantId = tenantId, 
-                        Email = email, 
-                        FirstName = givenName, 
-                        LastName = surname, 
-                        DisplayName = fullName, 
-                        ProviderKey = providerKey 
-                    });
-
-                    // Ensure organization membership
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status, created_at, updated_at)
-                        VALUES (@UserId, @OrgId, @TenantId, 'Active', NOW(), NOW())
-                        ON CONFLICT (user_id, organization_id) DO UPDATE SET status = 'Active';
-                    ", new { UserId = userId, OrgId = orgId, TenantId = tenantId });
-
-                    // Assign organization admin role
-                    var adminRoleId = await conn.ExecuteScalarAsync<Guid?>(@"
-                        SELECT id FROM roles 
-                        WHERE name IN ('OrganizationAdmin', 'OrganizationOwner', 'PlatformAdmin') 
-                          AND (tenant_id = @TenantId OR tenant_id IS NULL)
-                        ORDER BY CASE WHEN name = 'OrganizationAdmin' THEN 1 WHEN name = 'OrganizationOwner' THEN 2 ELSE 3 END 
-                        LIMIT 1", new { TenantId = tenantId });
-
-                    if (adminRoleId.HasValue)
-                    {
-                        await conn.ExecuteAsync(@"
-                            INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
-                            VALUES (@UserId, @RoleId, @OrgId, @TenantId)
-                            ON CONFLICT DO NOTHING;
-                        ", new { UserId = userId, RoleId = adminRoleId.Value, OrgId = orgId, TenantId = tenantId });
-                    }
-                }
+                userId = (Guid)existingUser.id;
             }
 
-            // 4. We have a linked user ID. Ensure the account is active.
-            var user = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId, bool IsActive)?>(
-                "SELECT id as Id, tenant_id as TenantId, is_active as IsActive FROM users WHERE id = @UserId", 
-                new { UserId = userId });
+            // 3. Verify user has administrative privileges (PlatformAdmin, SuperAdmin, OrganizationAdmin, or OrganizationOwner)
+            var hasAdminRole = await conn.ExecuteScalarAsync<bool>(@"
+                SELECT EXISTS (
+                    SELECT 1 FROM user_roles ur
+                    JOIN roles r ON ur.role_id = r.id
+                    WHERE ur.user_id = @UserId AND r.name IN ('PlatformAdmin', 'SuperAdmin')
+                    UNION
+                    SELECT 1 FROM user_organization_roles uor
+                    JOIN roles r ON uor.role_id = r.id
+                    WHERE uor.user_id = @UserId AND r.name IN ('OrganizationAdmin', 'OrganizationOwner')
+                )", new { UserId = userId.Value });
 
-            if (user == null || !user.Value.IsActive)
+            if (!hasAdminRole)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/auth/access-denied?reason=account_disabled");
+                return Results.Redirect("/access-denied?reason=insufficient_permissions");
             }
 
-            // 5. Rebuild the claims explicitly from our trusted DB
+            // 4. Link Google account to this admin user if not already linked
+            await conn.ExecuteAsync(@"
+                INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
+                VALUES ('Google', @ProviderKey, @UserId, NOW())
+                ON CONFLICT (provider, provider_key) DO NOTHING;
+                UPDATE users SET email_confirmed = true, updated_at = NOW() WHERE id = @UserId;
+            ", new { ProviderKey = providerKey, UserId = userId.Value });
+
+            // 5. We have a linked user ID. Ensure the account is active and retrieve display name.
+            var user = await conn.QuerySingleOrDefaultAsync<dynamic>(
+                "SELECT id, tenant_id, is_active, display_name, first_name, last_name, email FROM users WHERE id = @UserId", 
+                new { UserId = userId.Value });
+
+            if (user == null || !user.is_active)
+            {
+                await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                return Results.Redirect("/access-denied?reason=account_disabled");
+            }
+
+            string displayName = (string?)user.display_name;
+            if (string.IsNullOrWhiteSpace(displayName))
+                displayName = $"{user.first_name} {user.last_name}".Trim();
+            if (string.IsNullOrWhiteSpace(displayName))
+                displayName = fullName ?? givenName ?? email ?? (string)user.email ?? "Admin";
+
+            // 6. Rebuild the claims explicitly from our trusted DB
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Value.Id.ToString()),
-                new Claim(ClaimTypes.Email, email ?? string.Empty),
-                new Claim("TenantId", user.Value.TenantId.ToString())
+                new Claim(ClaimTypes.NameIdentifier, ((Guid)user.id).ToString()),
+                new Claim(ClaimTypes.Name, displayName),
+                new Claim("DisplayName", displayName),
+                new Claim(ClaimTypes.Email, email ?? (string)user.email ?? string.Empty),
+                new Claim("TenantId", ((Guid)user.tenant_id).ToString())
             };
 
             var memberships = (await conn.QueryAsync<Guid>(
                 "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                new { UserId = user.Value.Id })).ToList();
+                new { UserId = userId.Value })).ToList();
 
             if (memberships.Count == 0)
             {
@@ -218,7 +202,7 @@ public static class AuthEndpoints
 
             Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : null;
 
-            await BuildAuthClaimsAsync(conn, claims, user.Value.Id, activeOrgId);
+            await BuildAuthClaimsAsync(conn, claims, userId.Value, activeOrgId);
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var properties = new AuthenticationProperties { IsPersistent = true };
@@ -271,9 +255,16 @@ public static class AuthEndpoints
                 if (!isParent) return Results.Redirect("/auth/access-denied?reason=invalid_org");
             }
 
+            var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value 
+                ?? context.User.FindFirst("DisplayName")?.Value 
+                ?? email 
+                ?? "Admin";
+
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, userIdStr),
+                new Claim(ClaimTypes.Name, displayName),
+                new Claim("DisplayName", displayName),
                 new Claim(ClaimTypes.Email, email ?? ""),
                 new Claim("TenantId", tenantId ?? "")
             };
@@ -296,17 +287,7 @@ public static class AuthEndpoints
         
         group.MapGet("/access-denied", ([FromQuery] string? reason) => 
         {
-            var message = reason switch 
-            {
-                "not_linked" => "Your account is not linked. Please use the invitation link sent by your administrator.",
-                "invalid_invite" => "The invitation link is invalid or expired.",
-                "account_disabled" => "Your account is disabled. Contact your administrator.",
-                "no_organizations" => "You are not assigned to any active organizations.",
-                "google_not_configured" => "Google Authentication is not yet configured. Please set Authentication:Google:ClientId in appsettings.json or use dev login.",
-                "invalid_org" => "Invalid organization selection.",
-                _ => "Access Denied."
-            };
-            return Results.Text(message, "text/plain");
+            return Results.Redirect($"/access-denied?reason={Uri.EscapeDataString(reason ?? string.Empty)}");
         });
     }
 
