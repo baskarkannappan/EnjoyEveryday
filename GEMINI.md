@@ -125,3 +125,19 @@ When listing people (teachers, children, users, parents):
 ## 6. Testing Policy
 
 - **CRITICAL**: Do NOT run automated tests (`dotnet test`, unit tests, integration tests, test projects, or test runner scripts) unless the user explicitly instructs you to do so.
+
+---
+
+## 7. AI Usage & Cost-Control Architecture Rules
+
+Every agent working in this repository MUST strictly follow these AI and cost-control rules:
+
+1. **Rules-First Architecture**: Use ordinary application code, PostgreSQL, repositories, and deterministic business rules for authentication, authorization, multi-tenant isolation, attendance, scheduling, billing, memory timelines, and validation. Never invoke AI for logic that ordinary code performs reliably.
+2. **AI Only When Adding Clear Value**: Use Google ADK selectively (e.g. explaining why an activity fits, summarizing observations, drafting communications). Do NOT create competing AI services or duplicate agents.
+3. **On-Demand Execution**: AI runs on-demand when requested by an authorized user. Never poll or run background regeneration loops on page loads, filter changes, or database updates.
+4. **Deterministic Fallback**: Every AI feature must have a functional, transparent non-AI fallback. Never fabricate data or pretend an AI analysis succeeded when the provider is unavailable.
+5. **Cost & Performance Controls**: Bounded inputs, timeouts, cancellation, token budgeting, and duplicate request prevention. Do not cache personalized insights across users/tenants.
+6. **Data Minimization**: Send only the minimal authorized fields. Never send raw tables, full child histories, family details, credentials, or tokens. Enforce tenant and authorization boundaries *before* assembling AI input.
+7. **No AI-Controlled Business Decisions**: AI must never independently grant access, verify payments, approve consent, publish content, override safety rules, record attendance, or alter child milestone records. Teachers remain in control.
+8. **Simple Architecture**: No unnecessary microservices, event streams, or vector databases (no pgvector) without verified, measured justification.
+9. **Core Operations Must Always Work**: EnjoyEveryday must continue to perform all essential daycare operations when the AI provider is unavailable, rate-limited, misconfigured, or disabled.
