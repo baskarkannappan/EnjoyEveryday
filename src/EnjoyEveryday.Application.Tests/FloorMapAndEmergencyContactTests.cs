@@ -605,6 +605,8 @@ public class MockOrganizationRepository : IOrganizationRepository
         Task.FromResult<IEnumerable<Organization>>(Organizations.Where(o => o.TenantId == tenantId).ToList());
     public Task<Organization?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default) =>
         Task.FromResult(Organizations.FirstOrDefault(o => o.TenantId == tenantId && o.Id == id));
+    public Task<Organization?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult(Organizations.FirstOrDefault(o => o.Id == id));
     public Task<Organization> AddAsync(Organization org, CancellationToken ct = default) { Organizations.Add(org); return Task.FromResult(org); }
     public Task UpdateAsync(Organization org, CancellationToken ct = default) => Task.CompletedTask;
     public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default) => Task.CompletedTask;

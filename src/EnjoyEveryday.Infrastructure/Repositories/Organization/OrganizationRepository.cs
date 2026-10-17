@@ -25,6 +25,17 @@ public class OrganizationRepository : IOrganizationRepository
         return await connection.QuerySingleOrDefaultAsync<Organization>(sql, new { Id = id, TenantId = tenantId });
     }
 
+    public async Task<Organization?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT id, tenant_id, name, location, is_active, created_at, updated_at
+            FROM organizations
+            WHERE id = @Id";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QuerySingleOrDefaultAsync<Organization>(sql, new { Id = id });
+    }
+
     public async Task<IEnumerable<Organization>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
         const string sql = @"

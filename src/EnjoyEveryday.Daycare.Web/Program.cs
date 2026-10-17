@@ -89,6 +89,7 @@ app.MapStaticAssets();
 app.MapAuthEndpoints();
 app.MapFloorMapEndpoints();
 app.MapStorybookEndpoints();
+app.MapBillingEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

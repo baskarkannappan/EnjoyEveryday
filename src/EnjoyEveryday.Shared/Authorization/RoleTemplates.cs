@@ -43,7 +43,7 @@ public static class RoleTemplates
 
     private static readonly string[] OrganizationAdminPermissions =
     {
-        Permissions.OrganizationManage, Permissions.BranchManage, Permissions.ClassroomManage,
+        Permissions.OrganizationManage, Permissions.OrganizationBillingView, Permissions.BranchManage, Permissions.ClassroomManage,
         Permissions.StaffManage, Permissions.RoleAssign, Permissions.AuditView,
         Permissions.ChildView, Permissions.ChildManage, Permissions.ChildEnrollmentManage,
         Permissions.FamilyManage, Permissions.FamilyVerify,
@@ -102,7 +102,7 @@ public static class RoleTemplates
     private static readonly string[] PlatformAdminPermissions =
     {
         Permissions.PlatformConfigure, Permissions.TenantManage, Permissions.PlatformPlans, Permissions.PlatformHealth,
-        Permissions.PlatformSecurityEvents, Permissions.PlatformRolesManage
+        Permissions.PlatformSecurityEvents, Permissions.PlatformRolesManage, Permissions.PlatformBillingManage
         // Permissions.PlatformSupportAccess is deliberately absent: it is only usable with a time-boxed support grant.
     };
 

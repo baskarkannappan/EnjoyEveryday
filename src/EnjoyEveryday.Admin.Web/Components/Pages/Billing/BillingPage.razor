@@ -2,48 +2,187 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.UI.Shared.Components
+@inject IBillingService BillingService
 @inject IPlatformAdminService PlatformService
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
-<PageTitle>Billing &amp; Invoices — Platform Admin</PageTitle>
+<PageTitle>Commercial Billing &amp; Invoices — Platform Admin</PageTitle>
 
-<div class="content">
+<div class="content billing-container">
     <PageHero Eyebrow="COMMERCIAL MANAGEMENT"
               Title="Billing &amp; Invoices"
-              Subtitle="Track issued invoices, due dates, outstanding balances, and financial states.">
+              Subtitle="Administer daycare organization invoices, configure manual vs. automatic billing modes, record payments, and manage ledgers.">
         <RightContent>
-            <a href="/" class="btn secondary">← Back to Dashboard</a>
+            <button class="btn secondary" @onclick="RunScheduledBillingAsync" title="Run scheduled automatic billing for eligible organizations">
+                ⚡ Run Scheduled Billing
+            </button>
+            <button class="btn primary" @onclick="OpenCreateInvoiceModal">
+                + Create Draft Invoice
+            </button>
         </RightContent>
     </PageHero>
 
-    @if (_invoices == null)
+    @if (!string.IsNullOrWhiteSpace(_statusNotification))
     {
-        <LoadingState Text="Loading invoices..." />
+        <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; border-radius: 12px; padding: 12px 18px; font-size: 13.5px; color: var(--accent-dark, #3e6253); display: flex; align-items: center; justify-content: space-between;">
+            <span>@_statusNotification</span>
+            <button style="background: none; border: none; cursor: pointer; color: var(--accent-dark); font-weight: 700;" @onclick="() => _statusNotification = null">✕</button>
+        </div>
+    }
+
+    <!-- METRICS GRID -->
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <span class="metric-label">Total Invoiced</span>
+            <span class="metric-value">@TotalInvoicedAmount.ToString("C0")</span>
+            <span class="metric-sub">Across @_allInvoices.Count invoices</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Outstanding Balance</span>
+            <span class="metric-value" style="color: #b55a5a;">@TotalOutstandingBalance.ToString("C0")</span>
+            <span class="metric-sub">@OverdueCount overdue</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Payments Collected</span>
+            <span class="metric-value" style="color: var(--accent-dark, #3e6253);">@TotalAmountPaid.ToString("C0")</span>
+            <span class="metric-sub">Reconciled to ledger</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Active Mode</span>
+            <span class="metric-value" style="font-size: 20px; text-transform: uppercase;">@(_currentBillingSettings?.Mode.ToString() ?? "Manual")</span>
+            <span class="metric-sub">@(_selectedOrgId.HasValue ? GetOrgName(_selectedOrgId.Value) : "Select an organization")</span>
+        </div>
+    </div>
+
+    <!-- CONTROLS & ORGANIZATION SELECTOR -->
+    <div class="controls-row">
+        <div class="filters-left">
+            <select class="select-filter" value="@(_selectedOrgId?.ToString() ?? "")" @onchange="OnOrganizationChanged">
+                <option value="">All Daycare Organizations</option>
+                @foreach (var org in _organizations)
+                {
+                    <option value="@org.Id">@org.Name</option>
+                }
+            </select>
+
+            <input class="search-input" placeholder="Filter by invoice # or description..." @bind="_searchQuery" @bind:event="oninput" />
+        </div>
+
+        <div class="actions-right">
+            @if (_selectedOrgId.HasValue)
+            {
+                <button class="action-btn" @onclick="OpenBillingSettingsModal">
+                    ⚙️ Billing Settings (@(_currentBillingSettings?.Mode.ToString() ?? "Manual"))
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs-row">
+        <button class="tab-btn @(_activeTab == "All" ? "active" : "")" @onclick='() => _activeTab = "All"'>
+            All Invoices (@FilteredInvoices.Count)
+        </button>
+        <button class="tab-btn @(_activeTab == "Draft" ? "active" : "")" @onclick='() => _activeTab = "Draft"'>
+            Drafts (@_allInvoices.Count(i => i.Status == InvoiceStatus.Draft))
+        </button>
+        <button class="tab-btn @(_activeTab == "Unpaid" ? "active" : "")" @onclick='() => _activeTab = "Unpaid"'>
+            Unpaid &amp; Overdue (@_allInvoices.Count(i => i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PartiallyPaid || i.Status == InvoiceStatus.Overdue))
+        </button>
+        <button class="tab-btn @(_activeTab == "Paid" ? "active" : "")" @onclick='() => _activeTab = "Paid"'>
+            Paid (@_allInvoices.Count(i => i.Status == InvoiceStatus.Paid))
+        </button>
+        <button class="tab-btn @(_activeTab == "Void" ? "active" : "")" @onclick='() => _activeTab = "Void"'>
+            Void (@_allInvoices.Count(i => i.Status == InvoiceStatus.Void))
+        </button>
+    </div>
+
+    <!-- INVOICES TABLE -->
+    @if (_isLoading)
+    {
+        <LoadingState Message="Loading invoices and organization ledgers..." />
+    }
+    else if (!FilteredInvoices.Any())
+    {
+        <EmptyState Title="No Invoices Found"
+                    Description="There are no invoices matching the selected organization and status filters. Click 'Create Draft Invoice' to issue a new invoice." />
     }
     else
     {
-        <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
-            <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
+        <div class="invoices-card">
+            <table class="invoices-table">
                 <thead>
-                    <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
-                        <th style="padding: 12px 14px; text-align: left;">Invoice #</th>
-                        <th style="padding: 12px 14px; text-align: left;">Description</th>
-                        <th style="padding: 12px 14px; text-align: left;">Issue Date</th>
-                        <th style="padding: 12px 14px; text-align: left;">Due Date</th>
-                        <th style="padding: 12px 14px; text-align: left;">Total</th>
-                        <th style="padding: 12px 14px; text-align: left;">Status</th>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Organization</th>
+                        <th>Issue Date</th>
+                        <th>Due Date</th>
+                        <th>Total</th>
+                        <th>Paid</th>
+                        <th>Balance Due</th>
+                        <th>Status</th>
+                        <th style="text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var inv in _invoices)
+                    @foreach (var inv in FilteredInvoices)
                     {
-                        <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
-                            <td style="padding: 14px; font-weight: 750; color: var(--text);">@inv.InvoiceNumber</td>
-                            <td style="padding: 14px; color: var(--text);">@inv.Description</td>
-                            <td style="padding: 14px; color: var(--muted);">@inv.IssueDate.ToString("MMM dd, yyyy")</td>
-                            <td style="padding: 14px; color: var(--muted);">@inv.DueDate.ToString("MMM dd, yyyy")</td>
-                            <td style="padding: 14px; font-weight: 800; color: var(--text);">@inv.TotalAmount.ToString("C0")</td>
-                            <td style="padding: 14px;"><StatusBadge Status="@inv.Status.ToString()" /></td>
+                        <tr>
+                            <td style="font-weight: 800; color: var(--text);">
+                                <span style="font-family: monospace; font-size: 13px;">@inv.InvoiceNumber</span>
+                                @if (!string.IsNullOrWhiteSpace(inv.BillingPeriod))
+                                {
+                                    <span style="font-size: 10px; background: #eaf0eb; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">@inv.BillingPeriod</span>
+                                }
+                            </td>
+                            <td>
+                                <div style="font-weight: 700;">@GetOrgName(inv.OrganizationId)</div>
+                                <div style="font-size: 11.5px; color: var(--muted);">@inv.Description</div>
+                            </td>
+                            <td style="color: var(--muted);">@inv.IssueDate.ToString("MMM dd, yyyy")</td>
+                            <td style="color: var(--muted);">@inv.DueDate.ToString("MMM dd, yyyy")</td>
+                            <td style="font-weight: 800;">@inv.TotalAmount.ToString("C2")</td>
+                            <td style="color: var(--accent-dark); font-weight: 700;">@inv.AmountPaid.ToString("C2")</td>
+                            <td style="font-weight: 800; color: @(inv.BalanceDue > 0 ? "#b55a5a" : "var(--text)");">
+                                @inv.BalanceDue.ToString("C2")
+                            </td>
+                            <td>
+                                <StatusBadge Status="@inv.Status.ToString()" />
+                            </td>
+                            <td style="text-align: right;">
+                                <div style="display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+                                    <button class="action-btn" title="View &amp; Print Document" @onclick="() => OpenPreviewModal(inv)">
+                                        📄 View
+                                    </button>
+
+                                    @if (inv.Status == InvoiceStatus.Draft)
+                                    {
+                                        <button class="action-btn" title="Edit Line Items" @onclick="() => OpenEditDraftModal(inv)">
+                                            ✏️ Edit
+                                        </button>
+                                        <button class="action-btn primary-action" title="Publish to Daycare" @onclick="() => PublishInvoice(inv.Id)">
+                                            🚀 Publish
+                                        </button>
+                                    }
+                                    else if (inv.Status != InvoiceStatus.Void && inv.BalanceDue > 0)
+                                    {
+                                        <button class="action-btn primary-action" title="Record In-Person Cash Payment &amp; Issue Receipt" @onclick="() => OpenRecordCashModal(inv)">
+                                            💵 Cash
+                                        </button>
+                                        <button class="action-btn" title="Record Bank Wire / Check Payment" @onclick="() => OpenRecordPaymentModal(inv)">
+                                            🏦 Wire/Other
+                                        </button>
+                                    }
+
+                                    @if (inv.Status != InvoiceStatus.Void && inv.AmountPaid == 0)
+                                    {
+                                        <button class="action-btn danger-action" title="Void Invoice" @onclick="() => OpenVoidModal(inv)">
+                                            Void
+                                        </button>
+                                    }
+                                </div>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -52,11 +191,1108 @@
     }
 </div>
 
+<!-- ========================================== -->
+<!-- CREATE / EDIT DRAFT INVOICE MODAL -->
+<!-- ========================================== -->
+@if (_showInvoiceModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card modal-large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">@(_editingInvoiceId.HasValue ? "UPDATE DRAFT INVOICE" : "NEW INVOICE GENERATOR")</div>
+                    <h3 class="modal-title">@(_editingInvoiceId.HasValue ? "Edit Draft Line Items & Dates" : "Create Manual Organization Invoice")</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                @if (!_editingInvoiceId.HasValue)
+                {
+                    <div class="form-group">
+                        <label>Target Daycare Organization *</label>
+                        <select class="form-input" @bind="_invoiceOrgId">
+                            <option value="">-- Select Daycare Organization --</option>
+                            @foreach (var org in _organizations)
+                            {
+                                <option value="@org.Id">@org.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>Issue Date *</label>
+                        <input type="date" class="form-input" value="@_invoiceIssueDate.ToString("yyyy-MM-dd")" @onchange="e => _invoiceIssueDate = DateTime.Parse(e.Value!.ToString()!)" />
+                    </div>
+                    <div class="form-group">
+                        <label>Payment Due Date *</label>
+                        <input type="date" class="form-input" value="@_invoiceDueDate.ToString("yyyy-MM-dd")" @onchange="e => _invoiceDueDate = DateTime.Parse(e.Value!.ToString()!)" />
+                    </div>
+                    <div class="form-group">
+                        <label>Currency</label>
+                        <select class="form-input" @bind="_invoiceCurrency">
+                            <option value="USD">USD ($)</option>
+                            <option value="EUR">EUR (€)</option>
+                            <option value="GBP">GBP (£)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Invoice Memo / Description</label>
+                    <input class="form-input" placeholder="e.g. October 2026 Platform Subscription and Branch Fee" @bind="_invoiceDescription" />
+                </div>
+
+                <!-- LINE ITEMS TABLE -->
+                <div style="border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: var(--surface-soft);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="font-weight: 800; font-size: 13px; text-transform: uppercase; color: var(--muted);">Line Items</span>
+                        <button type="button" class="action-btn" @onclick="AddLineItem">
+                            + Add Line Item
+                        </button>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase;">
+                                <th style="padding: 6px;">Description</th>
+                                <th style="padding: 6px; width: 80px;">Qty</th>
+                                <th style="padding: 6px; width: 120px;">Unit Price</th>
+                                <th style="padding: 6px; width: 100px;">Total</th>
+                                <th style="padding: 6px; width: 60px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _lineItems)
+                            {
+                                <tr>
+                                    <td style="padding: 6px;">
+                                        <input class="form-input" placeholder="Item description..." @bind="item.Description" />
+                                    </td>
+                                    <td style="padding: 6px;">
+                                        <input type="number" min="1" class="form-input" @bind="item.Quantity" />
+                                    </td>
+                                    <td style="padding: 6px;">
+                                        <input type="number" step="0.01" min="0" class="form-input" @bind="item.UnitPrice" />
+                                    </td>
+                                    <td style="padding: 6px; font-weight: 750;">
+                                        @((item.Quantity * item.UnitPrice).ToString("C2"))
+                                    </td>
+                                    <td style="padding: 6px; text-align: center;">
+                                        <button type="button" style="background: none; border: none; color: #b55a5a; cursor: pointer; font-weight: bold;" @onclick="() => RemoveLineItem(item)">
+                                            ✕
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                    <!-- TOTALS SUMMARY -->
+                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+                        <div style="font-size: 13px; color: var(--muted);">Subtotal: <strong>@ComputedSubtotal.ToString("C2")</strong></div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);">
+                            <span>Tax (%):</span>
+                            <input type="number" step="0.1" min="0" max="100" style="width: 70px; padding: 4px 8px;" class="form-input" @bind="_invoiceTaxRate" />
+                            <span>= @ComputedTaxAmount.ToString("C2")</span>
+                        </div>
+                        <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-top: 4px;">
+                            Final Total: @ComputedTotalAmount.ToString("C2")
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Remittance Notes &amp; Payment Instructions</label>
+                    <textarea class="form-input" rows="2" placeholder="e.g. Please wire transfer to Account #123456789 or send check to..." @bind="_invoicePaymentInstructions"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn secondary" @onclick="SaveAsDraft" disabled="@(!CanSaveDraft)">
+                    💾 Save as Draft
+                </button>
+                <button class="btn primary" @onclick="SaveAndPublish" disabled="@(!CanSaveDraft)">
+                    🚀 Publish Immediately
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- RECORD PAYMENT MODAL -->
+<!-- ========================================== -->
+@if (_showPaymentModal && _selectedInvoiceForAction != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">RECONCILE LEDGER</div>
+                    <h3 class="modal-title">Record Manual Payment</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; padding: 14px; font-size: 13px;">
+                    <div>Invoice: <strong>@_selectedInvoiceForAction.InvoiceNumber</strong></div>
+                    <div>Organization: <strong>@GetOrgName(_selectedInvoiceForAction.OrganizationId)</strong></div>
+                    <div style="margin-top: 6px; font-size: 14px;">Total Amount: <strong>@_selectedInvoiceForAction.TotalAmount.ToString("C2")</strong></div>
+                    <div style="color: var(--accent-dark);">Amount Paid: <strong>@_selectedInvoiceForAction.AmountPaid.ToString("C2")</strong></div>
+                    <div style="color: #b55a5a; font-weight: 750;">Balance Due: <strong>@_selectedInvoiceForAction.BalanceDue.ToString("C2")</strong></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Payment Amount * (Max: @_selectedInvoiceForAction.BalanceDue.ToString("C2"))</label>
+                    <input type="number" step="0.01" min="0.01" max="@_selectedInvoiceForAction.BalanceDue" class="form-input" @bind="_paymentAmount" />
+                </div>
+
+                <div class="form-group">
+                    <label>Payment Method *</label>
+                    <select class="form-input" @bind="_paymentMethod">
+                        <option value="BankTransfer">Bank Wire / Electronic Transfer</option>
+                        <option value="ACH">ACH Direct Debit</option>
+                        <option value="Check">Business Check</option>
+                        <option value="CreditCard">Credit / Debit Card (Manual)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Payment Reference / Transaction # *</label>
+                    <input class="form-input" placeholder="e.g. WIRE-8849102 or CHK-4401" @bind="_paymentReference" />
+                </div>
+
+                <div class="form-group">
+                    <label>Payment Date</label>
+                    <input type="date" class="form-input" value="@_paymentDate.ToString("yyyy-MM-dd")" @onchange="e => _paymentDate = DateTime.Parse(e.Value!.ToString()!)" />
+                </div>
+
+                <div class="form-group">
+                    <label>Internal Audit Notes</label>
+                    <input class="form-input" placeholder="Any remarks regarding this payment..." @bind="_paymentNotes" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitPayment" disabled="@(_paymentAmount <= 0 || string.IsNullOrWhiteSpace(_paymentReference))">
+                    Confirm &amp; Record Payment
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- RECORD CASH PAYMENT MODAL -->
+<!-- ========================================== -->
+@if (_showCashPaymentModal && _selectedInvoiceForAction != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">IN-PERSON CASH COLLECTION</div>
+                    <h3 class="modal-title">Record Cash Received</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; padding: 14px; font-size: 13px; margin-bottom: 16px;">
+                    <div>Invoice: <strong>@_selectedInvoiceForAction.InvoiceNumber</strong></div>
+                    <div>Organization: <strong>@GetOrgName(_selectedInvoiceForAction.OrganizationId)</strong></div>
+                    <div style="margin-top: 6px; font-size: 14px;">Total Invoice: <strong>@_selectedInvoiceForAction.TotalAmount.ToString("C2")</strong></div>
+                    <div style="color: var(--accent-dark);">Amount Already Paid: <strong>@_selectedInvoiceForAction.AmountPaid.ToString("C2")</strong></div>
+                    <div style="color: #b55a5a; font-weight: 750;">Current Outstanding Balance: <strong>@_selectedInvoiceForAction.BalanceDue.ToString("C2")</strong></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Cash Amount Received * (Max: @_selectedInvoiceForAction.BalanceDue.ToString("C2"))</label>
+                    <input type="number" step="0.01" min="0.01" max="@_selectedInvoiceForAction.BalanceDue" class="form-input" @bind="_cashAmount" />
+                </div>
+
+                <div class="form-group">
+                    <label>Actual Receipt Date *</label>
+                    <input type="date" class="form-input" value="@_cashReceiptDate.ToString("yyyy-MM-dd")" @onchange="e => _cashReceiptDate = DateTime.Parse(e.Value!.ToString()!)" />
+                </div>
+
+                <div class="form-group">
+                    <label>Official Cash Receipt # *</label>
+                    <input class="form-input" placeholder="e.g. RCPT-CASH-20261016-1042" @bind="_cashReceiptNumber" />
+                    <small style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">Auto-generated unique receipt identifier for this daycare organization.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Internal Audit Notes / Memo</label>
+                    <input class="form-input" placeholder="e.g. Received in person from Director at main daycare office..." @bind="_cashNotes" />
+                </div>
+
+                <div style="margin-top: 16px; padding: 12px; background: #eaf1ec; border: 1px solid #c8dacd; border-radius: 10px;">
+                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 12.5px; font-weight: 650; color: #26332d;">
+                        <input type="checkbox" style="margin-top: 3px;" @bind="_cashConfirmed" />
+                        <span>I confirm that physical cash has been verified and received in person from the authorized organization representative.</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitCashPayment" disabled="@(_cashAmount <= 0 || _cashAmount > _selectedInvoiceForAction.BalanceDue || string.IsNullOrWhiteSpace(_cashReceiptNumber) || !_cashConfirmed)">
+                    Confirm &amp; Record Cash Payment
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- REVERSE PAYMENT MODAL -->
+<!-- ========================================== -->
+@if (_showReverseModal && _selectedPaymentForReversal != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">AUDIT &amp; GOVERNANCE</div>
+                    <h3 class="modal-title">Reverse Recorded Payment</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: #9b2c2c; margin: 0; background: #fff5f5; border: 1px solid #fed7d7; padding: 12px; border-radius: 10px;">
+                    ⚠️ Reversing this payment of <strong>@_selectedPaymentForReversal.Amount.ToString("C2")</strong> (@_selectedPaymentForReversal.PaymentReference) will restore the outstanding balance on the invoice. This action is permanently audited.
+                </p>
+
+                <div class="form-group" style="margin-top: 14px;">
+                    <label>Reason for Reversal / Correction *</label>
+                    <textarea class="form-input" rows="3" placeholder="Provide an explanation for reversing this payment..." @bind="_reversalReason"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn danger-action" @onclick="SubmitReversal" disabled="@(string.IsNullOrWhiteSpace(_reversalReason))">
+                    Confirm Audited Reversal
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- VOID INVOICE MODAL -->
+<!-- ========================================== -->
+@if (_showVoidModal && _selectedInvoiceForAction != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">AUDIT &amp; GOVERNANCE</div>
+                    <h3 class="modal-title">Void Invoice @_selectedInvoiceForAction.InvoiceNumber</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: #9b2c2c; margin: 0; background: #fff5f5; border: 1px solid #fed7d7; padding: 12px; border-radius: 10px;">
+                    ⚠️ Voiding an invoice cancels its balance due and removes it from active billing. This action is permanently recorded in the audit log.
+                </p>
+
+                <div class="form-group">
+                    <label>Reason for Voiding *</label>
+                    <textarea class="form-input" rows="3" placeholder="Provide a detailed explanation for this cancellation..." @bind="_voidReason"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn danger-action" @onclick="SubmitVoid" disabled="@(string.IsNullOrWhiteSpace(_voidReason))">
+                    Confirm Void
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- BILLING SETTINGS MODAL (MANUAL VS AUTOMATIC) -->
+<!-- ========================================== -->
+@if (_showSettingsModal && _selectedOrgId.HasValue)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">ORGANIZATION BILLING CONFIGURATION</div>
+                    <h3 class="modal-title">@GetOrgName(_selectedOrgId.Value)</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Billing Mode</label>
+                    <div style="display: flex; gap: 16px; margin-top: 4px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer;">
+                            <input type="radio" name="billingMode" checked="@(_targetBillingMode == BillingMode.Manual)" @onchange="() => _targetBillingMode = BillingMode.Manual" />
+                            <span><strong>Manual</strong> — Admin creates &amp; publishes invoices</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer;">
+                            <input type="radio" name="billingMode" checked="@(_targetBillingMode == BillingMode.Automatic)" @onchange="() => _targetBillingMode = BillingMode.Automatic" />
+                            <span><strong>Automatic</strong> — System generates on schedule</span>
+                        </label>
+                    </div>
+                </div>
+
+                @if (_targetBillingMode == BillingMode.Automatic)
+                {
+                    <div class="form-group">
+                        <label>Billing Frequency</label>
+                        <select class="form-input" @bind="_targetFrequency">
+                            <option value="@BillingFrequency.Monthly">Monthly</option>
+                            <option value="@BillingFrequency.Quarterly">Quarterly</option>
+                            <option value="@BillingFrequency.Annual">Annual</option>
+                        </select>
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label>Effective Date</label>
+                    <input type="date" class="form-input" value="@_targetEffectiveDate.ToString("yyyy-MM-dd")" @onchange="e => _targetEffectiveDate = DateTime.Parse(e.Value!.ToString()!)" />
+                </div>
+
+                <!-- CONSEQUENCE SUMMARY -->
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; padding: 14px; font-size: 13px;">
+                    <div style="font-weight: 750; margin-bottom: 6px; color: var(--text);">Policy Summary:</div>
+                    @if (_targetBillingMode == BillingMode.Automatic)
+                    {
+                        <div style="color: var(--muted); line-height: 1.4;">
+                            ✓ All existing invoices and payments are strictly preserved.<br />
+                            ✓ First scheduled invoice will generate on the effective date.<br />
+                            ✓ Periods that already have an invoice will never be duplicated.
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="color: var(--muted); line-height: 1.4;">
+                            ✓ Stops future automatic scheduled invoice generation.<br />
+                            ✓ All outstanding balances and published invoices remain visible.<br />
+                            ✓ Authorized admins can create, publish, and manage manual invoices anytime.
+                        </div>
+                    }
+                </div>
+
+                <div class="form-group">
+                    <label>Reason / Audit Remark</label>
+                    <input class="form-input" placeholder="e.g. Switched to automatic recurring billing upon contract renewal" @bind="_billingSettingsReason" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitBillingSettings">
+                    Save Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- PRINTABLE INVOICE PREVIEW MODAL -->
+<!-- ========================================== -->
+@if (_showPreviewModal && _selectedInvoiceForAction != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card modal-large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">DOCUMENT PREVIEW</div>
+                    <h3 class="modal-title">Invoice @_selectedInvoiceForAction.InvoiceNumber</h3>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="action-btn" @onclick="PrintInvoice">🖨️ Print / PDF</button>
+                    <button class="modal-close" @onclick="CloseModals">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="printable-invoice" id="printableInvoice">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #557c6c; padding-bottom: 20px; margin-bottom: 24px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 24px;">🌿</span>
+                                <span style="font-size: 22px; font-weight: 800; color: #26332d;">EnjoyEveryday</span>
+                            </div>
+                            <div style="font-size: 12px; color: #6c7870; margin-top: 4px;">Daycare &amp; Early-Childhood Platform</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 24px; font-weight: 800; color: #557c6c;">INVOICE</div>
+                            <div style="font-size: 13px; font-weight: 750; font-family: monospace;">@_selectedInvoiceForAction.InvoiceNumber</div>
+                            <div style="font-size: 12px; color: #6c7870;">Status: @_selectedInvoiceForAction.Status</div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                        <div>
+                            <div style="font-size: 11px; font-weight: 800; color: #6c7870; text-transform: uppercase;">Billed To:</div>
+                            <div style="font-size: 16px; font-weight: 800; color: #26332d; margin-top: 4px;">@GetOrgName(_selectedInvoiceForAction.OrganizationId)</div>
+                            <div style="font-size: 13px; color: #6c7870;">@_selectedInvoiceForAction.BillingContactEmail</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 13px;"><strong>Issue Date:</strong> @_selectedInvoiceForAction.IssueDate.ToString("MMMM dd, yyyy")</div>
+                            <div style="font-size: 13px; margin-top: 4px;"><strong>Due Date:</strong> @_selectedInvoiceForAction.DueDate.ToString("MMMM dd, yyyy")</div>
+                            @if (!string.IsNullOrWhiteSpace(_selectedInvoiceForAction.BillingPeriod))
+                            {
+                                <div style="font-size: 13px; margin-top: 4px;"><strong>Billing Period:</strong> @_selectedInvoiceForAction.BillingPeriod</div>
+                            }
+                        </div>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+                        <thead>
+                            <tr style="background: #f8f9f5; border-bottom: 1px solid #e4e7df; text-align: left; font-size: 11px; text-transform: uppercase; color: #6c7870;">
+                                <th style="padding: 10px 12px;">#</th>
+                                <th style="padding: 10px 12px;">Description</th>
+                                <th style="padding: 10px 12px; text-align: right;">Qty</th>
+                                <th style="padding: 10px 12px; text-align: right;">Unit Price</th>
+                                <th style="padding: 10px 12px; text-align: right;">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_selectedInvoiceForAction.LineItems.Any())
+                            {
+                                @foreach (var li in _selectedInvoiceForAction.LineItems)
+                                {
+                                    <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
+                                        <td style="padding: 12px; color: #6c7870;">@li.LineNumber</td>
+                                        <td style="padding: 12px; font-weight: 600;">@li.Description</td>
+                                        <td style="padding: 12px; text-align: right;">@li.Quantity</td>
+                                        <td style="padding: 12px; text-align: right;">@li.UnitPrice.ToString("C2")</td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 700;">@li.LineTotal.ToString("C2")</td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
+                                    <td style="padding: 12px; color: #6c7870;">1</td>
+                                    <td style="padding: 12px; font-weight: 600;">@(_selectedInvoiceForAction.Description ?? "Platform Subscription Fee")</td>
+                                    <td style="padding: 12px; text-align: right;">1</td>
+                                    <td style="padding: 12px; text-align: right;">@_selectedInvoiceForAction.Subtotal.ToString("C2")</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 700;">@_selectedInvoiceForAction.Subtotal.ToString("C2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
+                        <div style="width: 260px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #6c7870;">Subtotal:</span>
+                                <strong>@_selectedInvoiceForAction.Subtotal.ToString("C2")</strong>
+                            </div>
+                            @if (_selectedInvoiceForAction.TaxAmount > 0)
+                            {
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: #6c7870;">Tax:</span>
+                                    <span>@_selectedInvoiceForAction.TaxAmount.ToString("C2")</span>
+                                </div>
+                            }
+                            <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; border-top: 1px solid #e4e7df; padding-top: 8px;">
+                                <span>Total Amount:</span>
+                                <span>@_selectedInvoiceForAction.TotalAmount.ToString("C2")</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; color: #557c6c;">
+                                <span>Amount Paid:</span>
+                                <span>@_selectedInvoiceForAction.AmountPaid.ToString("C2")</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #b55a5a; border-top: 1px solid #e4e7df; padding-top: 6px;">
+                                <span>Balance Due:</span>
+                                <span>@_selectedInvoiceForAction.BalanceDue.ToString("C2")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_selectedInvoiceForAction.PaymentInstructions))
+                    {
+                        <div style="background: #f8f9f5; border: 1px solid #e4e7df; border-radius: 8px; padding: 14px; font-size: 12.5px; color: #6c7870;">
+                            <div style="font-weight: 750; color: #26332d; margin-bottom: 4px;">Payment Instructions:</div>
+                            @_selectedInvoiceForAction.PaymentInstructions
+                        </div>
+                    }
+
+                    <!-- RECORDED PAYMENTS LEDGER -->
+                    <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 18px;">
+                        <div style="font-size: 14px; font-weight: 750; color: var(--text); margin-bottom: 10px;">Payment Ledger (@_invoicePayments.Count transaction(s))</div>
+                        @if (_invoicePayments.Any())
+                        {
+                            <table style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+                                <thead>
+                                    <tr style="background: #f8f9f5; border-bottom: 1px solid #e4e7df; text-align: left; color: #6c7870;">
+                                        <th style="padding: 8px 10px;">Date</th>
+                                        <th style="padding: 8px 10px;">Method</th>
+                                        <th style="padding: 8px 10px;">Reference / Receipt</th>
+                                        <th style="padding: 8px 10px; text-align: right;">Amount</th>
+                                        <th style="padding: 8px 10px; text-align: center;">Status</th>
+                                        <th style="padding: 8px 10px; text-align: right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var p in _invoicePayments)
+                                    {
+                                        <tr style="border-bottom: 1px solid #edf1ec; opacity: @(p.IsReversed ? "0.6" : "1.0");">
+                                            <td style="padding: 8px 10px;">@p.PaymentDate.ToString("yyyy-MM-dd")</td>
+                                            <td style="padding: 8px 10px; font-weight: 600;">
+                                                @if (p.PaymentMethod == "Cash")
+                                                {
+                                                    <span>💵 Cash</span>
+                                                }
+                                                else if (p.PaymentMethod == "Razorpay")
+                                                {
+                                                    <span>💳 Razorpay</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>🏦 @p.PaymentMethod</span>
+                                                }
+                                            </td>
+                                            <td style="padding: 8px 10px; font-family: monospace;">
+                                                @(p.ReceiptNumber ?? p.PaymentReference)
+                                                @if (p.IsReversed)
+                                                {
+                                                    <span style="color: #9b2c2c; display: block; font-size: 11px;">[REVERSED: @p.ReversalReason]</span>
+                                                }
+                                            </td>
+                                            <td style="padding: 8px 10px; text-align: right; font-weight: 700;">@p.Amount.ToString("C2")</td>
+                                            <td style="padding: 8px 10px; text-align: center;">
+                                                @if (p.IsReversed)
+                                                {
+                                                    <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Reversed</span>
+                                                }
+                                                else
+                                                {
+                                                    <span style="background: var(--accent-light); color: var(--accent-dark); padding: 2px 6px; border-radius: 4px; font-size: 11px;">@p.Status</span>
+                                                }
+                                            </td>
+                                            <td style="padding: 8px 10px; text-align: right;">
+                                                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                                    <a href="/api/billing/payments/@p.Id/receipt" target="_blank" class="action-btn" style="text-decoration: none;">📄 Receipt</a>
+                                                    @if (!p.IsReversed && p.Status == PaymentStatus.Completed)
+                                                    {
+                                                        <button class="action-btn" style="color: #9b2c2c;" @onclick="() => OpenReverseModal(p)">⚠️ Reverse</button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <div style="font-size: 12.5px; color: var(--muted); font-style: italic;">No payments recorded for this invoice yet.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Close Preview</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
-    private List<Invoice>? _invoices;
+    private List<PlatformOrganizationDto> _organizations = new();
+    private List<Invoice> _allInvoices = new();
+    private OrganizationBillingSettings? _currentBillingSettings;
+    private Guid? _selectedOrgId;
+    private string _searchQuery = string.Empty;
+    private string _activeTab = "All";
+    private bool _isLoading = true;
+    private string? _statusNotification;
+
+    // Create / Edit modal state
+    private bool _showInvoiceModal = false;
+    private Guid? _editingInvoiceId;
+    private Guid _invoiceOrgId;
+    private DateTime _invoiceIssueDate = DateTime.Today;
+    private DateTime _invoiceDueDate = DateTime.Today.AddDays(14);
+    private string _invoiceCurrency = "USD";
+    private string? _invoiceDescription;
+    private decimal _invoiceTaxRate = 0;
+    private string? _invoicePaymentInstructions;
+    private List<CreateInvoiceLineItemRequest> _lineItems = new();
+
+    // Record Payment modal state
+    private bool _showPaymentModal = false;
+    private Invoice? _selectedInvoiceForAction;
+    private decimal _paymentAmount;
+    private string _paymentMethod = "BankTransfer";
+    private string _paymentReference = string.Empty;
+    private DateTime _paymentDate = DateTime.Today;
+    private string? _paymentNotes;
+
+    // Cash Payment modal state
+    private bool _showCashPaymentModal = false;
+    private decimal _cashAmount;
+    private DateTime _cashReceiptDate = DateTime.Today;
+    private string _cashReceiptNumber = string.Empty;
+    private string? _cashNotes;
+    private bool _cashConfirmed = false;
+
+    // Reversal modal state
+    private bool _showReverseModal = false;
+    private Payment? _selectedPaymentForReversal;
+    private string _reversalReason = string.Empty;
+    private List<Payment> _invoicePayments = new();
+
+    // Void modal state
+    private bool _showVoidModal = false;
+    private string _voidReason = string.Empty;
+
+    // Settings modal state
+    private bool _showSettingsModal = false;
+    private BillingMode _targetBillingMode = BillingMode.Manual;
+    private BillingFrequency _targetFrequency = BillingFrequency.Monthly;
+    private DateTime _targetEffectiveDate = DateTime.Today;
+    private string? _billingSettingsReason;
+
+    // Preview modal state
+    private bool _showPreviewModal = false;
+
+    // Computed metrics
+    private decimal TotalInvoicedAmount => _allInvoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.TotalAmount);
+    private decimal TotalOutstandingBalance => _allInvoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.BalanceDue);
+    private decimal TotalAmountPaid => _allInvoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.AmountPaid);
+    private int OverdueCount => _allInvoices.Count(i => i.Status == InvoiceStatus.Overdue);
+
+    private decimal ComputedSubtotal => _lineItems.Sum(li => li.Quantity * li.UnitPrice);
+    private decimal ComputedTaxAmount => Math.Round(ComputedSubtotal * (_invoiceTaxRate / 100m), 2);
+    private decimal ComputedTotalAmount => ComputedSubtotal + ComputedTaxAmount;
+    private bool CanSaveDraft => (_invoiceOrgId != Guid.Empty || _editingInvoiceId.HasValue) && _lineItems.Any() && ComputedTotalAmount > 0;
 
     protected override async Task OnInitializedAsync()
     {
-        _invoices = await PlatformService.GetInvoicesAsync();
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _organizations = await PlatformService.GetOrganizationsOverviewAsync();
+            _allInvoices = await BillingService.GetAllInvoicesAsync(organizationId: _selectedOrgId);
+
+            if (_selectedOrgId.HasValue)
+            {
+                _currentBillingSettings = await BillingService.GetBillingSettingsAsync(_selectedOrgId.Value);
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private List<Invoice> FilteredInvoices
+    {
+        get
+        {
+            var query = _allInvoices.AsEnumerable();
+
+            if (_selectedOrgId.HasValue && _selectedOrgId.Value != Guid.Empty)
+            {
+                query = query.Where(i => i.OrganizationId == _selectedOrgId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(i => i.InvoiceNumber.ToLowerInvariant().Contains(q)
+                                      || (i.Description != null && i.Description.ToLowerInvariant().Contains(q))
+                                      || GetOrgName(i.OrganizationId).ToLowerInvariant().Contains(q));
+            }
+
+            query = _activeTab switch
+            {
+                "Draft" => query.Where(i => i.Status == InvoiceStatus.Draft),
+                "Unpaid" => query.Where(i => i.Status == InvoiceStatus.Unpaid || i.Status == InvoiceStatus.PartiallyPaid || i.Status == InvoiceStatus.Overdue),
+                "Paid" => query.Where(i => i.Status == InvoiceStatus.Paid),
+                "Void" => query.Where(i => i.Status == InvoiceStatus.Void),
+                _ => query
+            };
+
+            return query.OrderByDescending(i => i.IssueDate).ToList();
+        }
+    }
+
+    private string GetOrgName(Guid orgId)
+    {
+        var org = _organizations.FirstOrDefault(o => o.Id == orgId);
+        return org?.Name ?? "Daycare Organization";
+    }
+
+    private async Task OnOrganizationChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (Guid.TryParse(val, out var parsed))
+        {
+            _selectedOrgId = parsed;
+            _currentBillingSettings = await BillingService.GetBillingSettingsAsync(parsed);
+        }
+        else
+        {
+            _selectedOrgId = null;
+            _currentBillingSettings = null;
+        }
+    }
+
+    private void OpenCreateInvoiceModal()
+    {
+        _editingInvoiceId = null;
+        _invoiceOrgId = _selectedOrgId ?? (_organizations.FirstOrDefault()?.Id ?? Guid.Empty);
+        _invoiceIssueDate = DateTime.Today;
+        _invoiceDueDate = DateTime.Today.AddDays(14);
+        _invoiceCurrency = "USD";
+        _invoiceDescription = "Monthly Subscription Fee";
+        _invoiceTaxRate = 0;
+        _invoicePaymentInstructions = "Remit payment within 14 days via Bank Transfer or ACH.";
+        _lineItems = new List<CreateInvoiceLineItemRequest>
+        {
+            new CreateInvoiceLineItemRequest
+            {
+                Description = "EnjoyEveryday Early-Childhood Platform Subscription",
+                Quantity = 1,
+                UnitPrice = 299.00m,
+                Category = "Subscription"
+            }
+        };
+        _showInvoiceModal = true;
+    }
+
+    private void OpenEditDraftModal(Invoice inv)
+    {
+        _editingInvoiceId = inv.Id;
+        _invoiceOrgId = inv.OrganizationId;
+        _invoiceIssueDate = inv.IssueDate.DateTime;
+        _invoiceDueDate = inv.DueDate.DateTime;
+        _invoiceCurrency = inv.Currency;
+        _invoiceDescription = inv.Description;
+        _invoicePaymentInstructions = inv.PaymentInstructions;
+        _lineItems = inv.LineItems.Select(li => new CreateInvoiceLineItemRequest
+        {
+            Description = li.Description,
+            Quantity = li.Quantity,
+            UnitPrice = li.UnitPrice,
+            Category = li.Category
+        }).ToList();
+
+        if (!_lineItems.Any())
+        {
+            _lineItems.Add(new CreateInvoiceLineItemRequest
+            {
+                Description = inv.Description ?? "Platform Fee",
+                Quantity = 1,
+                UnitPrice = inv.Subtotal,
+                Category = "Subscription"
+            });
+        }
+
+        _showInvoiceModal = true;
+    }
+
+    private void AddLineItem()
+    {
+        _lineItems.Add(new CreateInvoiceLineItemRequest
+        {
+            Description = "Additional Service / Branch Fee",
+            Quantity = 1,
+            UnitPrice = 50.00m,
+            Category = "AdditionalService"
+        });
+    }
+
+    private void RemoveLineItem(CreateInvoiceLineItemRequest item)
+    {
+        _lineItems.Remove(item);
+    }
+
+    private async Task SaveAsDraft()
+    {
+        if (!_editingInvoiceId.HasValue && _invoiceOrgId == Guid.Empty)
+        {
+            _statusNotification = "Please select a target daycare organization.";
+            return;
+        }
+
+        try
+        {
+            if (_editingInvoiceId.HasValue)
+            {
+                await BillingService.UpdateDraftInvoiceAsync(new UpdateDraftInvoiceRequest
+                {
+                    InvoiceId = _editingInvoiceId.Value,
+                    IssueDate = DateTime.SpecifyKind(_invoiceIssueDate, DateTimeKind.Utc),
+                    DueDate = DateTime.SpecifyKind(_invoiceDueDate, DateTimeKind.Utc),
+                    Description = _invoiceDescription,
+                    PaymentInstructions = _invoicePaymentInstructions,
+                    TaxRatePercentage = _invoiceTaxRate,
+                    LineItems = _lineItems
+                });
+                _statusNotification = "Draft invoice successfully updated.";
+            }
+            else
+            {
+                var inv = await BillingService.CreateDraftInvoiceAsync(new CreateDraftInvoiceRequest
+                {
+                    OrganizationId = _invoiceOrgId,
+                    IssueDate = DateTime.SpecifyKind(_invoiceIssueDate, DateTimeKind.Utc),
+                    DueDate = DateTime.SpecifyKind(_invoiceDueDate, DateTimeKind.Utc),
+                    Currency = _invoiceCurrency,
+                    Description = _invoiceDescription,
+                    PaymentInstructions = _invoicePaymentInstructions,
+                    TaxRatePercentage = _invoiceTaxRate,
+                    LineItems = _lineItems
+                });
+                _statusNotification = $"Draft invoice {inv.InvoiceNumber} created successfully.";
+            }
+
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusNotification = $"Error saving invoice: {ex.Message}";
+        }
+    }
+
+    private async Task SaveAndPublish()
+    {
+        if (!_editingInvoiceId.HasValue && _invoiceOrgId == Guid.Empty)
+        {
+            _statusNotification = "Please select a target daycare organization.";
+            return;
+        }
+
+        try
+        {
+            Invoice inv;
+            if (_editingInvoiceId.HasValue)
+            {
+                inv = await BillingService.UpdateDraftInvoiceAsync(new UpdateDraftInvoiceRequest
+                {
+                    InvoiceId = _editingInvoiceId.Value,
+                    IssueDate = DateTime.SpecifyKind(_invoiceIssueDate, DateTimeKind.Utc),
+                    DueDate = DateTime.SpecifyKind(_invoiceDueDate, DateTimeKind.Utc),
+                    Description = _invoiceDescription,
+                    PaymentInstructions = _invoicePaymentInstructions,
+                    TaxRatePercentage = _invoiceTaxRate,
+                    LineItems = _lineItems
+                });
+            }
+            else
+            {
+                inv = await BillingService.CreateDraftInvoiceAsync(new CreateDraftInvoiceRequest
+                {
+                    OrganizationId = _invoiceOrgId,
+                    IssueDate = DateTime.SpecifyKind(_invoiceIssueDate, DateTimeKind.Utc),
+                    DueDate = DateTime.SpecifyKind(_invoiceDueDate, DateTimeKind.Utc),
+                    Currency = _invoiceCurrency,
+                    Description = _invoiceDescription,
+                    PaymentInstructions = _invoicePaymentInstructions,
+                    TaxRatePercentage = _invoiceTaxRate,
+                    LineItems = _lineItems
+                });
+            }
+
+            await BillingService.PublishInvoiceAsync(inv.Id);
+            _statusNotification = $"Invoice {inv.InvoiceNumber} published and available to the daycare organization.";
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusNotification = $"Error publishing invoice: {ex.Message}";
+        }
+    }
+
+    private async Task PublishInvoice(Guid invoiceId)
+    {
+        var inv = await BillingService.PublishInvoiceAsync(invoiceId);
+        _statusNotification = $"Invoice {inv.InvoiceNumber} successfully published.";
+        await LoadDataAsync();
+    }
+
+    private void OpenRecordPaymentModal(Invoice inv)
+    {
+        _selectedInvoiceForAction = inv;
+        _paymentAmount = inv.BalanceDue;
+        _paymentMethod = "BankTransfer";
+        _paymentReference = $"REF-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(100, 999)}";
+        _paymentDate = DateTime.Today;
+        _paymentNotes = string.Empty;
+        _showPaymentModal = true;
+    }
+
+    private async Task SubmitPayment()
+    {
+        if (_selectedInvoiceForAction == null) return;
+
+        var payment = await BillingService.RecordPaymentAsync(new RecordPaymentRequest
+        {
+            InvoiceId = _selectedInvoiceForAction.Id,
+            Amount = _paymentAmount,
+            PaymentMethod = _paymentMethod,
+            PaymentReference = _paymentReference,
+            PaymentDate = DateTime.SpecifyKind(_paymentDate, DateTimeKind.Utc),
+            Notes = _paymentNotes
+        });
+
+        _statusNotification = $"Payment of {payment.Amount:C2} ({payment.PaymentReference}) recorded successfully.";
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private void OpenVoidModal(Invoice inv)
+    {
+        _selectedInvoiceForAction = inv;
+        _voidReason = string.Empty;
+        _showVoidModal = true;
+    }
+
+    private async Task SubmitVoid()
+    {
+        if (_selectedInvoiceForAction == null) return;
+
+        await BillingService.VoidInvoiceAsync(_selectedInvoiceForAction.Id, _voidReason);
+        _statusNotification = $"Invoice {_selectedInvoiceForAction.InvoiceNumber} has been voided.";
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private void OpenBillingSettingsModal()
+    {
+        if (_currentBillingSettings != null)
+        {
+            _targetBillingMode = _currentBillingSettings.Mode;
+            _targetFrequency = _currentBillingSettings.Frequency;
+            _targetEffectiveDate = DateTime.Today;
+            _billingSettingsReason = string.Empty;
+        }
+        _showSettingsModal = true;
+    }
+
+    private async Task SubmitBillingSettings()
+    {
+        if (!_selectedOrgId.HasValue) return;
+
+        _currentBillingSettings = await BillingService.UpdateBillingModeAsync(new UpdateBillingModeRequest
+        {
+            OrganizationId = _selectedOrgId.Value,
+            Mode = _targetBillingMode,
+            Frequency = _targetFrequency,
+            EffectiveDate = DateTime.SpecifyKind(_targetEffectiveDate, DateTimeKind.Utc),
+            Reason = _billingSettingsReason
+        });
+
+        _statusNotification = $"Billing mode for {GetOrgName(_selectedOrgId.Value)} set to {_targetBillingMode}.";
+        CloseModals();
+        await LoadDataAsync();
+    }
+
+    private async Task RunScheduledBillingAsync()
+    {
+        var runResult = await BillingService.ExecuteAutomaticBillingRunAsync(DateTimeOffset.UtcNow);
+        _statusNotification = $"Automatic Billing Run Completed: {runResult.GeneratedInvoices} invoice(s) generated for {runResult.ProcessedOrganizations} organization(s).";
+        await LoadDataAsync();
+    }
+
+    private async Task OpenPreviewModal(Invoice inv)
+    {
+        _selectedInvoiceForAction = inv;
+        _invoicePayments = await BillingService.GetInvoicePaymentsAsync(inv.Id);
+        _showPreviewModal = true;
+    }
+
+    private void OpenRecordCashModal(Invoice inv)
+    {
+        _selectedInvoiceForAction = inv;
+        _cashAmount = inv.BalanceDue;
+        _cashReceiptDate = DateTime.Today;
+        _cashReceiptNumber = $"RCPT-CASH-{DateTime.UtcNow:yyyyMMdd}-{new Random().Next(1000, 9999)}";
+        _cashNotes = string.Empty;
+        _cashConfirmed = false;
+        _showCashPaymentModal = true;
+    }
+
+    private async Task SubmitCashPayment()
+    {
+        if (_selectedInvoiceForAction == null || !_cashConfirmed) return;
+
+        try
+        {
+            var payment = await BillingService.RecordCashPaymentAsync(new RecordCashPaymentRequest
+            {
+                InvoiceId = _selectedInvoiceForAction.Id,
+                Amount = _cashAmount,
+                ReceiptNumber = _cashReceiptNumber,
+                ReceiptDate = DateTime.SpecifyKind(_cashReceiptDate, DateTimeKind.Utc),
+                Notes = _cashNotes
+            });
+
+            _statusNotification = $"Cash payment of {payment.Amount:C2} (Receipt #{payment.ReceiptNumber}) recorded successfully.";
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusNotification = $"Error recording cash payment: {ex.Message}";
+        }
+    }
+
+    private void OpenReverseModal(Payment p)
+    {
+        _selectedPaymentForReversal = p;
+        _reversalReason = string.Empty;
+        _showReverseModal = true;
+    }
+
+    private async Task SubmitReversal()
+    {
+        if (_selectedPaymentForReversal == null) return;
+
+        try
+        {
+            await BillingService.ReversePaymentAsync(new ReversePaymentRequest
+            {
+                PaymentId = _selectedPaymentForReversal.Id,
+                Reason = _reversalReason
+            });
+            _statusNotification = $"Payment {_selectedPaymentForReversal.PaymentReference} reversed. Balance restored.";
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusNotification = $"Error reversing payment: {ex.Message}";
+        }
+    }
+
+    private async Task PrintInvoice()
+    {
+        await JS.InvokeVoidAsync("window.print");
+    }
+
+    private void CloseModals()
+    {
+        _showInvoiceModal = false;
+        _showPaymentModal = false;
+        _showCashPaymentModal = false;
+        _showReverseModal = false;
+        _showVoidModal = false;
+        _showSettingsModal = false;
+        _showPreviewModal = false;
+        _selectedInvoiceForAction = null;
+        _selectedPaymentForReversal = null;
+        _cashConfirmed = false;
     }
 }

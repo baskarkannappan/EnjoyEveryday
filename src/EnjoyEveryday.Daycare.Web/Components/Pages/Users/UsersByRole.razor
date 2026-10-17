@@ -34,7 +34,7 @@
                @bind:event="oninput" 
                placeholder="Search team members by name, email, or role..." />
                
-        <select class="filter" @bind="_selectedFilter" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-weight: 650; color: var(--text, #26332d); background: white; font-size: 13px; cursor: pointer;">
+        <select class="filter" @bind="_selectedFilter" @bind:after="RecomputeGroups" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-weight: 650; color: var(--text, #26332d); background: white; font-size: 13px; cursor: pointer;">
             <option value="All">All Roles (@_allUsers.Count)</option>
             <option value="Admin">Leadership &amp; Admins</option>
             <option value="Teacher">Educators &amp; Teachers</option>
@@ -42,21 +42,8 @@
         </select>
     </div>
 
-    <!-- FILTER TABS (Native EnjoyEveryday Style) -->
-    <div class="tabs" style="margin-bottom: 28px;">
-        <button class="tab @(_selectedFilter == "All" ? "active" : "")" @onclick='() => _selectedFilter = "All"'>
-            All Users (@_allUsers.Count)
-        </button>
-        <button class="tab @(_selectedFilter == "Admin" ? "active" : "")" @onclick='() => _selectedFilter = "Admin"'>
-            Leadership &amp; Admins
-        </button>
-        <button class="tab @(_selectedFilter == "Teacher" ? "active" : "")" @onclick='() => _selectedFilter = "Teacher"'>
-            Educators &amp; Teachers
-        </button>
-        <button class="tab @(_selectedFilter == "Parent" ? "active" : "")" @onclick='() => _selectedFilter = "Parent"'>
-            Families &amp; Parents
-        </button>
-    </div>
+    <!-- FILTER TABS -->
+    <FilterTabs Tabs="UserRoleTabs" ActiveTab="@_selectedFilter" OnTabSelected="SetRoleFilter" />
 
     <!-- HIERARCHY GROUPS -->
     @if (_isLoading)
@@ -429,5 +416,37 @@
             .Where(g => g.Users.Any())
             .OrderBy(g => g.HierarchyRank)
             .ToList();
+    }
+
+    private IEnumerable<FilterTabs.TabItem> UserRoleTabs => new List<FilterTabs.TabItem>
+    {
+        new() { Text = "All Users", Value = "All", Count = _allUsers.Count },
+        new() { 
+            Text = "Leadership & Admins", 
+            Value = "Admin", 
+            Count = _allUsers.Count(u => u.CanonicalRoles.Any(r => 
+                r == RoleTemplates.PlatformAdmin || 
+                r == RoleTemplates.OrganizationOwner || 
+                r == RoleTemplates.OrganizationAdmin || 
+                r == RoleTemplates.BranchAdmin)) 
+        },
+        new() { 
+            Text = "Educators & Teachers", 
+            Value = "Teacher", 
+            Count = _allUsers.Count(u => u.CanonicalRoles.Any(r => 
+                r == RoleTemplates.ClassroomTeacher || 
+                r == RoleTemplates.DaycareTeacher)) 
+        },
+        new() { 
+            Text = "Families & Parents", 
+            Value = "Parent", 
+            Count = _allUsers.Count(u => u.CanonicalRoles.Any(r => r == RoleTemplates.Parent)) 
+        }
+    };
+
+    private void SetRoleFilter(string filter)
+    {
+        _selectedFilter = filter;
+        RecomputeGroups();
     }
 }

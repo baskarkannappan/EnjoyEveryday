@@ -57,7 +57,7 @@ public class PlatformAdminService : IPlatformAdminService
         var invoices = _invoices.Values.ToList();
         var payments = _payments.Values.ToList();
 
-        var overdueInvoices = invoices.Where(i => i.Status == FinancialStatus.Overdue).ToList();
+        var overdueInvoices = invoices.Where(i => i.Status == InvoiceStatus.Overdue).ToList();
         var pendingPayments = payments.Where(p => !p.IsVerified).ToList();
 
         var summary = new PlatformDashboardSummary
@@ -68,7 +68,7 @@ public class PlatformAdminService : IPlatformAdminService
             SuspendedOrganizations = orgs.Count(o => o.AccountStatus == AccountStatus.Suspended),
             ActiveSubscriptions = orgs.Count(o => o.AccountStatus == AccountStatus.Active || o.AccountStatus == AccountStatus.Trial),
             AvailablePlansCount = _plans.Values.Count(p => p.IsActive),
-            OutstandingBalance = invoices.Where(i => i.Status != FinancialStatus.Reconciled).Sum(i => i.BalanceDue),
+            OutstandingBalance = invoices.Where(i => i.Status != InvoiceStatus.Paid && i.Status != InvoiceStatus.Void).Sum(i => i.BalanceDue),
             OverdueInvoicesCount = overdueInvoices.Count,
             OverdueAmount = overdueInvoices.Sum(i => i.BalanceDue),
             PaymentsAwaitingVerificationCount = pendingPayments.Count,
@@ -79,13 +79,92 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(summary);
     }
 
-    public Task<List<PlatformOrganizationDto>> GetOrganizationsOverviewAsync(
+    public async Task<List<PlatformOrganizationDto>> GetOrganizationsOverviewAsync(
         string? search = null,
         string? accountStatus = null,
         string? financialStatus = null,
         string? lifecycleStage = null,
         CancellationToken cancellationToken = default)
     {
+        if (_dbConnectionFactory != null)
+        {
+            try
+            {
+                using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+                const string dbSql = @"
+                    SELECT o.id, o.tenant_id, o.name, o.location, o.is_active, o.created_at,
+                           (SELECT COUNT(*) FROM branches b WHERE b.organization_id = o.id) AS branch_count
+                    FROM organizations o
+                    ORDER BY o.name";
+                var dbRows = (await conn.QueryAsync(dbSql)).ToList();
+                if (dbRows.Any())
+                {
+                    foreach (var r in dbRows)
+                    {
+                        Guid orgId = r.id;
+                        if (!_organizations.ContainsKey(orgId))
+                        {
+                            _organizations[orgId] = new PlatformOrganizationDto
+                            {
+                                Id = orgId,
+                                TenantId = r.tenant_id,
+                                Name = r.name,
+                                Location = r.location ?? "Daycare Center",
+                                BranchCount = (int)(r.branch_count ?? 1),
+                                AccountStatus = r.is_active ? AccountStatus.Active : AccountStatus.Suspended,
+                                FinancialStatus = FinancialStatus.Reconciled,
+                                PlanId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                                PlanName = "Bloom (Growth)",
+                                MonthlyRate = 299.00m,
+                                NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
+                                AdminEmail = $"admin@{((string)r.name).ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
+                                LifecycleStageKey = "Active",
+                                CreatedAt = r.created_at != null ? (DateTimeOffset)r.created_at : DateTimeOffset.UtcNow.AddMonths(-1)
+                            };
+                        }
+                    }
+
+                    var validIds = dbRows.Select(r => (Guid)r.id).ToHashSet();
+                    var dbFiltered = _organizations.Values.Where(o => validIds.Contains(o.Id)).AsEnumerable();
+
+                    if (!string.IsNullOrWhiteSpace(search))
+                    {
+                        var s = search.Trim();
+                        dbFiltered = dbFiltered.Where(o => o.Name.Contains(s, StringComparison.OrdinalIgnoreCase)
+                                              || (o.Location != null && o.Location.Contains(s, StringComparison.OrdinalIgnoreCase))
+                                              || o.AdminEmail.Contains(s, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(accountStatus) && accountStatus != "All")
+                    {
+                        if (Enum.TryParse<AccountStatus>(accountStatus, true, out var status))
+                        {
+                            dbFiltered = dbFiltered.Where(o => o.AccountStatus == status);
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(financialStatus) && financialStatus != "All")
+                    {
+                        if (Enum.TryParse<FinancialStatus>(financialStatus, true, out var status))
+                        {
+                            dbFiltered = dbFiltered.Where(o => o.FinancialStatus == status);
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(lifecycleStage) && lifecycleStage != "All")
+                    {
+                        dbFiltered = dbFiltered.Where(o => string.Equals(o.LifecycleStageKey, lifecycleStage, StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    return dbFiltered.OrderBy(o => o.Name).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load organizations from database, falling back to static store.");
+            }
+        }
+
         var query = _organizations.Values.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -117,7 +196,7 @@ public class PlatformAdminService : IPlatformAdminService
             query = query.Where(o => string.Equals(o.LifecycleStageKey, lifecycleStage, StringComparison.OrdinalIgnoreCase));
         }
 
-        return Task.FromResult(query.OrderByDescending(o => o.CreatedAt).ToList());
+        return query.OrderByDescending(o => o.CreatedAt).ToList();
     }
 
     public Task<PlatformOrganizationDto?> GetOrganizationDetailsAsync(Guid organizationId, CancellationToken cancellationToken = default)
@@ -583,9 +662,13 @@ public class PlatformAdminService : IPlatformAdminService
         var query = _invoices.Values.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(status) && status != "All")
         {
-            if (Enum.TryParse<FinancialStatus>(status, true, out var parsed))
+            if (Enum.TryParse<InvoiceStatus>(status, true, out var parsedInvoiceStatus))
             {
-                query = query.Where(i => i.Status == parsed);
+                query = query.Where(i => i.Status == parsedInvoiceStatus);
+            }
+            else if (Enum.TryParse<FinancialStatus>(status, true, out var parsedFinancialStatus))
+            {
+                query = query.Where(i => i.FinancialStatus == parsedFinancialStatus);
             }
         }
         return Task.FromResult(query.OrderByDescending(i => i.DueDate).ToList());
@@ -614,18 +697,18 @@ public class PlatformAdminService : IPlatformAdminService
                 invoice.AmountPaid += payment.Amount;
                 if (invoice.BalanceDue <= 0)
                 {
-                    invoice.Status = FinancialStatus.Reconciled;
+                    invoice.Status = InvoiceStatus.Paid;
                     invoice.PaidAt = DateTimeOffset.UtcNow;
                 }
                 else
                 {
-                    invoice.Status = FinancialStatus.PartiallyPaid;
+                    invoice.Status = InvoiceStatus.PartiallyPaid;
                 }
 
                 // Update organization financial status
                 if (_organizations.TryGetValue(payment.OrganizationId, out var org))
                 {
-                    org.FinancialStatus = invoice.Status;
+                    org.FinancialStatus = invoice.FinancialStatus;
                 }
             }
 
@@ -652,7 +735,7 @@ public class PlatformAdminService : IPlatformAdminService
             TotalAmount = amount,
             AmountPaid = 0,
             Currency = "USD",
-            Status = FinancialStatus.InvoiceDue,
+            Status = InvoiceStatus.Unpaid,
             IssueDate = DateTimeOffset.UtcNow,
             DueDate = DateTimeOffset.UtcNow.AddDays(14),
             Description = description,
@@ -816,15 +899,16 @@ public class PlatformAdminService : IPlatformAdminService
         growthPlan.Tariffs.AddRange(new[] { t3, t4 });
         canopyPlan.Tariffs.Add(t5);
 
-        // Seed Organizations
-        var org1Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        // Seed Organizations matching database seeds (002_seed_data.sql)
+        var org1Id = Guid.Parse("20000000-0000-0000-0000-000000000001");
+        var org1Tenant = Guid.Parse("10000000-0000-0000-0000-000000000001");
         var org1 = new PlatformOrganizationDto
         {
             Id = org1Id,
-            TenantId = org1Id,
-            Name = "Little Stars Early Learning Center",
-            Location = "Seattle, WA",
-            BranchCount = 2,
+            TenantId = org1Tenant,
+            Name = "Little Stars Daycare",
+            Location = "Toronto · 3 branches",
+            BranchCount = 3,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.Reconciled,
             PlanId = growthPlan.Id,
@@ -833,19 +917,20 @@ public class PlatformAdminService : IPlatformAdminService
             TariffName = "Growth Monthly",
             MonthlyRate = 299.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(18),
-            AdminEmail = "director@littlestars.org",
+            AdminEmail = "admin@littlestars.com",
             LifecycleStageKey = "Active",
             CreatedAt = DateTimeOffset.UtcNow.AddMonths(-6)
         };
 
-        var org2Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var org2Id = Guid.Parse("20000000-0000-0000-0000-000000000002");
+        var org2Tenant = Guid.Parse("10000000-0000-0000-0000-000000000002");
         var org2 = new PlatformOrganizationDto
         {
             Id = org2Id,
-            TenantId = org2Id,
-            Name = "Nordic Pine Forest Preschool",
-            Location = "Portland, OR",
-            BranchCount = 1,
+            TenantId = org2Tenant,
+            Name = "Sunshine Garden Preschool",
+            Location = "Toronto · 2 branches",
+            BranchCount = 2,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.Reconciled,
             PlanId = starterPlan.Id,
@@ -854,19 +939,20 @@ public class PlatformAdminService : IPlatformAdminService
             TariffName = "Starter Monthly",
             MonthlyRate = 149.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(22),
-            AdminEmail = "karin@nordicpine.edu",
+            AdminEmail = "daniel@sunshinegarden.com",
             LifecycleStageKey = "Active",
             CreatedAt = DateTimeOffset.UtcNow.AddMonths(-3)
         };
 
-        var org3Id = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var org3Id = Guid.Parse("20000000-0000-0000-0000-000000000003");
+        var org3Tenant = Guid.Parse("10000000-0000-0000-0000-000000000003");
         var org3 = new PlatformOrganizationDto
         {
             Id = org3Id,
-            TenantId = org3Id,
-            Name = "Cedar Grove Childcare Network",
-            Location = "Bellevue, WA",
-            BranchCount = 4,
+            TenantId = org3Tenant,
+            Name = "Happy Roots Early Learning",
+            Location = "Vancouver · 1 branch",
+            BranchCount = 1,
             AccountStatus = AccountStatus.Active,
             FinancialStatus = FinancialStatus.InvoiceDue,
             PlanId = canopyPlan.Id,
@@ -875,114 +961,48 @@ public class PlatformAdminService : IPlatformAdminService
             TariffName = "Canopy Monthly",
             MonthlyRate = 599.00m,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(5),
-            AdminEmail = "finance@cedargrove.com",
+            AdminEmail = "director@happyroots.com",
             LifecycleStageKey = "Invoiced",
             CreatedAt = DateTimeOffset.UtcNow.AddMonths(-11)
-        };
-
-        var org4Id = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
-        var org4 = new PlatformOrganizationDto
-        {
-            Id = org4Id,
-            TenantId = org4Id,
-            Name = "Sunny Hollow Montessori",
-            Location = "Redmond, WA",
-            BranchCount = 1,
-            AccountStatus = AccountStatus.Onboarding,
-            FinancialStatus = FinancialStatus.Unbilled,
-            PlanId = growthPlan.Id,
-            PlanName = "Bloom (Growth)",
-            TariffId = t3.Id,
-            TariffName = "Growth Monthly",
-            MonthlyRate = 299.00m,
-            NextBillingDate = DateTimeOffset.UtcNow.AddDays(30),
-            AdminEmail = "onboarding@sunnyhollow.org",
-            LifecycleStageKey = "Onboarding",
-            CreatedAt = DateTimeOffset.UtcNow.AddDays(-3)
-        };
-
-        var org5Id = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
-        var org5 = new PlatformOrganizationDto
-        {
-            Id = org5Id,
-            TenantId = org5Id,
-            Name = "Meadowlark Family Cooperative",
-            Location = "Spokane, WA",
-            BranchCount = 1,
-            AccountStatus = AccountStatus.Active,
-            FinancialStatus = FinancialStatus.Overdue,
-            PlanId = starterPlan.Id,
-            PlanName = "Sprout (Starter)",
-            TariffId = t1.Id,
-            TariffName = "Starter Monthly",
-            MonthlyRate = 149.00m,
-            NextBillingDate = DateTimeOffset.UtcNow.AddDays(-8),
-            AdminEmail = "treasurer@meadowlark.org",
-            LifecycleStageKey = "Invoiced",
-            CreatedAt = DateTimeOffset.UtcNow.AddMonths(-2)
-        };
-
-        var org6Id = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
-        var org6 = new PlatformOrganizationDto
-        {
-            Id = org6Id,
-            TenantId = org6Id,
-            Name = "Evergreen Discovery Academy",
-            Location = "Tacoma, WA",
-            BranchCount = 2,
-            AccountStatus = AccountStatus.Trial,
-            FinancialStatus = FinancialStatus.PaymentAwaitingVerification,
-            PlanId = growthPlan.Id,
-            PlanName = "Bloom (Growth)",
-            TariffId = t3.Id,
-            TariffName = "Growth Monthly",
-            MonthlyRate = 299.00m,
-            NextBillingDate = DateTimeOffset.UtcNow.AddDays(12),
-            AdminEmail = "contact@evergreendiscovery.com",
-            LifecycleStageKey = "PaymentVerification",
-            CreatedAt = DateTimeOffset.UtcNow.AddDays(-14)
         };
 
         _organizations[org1Id] = org1;
         _organizations[org2Id] = org2;
         _organizations[org3Id] = org3;
-        _organizations[org4Id] = org4;
-        _organizations[org5Id] = org5;
-        _organizations[org6Id] = org6;
 
         // Invoices
         var inv1Id = Guid.NewGuid();
         _invoices[inv1Id] = new Invoice
         {
             Id = inv1Id,
-            TenantId = org3Id,
+            TenantId = org3Tenant,
             OrganizationId = org3Id,
             InvoiceNumber = "INV-202610-8491",
             Subtotal = 599.00m,
             TotalAmount = 599.00m,
             AmountPaid = 0,
-            Status = FinancialStatus.InvoiceDue,
+            Status = InvoiceStatus.Unpaid,
             IssueDate = DateTimeOffset.UtcNow.AddDays(-10),
             DueDate = DateTimeOffset.UtcNow.AddDays(5),
             Description = "Canopy Tier Subscription - October 2026",
-            BillingContactEmail = "finance@cedargrove.com"
+            BillingContactEmail = "director@happyroots.com"
         };
 
         var inv2Id = Guid.NewGuid();
         _invoices[inv2Id] = new Invoice
         {
             Id = inv2Id,
-            TenantId = org5Id,
-            OrganizationId = org5Id,
+            TenantId = org2Tenant,
+            OrganizationId = org2Id,
             InvoiceNumber = "INV-202609-3120",
             Subtotal = 149.00m,
             TotalAmount = 149.00m,
             AmountPaid = 0,
-            Status = FinancialStatus.Overdue,
+            Status = InvoiceStatus.Overdue,
             IssueDate = DateTimeOffset.UtcNow.AddDays(-38),
             DueDate = DateTimeOffset.UtcNow.AddDays(-8),
             Description = "Sprout Tier Subscription - September 2026",
-            BillingContactEmail = "treasurer@meadowlark.org"
+            BillingContactEmail = "daniel@sunshinegarden.com"
         };
 
         // Payments
@@ -990,8 +1010,8 @@ public class PlatformAdminService : IPlatformAdminService
         _payments[pay1Id] = new Payment
         {
             Id = pay1Id,
-            TenantId = org6Id,
-            OrganizationId = org6Id,
+            TenantId = org1Tenant,
+            OrganizationId = org1Id,
             PaymentReference = "PAY-ACH-99410",
             Amount = 299.00m,
             Method = "ACH",
@@ -1058,7 +1078,7 @@ public class PlatformAdminService : IPlatformAdminService
 
         // Audit Logs
         AddAuditLog("System Boot", "EnjoyEveryday Platform Administration services initialized.", "Info");
-        AddAuditLog("Organization Created", "Sunny Hollow Montessori initiated registration and onboarding.", "Info", org4Id);
+        AddAuditLog("Organization Created", "Sunshine Garden Preschool initiated registration.", "Info", org2Id);
         AddAuditLog("Payment Submitted", "ACH payment PAY-ACH-99410 for $299.00 awaiting administrative reconciliation.", "Warning", pay1Id);
         AddAuditLog("AI Parent Communication Sent", "Daily update draft approved by Teacher Rachel Green and dispatched to parent Sunita Patel.", "Info", comm1Id);
     }

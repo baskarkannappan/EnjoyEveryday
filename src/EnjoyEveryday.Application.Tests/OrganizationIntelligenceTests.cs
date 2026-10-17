@@ -279,6 +279,12 @@ public class OrganizationIntelligenceTests
             return Task.FromResult(org?.TenantId == tenantId ? org : null);
         }
 
+        public Task<Organization?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            Organizations.TryGetValue(id, out var org);
+            return Task.FromResult(org);
+        }
+
         public Task<IEnumerable<Organization>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default) => Task.FromResult(Organizations.Values.Where(o => o.TenantId == tenantId));
         public Task<Organization> AddAsync(Organization org, CancellationToken cancellationToken = default) => Task.FromResult(org);
         public Task UpdateAsync(Organization org, CancellationToken cancellationToken = default) => Task.CompletedTask;

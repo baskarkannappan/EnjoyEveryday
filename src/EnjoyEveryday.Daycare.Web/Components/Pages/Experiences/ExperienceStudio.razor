@@ -17,17 +17,17 @@
 <div class="content">
     <PageHero Eyebrow="Little Stars"
               Title="Experience Studio"
-              Subtitle="">
+              Subtitle="Design and refine developmental experiences with structured DNA, timeline phases, and AI co-creation.">
         <RightContent>
             @if (_experience.Status != "Published")
             {
-                <button class="studio-btn studio-btn-secondary" @onclick="OpenHistoryDialog" style="margin-right: 8px;">
+                <button class="studio-btn studio-btn-secondary" @onclick="OpenHistoryDialog">
                     Compare Versions
                 </button>
-                <button class="studio-btn studio-btn-secondary" @onclick="OpenPreview" style="margin-right: 8px;">
+                <button class="studio-btn studio-btn-secondary" @onclick="OpenPreview">
                     Preview
                 </button>
-                <button class="studio-btn studio-btn-primary" @onclick="SaveDraftAsync" style="margin-right: 8px;">
+                <button class="studio-btn studio-btn-primary" @onclick="SaveDraftAsync">
                     Save Draft
                 </button>
                 <button class="studio-btn studio-btn-outline" @onclick="PublishAsync">
@@ -36,12 +36,15 @@
             }
             else
             {
-                <button class="studio-btn studio-btn-outline" @onclick="PlanExperience">
+                <button class="studio-btn studio-btn-primary" @onclick="PlanExperience">
                     Plan Experience
                 </button>
             }
         </RightContent>
     </PageHero>
+
+    <!-- Studio Navigation Tabs -->
+    <FilterTabs Tabs="StudioTabs" ActiveTab="@_activeStudioTab" OnTabSelected="SetStudioTab" />
 
     @if (_isLoading)
     {
@@ -49,52 +52,57 @@
     }
     else
     {
-        <div class="studio-grid">
+        <div class="studio-grid studio-view-@_activeStudioTab">
 
-            <!-- LEFT PANEL -->
-            <div>
-                <div class="card idea-card" style="margin-bottom: 20px;">
-                    <div class="idea-heading" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                        <div class="idea-icon">&#10022;</div>
-                        <div>
-                            <strong>Start with an idea</strong>
-                            <div style="font-size: 14px; color: #374151; margin-top: 4px;">It doesn't need to be complete.</div>
+            <!-- LEFT PANEL: AI Inspiration -->
+            @if (_activeStudioTab == "all" || _activeStudioTab == "ai")
+            {
+                <div class="studio-col-ai">
+                    <div class="card idea-card" style="margin-bottom: 20px;">
+                        <div class="idea-heading" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <div class="idea-icon">&#10022;</div>
+                            <div>
+                                <strong>Start with an idea</strong>
+                                <div style="font-size: 14px; color: #374151; margin-top: 4px;">It doesn't need to be complete.</div>
+                            </div>
+                        </div>
+                        <textarea @bind="_ideaInput" class="studio-input" style="margin-bottom: 12px; min-height: 120px; resize: vertical;" placeholder="Example: The children are fascinated by rain..."></textarea>
+                        <div class="idea-actions" style="margin-top: 10px;">
+                            <button class="studio-btn studio-btn-primary" style="width: 100%; padding: 12px;" @onclick="GenerateIdeasAsync" disabled="@_isGeneratingIdeas">
+                                &#10022; @(_isGeneratingIdeas ? "Thinking..." : "Help me explore")
+                            </button>
                         </div>
                     </div>
-                    <textarea @bind="_ideaInput" class="studio-input" style="margin-bottom: 12px; min-height: 120px; resize: vertical;" placeholder="Example: The children are fascinated by rain..."></textarea>
-                    <div class="idea-actions" style="margin-top: 10px;">
-                        <button class="studio-btn studio-btn-primary" style="width: 100%; padding: 12px;" @onclick="GenerateIdeasAsync" disabled="@_isGeneratingIdeas">
-                            &#10022; @(_isGeneratingIdeas ? "Thinking..." : "Help me explore")
-                        </button>
-                    </div>
-                </div>
 
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Possible directions</h2>
-                        <span>AI suggestions</span>
-                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Possible directions</h2>
+                            <span>AI suggestions</span>
+                        </div>
 
-                    @if (_aiSuggestions.Any())
-                    {
-                        @foreach (var suggestion in _aiSuggestions)
+                        @if (_aiSuggestions.Any())
                         {
-                            <div class="suggestion-card" @onclick="() => ApplySuggestion(suggestion)">
-                                <div class="suggestion-title">@suggestion.Title</div>
-                                <div class="suggestion-text">@suggestion.Description</div>
-                            </div>
+                            @foreach (var suggestion in _aiSuggestions)
+                            {
+                                <div class="suggestion-card" @onclick="() => ApplySuggestion(suggestion)">
+                                    <div class="suggestion-title">@suggestion.Title</div>
+                                    <div class="suggestion-text">@suggestion.Description</div>
+                                </div>
+                            }
                         }
-                    }
-                    else
-                    {
-                        <div style="padding: 16px; color: #4b5563; font-size: 14px;">Tell me an idea above to get AI suggestions!</div>
-                    }
+                        else
+                        {
+                            <div style="padding: 16px; color: #4b5563; font-size: 14px;">Tell me an idea above to get AI suggestions!</div>
+                        }
+                    </div>
                 </div>
-            </div>
+            }
 
             <!-- CENTER CANVAS -->
-            <div>
-                <div class="canvas">
+            @if (_activeStudioTab == "all" || _activeStudioTab == "canvas" || _activeStudioTab == "timeline")
+            {
+                <div class="studio-col-canvas">
+                    <div class="canvas">
                     <div class="canvas-top">
                         <div class="canvas-title">
                             <input id="experienceTitle" @bind="_experience.Title" @bind:after="SaveDraftAsync" placeholder="Experience Title" />
@@ -166,9 +174,12 @@
                     </div>
                 </div>
             </div>
+            }
 
-            <!-- RIGHT PANEL -->
-            <aside class="right-panel">
+            <!-- RIGHT PANEL: Details & AI Refinement -->
+            @if (_activeStudioTab == "all" || _activeStudioTab == "details")
+            {
+                <aside class="right-panel studio-col-details">
                 <div class="card">
                     <div class="card-header">
                         <h2>Experience details</h2>
@@ -289,6 +300,7 @@
                     }
                 </div>
             </aside>
+            }
 
         </div>
     }
@@ -488,6 +500,22 @@
     private bool _isImproving = false;
     private ExperienceImprovementResult? _pendingImprovement;
     private bool _showImprovementCompare = false;
+
+    private string _activeStudioTab = "all";
+
+    private IEnumerable<FilterTabs.TabItem> StudioTabs => new List<FilterTabs.TabItem>
+    {
+        new() { Text = "All Views", Value = "all", Count = null },
+        new() { Text = "DNA Canvas", Value = "canvas", Count = 7 },
+        new() { Text = "Activity Timeline", Value = "timeline", Count = _dna.ExecutionGuide?.Phases?.Count ?? 0 },
+        new() { Text = "AI Idea Explorer", Value = "ai", Count = _aiSuggestions.Count },
+        new() { Text = "Details & Materials", Value = "details", Count = _dna.Materials?.Count ?? 0 }
+    };
+
+    private void SetStudioTab(string tab)
+    {
+        _activeStudioTab = tab;
+    }
 
     private string _ideaInput = string.Empty;
     private bool _isGeneratingIdeas = false;

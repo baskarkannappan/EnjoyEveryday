@@ -86,6 +86,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 
 app.MapAuthEndpoints();
+app.MapBillingEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

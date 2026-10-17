@@ -28,6 +28,7 @@ public interface IResourceAuthorizer
 
     /// <summary>Role grant guard: no self-grant, no unknown role, no platform role via org path, no grant above caller's own permissions.</summary>
     Task RequireCanGrantRoleAsync(string roleName, Guid targetUserId, CancellationToken ct = default);
+    Task RequireInvoiceAccessAsync(Invoice invoice, string permission, CancellationToken ct = default);
 }
 
 /// <summary>Permissive authorizer used as default fallback when authorizer is not provided in existing tests</summary>
@@ -44,6 +45,7 @@ public class NullResourceAuthorizer : IResourceAuthorizer
         Task.FromResult<IReadOnlyList<Child>>(children.ToList());
     public Task RequireGuardianAsync(Guid childId, CancellationToken ct = default) => Task.CompletedTask;
     public Task RequireCanGrantRoleAsync(string roleName, Guid targetUserId, CancellationToken ct = default) => Task.CompletedTask;
+    public Task RequireInvoiceAccessAsync(Invoice invoice, string permission, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 public class NullAuditService : IAuditService
@@ -170,6 +172,37 @@ public class ResourceAuthorizer : IResourceAuthorizer
             if (!heldRoles.Any(r => RoleTemplates.ScopeOf(r) == RoleScope.Organization))
                 throw await DenyAsync(action + ".escalation", "Role", targetUserId, ct);
         }
+    }
+
+    public async Task RequireInvoiceAccessAsync(Invoice invoice, string permission, CancellationToken ct = default)
+    {
+        if (invoice == null) throw new ArgumentNullException(nameof(invoice));
+
+        // Platform billing manager can access any invoice
+        if (_user.HasPermission(Permissions.PlatformBillingManage))
+        {
+            return;
+        }
+
+        // Organization billing viewer must belong to the same tenant and active organization
+        if (invoice.TenantId != _tenant.TenantId)
+        {
+            throw await DenyAsync(permission, "Invoice", invoice.Id, ct);
+        }
+
+        var activeOrg = _user.OrganizationId;
+        if (!activeOrg.HasValue || activeOrg.Value != invoice.OrganizationId)
+        {
+            throw await DenyAsync(permission, "Invoice", invoice.Id, ct);
+        }
+
+        // Organization viewer cannot see draft invoices
+        if (invoice.Status == InvoiceStatus.Draft)
+        {
+            throw await DenyAsync(permission, "Invoice", invoice.Id, ct);
+        }
+
+        await RequireOrganizationAsync(invoice.OrganizationId, permission, ct);
     }
 
     // ------------------------------------------------------------------ core decision

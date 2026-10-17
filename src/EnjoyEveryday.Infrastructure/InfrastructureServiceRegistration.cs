@@ -62,6 +62,12 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IWeeklyPlanningRepository, WeeklyPlanningRepository>();
         services.AddScoped<IParentCommunicationRepository, ParentCommunicationRepository>();
         services.AddScoped<IOrganizationIntelligenceRepository, OrganizationIntelligenceRepository>();
+        services.AddScoped<IBillingRepository, BillingRepository>();
+
+        // Razorpay Payment Gateway
+        services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(
+            configuration.GetSection(EnjoyEveryday.Application.Services.RazorpaySettings.SectionName));
+        services.AddHttpClient<EnjoyEveryday.Application.Services.IRazorpayGateway, EnjoyEveryday.Infrastructure.Services.RazorpayGateway>();
 
         return services;
     }

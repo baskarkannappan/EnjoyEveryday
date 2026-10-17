@@ -1,0 +1,594 @@
+@page "/management/billing"
+@page "/billing"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject IBillingService BillingService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IJSRuntime JS
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Billing &amp; Invoices — EnjoyEveryday</PageTitle>
+
+<div class="content billing-page-container">
+    <PageHero Eyebrow="ORGANIZATION MANAGEMENT"
+              Title="Billing &amp; Invoices"
+              Subtitle="Track issued daycare subscription invoices, payment receipts, due dates, and review your organization's ledger balance.">
+        <RightContent>
+            <a href="mailto:billing@enjoyeveryday.com?subject=Billing Inquiry for Daycare" class="btn secondary">
+                ✉️ Contact Billing Support
+            </a>
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_paymentMessage))
+    {
+        <div style="padding: 12px 18px; border-radius: 12px; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; background: @(_paymentSuccess ? "var(--accent-light, #e6eee9)" : "#fff5f5"); border: 1px solid @(_paymentSuccess ? "#c8dacd" : "#fed7d7"); color: @(_paymentSuccess ? "var(--accent-dark, #3e6253)" : "#9b2c2c");">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 16px;">@(_paymentSuccess ? "✓" : "⚠️")</span>
+                <span>@_paymentMessage</span>
+            </div>
+            <button style="background: none; border: none; cursor: pointer; color: inherit; font-size: 14px;" @onclick="() => _paymentMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- METRICS SUMMARY -->
+    <div class="metrics-summary-grid">
+        <div class="summary-card">
+            <span class="summary-card-label">Outstanding Balance</span>
+            <span class="summary-card-value" style="color: @(TotalOutstandingBalance > 0 ? "#b55a5a" : "var(--text)");">
+                @TotalOutstandingBalance.ToString("C2")
+            </span>
+            <span class="summary-card-sub">
+                @(OverdueCount > 0 ? $"{OverdueCount} invoice(s) overdue" : "All current accounts up to date")
+            </span>
+        </div>
+        <div class="summary-card">
+            <span class="summary-card-label">Total Paid to Date</span>
+            <span class="summary-card-value" style="color: var(--accent-dark, #3e6253);">
+                @TotalAmountPaid.ToString("C2")
+            </span>
+            <span class="summary-card-sub">Across @_invoices.Count(i => i.AmountPaid > 0) invoice payments</span>
+        </div>
+        <div class="summary-card">
+            <span class="summary-card-label">Next Payment Due</span>
+            <span class="summary-card-value" style="font-size: 20px;">
+                @(NextDueDate.HasValue ? NextDueDate.Value.ToString("MMM dd, yyyy") : "None Pending")
+            </span>
+            <span class="summary-card-sub">
+                @(NextDueDate.HasValue ? $"Due in {(int)(NextDueDate.Value - DateTimeOffset.UtcNow).TotalDays} days" : "No active unpaid balances")
+            </span>
+        </div>
+        <div class="summary-card">
+            <span class="summary-card-label">Billing Schedule</span>
+            <span class="summary-card-value" style="font-size: 20px; text-transform: capitalize;">
+                @(_billingSettings?.Frequency.ToString() ?? "Monthly")
+            </span>
+            <span class="summary-card-sub">
+                @(_billingSettings?.Mode == BillingMode.Automatic ? "Automatic scheduled billing" : "Manual administrative invoicing")
+            </span>
+        </div>
+    </div>
+
+    <!-- FILTER & SEARCH ROW -->
+    <div class="filter-row">
+        <div class="tabs-container">
+            <button class="billing-tab @(_activeTab == "All" ? "active" : "")" @onclick='() => _activeTab = "All"'>
+                All Invoices (@_invoices.Count)
+            </button>
+            <button class="billing-tab @(_activeTab == "Outstanding" ? "active" : "")" @onclick='() => _activeTab = "Outstanding"'>
+                Outstanding &amp; Overdue (@_invoices.Count(i => i.BalanceDue > 0))
+            </button>
+            <button class="billing-tab @(_activeTab == "Paid" ? "active" : "")" @onclick='() => _activeTab = "Paid"'>
+                Paid (@_invoices.Count(i => i.Status == InvoiceStatus.Paid))
+            </button>
+        </div>
+
+        <input class="search-box" placeholder="Search by invoice # or memo..." @bind="_searchQuery" @bind:event="oninput" />
+    </div>
+
+    <!-- INVOICE LIST -->
+    @if (_isLoading)
+    {
+        <LoadingState Message="Retrieving organization invoices..." />
+    }
+    else if (!FilteredInvoices.Any())
+    {
+        <EmptyState Title="No Invoices Issued Yet"
+                    Description="There are no published invoices for your daycare organization at this time. When our platform administrators issue your billing statements, they will appear here." />
+    }
+    else
+    {
+        <div class="invoices-panel">
+            <table class="invoices-data-table">
+                <thead>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Billing Memo</th>
+                        <th>Issue Date</th>
+                        <th>Due Date</th>
+                        <th>Total Amount</th>
+                        <th>Paid</th>
+                        <th>Balance Due</th>
+                        <th>Status</th>
+                        <th style="text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var inv in FilteredInvoices)
+                    {
+                        <tr>
+                            <td style="font-weight: 800; font-family: monospace; font-size: 13.5px; color: var(--text);">
+                                @inv.InvoiceNumber
+                            </td>
+                            <td>
+                                <div style="font-weight: 650; color: var(--text);">@(!string.IsNullOrWhiteSpace(inv.Description) ? inv.Description : "Platform Subscription Fee")</div>
+                                @if (!string.IsNullOrWhiteSpace(inv.BillingPeriod))
+                                {
+                                    <div style="font-size: 11px; color: var(--muted); margin-top: 2px;">Billing Period: @inv.BillingPeriod</div>
+                                }
+                            </td>
+                            <td style="color: var(--muted);">@inv.IssueDate.ToString("MMM dd, yyyy")</td>
+                            <td style="color: var(--muted);">@inv.DueDate.ToString("MMM dd, yyyy")</td>
+                            <td style="font-weight: 800;">@inv.TotalAmount.ToString("C2")</td>
+                            <td style="color: var(--accent-dark); font-weight: 700;">@inv.AmountPaid.ToString("C2")</td>
+                            <td style="font-weight: 800; color: @(inv.BalanceDue > 0 ? "#b55a5a" : "var(--text)");">
+                                @inv.BalanceDue.ToString("C2")
+                            </td>
+                            <td>
+                                <StatusBadge Status="@inv.Status.ToString()" />
+                            </td>
+                            <td style="text-align: right;">
+                                <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                                    @if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Draft && inv.Status != InvoiceStatus.Void)
+                                    {
+                                        <button class="btn-pay-now" @onclick="() => PayInvoiceOnline(inv)" disabled="@_isProcessingPayment">
+                                            💳 Pay Now
+                                        </button>
+                                    }
+                                    <button class="btn-view-invoice" @onclick="() => OpenInvoiceModal(inv)">
+                                        📄 View Details
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- SUPPORT / REMITTANCE BANNER -->
+    <div class="support-banner">
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="support-icon">💡</div>
+            <div>
+                <div style="font-weight: 750; font-size: 14px; color: var(--text);">Payment Questions or Inquiries?</div>
+                <div style="font-size: 12.5px; color: var(--muted); margin-top: 2px;">
+                    Invoices are issued by the EnjoyEveryday platform administration team. Please remit payments according to the wire instructions on each invoice.
+                </div>
+            </div>
+        </div>
+        <a href="mailto:billing@enjoyeveryday.com" style="color: var(--accent-dark); font-size: 13px; font-weight: 750; text-decoration: none;">
+            billing@enjoyeveryday.com →
+        </a>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- INVOICE DETAILS & DOCUMENT VIEW MODAL -->
+<!-- ========================================== -->
+@if (_showInvoiceModal && _selectedInvoice != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModal">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">INVOICE STATEMENT</div>
+                    <h3 class="modal-title">@_selectedInvoice.InvoiceNumber</h3>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button class="btn-view-invoice" @onclick="PrintInvoice">🖨️ Print / Download PDF</button>
+                    <button class="modal-close" @onclick="CloseModal">✕</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="printable-invoice-body">
+                    <!-- INVOICE BRAND HEADER -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #557c6c; padding-bottom: 18px; margin-bottom: 20px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 24px;">🌿</span>
+                                <span style="font-size: 22px; font-weight: 800; color: #26332d;">EnjoyEveryday</span>
+                            </div>
+                            <div style="font-size: 12px; color: #6c7870; margin-top: 2px;">Early-Childhood &amp; Daycare Management</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 22px; font-weight: 800; color: #557c6c;">INVOICE</div>
+                            <div style="font-size: 13px; font-weight: 750; font-family: monospace;">@_selectedInvoice.InvoiceNumber</div>
+                            <div style="margin-top: 4px;"><StatusBadge Status="@_selectedInvoice.Status.ToString()" /></div>
+                        </div>
+                    </div>
+
+                    <!-- DATES & RECIPIENT -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 13px;">
+                        <div>
+                            <div style="font-size: 11px; font-weight: 800; color: #6c7870; text-transform: uppercase;">Billed Daycare Organization:</div>
+                            <div style="font-size: 15px; font-weight: 800; color: #26332d; margin-top: 3px;">@_orgName</div>
+                            <div style="color: #6c7870;">@_selectedInvoice.BillingContactEmail</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div><strong>Issue Date:</strong> @_selectedInvoice.IssueDate.ToString("MMMM dd, yyyy")</div>
+                            <div style="margin-top: 3px;"><strong>Due Date:</strong> @_selectedInvoice.DueDate.ToString("MMMM dd, yyyy")</div>
+                            @if (!string.IsNullOrWhiteSpace(_selectedInvoice.BillingPeriod))
+                            {
+                                <div style="margin-top: 3px;"><strong>Billing Cycle:</strong> @_selectedInvoice.BillingPeriod</div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- LINE ITEMS TABLE -->
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;">
+                        <thead>
+                            <tr style="background: #f8f9f5; border-bottom: 1px solid #e4e7df; text-align: left; font-size: 11px; text-transform: uppercase; color: #6c7870;">
+                                <th style="padding: 10px 12px;">Item</th>
+                                <th style="padding: 10px 12px; text-align: right; width: 60px;">Qty</th>
+                                <th style="padding: 10px 12px; text-align: right; width: 110px;">Unit Price</th>
+                                <th style="padding: 10px 12px; text-align: right; width: 110px;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_selectedInvoice.LineItems.Any())
+                            {
+                                @foreach (var li in _selectedInvoice.LineItems)
+                                {
+                                    <tr style="border-bottom: 1px solid #edf1ec;">
+                                        <td style="padding: 10px 12px; font-weight: 600;">@li.Description</td>
+                                        <td style="padding: 10px 12px; text-align: right;">@li.Quantity</td>
+                                        <td style="padding: 10px 12px; text-align: right;">@li.UnitPrice.ToString("C2")</td>
+                                        <td style="padding: 10px 12px; text-align: right; font-weight: 700;">@li.LineTotal.ToString("C2")</td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr style="border-bottom: 1px solid #edf1ec;">
+                                    <td style="padding: 10px 12px; font-weight: 600;">@(!string.IsNullOrWhiteSpace(_selectedInvoice.Description) ? _selectedInvoice.Description : "Platform Subscription Service")</td>
+                                    <td style="padding: 10px 12px; text-align: right;">1</td>
+                                    <td style="padding: 10px 12px; text-align: right;">@_selectedInvoice.Subtotal.ToString("C2")</td>
+                                    <td style="padding: 10px 12px; text-align: right; font-weight: 700;">@_selectedInvoice.Subtotal.ToString("C2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+
+                    <!-- TOTALS BREAKDOWN -->
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
+                        <div style="width: 260px; display: flex; flex-direction: column; gap: 5px; font-size: 13.5px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #6c7870;">Subtotal:</span>
+                                <strong>@_selectedInvoice.Subtotal.ToString("C2")</strong>
+                            </div>
+                            @if (_selectedInvoice.TaxAmount > 0)
+                            {
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: #6c7870;">Tax:</span>
+                                    <span>@_selectedInvoice.TaxAmount.ToString("C2")</span>
+                                </div>
+                            }
+                            <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; border-top: 1px solid #e4e7df; padding-top: 8px;">
+                                <span>Total Amount:</span>
+                                <span>@_selectedInvoice.TotalAmount.ToString("C2")</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; color: #557c6c;">
+                                <span>Total Paid:</span>
+                                <strong>@_selectedInvoice.AmountPaid.ToString("C2")</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #b55a5a; border-top: 1px solid #e4e7df; padding-top: 6px;">
+                                <span>Balance Due:</span>
+                                <span>@_selectedInvoice.BalanceDue.ToString("C2")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PAYMENT INSTRUCTIONS -->
+                    @if (!string.IsNullOrWhiteSpace(_selectedInvoice.PaymentInstructions))
+                    {
+                        <div style="background: #f8f9f5; border: 1px solid #e4e7df; border-radius: 8px; padding: 14px; font-size: 12.5px; color: #6c7870; margin-bottom: 20px;">
+                            <div style="font-weight: 750; color: #26332d; margin-bottom: 4px;">Payment Remittance Instructions:</div>
+                            @_selectedInvoice.PaymentInstructions
+                        </div>
+                    }
+
+                    <!-- PAYMENT HISTORY TABLE FOR THIS INVOICE -->
+                    @{
+                        var paymentsList = _selectedInvoicePayments.Any() ? _selectedInvoicePayments : _selectedInvoice.Payments;
+                    }
+                    @if (paymentsList.Any())
+                    {
+                        <div style="border-top: 1px solid #e4e7df; padding-top: 16px;">
+                            <div style="font-size: 12px; font-weight: 800; color: #6c7870; text-transform: uppercase; margin-bottom: 8px;">
+                                Payment Ledger History (@paymentsList.Count)
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+                                <thead>
+                                    <tr style="text-align: left; color: #6c7870; border-bottom: 1px solid #e4e7df;">
+                                        <th style="padding: 6px 8px;">Date</th>
+                                        <th style="padding: 6px 8px;">Method</th>
+                                        <th style="padding: 6px 8px;">Reference / Receipt</th>
+                                        <th style="padding: 6px 8px; text-align: right;">Amount</th>
+                                        <th style="padding: 6px 8px; text-align: center;">Status</th>
+                                        <th style="padding: 6px 8px; text-align: right;">Receipt</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var p in paymentsList)
+                                    {
+                                        <tr style="border-bottom: 1px solid #edf1ec; opacity: @(p.IsReversed ? "0.6" : "1.0");">
+                                            <td style="padding: 6px 8px;">@p.PaymentDate.ToString("MMM dd, yyyy")</td>
+                                            <td style="padding: 6px 8px; font-weight: 600;">
+                                                @if (p.PaymentMethod == "Cash")
+                                                {
+                                                    <span>💵 Cash</span>
+                                                }
+                                                else if (p.PaymentMethod == "Razorpay")
+                                                {
+                                                    <span>💳 Razorpay</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>🏦 @(p.PaymentMethod ?? p.Method)</span>
+                                                }
+                                            </td>
+                                            <td style="padding: 6px 8px; font-family: monospace;">
+                                                @(p.ReceiptNumber ?? p.PaymentReference)
+                                                @if (p.IsReversed)
+                                                {
+                                                    <span style="color: #9b2c2c; display: block; font-size: 10.5px;">[REVERSED: @p.ReversalReason]</span>
+                                                }
+                                            </td>
+                                            <td style="padding: 6px 8px; text-align: right; font-weight: 700; color: #557c6c;">@p.Amount.ToString("C2")</td>
+                                            <td style="padding: 6px 8px; text-align: center;">
+                                                @if (p.IsReversed)
+                                                {
+                                                    <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 2px 6px; border-radius: 4px; font-size: 10.5px;">Reversed</span>
+                                                }
+                                                else
+                                                {
+                                                    <span style="background: var(--accent-light); color: var(--accent-dark); padding: 2px 6px; border-radius: 4px; font-size: 10.5px;">@p.Status</span>
+                                                }
+                                            </td>
+                                            <td style="padding: 6px 8px; text-align: right;">
+                                                <a href="/api/billing/payments/@p.Id/receipt" target="_blank" class="action-receipt-link">
+                                                    📄 Receipt
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    @if (_selectedInvoice.BalanceDue > 0 && _selectedInvoice.Status != InvoiceStatus.Draft && _selectedInvoice.Status != InvoiceStatus.Void)
+                    {
+                        <button class="btn-pay-now" @onclick="() => PayInvoiceOnline(_selectedInvoice)" disabled="@_isProcessingPayment" style="padding: 8px 18px; font-size: 13.5px;">
+                            💳 Pay Outstanding Balance (@_selectedInvoice.BalanceDue.ToString("C2"))
+                        </button>
+                    }
+                </div>
+                <button class="btn secondary" @onclick="CloseModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Invoice> _invoices = new();
+    private OrganizationBillingSettings? _billingSettings;
+    private Invoice? _selectedInvoice;
+    private bool _showInvoiceModal = false;
+    private bool _isLoading = true;
+    private string _activeTab = "All";
+    private string _searchQuery = string.Empty;
+    private string _orgName = "Daycare Organization";
+
+    private DotNetObjectReference<OrganizationBilling>? _dotNetRef;
+    private bool _isProcessingPayment = false;
+    private string? _paymentMessage;
+    private bool _paymentSuccess = false;
+    private List<Payment> _selectedInvoicePayments = new();
+    private Invoice? _selectedInvoiceForPayment;
+
+    private decimal TotalOutstandingBalance => _invoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.BalanceDue);
+    private decimal TotalAmountPaid => _invoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.AmountPaid);
+    private int OverdueCount => _invoices.Count(i => i.Status == InvoiceStatus.Overdue);
+    private DateTimeOffset? NextDueDate => _invoices
+        .Where(i => i.BalanceDue > 0 && i.Status != InvoiceStatus.Void)
+        .OrderBy(i => i.DueDate)
+        .Select(i => (DateTimeOffset?)i.DueDate)
+        .FirstOrDefault();
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInvoicesAsync();
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private async Task LoadInvoicesAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+            _invoices = await BillingService.GetInvoicesForOrganizationAsync(orgId);
+            _billingSettings = await BillingService.GetBillingSettingsAsync(orgId);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private List<Invoice> FilteredInvoices
+    {
+        get
+        {
+            var query = _invoices.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(i => i.InvoiceNumber.ToLowerInvariant().Contains(q)
+                                      || (i.Description != null && i.Description.ToLowerInvariant().Contains(q)));
+            }
+
+            query = _activeTab switch
+            {
+                "Outstanding" => query.Where(i => i.BalanceDue > 0),
+                "Paid" => query.Where(i => i.Status == InvoiceStatus.Paid),
+                _ => query
+            };
+
+            return query.OrderByDescending(i => i.IssueDate).ToList();
+        }
+    }
+
+    private async Task OpenInvoiceModal(Invoice inv)
+    {
+        _selectedInvoice = inv;
+        _selectedInvoicePayments = await BillingService.GetInvoicePaymentsAsync(inv.Id);
+        _showInvoiceModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showInvoiceModal = false;
+        _selectedInvoice = null;
+    }
+
+    private async Task PayInvoiceOnline(Invoice inv)
+    {
+        if (_isProcessingPayment) return;
+        _isProcessingPayment = true;
+        _paymentMessage = null;
+        _selectedInvoiceForPayment = inv;
+
+        try
+        {
+            var order = await BillingService.CreateRazorpayOrderAsync(new CreateRazorpayOrderRequest { InvoiceId = inv.Id });
+            var options = new
+            {
+                key = order.KeyId,
+                amount = order.AmountInPaise,
+                currency = order.Currency,
+                name = "EnjoyEveryday Daycare",
+                description = $"Payment for Invoice {order.InvoiceNumber}",
+                orderId = order.OrderId,
+                invoiceId = inv.Id.ToString(),
+                invoiceNumber = order.InvoiceNumber,
+                organizationId = inv.OrganizationId.ToString(),
+                prefillName = _orgName,
+                prefillEmail = inv.BillingContactEmail ?? ""
+            };
+
+            await JS.InvokeVoidAsync("initiateRazorpayPayment", options, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            _paymentSuccess = false;
+            _paymentMessage = $"Could not initiate payment: {ex.Message}";
+            _isProcessingPayment = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnRazorpaySuccess(RazorpayCallbackPayload payload)
+    {
+        _isProcessingPayment = true;
+        StateHasChanged();
+        try
+        {
+            if (_selectedInvoiceForPayment == null) return;
+
+            var result = await BillingService.VerifyRazorpayPaymentAsync(new VerifyRazorpayPaymentRequest
+            {
+                InvoiceId = _selectedInvoiceForPayment.Id,
+                RazorpayOrderId = payload.OrderId,
+                RazorpayPaymentId = payload.PaymentId,
+                RazorpaySignature = payload.Signature
+            });
+
+            if (!result.Success || result.Payment == null)
+            {
+                throw new InvalidOperationException(result.ErrorMessage ?? "Payment verification failed.");
+            }
+
+            var payment = result.Payment;
+            _paymentSuccess = true;
+            _paymentMessage = $"Payment of {payment.Amount:C2} ({payment.PaymentReference}) verified successfully via Razorpay.";
+            await LoadInvoicesAsync();
+            if (_selectedInvoice != null && _selectedInvoice.Id == _selectedInvoiceForPayment.Id)
+            {
+                _selectedInvoice = _invoices.FirstOrDefault(i => i.Id == _selectedInvoiceForPayment.Id);
+                if (_selectedInvoice != null)
+                {
+                    _selectedInvoicePayments = await BillingService.GetInvoicePaymentsAsync(_selectedInvoice.Id);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _paymentSuccess = false;
+            _paymentMessage = $"Payment verification error: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessingPayment = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnRazorpayError(string error)
+    {
+        _isProcessingPayment = false;
+        _paymentSuccess = false;
+        _paymentMessage = $"Payment was not completed: {error}";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnRazorpayDismiss()
+    {
+        _isProcessingPayment = false;
+        StateHasChanged();
+    }
+
+    private async Task PrintInvoice()
+    {
+        await JS.InvokeVoidAsync("window.print");
+    }
+
+    public class RazorpayCallbackPayload
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public string PaymentId { get; set; } = string.Empty;
+        public string Signature { get; set; } = string.Empty;
+    }
+}
