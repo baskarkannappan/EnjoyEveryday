@@ -19,36 +19,91 @@ router = APIRouter(tags=["Experience Design"])
 def build_improved_fallback(existing_data: Dict[str, Any], request_context: str) -> Dict[str, Any]:
     base = experience_validator.sanitize_and_validate(existing_data)
     title = base.get("Title") or "Creative Learning Studio"
-    desc = base.get("Description") or "Children explore and create together."
-    challenge = base.get("Challenge") or "How can we build and explore together?"
+    
+    # Strip existing awkward artifacts if present
+    for artifact in ["(Focus:", "Focus:", "Adapted with emphasis on:"]:
+        if artifact.lower() in title.lower():
+            title = title.split("(")[0].strip()
+    if title.lower().startswith("exploring "):
+        core_topic = title[10:].strip()
+        if ":" in core_topic:
+            core_topic = core_topic.split(":")[0].strip()
+    else:
+        core_topic = title.split(":")[0].strip()
 
     req_clean = request_context.strip()
-    title_suffix = f" (Focus: {req_clean.title()})" if req_clean.lower() not in title.lower() else ""
+    is_playful = "playful" in req_clean.lower()
+    is_choice = "choice" in req_clean.lower()
+    is_sensory = "sensory" in req_clean.lower()
+    is_outdoor = "outdoor" in req_clean.lower()
+
+    if is_playful:
+        new_title = f"The Playful World of {core_topic.title()}"
+        new_desc = f"Children embark on a whimsical, playful adventure with {core_topic.lower()}, turning tactile curiosity into imaginative storytelling, roleplay, and joyful collaboration."
+        new_challenge = f"Can we build a miniature play village or friendly creature using our {core_topic.lower()}?"
+        new_choice = "Children invent their own characters, choose their favorite textures and shapes, and guide the story."
+        new_together = "Children connect their individual creations together to form a lively shared fantasy world."
+        new_magic = "The sheer delight when their creations interact and tell a story together."
+    elif is_choice:
+        new_title = f"{core_topic.title()}: Child-Led Creative Studio"
+        new_desc = f"An open-ended, child-guided exploration where little learners choose their tools, decide their own pace, and experiment freely with {core_topic.lower()}."
+        new_challenge = f"What amazing discoveries can you make today? You decide what to create and how to test it!"
+        new_choice = "Children freely select from various tools, molds, colors, and textures, deciding whether to work solo or with peers."
+        new_together = "Children observe each other's ideas, trade tools, and offer helpful suggestions."
+        new_magic = "A child's independent realization that they solved a challenge using their own unique method."
+    elif is_sensory:
+        new_title = f"{core_topic.title()}: Sensory Touch & Texture Lab"
+        new_desc = f"A rich tactile adventure inviting children to squeeze, roll, imprint, and observe physical transformations through immersive sensory play."
+        new_challenge = f"How many different patterns, textures, and sensations can we press into our materials?"
+        new_choice = "Children choose between textured rollers, natural stamps, stamps, and sensory tools."
+        new_together = "Children share textured impressions and compare how different surfaces feel."
+        new_magic = "Discovering an intricate pattern revealed under the magnifying glass or light table."
+    elif is_outdoor:
+        new_title = f"{core_topic.title()}: Outdoor Nature Studio"
+        new_desc = f"Taking creative exploration into the fresh air, blending natural elements with {core_topic.lower()} in sunlight and open space."
+        new_challenge = f"Can we combine outdoor treasures (leaves, stones, twigs) with our materials to build a nature garden?"
+        new_choice = "Children explore the outdoor perimeter to collect their own organic crafting accents."
+        new_together = "Small groups work together on the outdoor work table or lawn."
+        new_magic = "Seeing how natural sunlight and botanical textures transform their finished work."
+        base["Environment"] = "Outdoor"
+    else:
+        new_title = f"{core_topic.title()} Adventure Studio"
+        new_desc = f"Children engage in dynamic, hands-on exploration centered on {core_topic.lower()}, tailored to foster {req_clean.lower()}."
+        new_challenge = f"How can we explore {core_topic.lower()} in a brand new way today?"
+        new_choice = f"Children choose how they incorporate {req_clean.lower()} into their creations."
+        new_together = f"Children share materials and collaborate in small groups."
+        new_magic = "A wonderful breakthrough when their collaborative idea takes shape."
 
     exec_guide = base.get("ExecutionGuide", {})
     if not exec_guide.get("Phases"):
         exec_guide["Phases"] = [
-            {"Name": "Welcome & Exploration", "DurationMinutes": 5, "ChildrenDo": "Gather and inspect materials", "TeacherDoes": f"Introduces the focus on {req_clean}"},
-            {"Name": "Active Creation", "DurationMinutes": 15, "ChildrenDo": "Create and collaborate", "TeacherDoes": "Circulates, offering open questions and encouragement"},
-            {"Name": "Reflection & Clean-Up", "DurationMinutes": 5, "ChildrenDo": "Tidy materials and share discoveries", "TeacherDoes": "Guides reflection circle"}
+            {"Name": "Welcome & Sensory Invitation", "DurationMinutes": 5, "ChildrenDo": f"Touch and explore {core_topic.lower()} with open curiosity", "TeacherDoes": f"Introduces the playful theme with an inviting question"},
+            {"Name": "Hands-On Play & Creation", "DurationMinutes": 15, "ChildrenDo": "Shape, build, and invent together in small groups", "TeacherDoes": "Circulates, offering encouragement, playful prompts, and listening closely"},
+            {"Name": "Showcase & Circle Sharing", "DurationMinutes": 5, "ChildrenDo": "Proudly display creations and describe what they made", "TeacherDoes": "Leads a gentle reflection and celebration of each child's creativity"}
         ]
         exec_guide["SuggestedDurationMinutes"] = 25
-        exec_guide["Watch"] = "Watch for engaged curiosity and peer sharing."
-        exec_guide["Ask"] = f"How did you decide to use {req_clean} in your creation?"
-        exec_guide["Try"] = "Try combining two different materials together."
+        exec_guide["Watch"] = "Watch for moments of joyful collaboration, fine-motor experimentation, and peer sharing."
+        exec_guide["Ask"] = f"What does your creation remind you of? Tell me about what's happening here!"
+        exec_guide["Try"] = "Try adding a new texture or combining two pieces to see what happens."
 
     return experience_validator.sanitize_and_validate({
-        "Title": f"{title}{title_suffix}",
-        "Description": f"{desc} Adapted with emphasis on: {req_clean}.",
-        "Challenge": f"{challenge} Challenge adaptation: {req_clean}.",
-        "Together": base.get("Together") or f"Children collaborate in small groups to explore {req_clean}.",
-        "Create": base.get("Create") or "A collaborative hands-on project.",
-        "ChildChoice": base.get("ChildChoice") or f"Children choose how they incorporate {req_clean} into their play.",
-        "MagicMoment": base.get("MagicMoment") or "The excitement when their idea comes to life.",
-        "Accomplishment": base.get("Accomplishment") or "Sharing their finished creation with the classroom.",
-        "Reflection": base.get("Reflection") or f"What was your favorite part about exploring {req_clean}?",
-        "TeacherGuidance": base.get("TeacherGuidance") or f"Set up work trays with accessible supplies. Guide children to explore {req_clean}.",
-        "Materials": base.get("Materials") or ["Standard classroom learning materials", "Washable craft supplies"],
+        "Title": new_title,
+        "Description": new_desc,
+        "Challenge": new_challenge,
+        "Together": new_together,
+        "Create": base.get("Create") or f"A collaborative hands-on project exploring {core_topic.lower()}.",
+        "ChildChoice": new_choice,
+        "MagicMoment": new_magic,
+        "Accomplishment": base.get("Accomplishment") or "Sharing their finished creation with pride during group circle time.",
+        "Reflection": base.get("Reflection") or f"What was your favorite part of playing with {core_topic.lower()} today?",
+        "TeacherGuidance": base.get("TeacherGuidance") or f"Set up materials at child height. Encourage open exploration without rigid right-or-wrong rules.",
+        "AgeMin": base.get("AgeMin", 3),
+        "AgeMax": base.get("AgeMax", 5),
+        "GroupSizeMin": base.get("GroupSizeMin", 2),
+        "GroupSizeMax": base.get("GroupSizeMax", 6),
+        "Environment": base.get("Environment", "Indoor"),
+        "DevelopmentalGoals": base.get("DevelopmentalGoals", ["Fine Motor Skills", "Creative Expression", "Social Cooperation"]),
+        "Materials": base.get("Materials") or [core_topic.title(), "Natural texture tools", "Child-safe work trays"],
         "ExecutionGuide": exec_guide
     })
 

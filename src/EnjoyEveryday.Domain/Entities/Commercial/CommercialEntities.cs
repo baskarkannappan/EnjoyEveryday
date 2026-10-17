@@ -51,7 +51,7 @@ public class SubscriptionPlan
     public string Code { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public decimal BasePrice { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public BillingFrequency Frequency { get; set; } = BillingFrequency.Monthly;
     public int MaxBranches { get; set; } = 1;
     public int MaxClassrooms { get; set; } = 5;
@@ -70,7 +70,7 @@ public class Tariff
     public string Name { get; set; } = string.Empty;
     public BillingFrequency Frequency { get; set; } = BillingFrequency.Monthly;
     public decimal Price { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public decimal DiscountPercentage { get; set; }
     public DateTimeOffset EffectiveDate { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ExpiryDate { get; set; }
@@ -89,7 +89,7 @@ public class OrganizationSubscription
     public AccountStatus AccountStatus { get; set; } = AccountStatus.Onboarding;
     public FinancialStatus FinancialStatus { get; set; } = FinancialStatus.Unbilled;
     public decimal AgreedPrice { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public DateTimeOffset StartDate { get; set; }
     public DateTimeOffset? NextBillingDate { get; set; }
     public DateTimeOffset? TrialEndsAt { get; set; }
@@ -125,7 +125,7 @@ public class Invoice
     public decimal TotalAmount { get; set; }
     public decimal AmountPaid { get; set; }
     public decimal BalanceDue => Math.Max(0, TotalAmount - AmountPaid);
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
 
     private InvoiceStatus _status = InvoiceStatus.Draft;
     public InvoiceStatus Status
@@ -257,7 +257,7 @@ public class DiscountOffer
     public string Title { get; set; } = string.Empty;
     public decimal Percentage { get; set; }
     public decimal FixedAmount { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public DateTimeOffset ValidFrom { get; set; }
     public DateTimeOffset ValidUntil { get; set; }
     public bool IsActive { get; set; } = true;

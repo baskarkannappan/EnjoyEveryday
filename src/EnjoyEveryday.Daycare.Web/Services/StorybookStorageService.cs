@@ -100,7 +100,13 @@ public class StorybookStorageService
         {
             try
             {
-                return await File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
+                var fileInfo = new FileInfo(filePath);
+                var isStale = exp.UpdatedAt > DateTimeOffset.MinValue && fileInfo.LastWriteTimeUtc < exp.UpdatedAt.UtcDateTime;
+                if (!isStale)
+                {
+                    return await File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
+                }
+                _logger.LogInformation("Storybook file at {Path} is older than Experience UpdatedAt. Regenerating to match current version.", filePath);
             }
             catch (Exception ex)
             {
@@ -108,7 +114,7 @@ public class StorybookStorageService
             }
         }
 
-        // If not yet stored on disk, generate and store it now because it is published
+        // If not yet stored on disk or stale, generate and store it now because it is published
         return await StoreStorybookAsync(exp, cancellationToken);
     }
 

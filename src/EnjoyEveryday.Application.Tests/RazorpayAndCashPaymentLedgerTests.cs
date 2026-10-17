@@ -89,7 +89,7 @@ public class RazorpayAndCashPaymentLedgerTests
             Subtotal = 500.00m,
             TotalAmount = 500.00m,
             AmountPaid = 0.00m,
-            Currency = "USD",
+            Currency = "INR",
             Status = InvoiceStatus.Unpaid,
             IssueDate = DateTimeOffset.UtcNow,
             DueDate = DateTimeOffset.UtcNow.AddDays(14)

@@ -17,6 +17,12 @@ public class ExperienceFullData
     public string Accomplishment { get; set; } = string.Empty;
     public string Reflection { get; set; } = string.Empty;
     public string TeacherGuidance { get; set; } = string.Empty;
+    public int AgeMin { get; set; } = 3;
+    public int AgeMax { get; set; } = 5;
+    public int GroupSizeMin { get; set; } = 2;
+    public int GroupSizeMax { get; set; } = 6;
+    public string Environment { get; set; } = "Indoor";
+    public List<string> DevelopmentalGoals { get; set; } = new();
     public List<string> Materials { get; set; } = new();
     public EnjoyEveryday.Domain.Entities.ExecutionGuide ExecutionGuide { get; set; } = new();
 }

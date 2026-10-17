@@ -73,7 +73,7 @@ public class PlatformAdminService : IPlatformAdminService
             OverdueAmount = overdueInvoices.Sum(i => i.BalanceDue),
             PaymentsAwaitingVerificationCount = pendingPayments.Count,
             CollectionsThisMonth = payments.Where(p => p.IsVerified && p.PaymentDate >= DateTimeOffset.UtcNow.AddDays(-30)).Sum(p => p.Amount),
-            Currency = "USD"
+            Currency = "INR"
         };
 
         return Task.FromResult(summary);
@@ -734,7 +734,7 @@ public class PlatformAdminService : IPlatformAdminService
             DiscountAmount = 0,
             TotalAmount = amount,
             AmountPaid = 0,
-            Currency = "USD",
+            Currency = "INR",
             Status = InvoiceStatus.Unpaid,
             IssueDate = DateTimeOffset.UtcNow,
             DueDate = DateTimeOffset.UtcNow.AddDays(14),

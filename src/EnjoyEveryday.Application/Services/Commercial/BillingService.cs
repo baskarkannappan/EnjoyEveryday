@@ -67,7 +67,7 @@ public class BillingService : IBillingService
             TenantId = orgTenantId,
             OrganizationId = org.Id,
             InvoiceNumber = invoiceNumber,
-            Currency = string.IsNullOrWhiteSpace(request.Currency) ? "USD" : request.Currency.ToUpperInvariant(),
+            Currency = "INR",
             IssueDate = request.IssueDate.ToUniversalTime(),
             DueDate = request.DueDate.ToUniversalTime(),
             Status = InvoiceStatus.Draft,
@@ -475,11 +475,11 @@ public class BillingService : IBillingService
         if (invoice.BalanceDue <= 0 || invoice.Status == InvoiceStatus.Paid)
             throw new InvalidOperationException($"Invoice '{invoice.InvoiceNumber}' has no balance due.");
 
-        // Supported currency enforcement: Razorpay is configured for INR (or invoice currency matching supported gateway currency)
+        // Supported currency enforcement: Entire application currency is INR only
         var targetCurrency = !string.IsNullOrWhiteSpace(invoice.Currency) ? invoice.Currency.ToUpperInvariant() : "INR";
-        if (targetCurrency != "INR" && targetCurrency != "USD")
+        if (targetCurrency != "INR")
         {
-            throw new NotSupportedException($"Currency '{targetCurrency}' is not currently supported for online Razorpay checkout. Supported currencies: INR, USD.");
+            throw new NotSupportedException($"Currency '{targetCurrency}' is not supported. The application uses INR only.");
         }
 
         // Authoritative server-side balance
@@ -866,7 +866,7 @@ public class BillingService : IBillingService
                     OrganizationId = orgSetting.OrganizationId,
                     InvoiceNumber = invoiceNumber,
                     BillingPeriod = periodKey,
-                    Currency = "USD",
+                    Currency = "INR",
                     IssueDate = asOfDate,
                     DueDate = asOfDate.AddDays(14),
                     Status = InvoiceStatus.Unpaid,

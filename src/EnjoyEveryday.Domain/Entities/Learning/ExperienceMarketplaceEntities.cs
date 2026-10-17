@@ -94,7 +94,7 @@ public class PlatformExperience
     public string DnaPayload { get; set; } = "{}";
     public string PricingModel { get; set; } = ExperiencePricingModel.IncludedInSubscription;
     public decimal PriceAmount { get; set; } = 0.00m;
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public string PublicationStatus { get; set; } = PlatformPublicationStatus.Draft;
     public string OwnershipType { get; set; } = "CuratedLicensed";
     public int CurrentVersion { get; set; } = 1;
@@ -136,7 +136,7 @@ public class MarketplaceOrder
     public Guid PurchasedByUserId { get; set; }
     public string PricingModel { get; set; } = string.Empty;
     public decimal AmountPaid { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public string PaymentStatus { get; set; } = "Completed";
     public string TransactionReference { get; set; } = string.Empty;
     public DateTimeOffset PurchasedAt { get; set; } = DateTimeOffset.UtcNow;

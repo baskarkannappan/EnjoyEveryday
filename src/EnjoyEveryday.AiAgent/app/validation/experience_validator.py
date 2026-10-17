@@ -4,7 +4,8 @@ class ExperienceValidator:
     REQUIRED_ROOT_FIELDS = [
         "Title", "Description", "Challenge", "Together", "Create",
         "ChildChoice", "MagicMoment", "Accomplishment", "Reflection",
-        "TeacherGuidance", "Materials", "ExecutionGuide"
+        "TeacherGuidance", "AgeMin", "AgeMax", "GroupSizeMin", "GroupSizeMax",
+        "Environment", "DevelopmentalGoals", "Materials", "ExecutionGuide"
     ]
 
     REQUIRED_EXEC_FIELDS = [
@@ -33,8 +34,15 @@ class ExperienceValidator:
         # 1. Map all root fields case-insensitively to exact PascalCase expected by .NET
         for f in cls.REQUIRED_ROOT_FIELDS:
             val = get_ci(data, f)
-            if f == "Materials":
+            if f in ["Materials", "DevelopmentalGoals"]:
                 cleaned[f] = val if isinstance(val, list) else []
+            elif f in ["AgeMin", "AgeMax", "GroupSizeMin", "GroupSizeMax"]:
+                try:
+                    cleaned[f] = int(val) if val is not None else (3 if "Age" in f else 4)
+                except (ValueError, TypeError):
+                    cleaned[f] = 3 if "Age" in f else 4
+            elif f == "Environment":
+                cleaned[f] = str(val) if val else "Indoor"
             elif f == "ExecutionGuide":
                 cleaned[f] = val if isinstance(val, dict) else {}
             else:

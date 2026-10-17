@@ -15,7 +15,7 @@ public class PlatformDashboardSummary
     public decimal OverdueAmount { get; set; }
     public int PaymentsAwaitingVerificationCount { get; set; }
     public decimal CollectionsThisMonth { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
 }
 
 public class PlatformOrganizationDto

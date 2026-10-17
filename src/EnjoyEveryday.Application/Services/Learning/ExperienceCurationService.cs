@@ -268,7 +268,7 @@ public class ExperienceCurationService
             SourceOrganizationId = source.OrganizationId, // Private provenance retained for Platform Admin
             PricingModel = ExperiencePricingModel.IncludedInSubscription,
             PriceAmount = 0.00m,
-            Currency = "USD",
+            Currency = "INR",
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };

@@ -8,6 +8,11 @@ using EnjoyEveryday.Daycare.Web.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Enforce INR currency and formatting application-wide
+var inrCulture = new System.Globalization.CultureInfo("en-IN");
+System.Globalization.CultureInfo.DefaultThreadCurrentCulture = inrCulture;
+System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = inrCulture;
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents(options => options.DetailedErrors = true)
@@ -81,6 +86,13 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseRequestLocalization(new RequestLocalizationOptions
+{
+    DefaultRequestCulture = new Microsoft.AspNetCore.Localization.RequestCulture(inrCulture),
+    SupportedCultures = new[] { inrCulture },
+    SupportedUICultures = new[] { inrCulture }
+});
 
 app.UseAntiforgery();
 

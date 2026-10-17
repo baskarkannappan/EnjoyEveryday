@@ -15,7 +15,7 @@ public class CreateDraftInvoiceRequest
     public Guid OrganizationId { get; set; }
     public DateTimeOffset IssueDate { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset DueDate { get; set; } = DateTimeOffset.UtcNow.AddDays(14);
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public string? Description { get; set; }
     public string? Notes { get; set; }
     public string? PaymentInstructions { get; set; }

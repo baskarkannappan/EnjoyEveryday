@@ -763,7 +763,7 @@ public class BillingRepository : IBillingRepository
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }
         public decimal AmountPaid { get; set; }
-        public string Currency { get; set; } = "USD";
+        public string Currency { get; set; } = "INR";
         public string Status { get; set; } = "Draft";
         public DateTimeOffset IssueDate { get; set; }
         public DateTimeOffset DueDate { get; set; }

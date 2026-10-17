@@ -36,8 +36,8 @@ public static class StandaloneHtmlGenerator
                 chapters.Add(new ExperienceStorybook.StoryChapter
                 {
                     Number = i + 1,
-                    Title = string.IsNullOrWhiteSpace(p.Name) ? $"Chapter {i + 1}" : p.Name,
-                    PhaseTag = i == 0 ? "The Invitation & Spark" : i == phases.Count - 1 ? "Celebration & Memory" : $"Phase {i + 1}",
+                    Title = string.IsNullOrWhiteSpace(p.Name) ? $"Step {i + 1}" : p.Name,
+                    PhaseTag = i == 0 ? "Step 1: Setup & Invitation" : i == phases.Count - 1 ? $"Step {i + 1}: Reflection & Sharing" : $"Step {i + 1}: Hands-On Action",
                     Duration = p.DurationMinutes > 0 ? $"{p.DurationMinutes} min" : "5 min",
                     Narrative = $"Welcome to our journey with {title}. {p.ChildrenDo}. Every little movement brings a new spark of joyful understanding.",
                     ChildrenAction = string.IsNullOrWhiteSpace(p.ChildrenDo) ? "Children explore with open hands and focused curiosity." : p.ChildrenDo,
@@ -52,10 +52,10 @@ public static class StandaloneHtmlGenerator
             chapters.Add(new ExperienceStorybook.StoryChapter
             {
                 Number = 1,
-                Title = "The Gathering & Curious Invitation",
-                PhaseTag = "Chapter 1: The Spark",
+                Title = "The Gathering & Setup Invitation",
+                PhaseTag = "Step 1: Setup & Invitation",
                 Duration = "5 min",
-                Narrative = $"On a bright morning filled with gentle possibility, our little explorers gather closely. Today's quest is '{title}'. As we open the mystery tray, gentle eyes light up with wonder.",
+                Narrative = $"Prepare the low circle table or exploration rug. Place tactile elements within reach. Children gather closely to inspect the materials with open curiosity.",
                 ChildrenAction = "Children gather around the sensory rug, feeling the smooth textures and whispering guesses about today's mystery.",
                 TeacherSpark = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.TeacherIntroduction) ? dna.ExecutionGuide.TeacherIntroduction : "Present the mystery basket with calm excitement. Ask: 'What curious secrets are hiding inside?'",
                 WonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does this feel like in your hands? Have you ever seen this before?",
@@ -65,10 +65,10 @@ public static class StandaloneHtmlGenerator
             chapters.Add(new ExperienceStorybook.StoryChapter
             {
                 Number = 2,
-                Title = "The Wonder Challenge",
-                PhaseTag = "Chapter 2: The Inquiry",
+                Title = "The Wonder Challenge & Inquiry",
+                PhaseTag = "Step 2: The Inquiry",
                 Duration = "5 min",
-                Narrative = $"Now comes the irresistible challenge: {challenge}. There are no right or wrong answers—only invitations to experiment, hypothesize, and build.",
+                Narrative = $"Pose the gentle challenge: {challenge}. There are no right or wrong answers—only invitations to experiment, hypothesize, and build.",
                 ChildrenAction = "Children examine their tools, turn them over in their fingers, and whisper ideas to their neighbor with joyful energy.",
                 TeacherSpark = "Frame the challenge as an adventure. Encourage each child that every idea is valuable and worth trying.",
                 WonderPrompt = "How do you think we can make this work? What if we try it together?",
@@ -78,10 +78,10 @@ public static class StandaloneHtmlGenerator
             chapters.Add(new ExperienceStorybook.StoryChapter
             {
                 Number = 3,
-                Title = "Hands-On Creation & Play",
-                PhaseTag = "Chapter 3: Deep Flow",
+                Title = "Active Hands-On Play & Construction",
+                PhaseTag = "Step 3: Deep Flow",
                 Duration = "10 min",
-                Narrative = $"The room fills with the happy hum of active creation. {create}. Little hands mold, balance, test, and arrange natural treasures into brand new worlds.",
+                Narrative = $"The room fills with the happy hum of active creation. {create}. Little hands mold, balance, test, and arrange materials into brand new worlds.",
                 ChildrenAction = "Deeply engaged in flow state: sorting colors, building structures, testing balance, and sharing supplies kindly.",
                 TeacherSpark = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Watch) ? dna.ExecutionGuide.Watch : "Observe problem-solving moments. Notice who collaborates and who finds a peaceful solo focus.",
                 WonderPrompt = "Look what happens when these two come together! What story is your creation telling?",
@@ -92,9 +92,9 @@ public static class StandaloneHtmlGenerator
             {
                 Number = 4,
                 Title = "The Magic Moment & Discovery",
-                PhaseTag = "Chapter 4: The Eureka!",
+                PhaseTag = "Step 4: The Discovery",
                 Duration = "5 min",
-                Narrative = $"Suddenly, someone gasps! {magic}. A shared ripple of delight touches every heart in the room. A genuine spark of childhood discovery is born.",
+                Narrative = $"Encourage children to share their breakthrough: {magic}. A shared ripple of delight touches every heart in the room.",
                 ChildrenAction = "Eyes widen with excitement, pointing out their breakthrough to friends with wide, luminous smiles.",
                 TeacherSpark = "Celebrate the discovery immediately! Say: 'You discovered that all on your own! How did that happen?'",
                 WonderPrompt = "Did you see that? What made it happen? Can we do it again?",
@@ -105,7 +105,7 @@ public static class StandaloneHtmlGenerator
             {
                 Number = 5,
                 Title = "Pride, Reflection & Story Sharing",
-                PhaseTag = "Chapter 5: Reflection",
+                PhaseTag = "Step 5: Reflection",
                 Duration = "5 min",
                 Narrative = $"{accomplishment}. Each child holds up their triumph with gentle pride. {reflection}. The memories of today will stay warmly in our hearts.",
                 ChildrenAction = "Children proudly present their work, explain their creative decisions, and help tidy up their sanctuary.",
@@ -133,6 +133,10 @@ public static class StandaloneHtmlGenerator
             "Observation notebook or memory clipboard"
         };
 
+        var versionText = exp.UpdatedAt > DateTimeOffset.MinValue
+            ? $"Updated {exp.UpdatedAt:MMM dd, yyyy}" 
+            : $"Created {exp.CreatedAt:MMM dd, yyyy}";
+
         return GenerateHtml(
             exp.Title ?? "Wonder Experience",
             exp.Description ?? "",
@@ -143,7 +147,8 @@ public static class StandaloneHtmlGenerator
             dna.ExecutionGuide?.Watch ?? "",
             dna.ExecutionGuide?.Ask ?? "",
             dna.ExecutionGuide?.Try ?? "",
-            chapters
+            chapters,
+            versionText
         );
     }
 
@@ -157,7 +162,8 @@ public static class StandaloneHtmlGenerator
         string watchFor,
         string askQuestions,
         string tryThis,
-        List<ExperienceStorybook.StoryChapter> chapters)
+        List<ExperienceStorybook.StoryChapter> chapters,
+        string versionInfo = "")
     {
         var sb = new StringBuilder();
 
@@ -166,7 +172,7 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("<head>");
         sb.AppendLine("  <meta charset=\"UTF-8\">");
         sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"  <title>{HttpUtility.HtmlEncode(title)} — Interactive Storybook</title>");
+        sb.AppendLine($"  <title>{HttpUtility.HtmlEncode(title)} — Activity Playbook DIY Manual</title>");
         sb.AppendLine("  <style>");
         sb.AppendLine(@"
     :root {
@@ -186,7 +192,7 @@ public static class StandaloneHtmlGenerator
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif;
+      font-family: ""Figtree"", -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
@@ -198,13 +204,13 @@ public static class StandaloneHtmlGenerator
       margin: 0 auto;
     }
 
-    /* Top Hero */
+    /* Top Hero Header */
     .hero {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       gap: 24px;
-      margin-bottom: 30px;
+      margin-bottom: 26px;
       flex-wrap: wrap;
     }
 
@@ -214,7 +220,7 @@ public static class StandaloneHtmlGenerator
       gap: 8px;
       font-size: 11px;
       font-weight: 800;
-      letter-spacing: 1px;
+      letter-spacing: 1.2px;
       color: var(--accent-dark);
       text-transform: uppercase;
       margin-bottom: 8px;
@@ -226,7 +232,19 @@ public static class StandaloneHtmlGenerator
       padding: 3px 10px;
       border-radius: 999px;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 750;
+      letter-spacing: normal;
+    }
+
+    .setting-pill {
+      background: var(--warm);
+      color: #634f35;
+    }
+
+    .version-pill {
+      background: #eef2f6;
+      color: #3b4b5e;
+      border: 1px solid #d4dde5;
     }
 
     .hero-title {
@@ -239,8 +257,9 @@ public static class StandaloneHtmlGenerator
 
     .hero-desc {
       color: var(--muted);
-      font-size: 15px;
-      max-width: 780px;
+      font-size: 14px;
+      max-width: 820px;
+      line-height: 1.6;
     }
 
     .hero-actions {
@@ -256,7 +275,7 @@ public static class StandaloneHtmlGenerator
       padding: 10px 18px;
       border-radius: 11px;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 13px;
       cursor: pointer;
       border: 1px solid transparent;
       transition: all 0.2s ease;
@@ -267,6 +286,7 @@ public static class StandaloneHtmlGenerator
       background: var(--accent);
       color: white;
     }
+
     .btn.primary:hover {
       background: var(--accent-dark);
     }
@@ -276,42 +296,47 @@ public static class StandaloneHtmlGenerator
       border-color: var(--border);
       color: var(--text);
     }
+
     .btn.secondary:hover {
       background: var(--surface-soft);
     }
 
-    /* Split Grid */
+    /* Split Layout */
     .split-layout {
       display: grid;
-      grid-template-columns: 380px 1fr;
+      grid-template-columns: 360px 1fr;
       gap: 28px;
+      align-items: flex-start;
     }
 
     @media (max-width: 1024px) {
-      .split-layout {
-        grid-template-columns: 1fr;
-      }
+      .split-layout { grid-template-columns: 1fr; }
     }
 
-    /* Cards */
+    /* Sidebar Cards */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 22px;
-      margin-bottom: 22px;
+      padding: 20px;
     }
 
     .card-title-row {
       display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: center;
       margin-bottom: 14px;
     }
 
     .card-title {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 750;
       color: var(--text);
       display: flex;
@@ -319,7 +344,7 @@ public static class StandaloneHtmlGenerator
       gap: 8px;
     }
 
-    /* Chapter Stepper */
+    /* Step Nav Stepper */
     .stepper {
       display: flex;
       flex-direction: column;
@@ -332,16 +357,17 @@ public static class StandaloneHtmlGenerator
       gap: 12px;
       padding: 12px 14px;
       border-radius: 12px;
-      background: var(--surface-soft);
       border: 1px solid transparent;
+      background: var(--surface-soft);
       cursor: pointer;
       text-align: left;
       width: 100%;
-      transition: all 0.2s ease;
+      transition: all 0.2s;
     }
 
     .step-btn:hover {
-      background: #edf3ee;
+      border-color: var(--border);
+      background: #f0f4f1;
     }
 
     .step-btn.active {
@@ -355,13 +381,13 @@ public static class StandaloneHtmlGenerator
       border-radius: 50%;
       background: white;
       color: var(--accent-dark);
+      font-size: 13px;
       font-weight: 800;
-      font-size: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid var(--border);
       flex-shrink: 0;
+      border: 1px solid var(--border);
     }
 
     .step-btn.active .step-num {
@@ -372,7 +398,7 @@ public static class StandaloneHtmlGenerator
 
     .step-text h4 {
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 750;
       color: var(--text);
       margin-bottom: 2px;
     }
@@ -382,105 +408,55 @@ public static class StandaloneHtmlGenerator
       color: var(--muted);
     }
 
-    /* Audio Controller */
-    .narrator-box {
-      background: linear-gradient(135deg, #f7faf8, var(--accent-light));
-      border: 1px solid #d4e2d8;
-    }
-
-    .narrator-inner {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .play-circle {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: var(--accent);
-      color: white;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 18px;
-      flex-shrink: 0;
-      transition: transform 0.2s;
-    }
-
-    .play-circle:hover {
-      background: var(--accent-dark);
-      transform: scale(1.05);
-    }
-
-    .speed-btns {
-      margin-left: auto;
-      display: flex;
-      gap: 4px;
-    }
-
-    .speed-btn {
-      padding: 4px 8px;
-      font-size: 11px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: white;
-      cursor: pointer;
-      font-weight: 600;
-    }
-
-    .speed-btn.active {
-      background: var(--accent-dark);
-      color: white;
-      border-color: var(--accent-dark);
-    }
-
     /* Materials Checklist */
     .mat-item {
       display: flex;
       align-items: center;
       gap: 10px;
+      padding: 7px 0;
       font-size: 13px;
-      color: var(--text);
-      padding: 6px 0;
-      border-bottom: 1px dashed var(--border);
+      color: #3b4640;
+      border-bottom: 1px solid #f2f5f1;
+      cursor: pointer;
     }
+
     .mat-item:last-child { border-bottom: none; }
-    .mat-item input { accent-color: var(--accent); cursor: pointer; width: 16px; height: 16px; }
+    .mat-item input { accent-color: var(--accent); width: 16px; height: 16px; }
 
-    /* Teacher cues */
-    .cue-pill {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      padding: 2px 8px;
-      border-radius: 6px;
-      margin-bottom: 4px;
-    }
-    .cue-watch { background: #eef2ff; color: #3730a3; }
-    .cue-ask { background: #fef3c7; color: #92400e; }
-    .cue-try { background: #ecfdf5; color: #065f46; }
-
+    /* Teacher observation cues */
     .cue-item {
       margin-bottom: 14px;
     }
-    .cue-item p {
-      font-size: 13px;
-      color: #3b4740;
+
+    .cue-item:last-child { margin-bottom: 0; }
+
+    .cue-pill {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 4px;
     }
 
-    /* Theatre Stage */
+    .cue-watch { background: #eaf3ed; color: #2d5a3f; }
+    .cue-ask { background: #fef7ea; color: #855e1b; }
+    .cue-try { background: #fbeee8; color: #8f402c; }
+
+    .cue-item p {
+      font-size: 12.5px;
+      color: #435149;
+      line-height: 1.45;
+    }
+
+    /* DIY Manual Step Card */
     .stage {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 32px;
-      position: sticky;
-      top: 24px;
+      padding: 24px;
     }
 
     .stage-top {
@@ -488,31 +464,14 @@ public static class StandaloneHtmlGenerator
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
-    }
-
-    .stage-svg-box {
-      width: 100%;
-      height: 280px;
-      background: linear-gradient(180deg, #fbfdfb, var(--surface-soft));
-      border-radius: 14px;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 24px;
-      border: 1px solid #edf1eb;
-    }
-
-    .stage-svg-box svg {
-      width: 100%;
-      height: 100%;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
     }
 
     .scene-meta-row {
       display: flex;
-      gap: 10px;
       align-items: center;
-      margin-bottom: 8px;
+      gap: 12px;
     }
 
     .scene-tag {
@@ -520,118 +479,184 @@ public static class StandaloneHtmlGenerator
       font-weight: 800;
       color: var(--accent-dark);
       background: var(--accent-light);
-      padding: 3px 10px;
+      padding: 4px 12px;
       border-radius: 6px;
       text-transform: uppercase;
-    }
-
-    .scene-heading {
-      font-size: 26px;
-      font-weight: 800;
-      letter-spacing: -0.4px;
-      color: var(--text);
-      margin-bottom: 16px;
-    }
-
-    .narration-quote {
-      font-size: 18px;
-      line-height: 1.6;
-      color: #26332d;
-      background: #fafbf9;
-      border-left: 4px solid var(--accent);
-      padding: 18px 22px;
-      border-radius: 0 12px 12px 0;
-      font-style: italic;
-      margin-bottom: 24px;
-    }
-
-    /* Perspectives */
-    .perspectives {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-      margin-bottom: 24px;
-    }
-
-    @media (max-width: 768px) {
-      .perspectives { grid-template-columns: 1fr; }
-    }
-
-    .perspective-card {
-      padding: 16px;
-      border-radius: 12px;
-      background: var(--surface-soft);
-      border: 1px solid var(--border);
-    }
-
-    .persp-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 750;
-      font-size: 13px;
-      margin-bottom: 6px;
-    }
-
-    .child-card .persp-header { color: #3e6253; }
-    .teacher-card .persp-header { color: #855e39; }
-
-    .perspective-card p {
-      font-size: 13px;
-      color: #4b5850;
-    }
-
-    .wonder-box {
-      background: #fffbeb;
-      border: 1px solid #fef3c7;
-      padding: 14px 18px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 26px;
-    }
-
-    .wonder-box strong {
-      color: #92400e;
-      font-size: 13px;
-    }
-
-    .stage-bottom {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 18px;
-      border-top: 1px solid var(--border);
-      gap: 12px;
     }
 
     .dots-nav {
       display: flex;
       gap: 6px;
-      align-items: center;
     }
 
     .dot {
-      width: 10px;
-      height: 10px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
-      background: #cfd8d2;
+      background: #d8ded9;
       cursor: pointer;
       transition: all 0.2s;
     }
 
     .dot.active {
       background: var(--accent);
-      width: 24px;
-      border-radius: 999px;
+      transform: scale(1.3);
     }
 
+    /* DIY Layout: Diagram on Left, Step Instructions on Right */
+    .diy-step-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .diy-step-grid { grid-template-columns: 1fr; }
+    }
+
+    .diy-diagram-box {
+      background: #fafaf8;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diagram-header {
+      padding: 10px 14px;
+      background: #f1f4f0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 750;
+      color: var(--accent-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .diagram-canvas {
+      width: 100%;
+      height: 280px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .diagram-canvas svg {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .diy-info-box {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .scene-heading {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .instruction-callout {
+      background: var(--surface-soft);
+      border-left: 4px solid var(--accent);
+      padding: 14px 16px;
+      border-radius: 0 10px 10px 0;
+      margin-bottom: 16px;
+    }
+
+    .instruction-callout h5 {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--accent-dark);
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .instruction-callout p {
+      font-size: 13.5px;
+      color: #313f38;
+      line-height: 1.5;
+    }
+
+    /* Actions Grid */
+    .actions-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .action-card {
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #fafaf8;
+      border: 1px solid var(--border);
+    }
+
+    .action-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 750;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .child-action .action-header { color: #2e6047; }
+    .teacher-action .action-header { color: #855e39; }
+
+    .action-card p {
+      font-size: 12.5px;
+      color: #4b5850;
+      line-height: 1.45;
+    }
+
+    .wonder-box {
+      background: #fffbeb;
+      border: 1px solid #fef3c7;
+      padding: 12px 16px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .wonder-box strong {
+      color: #92400e;
+      font-size: 12.5px;
+    }
+
+    .wonder-box span {
+      font-size: 12.5px;
+      color: #78350f;
+    }
+
+    /* Bottom Navigation */
+    .stage-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Print View */
     @media print {
       body { background: white; padding: 0; }
-      .hero-actions, .narrator-box, .stage-bottom, .speed-btns { display: none !important; }
+      .hero-actions, .stage-bottom, .dots-nav { display: none !important; }
       .split-layout { display: block; }
-      .stage { page-break-after: always; box-shadow: none; border: 1px solid #ccc; }
+      .stage { page-break-after: always; box-shadow: none; border: 1px solid #ccc; margin-bottom: 30px; }
     }
   </style>");
         sb.AppendLine("</head>");
@@ -643,19 +668,20 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("    <header class=\"hero\">");
         sb.AppendLine("      <div>");
         sb.AppendLine("        <div class=\"hero-eyebrow\">");
-        sb.AppendLine("          <span>✨</span>");
-        sb.AppendLine("          <span>ENJOYEVERYDAY STORYBOOK SHOWCASE</span>");
+        sb.AppendLine("          <span>📐</span>");
+        sb.AppendLine("          <span>ACTIVITY PLAYBOOK — DIY EDUCATOR MANUAL</span>");
         sb.AppendLine($"          <span class=\"badge-pill\">Ages {HttpUtility.HtmlEncode(ageRange)}</span>");
-        sb.AppendLine($"          <span class=\"badge-pill\">{HttpUtility.HtmlEncode(setting)}</span>");
+        sb.AppendLine($"          <span class=\"badge-pill setting-pill\">{HttpUtility.HtmlEncode(setting)}</span>");
+        if (!string.IsNullOrWhiteSpace(versionInfo))
+        {
+            sb.AppendLine($"          <span class=\"badge-pill version-pill\">{HttpUtility.HtmlEncode(versionInfo)}</span>");
+        }
         sb.AppendLine("        </div>");
         sb.AppendLine($"        <h1 class=\"hero-title\">{HttpUtility.HtmlEncode(title)}</h1>");
         sb.AppendLine($"        <p class=\"hero-desc\">{HttpUtility.HtmlEncode(description)}</p>");
         sb.AppendLine("      </div>");
         sb.AppendLine("      <div class=\"hero-actions\">");
-        sb.AppendLine("        <button class=\"btn primary\" id=\"listenTopBtn\" onclick=\"toggleNarration()\">");
-        sb.AppendLine("          <span id=\"playIconTop\">▶</span> <span id=\"playTextTop\">Listen to Story</span>");
-        sb.AppendLine("        </button>");
-        sb.AppendLine("        <button class=\"btn secondary\" onclick=\"window.print()\">🖨️ Print Storybook</button>");
+        sb.AppendLine("        <button class=\"btn secondary\" onclick=\"window.print()\">🖨️ Print DIY Manual</button>");
         sb.AppendLine("      </div>");
         sb.AppendLine("    </header>");
 
@@ -665,30 +691,10 @@ public static class StandaloneHtmlGenerator
         // Sidebar
         sb.AppendLine("      <aside class=\"sidebar\">");
 
-        // Audio Narrator Deck
-        sb.AppendLine("        <div class=\"card narrator-box\">");
-        sb.AppendLine("          <div class=\"narrator-inner\">");
-        sb.AppendLine("            <button class=\"play-circle\" id=\"playMainBtn\" onclick=\"toggleNarration()\">▶</button>");
-        sb.AppendLine("            <div>");
-        sb.AppendLine("              <div style=\"font-size: 13px; font-weight: 750; color: var(--text);\">Story Narration Voice</div>");
-        sb.AppendLine("              <div id=\"narratorStatus\" style=\"font-size: 11px; color: var(--muted);\">Ready to play</div>");
-        sb.AppendLine("            </div>");
-        sb.AppendLine("            <div class=\"speed-btns\">");
-        sb.AppendLine("              <button class=\"speed-btn\" onclick=\"setRate(0.85, this)\">0.8x</button>");
-        sb.AppendLine("              <button class=\"speed-btn active\" onclick=\"setRate(1.0, this)\">1.0x</button>");
-        sb.AppendLine("              <button class=\"speed-btn\" onclick=\"setRate(1.15, this)\">1.2x</button>");
-        sb.AppendLine("            </div>");
-        sb.AppendLine("          </div>");
-        sb.AppendLine("          <label style=\"display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 10px; cursor: pointer;\">");
-        sb.AppendLine("            <input type=\"checkbox\" id=\"autoAdvanceCheck\" checked style=\"accent-color: var(--accent);\" />");
-        sb.AppendLine("            <span>Auto-advance slides on narration finish</span>");
-        sb.AppendLine("          </label>");
-        sb.AppendLine("        </div>");
-
-        // Stepper
+        // Step Navigation Stepper
         sb.AppendLine("        <div class=\"card\">");
         sb.AppendLine("          <div class=\"card-title-row\">");
-        sb.AppendLine("            <div class=\"card-title\"><span>📑</span> Story Chapters</div>");
+        sb.AppendLine("            <div class=\"card-title\"><span>📋</span> Manual Steps</div>");
         sb.AppendLine($"            <span style=\"font-size: 12px; font-weight: 700; color: var(--accent-dark);\">~{durationMinutes} min</span>");
         sb.AppendLine("          </div>");
         sb.AppendLine("          <div class=\"stepper\" id=\"stepperContainer\">");
@@ -712,7 +718,7 @@ public static class StandaloneHtmlGenerator
         // Materials Checklist
         sb.AppendLine("        <div class=\"card\">");
         sb.AppendLine("          <div class=\"card-title-row\">");
-        sb.AppendLine("            <div class=\"card-title\"><span>🌿</span> Sensory & Material Kit</div>");
+        sb.AppendLine("            <div class=\"card-title\"><span>🌿</span> Materials & Setup Kit</div>");
         sb.AppendLine($"            <span style=\"font-size: 11px; color: var(--muted);\">{materials.Count} items</span>");
         sb.AppendLine("          </div>");
         sb.AppendLine("          <div>");
@@ -756,12 +762,12 @@ public static class StandaloneHtmlGenerator
 
         sb.AppendLine("      </aside>");
 
-        // Stage Main
+        // Stage Main (DIY User Manual Step with Diagram on Left, Step Instructions on Right)
         sb.AppendLine("      <main>");
         sb.AppendLine("        <div class=\"stage\" id=\"stageElement\">");
         sb.AppendLine("          <div class=\"stage-top\">");
         sb.AppendLine("            <div class=\"scene-meta-row\">");
-        sb.AppendLine("              <span class=\"scene-tag\" id=\"chapterPill\">Chapter 1 of " + chapters.Count + "</span>");
+        sb.AppendLine("              <span class=\"scene-tag\" id=\"chapterPill\">Step 1 of " + chapters.Count + "</span>");
         sb.AppendLine("              <span style=\"font-size: 12px; color: var(--muted);\" id=\"chapterDuration\">⏱️ 5 min</span>");
         sb.AppendLine("            </div>");
         sb.AppendLine("            <div class=\"dots-nav\" id=\"dotsContainer\">");
@@ -773,43 +779,58 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("            </div>");
         sb.AppendLine("          </div>");
 
-        // Illustrated Scene Artwork Box
-        sb.AppendLine("          <div class=\"stage-svg-box\" id=\"svgBackdrop\">");
+        // Side-by-side DIY Step Grid
+        sb.AppendLine("          <div class=\"diy-step-grid\">");
+        
+        // Diagram on Left
+        sb.AppendLine("            <div class=\"diy-diagram-box\">");
+        sb.AppendLine("              <div class=\"diagram-header\">");
+        sb.AppendLine("                <span>🎨 Instructional Diagram</span>");
+        sb.AppendLine("                <span id=\"diagramStepNum\">STEP 1</span>");
+        sb.AppendLine("              </div>");
+        sb.AppendLine("              <div class=\"diagram-canvas\" id=\"svgBackdrop\">");
         if (chapters.Count > 0)
         {
             sb.AppendLine(GetSvgForKey(chapters[0].SvgSceneKey));
         }
-        sb.AppendLine("          </div>");
-
-        // Narrative Section
-        sb.AppendLine("          <h2 class=\"scene-heading\" id=\"chapterTitle\">" + HttpUtility.HtmlEncode(chapters[0].Title) + "</h2>");
-        sb.AppendLine("          <div class=\"narration-quote\" id=\"chapterNarrative\">“" + HttpUtility.HtmlEncode(chapters[0].Narrative) + "”</div>");
-
-        // Perspectives
-        sb.AppendLine("          <div class=\"perspectives\">");
-        sb.AppendLine("            <div class=\"perspective-card child-card\">");
-        sb.AppendLine("              <div class=\"persp-header\"><span>👧👦</span> The Little Explorers</div>");
-        sb.AppendLine("              <p id=\"childAction\">" + HttpUtility.HtmlEncode(chapters[0].ChildrenAction) + "</p>");
+        sb.AppendLine("              </div>");
         sb.AppendLine("            </div>");
-        sb.AppendLine("            <div class=\"perspective-card teacher-card\">");
-        sb.AppendLine("              <div class=\"persp-header\"><span>🌱</span> Teacher's Spark</div>");
-        sb.AppendLine("              <p id=\"teacherSpark\">" + HttpUtility.HtmlEncode(chapters[0].TeacherSpark) + "</p>");
-        sb.AppendLine("            </div>");
-        sb.AppendLine("          </div>");
 
-        // Wonder Box
-        sb.AppendLine("          <div class=\"wonder-box\">");
-        sb.AppendLine("            <span style=\"font-size: 20px;\">💡</span>");
-        sb.AppendLine("            <div>");
-        sb.AppendLine("              <strong>Spark of Wonder: </strong>");
-        sb.AppendLine("              <span id=\"wonderPrompt\">" + HttpUtility.HtmlEncode(chapters[0].WonderPrompt) + "</span>");
-        sb.AppendLine("            </div>");
-        sb.AppendLine("          </div>");
+        // Instructions on Right
+        sb.AppendLine("            <div class=\"diy-info-box\">");
+        sb.AppendLine("              <div>");
+        sb.AppendLine("                <h2 class=\"scene-heading\" id=\"chapterTitle\">" + HttpUtility.HtmlEncode(chapters[0].Title) + "</h2>");
+        sb.AppendLine("                <div class=\"instruction-callout\">");
+        sb.AppendLine("                  <h5>Educator Activity Guide</h5>");
+        sb.AppendLine("                  <p id=\"chapterNarrative\">" + HttpUtility.HtmlEncode(chapters[0].Narrative) + "</p>");
+        sb.AppendLine("                </div>");
+        sb.AppendLine("                <div class=\"actions-grid\">");
+        sb.AppendLine("                  <div class=\"action-card child-action\">");
+        sb.AppendLine("                    <div class=\"action-header\">👧👦 Children Action</div>");
+        sb.AppendLine("                    <p id=\"childAction\">" + HttpUtility.HtmlEncode(chapters[0].ChildrenAction) + "</p>");
+        sb.AppendLine("                  </div>");
+        sb.AppendLine("                  <div class=\"action-card teacher-action\">");
+        sb.AppendLine("                    <div class=\"action-header\">🌱 Teacher Guidance</div>");
+        sb.AppendLine("                    <p id=\"teacherSpark\">" + HttpUtility.HtmlEncode(chapters[0].TeacherSpark) + "</p>");
+        sb.AppendLine("                  </div>");
+        sb.AppendLine("                </div>");
+        sb.AppendLine("              </div>");
+
+        sb.AppendLine("              <div class=\"wonder-box\">");
+        sb.AppendLine("                <span style=\"font-size: 18px;\">💡</span>");
+        sb.AppendLine("                <div>");
+        sb.AppendLine("                  <strong>Wonder Prompt: </strong>");
+        sb.AppendLine("                  <span id=\"wonderPrompt\">" + HttpUtility.HtmlEncode(chapters[0].WonderPrompt) + "</span>");
+        sb.AppendLine("                </div>");
+        sb.AppendLine("              </div>");
+
+        sb.AppendLine("            </div>"); // end diy-info-box
+        sb.AppendLine("          </div>"); // end diy-step-grid
 
         // Stage Bottom Nav
         sb.AppendLine("          <div class=\"stage-bottom\">");
-        sb.AppendLine("            <button class=\"btn secondary\" id=\"prevBtn\" onclick=\"prevChapter()\" disabled>← Previous Chapter</button>");
-        sb.AppendLine("            <button class=\"btn primary\" id=\"nextBtn\" onclick=\"nextChapter()\">Next Chapter →</button>");
+        sb.AppendLine("            <button class=\"btn secondary\" id=\"prevBtn\" onclick=\"prevChapter()\" disabled>← Previous Step</button>");
+        sb.AppendLine("            <button class=\"btn primary\" id=\"nextBtn\" onclick=\"nextChapter()\">Next Step →</button>");
         sb.AppendLine("          </div>");
 
         sb.AppendLine("        </div>");
@@ -818,7 +839,7 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("    </div>"); // end split-layout
         sb.AppendLine("  </div>"); // end container
 
-        // Embed Chapters JSON & Interactive JS
+        // Embed Chapters JSON & Interactive JS (without audio)
         sb.AppendLine("  <script>");
         sb.AppendLine("    const chapters = [");
         for (int i = 0; i < chapters.Count; i++)
@@ -848,16 +869,11 @@ public static class StandaloneHtmlGenerator
 
         sb.AppendLine(@"
     let currentIndex = 0;
-    let isSpeaking = false;
-    let speechRate = 1.0;
 
     function goToChapter(index) {
       if (index < 0 || index >= chapters.length) return;
       currentIndex = index;
       renderCurrentChapter();
-      if (isSpeaking) {
-        speakCurrent();
-      }
     }
 
     function nextChapter() {
@@ -874,15 +890,16 @@ public static class StandaloneHtmlGenerator
 
     function renderCurrentChapter() {
       const ch = chapters[currentIndex];
-      document.getElementById('chapterPill').innerText = `Chapter ${currentIndex + 1} of ${chapters.length} • ${ch.phaseTag}`;
+      document.getElementById('chapterPill').innerText = `Step ${currentIndex + 1} of ${chapters.length} • ${ch.phaseTag}`;
       document.getElementById('chapterDuration').innerText = `⏱️ ${ch.duration}`;
+      document.getElementById('diagramStepNum').innerText = `STEP ${currentIndex + 1}`;
       document.getElementById('chapterTitle').innerText = ch.title;
-      document.getElementById('chapterNarrative').innerText = `“${ch.narrative}”`;
+      document.getElementById('chapterNarrative').innerText = ch.narrative;
       document.getElementById('childAction').innerText = ch.childAction;
       document.getElementById('teacherSpark').innerText = ch.teacherSpark;
       document.getElementById('wonderPrompt').innerText = ch.wonderPrompt;
 
-      // Update Artwork
+      // Update Artwork Diagram
       const svgContainer = document.getElementById('svgBackdrop');
       if (svgMap[ch.svgKey]) {
         svgContainer.innerHTML = svgMap[ch.svgKey];
@@ -900,7 +917,7 @@ public static class StandaloneHtmlGenerator
       document.getElementById('prevBtn').disabled = currentIndex === 0;
       const nextBtn = document.getElementById('nextBtn');
       if (currentIndex === chapters.length - 1) {
-        nextBtn.innerText = '✨ Replay Story';
+        nextBtn.innerText = '↺ Replay from Step 1';
         nextBtn.onclick = () => goToChapter(0);
       } else {
         nextBtn.innerText = `Next: ${chapters[currentIndex + 1].title} →`;
@@ -908,90 +925,16 @@ public static class StandaloneHtmlGenerator
       }
     }
 
-    // Audio narration via Web Speech API
-    function toggleNarration() {
-      if (isSpeaking) {
-        stopNarration();
-      } else {
-        isSpeaking = true;
-        speakCurrent();
-      }
-    }
-
-    function speakCurrent() {
-      if (!('speechSynthesis' in window)) {
-        alert('Speech narration is not supported in this browser.');
-        return;
-      }
-      window.speechSynthesis.cancel();
-      const ch = chapters[currentIndex];
-      const text = `${ch.title}. ${ch.narrative}. For the children: ${ch.childAction}. Teacher guidance: ${ch.teacherSpark}. Spark of wonder: ${ch.wonderPrompt}`;
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = speechRate;
-      utterance.pitch = 1.05;
-
-      const voices = window.speechSynthesis.getVoices();
-      const warmVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google') || v.name.includes('Karen')));
-      if (warmVoice) utterance.voice = warmVoice;
-
-      utterance.onend = () => {
-        const autoAdvance = document.getElementById('autoAdvanceCheck').checked;
-        if (autoAdvance && currentIndex < chapters.length - 1) {
-          setTimeout(() => {
-            goToChapter(currentIndex + 1);
-          }, 1200);
-        } else {
-          stopNarration();
-        }
-      };
-
-      utterance.onerror = () => {
-        stopNarration();
-      };
-
-      window.speechSynthesis.speak(utterance);
-      updateAudioUi(true);
-    }
-
-    function stopNarration() {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-      isSpeaking = false;
-      updateAudioUi(false);
-    }
-
-    function updateAudioUi(speaking) {
-      document.getElementById('playMainBtn').innerText = speaking ? '⏸' : '▶';
-      document.getElementById('playIconTop').innerText = speaking ? '⏸' : '▶';
-      document.getElementById('playTextTop').innerText = speaking ? 'Pause Narration' : 'Listen to Story';
-      document.getElementById('narratorStatus').innerText = speaking ? 'Narrating Chapter ' + (currentIndex + 1) + '...' : 'Ready to play';
-    }
-
-    function setRate(rate, btn) {
-      speechRate = rate;
-      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      if (isSpeaking) {
-        speakCurrent();
-      }
-    }
-
     // Keyboard navigation
     window.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight') nextChapter();
       if (e.key === 'ArrowLeft') prevChapter();
-      if (e.key === ' ') {
-        e.preventDefault();
-        toggleNarration();
-      }
     });
 
     renderCurrentChapter();
-  </script>");
-
-        sb.AppendLine("</body>");
-        sb.AppendLine("</html>");
+  </script>
+</body>
+</html>");
 
         return sb.ToString();
     }
@@ -1015,7 +958,7 @@ public static class StandaloneHtmlGenerator
   <rect width=""800"" height=""320"" fill=""url(#skyWarm)""/>
   <circle cx=""400"" cy=""70"" r=""180"" fill=""url(#sunRays)""/>
   
-  <!-- Arched Daycare Window -->
+  <!-- Arched Window -->
   <path d=""M 320 220 L 320 110 C 320 65, 480 65, 480 110 L 480 220 Z"" fill=""#ffffff"" stroke=""#d9e2db"" stroke-width=""5""/>
   <line x1=""400"" y1=""70"" x2=""400"" y2=""220"" stroke=""#d9e2db"" stroke-width=""3""/>
   <line x1=""320"" y1=""140"" x2=""480"" y2=""140"" stroke=""#d9e2db"" stroke-width=""3""/>
@@ -1093,11 +1036,9 @@ public static class StandaloneHtmlGenerator
   <path d=""M 275 155 Q 290 145 305 155"" stroke=""white"" stroke-width=""3"" stroke-linecap=""round"" fill=""none""/>
 
   <!-- Nature Samples on Table -->
-  <!-- Pinecone -->
   <path d=""M 495 185 C 485 175, 485 160, 495 150 C 505 160, 505 175, 495 185 Z"" fill=""#855e39""/>
   <ellipse cx=""495"" cy=""160"" rx=""8"" ry=""4"" fill=""#6b4928""/>
   <ellipse cx=""495"" cy=""170"" rx=""9"" ry=""4"" fill=""#6b4928""/>
-  <!-- Smooth river stone -->
   <ellipse cx=""525"" cy=""192"" rx=""18"" ry=""9"" fill=""#9ba8a0""/>
 
   <!-- Floating Question / Curiosity Sparkles -->
@@ -1205,16 +1146,13 @@ public static class StandaloneHtmlGenerator
   <rect x=""180"" y=""190"" width=""440"" height=""14"" rx=""4"" fill=""#ab9c76""/>
   
   <!-- Masterpiece Sculptures Displayed on Shelf -->
-  <!-- Child sculpture 1 -->
   <rect x=""230"" y=""150"" width=""35"" height=""40"" rx=""6"" fill=""#557c6c""/>
   <circle cx=""247"" cy=""140"" r=""12"" fill=""#e9b65e""/>
   
-  <!-- Child sculpture 2 (Centerpiece with Heart medal) -->
   <polygon points=""400,125 425,188 375,188"" fill=""#d9826c""/>
   <circle cx=""400"" cy=""155"" r=""14"" fill=""#ffffff""/>
   <path d=""M 395 153 C 395 149 400 148 400 152 C 400 148 405 149 405 153 C 405 158 400 161 400 161 C 400 161 395 158 395 153 Z"" fill=""#d9826c""/>
 
-  <!-- Child sculpture 3 -->
   <rect x=""530"" y=""155"" width=""45"" height=""35"" rx=""6"" fill=""#3e6253""/>
   <ellipse cx=""552"" cy=""145"" rx=""16"" ry=""8"" fill=""#f4d89a""/>
 

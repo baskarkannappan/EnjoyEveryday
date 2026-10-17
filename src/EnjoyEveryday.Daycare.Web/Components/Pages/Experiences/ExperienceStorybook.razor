@@ -12,14 +12,14 @@
 @inject IJSRuntime JS
 @inject EnjoyEveryday.Daycare.Web.Services.StorybookStorageService StorybookStorageService
 
-<PageTitle>@(string.IsNullOrEmpty(_experience?.Title) ? "Interactive Storybook" : $"{_experience.Title} — Storybook") — EnjoyEveryday</PageTitle>
+<PageTitle>@(string.IsNullOrEmpty(_experience?.Title) ? "Activity Playbook" : $"{_experience.Title} — Playbook") — EnjoyEveryday</PageTitle>
 
 <div class="content storybook-page">
     @if (_isLoading)
     {
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Gathering story elements and weaving the interactive experience...</p>
+            <p>Loading activity manual and instructional blueprints...</p>
         </div>
     }
     else if (_experience == null)
@@ -43,20 +43,24 @@
                     <span>Back to Experiences</span>
                 </a>
                 <div class="hero-eyebrow">
-                    <span class="sparkle-icon">✨</span>
-                    <span>INTERACTIVE STORYBOOK SHOWCASE</span>
+                    <span class="sparkle-icon">📐</span>
+                    <span>ACTIVITY PLAYBOOK — DIY EDUCATOR MANUAL</span>
                     <span class="badge-pill">Ages @GetAgeRange()</span>
                     <span class="badge-pill setting-pill">@GetSetting()</span>
+                    @if (!string.IsNullOrWhiteSpace(GetVersionBadge()))
+                    {
+                        <span class="badge-pill version-pill">@GetVersionBadge()</span>
+                    }
                 </div>
                 <h1 class="hero-title">@_experience.Title</h1>
                 <p class="hero-subtitle">
-                    @(!string.IsNullOrWhiteSpace(_experience.Description) ? _experience.Description : "An interactive guided storytelling journey designed to spark childhood wonder and exploration.")
+                    @(!string.IsNullOrWhiteSpace(_experience.Description) ? _experience.Description : "A step-by-step DIY manual with clear visual blueprints designed for daycare educators.")
                 </p>
             </div>
             <div class="hero-actions">
                 @if (IsPublished)
                 {
-                    <a href="/api/experiences/@ExperienceId/storybook" target="_blank" class="btn secondary" title="Open standalone storybook in a separate browser tab">
+                    <a href="/api/experiences/@ExperienceId/storybook" target="_blank" class="btn secondary" title="Open standalone manual in a separate browser tab">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                             <polyline points="15 3 21 3 21 9"></polyline>
@@ -64,95 +68,44 @@
                         </svg>
                         <span>Open in New Tab</span>
                     </a>
-                    <button class="btn secondary export-btn" @onclick="ExportStandaloneHtml" title="Export stored HTML file you can open offline or share with parents">
+                    <button class="btn secondary export-btn" @onclick="ExportStandaloneHtml" title="Export stored HTML file you can open offline or share with staff">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        <span>Download Standalone HTML</span>
+                        <span>Download Manual HTML</span>
                     </button>
                 }
                 else
                 {
-                    <button class="btn secondary disabled" disabled title="Storybook can only be downloaded after the experience is published in Experience Studio.">
-                        <span>🔒 Publish to Unlock Export</span>
+                    <button class="btn secondary disabled" disabled title="Manual can only be exported after the experience is published in Experience Studio.">
+                        <span>🔒 Publish in Studio to Export</span>
                     </button>
                 }
-                <button class="btn primary present-btn" @onclick="ToggleAudioNarration">
-                    @if (_isSpeaking)
-                    {
-                        <span class="audio-wave">
-                            <span></span><span></span><span></span>
-                        </span>
-                        <span>Pause Narration</span>
-                    }
-                    else
-                    {
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                        </svg>
-                        <span>Listen to Story</span>
-                    }
+                <button class="btn primary print-manual-btn" @onclick="PrintManual">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                        <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                    <span>Print Manual</span>
                 </button>
             </div>
         </div>
 
         <!-- Split View Layout -->
         <div class="storybook-split-container">
-            <!-- Left Column: Director's Blueprint & Teacher Guidance -->
+            <!-- Left Column: Step Stepper & Setup Blueprint -->
             <aside class="storybook-sidebar">
-                <!-- Audio Narrator Deck -->
-                <div class="deck-card narrator-deck">
-                    <div class="deck-header">
-                        <div class="deck-title">
-                            <span class="deck-icon">🎙️</span>
-                            <h3>Storyteller Audio</h3>
-                        </div>
-                        <span class="live-status @(_isSpeaking ? "active" : "")">
-                            @(_isSpeaking ? "Narrating..." : "Ready")
-                        </span>
-                    </div>
-                    <div class="narrator-controls">
-                        <button class="narrator-play-btn @(_isSpeaking ? "speaking" : "")" @onclick="ToggleAudioNarration">
-                            @if (_isSpeaking)
-                            {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <rect x="6" y="4" width="4" height="16"></rect>
-                                    <rect x="14" y="4" width="4" height="16"></rect>
-                                </svg>
-                            }
-                            else
-                            {
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                                </svg>
-                            }
-                        </button>
-                        <div class="narrator-info">
-                            <div class="narrator-title">Chapter @_currentChapterIndex of @_chapters.Count</div>
-                            <div class="narrator-current">@GetCurrentChapter().Title</div>
-                        </div>
-                        <div class="speed-toggle">
-                            <button class="speed-pill @(_speechRate == 0.85 ? "active" : "")" @onclick="() => SetSpeechRate(0.85)">0.8x</button>
-                            <button class="speed-pill @(_speechRate == 1.0 ? "active" : "")" @onclick="() => SetSpeechRate(1.0)">1.0x</button>
-                            <button class="speed-pill @(_speechRate == 1.15 ? "active" : "")" @onclick="() => SetSpeechRate(1.15)">1.2x</button>
-                        </div>
-                    </div>
-                    <label class="auto-advance-toggle">
-                        <input type="checkbox" @bind="_autoAdvanceSlides" />
-                        <span>Auto-advance to next chapter after narration finishes</span>
-                    </label>
-                </div>
-
-                <!-- Chapter Quick Nav -->
+                <!-- Step Quick Nav -->
                 <div class="deck-card chapters-deck">
                     <div class="deck-header">
                         <div class="deck-title">
-                            <span class="deck-icon">📑</span>
-                            <h3>Story Chapters</h3>
+                            <span class="deck-icon">📋</span>
+                            <h3>Manual Steps</h3>
                         </div>
-                        <span class="duration-badge">~@GetTotalDuration() min</span>
+                        <span class="duration-badge">~@GetTotalDuration() min total</span>
                     </div>
                     <div class="chapter-stepper">
                         @for (int i = 0; i < _chapters.Count; i++)
@@ -184,12 +137,12 @@
                     </div>
                 </div>
 
-                <!-- Materials & Sensory Kit -->
+                <!-- Materials & Setup Kit -->
                 <div class="deck-card materials-deck">
                     <div class="deck-header">
                         <div class="deck-title">
                             <span class="deck-icon">🌿</span>
-                            <h3>Sensory & Material Kit</h3>
+                            <h3>Materials & Setup Kit</h3>
                         </div>
                         <span class="item-count">@GetMaterialsList().Count items</span>
                     </div>
@@ -204,7 +157,7 @@
                     </div>
                 </div>
 
-                <!-- Teacher's Pedagogical Cues -->
+                <!-- Teacher's Pedagogical Lens -->
                 <div class="deck-card cues-deck">
                     <div class="deck-header">
                         <div class="deck-title">
@@ -231,11 +184,11 @@
                     <div class="export-banner">
                         <div class="export-icon">@(IsPublished ? "📦" : "🔒")</div>
                         <div>
-                            <h4>@(IsPublished ? "Stored Storybook Showcase" : "Stored When Published")</h4>
+                            <h4>@(IsPublished ? "Stored Playbook Manual" : "Stored When Published")</h4>
                             <p>
                                 @(IsPublished 
-                                    ? "This storybook is stored on disk and ready to display in a separate tab or download for offline circle time." 
-                                    : "This experience is currently an idea or draft. Publishing in Experience Studio stores the storybook and unlocks offline downloads and tab viewing.")
+                                    ? "This manual is synchronized with the latest published version and ready for offline circle time." 
+                                    : "Publishing in Experience Studio stores the manual and unlocks offline downloads and separate tab viewing.")
                             </p>
                         </div>
                     </div>
@@ -259,17 +212,17 @@
                 </div>
             </aside>
 
-            <!-- Right Column: Interactive Storybook Theatre Stage -->
+            <!-- Right Column: DIY User Manual Stage (Diagram Beside Instructions) -->
             <main class="storybook-stage-wrapper">
-                <!-- Chapter Progress Header -->
+                <!-- Step Progress Header -->
                 <div class="stage-top-bar">
                     <div class="progress-info">
-                        <span class="progress-pill">Chapter @_currentChapterIndex of @_chapters.Count</span>
+                        <span class="progress-pill">Step @_currentChapterIndex of @_chapters.Count</span>
                         <span class="progress-phase">@GetCurrentChapter().PhaseTag</span>
                     </div>
                     <!-- Navigation Arrows -->
                     <div class="stage-nav-arrows">
-                        <button class="arrow-btn" @onclick="PreviousChapter" disabled="@(_currentChapterIndex <= 1)" title="Previous chapter (Left Arrow)">
+                        <button class="arrow-btn" @onclick="PreviousChapter" disabled="@(_currentChapterIndex <= 1)" title="Previous step (Left Arrow)">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <polyline points="15 18 9 12 15 6"></polyline>
                             </svg>
@@ -281,7 +234,7 @@
                                 <span class="dot @(dotIdx == _currentChapterIndex ? "active" : "")" @onclick="() => JumpToChapter(dotIdx)"></span>
                             }
                         </span>
-                        <button class="arrow-btn" @onclick="NextChapter" disabled="@(_currentChapterIndex >= _chapters.Count)" title="Next chapter (Right Arrow)">
+                        <button class="arrow-btn" @onclick="NextChapter" disabled="@(_currentChapterIndex >= _chapters.Count)" title="Next step (Right Arrow)">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <polyline points="9 18 15 12 9 6"></polyline>
                             </svg>
@@ -289,82 +242,85 @@
                     </div>
                 </div>
 
-                <!-- Main Illustrated Theatre Stage -->
+                <!-- Main Illustrated DIY Card -->
                 <div class="stage-card @(_fadeAnimation ? "fade-in" : "")" id="storyStage">
-                    <!-- Illustrated Scene Backdrop -->
-                    <div class="scene-illustration-container">
-                        @((MarkupString)GetSceneSvg(GetCurrentChapter().SvgSceneKey))
-                    </div>
-
-                    <!-- Narrative & Experience Content -->
-                    <div class="scene-content">
-                        <div class="scene-meta">
-                            <span class="scene-chapter-badge">Chapter @_currentChapterIndex</span>
-                            <span class="scene-duration">⏱️ @GetCurrentChapter().Duration</span>
-                        </div>
-                        <h2 class="scene-title">@GetCurrentChapter().Title</h2>
-
-                        <!-- Large Storybook Narration Text -->
-                        <div class="story-narration-box @(_isSpeaking ? "reading-active" : "")">
-                            <p class="story-prose">
-                                “@GetCurrentChapter().Narrative”
-                            </p>
+                    <!-- DIY Grid: Diagram Left, Step Instructions Right -->
+                    <div class="diy-step-grid">
+                        <!-- Left Diagram -->
+                        <div class="diy-diagram-card">
+                            <div class="diagram-tag-bar">
+                                <span>🎨 Instructional Diagram</span>
+                                <span class="step-badge">STEP @_currentChapterIndex</span>
+                            </div>
+                            <div class="diagram-svg-box">
+                                @((MarkupString)GetSceneSvg(GetCurrentChapter().SvgSceneKey))
+                            </div>
                         </div>
 
-                        <!-- Child Experience vs Teacher Spark Grids -->
-                        <div class="perspectives-grid">
-                            <div class="perspective-card child-perspective">
-                                <div class="perspective-header">
-                                    <span class="perspective-avatar">👧👦</span>
-                                    <div>
-                                        <strong>The Little Explorers</strong>
-                                        <small>What children experience</small>
+                        <!-- Right Instructions -->
+                        <div class="diy-instructions-card">
+                            <div class="scene-meta">
+                                <span class="scene-chapter-badge">Step @_currentChapterIndex</span>
+                                <span class="scene-duration">⏱️ @GetCurrentChapter().Duration</span>
+                            </div>
+
+                            <h2 class="scene-title">@GetCurrentChapter().Title</h2>
+
+                            <!-- Educator Activity Guide Box -->
+                            <div class="diy-guide-box">
+                                <div class="guide-badge">Activity Flow</div>
+                                <p class="diy-guide-text">
+                                    @GetCurrentChapter().Narrative
+                                </p>
+                            </div>
+
+                            <!-- Actions Breakdown Grid -->
+                            <div class="perspectives-grid">
+                                <div class="perspective-card child-perspective">
+                                    <div class="perspective-header">
+                                        <span class="perspective-avatar">👧👦</span>
+                                        <div>
+                                            <strong>Children Action</strong>
+                                            <small>Hands-on exploration</small>
+                                        </div>
+                                    </div>
+                                    <p>@GetCurrentChapter().ChildrenAction</p>
+                                </div>
+
+                                <div class="perspective-card teacher-perspective">
+                                    <div class="perspective-header">
+                                        <span class="perspective-avatar">🌱</span>
+                                        <div>
+                                            <strong>Teacher Guidance</strong>
+                                            <small>Facilitation & support</small>
+                                        </div>
+                                    </div>
+                                    <p>@GetCurrentChapter().TeacherSpark</p>
+                                </div>
+                            </div>
+
+                            <!-- Wonder Callout -->
+                            @if (!string.IsNullOrWhiteSpace(GetCurrentChapter().WonderPrompt))
+                            {
+                                <div class="wonder-callout">
+                                    <span class="wonder-icon">💡</span>
+                                    <div class="wonder-text">
+                                        <strong>Spark of Wonder:</strong>
+                                        <span>@GetCurrentChapter().WonderPrompt</span>
                                     </div>
                                 </div>
-                                <p>@GetCurrentChapter().ChildrenAction</p>
-                            </div>
-
-                            <div class="perspective-card teacher-perspective">
-                                <div class="perspective-header">
-                                    <span class="perspective-avatar">🌱</span>
-                                    <div>
-                                        <strong>Teacher's Guiding Spark</strong>
-                                        <small>Facilitation & observation</small>
-                                    </div>
-                                </div>
-                                <p>@GetCurrentChapter().TeacherSpark</p>
-                            </div>
+                            }
                         </div>
-
-                        <!-- Wonder Callout -->
-                        @if (!string.IsNullOrWhiteSpace(GetCurrentChapter().WonderPrompt))
-                        {
-                            <div class="wonder-callout">
-                                <span class="wonder-icon">💡</span>
-                                <div class="wonder-text">
-                                    <strong>Spark of Wonder:</strong>
-                                    <span>@GetCurrentChapter().WonderPrompt</span>
-                                </div>
-                            </div>
-                        }
                     </div>
 
                     <!-- Stage Bottom Actions -->
                     <div class="stage-bottom-bar">
                         <button class="stage-btn secondary" @onclick="PreviousChapter" disabled="@(_currentChapterIndex <= 1)">
-                            <span>← Previous</span>
+                            <span>← Previous Step</span>
                         </button>
 
-                        <div class="audio-stage-trigger" @onclick="ToggleAudioNarration">
-                            @if (_isSpeaking)
-                            {
-                                <span class="wave-pulse"></span>
-                                <span>Narrating Scene... (Click to Pause)</span>
-                            }
-                            else
-                            {
-                                <span>🔊 Listen to this Chapter</span>
-                            }
+                        <div class="step-summary-pill">
+                            <span>Step @_currentChapterIndex of @_chapters.Count</span>
                         </div>
 
                         @if (_currentChapterIndex < _chapters.Count)
@@ -376,7 +332,7 @@
                         else
                         {
                             <button class="stage-btn finish-btn" @onclick="() => JumpToChapter(1)">
-                                <span>✨ Replay From Start</span>
+                                <span>↺ Replay from Step 1</span>
                             </button>
                         }
                     </div>
@@ -394,9 +350,6 @@
     private bool _isLoading = true;
     private int _currentChapterIndex = 1;
     private bool _fadeAnimation = true;
-    private bool _isSpeaking = false;
-    private double _speechRate = 1.0;
-    private bool _autoAdvanceSlides = true;
 
     private List<StoryChapter> _chapters = new();
 
@@ -461,43 +414,27 @@
         return _chapters[idx];
     }
 
-    private async Task JumpToChapter(int chapterNum)
+    private void JumpToChapter(int chapterNum)
     {
         _currentChapterIndex = Math.Clamp(chapterNum, 1, _chapters.Count);
         TriggerFade();
-        if (_isSpeaking)
-        {
-            await SpeakCurrentChapter();
-        }
     }
 
-    private async Task NextChapter()
+    private void NextChapter()
     {
         if (_currentChapterIndex < _chapters.Count)
         {
             _currentChapterIndex++;
             TriggerFade();
-            if (_isSpeaking)
-            {
-                await SpeakCurrentChapter();
-            }
-        }
-        else
-        {
-            await StopAudio();
         }
     }
 
-    private async Task PreviousChapter()
+    private void PreviousChapter()
     {
         if (_currentChapterIndex > 1)
         {
             _currentChapterIndex--;
             TriggerFade();
-            if (_isSpeaking)
-            {
-                await SpeakCurrentChapter();
-            }
         }
     }
 
@@ -506,62 +443,6 @@
         _fadeAnimation = false;
         StateHasChanged();
         _fadeAnimation = true;
-    }
-
-    private async Task SetSpeechRate(double rate)
-    {
-        _speechRate = rate;
-        if (_isSpeaking)
-        {
-            await SpeakCurrentChapter();
-        }
-    }
-
-    private async Task ToggleAudioNarration()
-    {
-        if (_isSpeaking)
-        {
-            await StopAudio();
-        }
-        else
-        {
-            _isSpeaking = true;
-            await SpeakCurrentChapter();
-        }
-    }
-
-    private async Task SpeakCurrentChapter()
-    {
-        var ch = GetCurrentChapter();
-        var speechScript = $"{ch.Title}. {ch.Narrative} For the children: {ch.ChildrenAction} Teacher guidance: {ch.TeacherSpark} Spark of wonder: {ch.WonderPrompt}";
-        
-        // Pass to client SpeechSynthesis
-        var dotNetRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("window.playStoryAudio", speechScript, _speechRate, dotNetRef);
-    }
-
-    [JSInvokable]
-    public async Task OnNarrationFinished()
-    {
-        if (_autoAdvanceSlides && _currentChapterIndex < _chapters.Count)
-        {
-            await Task.Delay(1200);
-            _currentChapterIndex++;
-            TriggerFade();
-            await SpeakCurrentChapter();
-            StateHasChanged();
-        }
-        else
-        {
-            _isSpeaking = false;
-            StateHasChanged();
-        }
-    }
-
-    private async Task StopAudio()
-    {
-        _isSpeaking = false;
-        await JS.InvokeVoidAsync("window.stopStoryAudio");
     }
 
     private string GetAgeRange()
@@ -574,6 +455,16 @@
     private string GetSetting()
     {
         return !string.IsNullOrWhiteSpace(_dna.Environment) ? _dna.Environment : "Indoor / Outdoor";
+    }
+
+    private string GetVersionBadge()
+    {
+        if (_experience == null) return string.Empty;
+        if (_experience.UpdatedAt > DateTimeOffset.MinValue)
+        {
+            return $"Updated {_experience.UpdatedAt:MMM dd, yyyy}";
+        }
+        return $"Created {_experience.CreatedAt:MMM dd, yyyy}";
     }
 
     private int GetTotalDuration()
@@ -603,7 +494,7 @@
     {
         if (!IsPublished)
         {
-            await JS.InvokeVoidAsync("alert", "Storybooks can only be downloaded once the experience has been published.");
+            await JS.InvokeVoidAsync("alert", "Playbook manuals can only be downloaded once the experience has been published.");
             return;
         }
 
@@ -615,16 +506,21 @@
 
         if (string.IsNullOrWhiteSpace(html))
         {
-            await JS.InvokeVoidAsync("alert", "Could not generate storybook for this experience.");
+            await JS.InvokeVoidAsync("alert", "Could not generate manual for this experience.");
             return;
         }
 
         var safeFileName = (_experience?.Title ?? "Experience")
             .Replace(" ", "_")
             .Replace("/", "_")
-            .Replace("\\", "_") + "_Storybook.html";
+            .Replace("\\", "_") + "_DIY_Manual.html";
 
         await JS.InvokeVoidAsync("window.downloadStandaloneHtml", safeFileName, html);
+    }
+
+    private async Task PrintManual()
+    {
+        await JS.InvokeVoidAsync("window.print");
     }
 
     private string GetSceneSvg(string key)
