@@ -1,0 +1,1049 @@
+@page "/warehouse-inventory"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IMaterialMarketplaceService MaterialService
+
+<PageTitle>Warehouse Inventory &amp; Stock — EnjoyEveryday</PageTitle>
+
+<div class="content" style="padding: 32px 36px 70px; max-width: 1550px; margin: auto;">
+    <PageHero Eyebrow="CENTRAL WAREHOUSE &amp; LOGISTICS"
+              Title="Warehouse &amp; Stock Balances"
+              Subtitle="Track material quantities across multi-state inventory: available, reserved, dispatched, on-loan, cleaning, and damaged.">
+        <RightContent>
+            <a href="/marketplace-operations" class="btn secondary">
+                📋 Marketplace Orders Queue
+            </a>
+            <button class="primary" @onclick="OpenAddProductModal">
+                + New Catalog Product
+            </button>
+        </RightContent>
+    </PageHero>
+
+    <!-- LOCATION BAR -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <span style="font-size: 13px; font-weight: 750; color: var(--text);">Warehouse Location:</span>
+            <select @bind="_selectedLocationId" @bind:after="LoadInventoryDataAsync" class="location-select">
+                @foreach (var loc in _locations)
+                {
+                    <option value="@loc.Id">@loc.Name (@loc.Code)</option>
+                }
+            </select>
+        </div>
+
+        <div style="display: flex; gap: 10px;">
+            <input @bind="_searchFilter" @bind:event="oninput" placeholder="Search by product SKU, name, category..." 
+                   style="padding: 9px 14px; border-radius: 9px; border: 1px solid var(--border); font-size: 13px; min-width: 250px;" />
+        </div>
+    </div>
+
+    <!-- AGGREGATE SUMMARY TILES -->
+    <div class="summary-tiles">
+        <div class="tile">
+            <div class="tile-val">@_balances.Sum(b => b.TotalStock)</div>
+            <div class="tile-lbl">Total Physical Units</div>
+        </div>
+        <div class="tile highlight">
+            <div class="tile-val">@_balances.Sum(b => b.AvailableStock)</div>
+            <div class="tile-lbl">Available to Order</div>
+        </div>
+        <div class="tile">
+            <div class="tile-val">@_balances.Sum(b => b.ReservedStock)</div>
+            <div class="tile-lbl">Reserved in Packing</div>
+        </div>
+        <div class="tile">
+            <div class="tile-val">@_balances.Sum(b => b.OnLoanStock)</div>
+            <div class="tile-lbl">Active on Loan</div>
+        </div>
+        <div class="tile">
+            <div class="tile-val">@_balances.Sum(b => b.UnderCleaningStock)</div>
+            <div class="tile-lbl">Under Sanitization</div>
+        </div>
+        <div class="tile">
+            <div class="tile-val">@_balances.Sum(b => b.DamagedStock + b.MissingStock)</div>
+            <div class="tile-lbl">Damaged / Missing</div>
+        </div>
+    </div>
+
+    <!-- INVENTORY TABLE -->
+    @if (_isLoading)
+    {
+        <div style="padding: 50px; text-align: center; color: var(--muted);">Loading warehouse stock balances...</div>
+    }
+    else
+    {
+        <div class="inventory-table-container">
+            <table class="inv-table">
+                <thead>
+                    <tr>
+                        <th>Material Product</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th style="text-align: center;">Status</th>
+                        <th style="text-align: right;">Total</th>
+                        <th style="text-align: right;">Available</th>
+                        <th style="text-align: right;">Reserved</th>
+                        <th style="text-align: right;">Dispatched</th>
+                        <th style="text-align: right;">On Loan</th>
+                        <th style="text-align: right;">Cleaning</th>
+                        <th style="text-align: right;">Damaged</th>
+                        <th style="text-align: center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in FilteredBalances)
+                    {
+                        var prod = _products.FirstOrDefault(p => p.Id == item.MaterialProductId);
+
+                        <tr>
+                            <td>
+                                <strong style="font-size: 13.5px; color: var(--text);">@item.ProductName</strong>
+                                <div style="font-size: 11.5px; color: var(--muted);">SKU: @item.ProductSku</div>
+                            </td>
+                            <td>
+                                <span class="cat-pill">@(prod?.Category ?? "General")</span>
+                            </td>
+                            <td>
+                                <span class="type-pill @(prod?.MaterialType.ToLowerInvariant() ?? "")">
+                                    @(prod?.MaterialType ?? "Consumable")
+                                </span>
+                            </td>
+                            <td style="text-align: center;">
+                                @if (prod?.IsActive ?? true)
+                                {
+                                    <span class="status-active-pill">Active</span>
+                                }
+                                else
+                                {
+                                    <span class="status-discontinued-pill">Discontinued</span>
+                                }
+                            </td>
+                            <td style="text-align: right; font-weight: 750; color: var(--text);">@item.TotalStock</td>
+                            <td style="text-align: right; font-weight: 800; color: var(--accent-dark);">
+                                @item.AvailableStock
+                            </td>
+                            <td style="text-align: right; font-weight: 650; color: var(--text);">@item.ReservedStock</td>
+                            <td style="text-align: right; color: var(--muted);">@item.DispatchedStock</td>
+                            <td style="text-align: right; font-weight: 700; color: var(--text);">@item.OnLoanStock</td>
+                            <td style="text-align: right;">
+                                @if (item.UnderCleaningStock > 0)
+                                {
+                                    <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); padding: 2px 7px; border-radius: 6px; font-weight: 700; font-size: 11px;">
+                                        @item.UnderCleaningStock
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span style="color: var(--muted);">0</span>
+                                }
+                            </td>
+                            <td style="text-align: right;">
+                                @if (item.DamagedStock + item.MissingStock > 0)
+                                {
+                                    <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 2px 7px; border-radius: 6px; font-weight: 700; font-size: 11px;">
+                                        @(item.DamagedStock + item.MissingStock)
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span style="color: var(--muted);">0</span>
+                                }
+                            </td>
+                            <td style="text-align: center;">
+                                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
+                                    @if (item.UnderCleaningStock > 0)
+                                    {
+                                        <button class="sanitize-btn" @onclick="() => SanitizeCleaningStock(item)" title="Sanitize and restore to Available stock">
+                                            ✨ Restock (@item.UnderCleaningStock)
+                                        </button>
+                                    }
+                                    <button class="action-btn" @onclick="() => OpenEditProductModal(item, prod)" title="Edit product details & pricing">
+                                        ✏️ Edit
+                                    </button>
+                                    @if (prod != null)
+                                    {
+                                        @if (prod.IsActive)
+                                        {
+                                            <button class="action-btn danger" @onclick="() => ToggleProductStatusAsync(prod, false)" title="Discontinue product from catalog">
+                                                Discontinue
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="action-btn reactivate" @onclick="() => ToggleProductStatusAsync(prod, true)" title="Reactivate product in catalog">
+                                                Reactivate
+                                            </button>
+                                        }
+                                    }
+                                    <button class="action-btn" @onclick="() => OpenAdjustModal(item)">
+                                        Adjust Stock
+                                    </button>
+                                    <button class="action-btn" @onclick="() => OpenLedgerDrawer(item)">
+                                        📜 Ledger
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<!-- STOCK ADJUSTMENT MODAL -->
+@if (_adjustModalItem != null)
+{
+    var bal = _adjustModalItem;
+
+    <div class="modal-backdrop" @onclick="() => _adjustModalItem = null">
+        <div class="modal-window" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-weight: 800;">Stock Movement &amp; Adjustment</h3>
+                    <div style="font-size: 12px; color: var(--muted);">@bal.ProductName (SKU: @bal.ProductSku)</div>
+                </div>
+                <button class="close-btn" @onclick="() => _adjustModalItem = null">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Transaction Type</label>
+                    <select @bind="_adjustTxType" class="form-input">
+                        <option value="Receipt">Stock Receipt (New Shipment Arrived)</option>
+                        <option value="Adjustment">Inventory Count Adjustment</option>
+                        <option value="Retirement">Write-Off / Retirement</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Quantity Delta (Positive to add, Negative to deduct)</label>
+                    <input type="number" @bind="_adjustDelta" class="form-input" />
+                    <div style="font-size: 11.5px; color: var(--muted); margin-top: 4px;">
+                        Current Available: <strong>@bal.AvailableStock</strong> · New Available will be: <strong>@(bal.AvailableStock + _adjustDelta)</strong>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Audit Reason &amp; Reference Notes *</label>
+                    <input @bind="_adjustNotes" class="form-input" placeholder="e.g. Supplier PO #4521 received from distributor" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _adjustModalItem = null">Cancel</button>
+                <button class="primary" @onclick="SubmitAdjustment">Commit to Ledger</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- NEW PRODUCT MODAL -->
+@if (_isAddProductOpen)
+{
+    <div class="modal-backdrop" @onclick="() => _isAddProductOpen = false">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3 style="margin: 0; font-weight: 800;">Add New Material to Catalog</h3>
+                <button class="close-btn" @onclick="() => _isAddProductOpen = false">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">SKU *</label>
+                        <input @bind="_newSku" class="form-input" placeholder="e.g. KIT-CLAY-01" />
+                    </div>
+                    <div>
+                        <label class="form-label">Product Name *</label>
+                        <input @bind="_newName" class="form-input" placeholder="e.g. Natural Terracotta Sculpting Clay" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">Category</label>
+                        <select @bind="_newCategory" class="form-input">
+                            <option value="Sensory & Science">Sensory &amp; Science</option>
+                            <option value="Arts & Crafts">Arts &amp; Crafts</option>
+                            <option value="Montessori & Math">Montessori &amp; Math</option>
+                            <option value="Sensory & STEM">Sensory &amp; STEM</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Material Classification</label>
+                        <select @bind="_newType" class="form-input">
+                            <option value="Consumable">Consumable (Buy only)</option>
+                            <option value="Reusable">Reusable (Borrow or Buy)</option>
+                            <option value="ActivityKit">Activity Kit (Structured set)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Description</label>
+                    <textarea @bind="_newDesc" class="form-input" rows="2" placeholder="Educational purpose and contents..."></textarea>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Safety &amp; Age Instructions</label>
+                    <input @bind="_newSafety" class="form-input" placeholder="Non-toxic, safe for ages 24m+..." />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">Purchase Price (₹)</label>
+                        <input type="number" @bind="_newBuyPrice" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Rental Fee (₹)</label>
+                        <input type="number" @bind="_newRentalFee" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Deposit (₹)</label>
+                        <input type="number" @bind="_newDeposit" class="form-input" />
+                    </div>
+                </div>
+
+                <div style="margin-top: 10px;">
+                    <label class="form-label">Initial Warehouse Stock (Available Units)</label>
+                    <input type="number" @bind="_newInitialStock" class="form-input" min="0" placeholder="e.g. 50" />
+                    <div style="font-size: 11.5px; color: var(--muted); margin-top: 4px;">Opening stock balance added directly to the central warehouse ledger upon saving.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _isAddProductOpen = false">Cancel</button>
+                <button class="primary" @onclick="SubmitNewProduct">Save Product to Catalog</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- EDIT PRODUCT MODAL -->
+@if (_editProductModalItem != null)
+{
+    <div class="modal-backdrop" @onclick="() => _editProductModalItem = null">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 600px;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-weight: 800;">Edit Product — @_editName</h3>
+                    <div style="font-size: 12px; color: var(--muted);">SKU: @_editSku</div>
+                </div>
+                <button class="close-btn" @onclick="() => _editProductModalItem = null">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">SKU *</label>
+                        <input @bind="_editSku" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Product Name *</label>
+                        <input @bind="_editName" class="form-input" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">Category</label>
+                        <select @bind="_editCategory" class="form-input">
+                            <option value="Sensory & Science">Sensory &amp; Science</option>
+                            <option value="Arts & Crafts">Arts &amp; Crafts</option>
+                            <option value="Montessori & Math">Montessori &amp; Math</option>
+                            <option value="Sensory & STEM">Sensory &amp; STEM</option>
+                            <option value="Dramatic Play">Dramatic Play</option>
+                            <option value="Music & Rhythm">Music &amp; Rhythm</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Material Classification</label>
+                        <select @bind="_editType" class="form-input">
+                            <option value="Consumable">Consumable (Buy only)</option>
+                            <option value="Reusable">Reusable (Borrow or Buy)</option>
+                            <option value="ActivityKit">Activity Kit (Structured set)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Description</label>
+                    <textarea @bind="_editDesc" class="form-input" rows="2" placeholder="Educational purpose and contents..."></textarea>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Safety &amp; Age Instructions</label>
+                    <input @bind="_editSafety" class="form-input" placeholder="Non-toxic, safe for preschool environments" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">Age Min (Months)</label>
+                        <input type="number" @bind="_editAgeMin" class="form-input" placeholder="e.g. 18" />
+                    </div>
+                    <div>
+                        <label class="form-label">Age Max (Months)</label>
+                        <input type="number" @bind="_editAgeMax" class="form-input" placeholder="e.g. 72" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                    <div>
+                        <label class="form-label">Purchase Price (₹)</label>
+                        <input type="number" @bind="_editBuyPrice" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Rental Fee (₹)</label>
+                        <input type="number" @bind="_editRentalFee" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Deposit (₹)</label>
+                        <input type="number" @bind="_editDeposit" class="form-input" />
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                    <div>
+                        <label class="form-label">Default Loan Duration (Days)</label>
+                        <input type="number" @bind="_editDefaultLoanDays" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Max Loan Duration (Days)</label>
+                        <input type="number" @bind="_editMaxLoanDays" class="form-input" />
+                    </div>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="font-size: 13px; color: var(--text);">Catalog Status</strong>
+                        <div style="font-size: 11.5px; color: var(--muted);">
+                            @(_editIsActive ? "Product is active and visible to Daycares in the marketplace." : "Product is discontinued and hidden from Daycares.")
+                        </div>
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 700;">
+                        <input type="checkbox" @bind="_editIsActive" style="width: 18px; height: 18px; accent-color: var(--accent);" />
+                        @(_editIsActive ? "Active" : "Discontinued")
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _editProductModalItem = null">Cancel</button>
+                <button class="primary" @onclick="SubmitEditProduct">Save Product Changes</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- LEDGER TRANSACTION HISTORY DRAWER -->
+@if (_ledgerModalItem != null)
+{
+    var bal = _ledgerModalItem;
+
+    <div class="modal-backdrop" @onclick="() => _ledgerModalItem = null">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 620px;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-weight: 800;">Stock Movement Ledger</h3>
+                    <div style="font-size: 12px; color: var(--muted);">@bal.ProductName (SKU: @bal.ProductSku)</div>
+                </div>
+                <button class="close-btn" @onclick="() => _ledgerModalItem = null">✕</button>
+            </div>
+            <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                @if (!_ledgerHistory.Any())
+                {
+                    <div style="padding: 24px; text-align: center; color: var(--muted);">No ledger movements recorded yet.</div>
+                }
+                else
+                {
+                    <div class="ledger-list">
+                        @foreach (var entry in _ledgerHistory)
+                        {
+                            <div class="ledger-row">
+                                <div style="flex-grow: 1;">
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <strong style="font-size: 13px;">@entry.TransactionType</strong>
+                                        <span class="ledger-delta @(entry.AvailableDelta >= 0 ? "pos" : "neg")">
+                                            @(entry.AvailableDelta >= 0 ? "+" : "")@entry.AvailableDelta available
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 12px; color: #4a5750; margin: 3px 0;">@entry.Notes</div>
+                                    <div style="font-size: 11px; color: var(--muted);">
+                                        @entry.CreatedAt.ToLocalTime().ToString("d MMM yyyy, h:mm tt") · By: @(entry.PerformedByEmail ?? "System")
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _ledgerModalItem = null">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .location-select {
+        padding: 9px 14px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--text);
+        background: white;
+    }
+
+    .summary-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+
+    .tile {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e1e6e0);
+        border-radius: var(--radius, 18px);
+        padding: 18px 20px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .tile.highlight {
+        background: #f4f7f5;
+        border-color: #c9dbcf;
+    }
+
+    .tile.highlight .tile-val {
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .tile-val {
+        font-size: 26px;
+        font-weight: 800;
+        color: var(--text);
+    }
+
+    .tile-lbl {
+        font-size: 11px;
+        font-weight: 750;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-top: 4px;
+    }
+
+    .inventory-table-container {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        overflow-x: auto;
+    }
+
+    .inv-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .inv-table th {
+        background: var(--surface-soft);
+        padding: 12px 16px;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .inv-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .inv-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .cat-pill {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        padding: 2px 7px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 650;
+    }
+
+    .type-pill {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .type-pill.consumable {
+        background: var(--warm, #f4eee1);
+        color: #5c4d34;
+        border: 1px solid #e5ded2;
+    }
+    .type-pill.activitykit, .type-pill.reusable {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border: 1px solid #c8dacd;
+    }
+
+    .action-btn {
+        background: white;
+        border: 1px solid var(--border);
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--text);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+        background: var(--surface-soft);
+        border-color: #cbd3cc;
+    }
+
+    .action-btn.danger {
+        color: #b91c1c;
+        border-color: #fecaca;
+    }
+
+    .action-btn.danger:hover {
+        background: #fff5f5;
+        border-color: #fca5a5;
+    }
+
+    .action-btn.reactivate {
+        color: var(--accent-dark, #3e6253);
+        border-color: #c8dacd;
+    }
+
+    .action-btn.reactivate:hover {
+        background: var(--accent-light, #e6eee9);
+        border-color: var(--accent);
+    }
+
+    .status-active-pill {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border: 1px solid #c8dacd;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 11px;
+    }
+
+    .status-discontinued-pill {
+        background: #fff5f5;
+        color: #9b2c2c;
+        border: 1px solid #fed7d7;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 11px;
+    }
+
+    .sanitize-btn {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border: 1px solid #c8dacd;
+        padding: 6px 11px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 750;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .sanitize-btn:hover {
+        background: #d8e5dc;
+    }
+
+    /* Ledger */
+    .ledger-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .ledger-row {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+    }
+
+    .ledger-delta {
+        font-size: 11px;
+        font-weight: 800;
+        padding: 1px 6px;
+        border-radius: 4px;
+    }
+
+    .ledger-delta.pos { background: #dcfce7; color: #15803d; }
+    .ledger-delta.neg { background: #fee2e2; color: #991b1b; }
+
+    /* Modal styles */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 28, 24, 0.45);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 999;
+    }
+
+    .modal-window {
+        background: white;
+        border-radius: 20px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        overflow: hidden;
+    }
+
+    .modal-header {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-body {
+        padding: 20px 22px;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .modal-footer {
+        padding: 14px 22px;
+        border-top: 1px solid var(--border);
+        background: var(--surface-soft);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        color: var(--muted);
+    }
+
+    .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 750;
+        color: var(--text);
+        margin-bottom: 5px;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 9px 11px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        font-family: inherit;
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+</style>
+
+@code {
+    private List<InventoryLocation> _locations = new();
+    private List<InventoryBalance> _balances = new();
+    private List<MaterialProduct> _products = new();
+    private Guid _selectedLocationId = Guid.Empty;
+    private string _searchFilter = "";
+    private bool _isLoading = true;
+
+    // Adjustment modal
+    private InventoryBalance? _adjustModalItem;
+    private string _adjustTxType = "Receipt";
+    private int _adjustDelta = 10;
+    private string _adjustNotes = "";
+
+    // Add Product modal
+    private bool _isAddProductOpen = false;
+    private string _newSku = "";
+    private string _newName = "";
+    private string _newCategory = "Sensory & Science";
+    private string _newType = "Consumable";
+    private string _newDesc = "";
+    private string _newSafety = "";
+    private decimal _newBuyPrice = 500m;
+    private decimal _newRentalFee = 0m;
+    private decimal _newDeposit = 0m;
+    private int _newInitialStock = 50;
+
+    // Edit Product modal state
+    private MaterialProduct? _editProductModalItem;
+    private Guid _editProductId = Guid.Empty;
+    private string _editSku = "";
+    private string _editName = "";
+    private string _editCategory = "Sensory & Science";
+    private string _editType = "Consumable";
+    private string _editDesc = "";
+    private string _editSafety = "";
+    private int? _editAgeMin;
+    private int? _editAgeMax;
+    private decimal _editBuyPrice;
+    private decimal _editRentalFee;
+    private decimal _editDeposit;
+    private int _editDefaultLoanDays = 14;
+    private int _editMaxLoanDays = 30;
+    private bool _editIsActive = true;
+
+    // Ledger drawer
+    private InventoryBalance? _ledgerModalItem;
+    private List<InventoryLedgerEntry> _ledgerHistory = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLocationsAndInitialDataAsync();
+    }
+
+    private async Task LoadLocationsAndInitialDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _locations = await MaterialService.GetWarehouseLocationsAsync();
+            var central = _locations.FirstOrDefault(l => l.IsCentralWarehouse) ?? _locations.FirstOrDefault();
+            if (central != null)
+            {
+                _selectedLocationId = central.Id;
+            }
+
+            _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+            await LoadInventoryDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing inventory: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadInventoryDataAsync()
+    {
+        if (_selectedLocationId != Guid.Empty)
+        {
+            _balances = await MaterialService.GetWarehouseInventoryBalancesAsync(_selectedLocationId);
+        }
+    }
+
+    private IEnumerable<InventoryBalance> FilteredBalances
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_searchFilter))
+                return _balances;
+
+            return _balances.Where(b => 
+                (b.ProductName?.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (b.ProductSku?.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private void OpenAdjustModal(InventoryBalance bal)
+    {
+        _adjustModalItem = bal;
+        _adjustTxType = "Receipt";
+        _adjustDelta = 10;
+        _adjustNotes = "Standard replenishment received at central warehouse dock";
+    }
+
+    private async Task SubmitAdjustment()
+    {
+        if (_adjustModalItem == null) return;
+
+        await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+        {
+            ProductId = _adjustModalItem.MaterialProductId,
+            LocationId = _selectedLocationId,
+            TransactionType = _adjustTxType,
+            QuantityDelta = _adjustDelta,
+            Notes = _adjustNotes
+        });
+
+        _adjustModalItem = null;
+        await LoadInventoryDataAsync();
+    }
+
+    private async Task SanitizeCleaningStock(InventoryBalance item)
+    {
+        if (item.UnderCleaningStock <= 0) return;
+        await MaterialService.SanitizeAndRestockCleaningItemsAsync(item.MaterialProductId, item.UnderCleaningStock);
+        await LoadInventoryDataAsync();
+    }
+
+    private void OpenAddProductModal()
+    {
+        _newSku = $"MAT-{Random.Shared.Next(1000, 9999)}";
+        _newName = "";
+        _newCategory = "Sensory & Science";
+        _newType = "Consumable";
+        _newDesc = "";
+        _newSafety = "Non-toxic, safe for preschool environments";
+        _newBuyPrice = 450m;
+        _newRentalFee = 0m;
+        _newDeposit = 0m;
+        _newInitialStock = 50;
+        _isAddProductOpen = true;
+    }
+
+    private async Task SubmitNewProduct()
+    {
+        if (string.IsNullOrWhiteSpace(_newSku) || string.IsNullOrWhiteSpace(_newName)) return;
+
+        var req = new SaveMaterialProductRequest
+        {
+            Sku = _newSku.Trim(),
+            Name = _newName.Trim(),
+            Category = _newCategory,
+            MaterialType = _newType,
+            Description = _newDesc.Trim(),
+            SafetyInstructions = _newSafety.Trim(),
+            AllowPurchase = _newBuyPrice > 0,
+            PurchasePrice = _newBuyPrice,
+            AllowBorrow = _newRentalFee > 0,
+            RentalFee = _newRentalFee,
+            RefundableDeposit = _newDeposit,
+            DefaultLoanDurationDays = 14,
+            MaxLoanDurationDays = 30,
+            IsActive = true
+        };
+
+        var id = await MaterialService.SaveProductAsync(req);
+
+        if (_newInitialStock > 0 && _selectedLocationId != Guid.Empty)
+        {
+            await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+            {
+                ProductId = id,
+                LocationId = _selectedLocationId,
+                TransactionType = "Receipt",
+                QuantityDelta = _newInitialStock,
+                Notes = "Initial catalog opening inventory"
+            });
+        }
+
+        _isAddProductOpen = false;
+
+        _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+        await LoadInventoryDataAsync();
+    }
+
+    private async Task OpenEditProductModal(InventoryBalance bal, MaterialProduct? prod)
+    {
+        var product = prod ?? await MaterialService.GetProductDetailsAsync(bal.MaterialProductId);
+        if (product == null) return;
+
+        // Fetch full details with offering
+        var full = await MaterialService.GetProductDetailsAsync(product.Id) ?? product;
+
+        _editProductModalItem = full;
+        _editProductId = full.Id;
+        _editSku = full.Sku;
+        _editName = full.Name;
+        _editCategory = full.Category;
+        _editType = full.MaterialType;
+        _editDesc = full.Description ?? "";
+        _editSafety = full.SafetyInstructions ?? "";
+        _editAgeMin = full.AgeMinMonths;
+        _editAgeMax = full.AgeMaxMonths;
+        _editIsActive = full.IsActive;
+
+        var offering = full.Offering;
+        _editBuyPrice = offering?.PurchasePrice ?? 0m;
+        _editRentalFee = offering?.RentalFee ?? 0m;
+        _editDeposit = offering?.RefundableDeposit ?? 0m;
+        _editDefaultLoanDays = offering?.DefaultLoanDurationDays ?? 14;
+        _editMaxLoanDays = offering?.MaxLoanDurationDays ?? 30;
+    }
+
+    private async Task SubmitEditProduct()
+    {
+        if (string.IsNullOrWhiteSpace(_editSku) || string.IsNullOrWhiteSpace(_editName)) return;
+
+        var req = new SaveMaterialProductRequest
+        {
+            Id = _editProductId,
+            Sku = _editSku.Trim(),
+            Name = _editName.Trim(),
+            Category = _editCategory,
+            MaterialType = _editType,
+            Description = _editDesc.Trim(),
+            SafetyInstructions = _editSafety.Trim(),
+            AgeMinMonths = _editAgeMin,
+            AgeMaxMonths = _editAgeMax,
+            AllowPurchase = _editBuyPrice > 0,
+            PurchasePrice = _editBuyPrice,
+            AllowBorrow = _editRentalFee > 0,
+            RentalFee = _editRentalFee,
+            RefundableDeposit = _editDeposit,
+            DefaultLoanDurationDays = _editDefaultLoanDays,
+            MaxLoanDurationDays = _editMaxLoanDays,
+            IsActive = _editIsActive
+        };
+
+        await MaterialService.SaveProductAsync(req);
+        _editProductModalItem = null;
+
+        _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+        await LoadInventoryDataAsync();
+    }
+
+    private async Task ToggleProductStatusAsync(MaterialProduct prod, bool newStatus)
+    {
+        var detailed = await MaterialService.GetProductDetailsAsync(prod.Id) ?? prod;
+        var off = detailed.Offering;
+
+        var req = new SaveMaterialProductRequest
+        {
+            Id = detailed.Id,
+            Sku = detailed.Sku,
+            Name = detailed.Name,
+            Category = detailed.Category,
+            MaterialType = detailed.MaterialType,
+            Description = detailed.Description,
+            SafetyInstructions = detailed.SafetyInstructions,
+            AgeMinMonths = detailed.AgeMinMonths,
+            AgeMaxMonths = detailed.AgeMaxMonths,
+            AllowPurchase = off?.AllowPurchase ?? (off?.PurchasePrice > 0),
+            PurchasePrice = off?.PurchasePrice ?? 0,
+            AllowBorrow = off?.AllowBorrow ?? (off?.RentalFee > 0),
+            RentalFee = off?.RentalFee ?? 0,
+            RefundableDeposit = off?.RefundableDeposit ?? 0,
+            DefaultLoanDurationDays = off?.DefaultLoanDurationDays ?? 14,
+            MaxLoanDurationDays = off?.MaxLoanDurationDays ?? 30,
+            IsActive = newStatus
+        };
+
+        await MaterialService.SaveProductAsync(req);
+        _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+        await LoadInventoryDataAsync();
+    }
+
+    private async Task OpenLedgerDrawer(InventoryBalance bal)
+    {
+        _ledgerModalItem = bal;
+        _ledgerHistory = await MaterialService.GetProductLedgerHistoryAsync(bal.MaterialProductId);
+    }
+}

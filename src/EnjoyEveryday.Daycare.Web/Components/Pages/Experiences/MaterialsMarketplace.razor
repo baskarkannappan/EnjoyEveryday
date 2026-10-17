@@ -1,0 +1,1029 @@
+@page "/materials-marketplace"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IMaterialMarketplaceService MaterialService
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
+
+<PageTitle>Materials Marketplace — EnjoyEveryday</PageTitle>
+
+<div class="content" style="padding: 32px 36px 70px; max-width: 1550px; margin: auto;">
+    <PageHero Eyebrow="MATERIALS &amp; SUPPLIES"
+              Title="Materials Marketplace"
+              Subtitle="Equip your classroom with consumable arts &amp; crafts, or borrow specialized early-learning kits without purchasing expensive inventory.">
+        <RightContent>
+            <a href="/materials-orders" class="btn secondary" style="display: flex; align-items: center; gap: 8px;">
+                <span>📦</span>
+                <span>My Orders &amp; Loans</span>
+                @if (_activeOrdersCount > 0)
+                {
+                    <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 800;">
+                        @_activeOrdersCount
+                    </span>
+                }
+            </a>
+            @if (_cartItems.Any())
+            {
+                <button class="primary" @onclick="OpenCartDrawer" style="display: flex; align-items: center; gap: 8px;">
+                    <span>🛒 Cart (@_cartItems.Sum(c => c.Quantity))</span>
+                    <span style="background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 8px; font-size: 12px;">₹@GetCartTotal().ToString("N0")</span>
+                </button>
+            }
+        </RightContent>
+    </PageHero>
+
+    <!-- SEARCH & FILTER BAR -->
+    <div class="search-row" style="display: flex; gap: 14px; margin-bottom: 20px; flex-wrap: wrap;">
+        <input class="search" @bind="_searchQuery" @bind:event="oninput" placeholder="Search materials, kits, supplies, safety..." 
+               style="flex: 1; min-width: 260px; padding: 11px 16px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); background: white; font-family: inherit; font-size: 13.5px;" />
+        
+        <select class="filter" @bind="_selectedCategory" style="padding: 11px 16px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); background: white; font-weight: 650; font-size: 13px; color: var(--text);">
+            <option value="All">All Categories</option>
+            <option value="Sensory & Science">Sensory &amp; Science</option>
+            <option value="Arts & Crafts">Arts &amp; Crafts</option>
+            <option value="Montessori & Math">Montessori &amp; Math</option>
+            <option value="Sensory & STEM">Sensory &amp; STEM</option>
+        </select>
+
+        <select class="filter" @bind="_selectedModelFilter" style="padding: 11px 16px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); background: white; font-weight: 650; font-size: 13px; color: var(--text);">
+            <option value="All">Buy &amp; Borrow Options</option>
+            <option value="Buy">Available to Buy (Consumables)</option>
+            <option value="Borrow">Available to Borrow (Reusable Kits)</option>
+        </select>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs" style="display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border, #e4e7df); padding-bottom: 8px;">
+        @foreach (var tab in new[] { "All", "Consumables", "Reusable Kits" })
+        {
+            <button class="tab-btn @(_activeTypeTab == tab ? "active" : "")" @onclick="() => SetTypeTab(tab)">
+                @tab
+            </button>
+        }
+    </div>
+
+    <!-- PRODUCT GRID -->
+    @if (_isLoading)
+    {
+        <div style="padding: 60px; text-align: center; color: var(--muted);">
+            <div style="font-size: 28px; margin-bottom: 12px;">🌿</div>
+            <div>Loading materials catalog...</div>
+        </div>
+    }
+    else if (!FilteredProducts.Any())
+    {
+        <div style="background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 50px; text-align: center;">
+            <div style="font-size: 32px; margin-bottom: 12px;">📦</div>
+            <h3 style="margin: 0 0 8px; font-weight: 750;">No materials match your filter</h3>
+            <p style="color: var(--muted); font-size: 13.5px; margin: 0;">Try adjusting your search query or selecting a different category.</p>
+        </div>
+    }
+    else
+    {
+        <div class="product-grid">
+            @foreach (var prod in FilteredProducts)
+            {
+                var off = prod.Offering;
+                var bal = prod.StockBalance;
+                var isKit = prod.MaterialType == "ActivityKit" || prod.MaterialType == "Reusable";
+
+                <div class="product-card">
+                    <div class="card-media">
+                        <div class="media-placeholder">
+                            <span style="font-size: 32px;">@(isKit ? "🧩" : "🎨")</span>
+                        </div>
+                        <span class="type-badge @prod.MaterialType.ToLowerInvariant()">
+                            @(isKit ? "Reusable Kit" : "Consumable")
+                        </span>
+                        @if (bal != null && bal.AvailableStock > 0)
+                        {
+                            <span class="stock-badge available">● @bal.AvailableStock in stock</span>
+                        }
+                        else
+                        {
+                            <span class="stock-badge request">Borrow on request</span>
+                        }
+                    </div>
+
+                    <div class="card-body">
+                        <div class="category-tag">@prod.Category</div>
+                        <h3 class="product-name">@prod.Name</h3>
+                        <p class="product-desc">@prod.Description</p>
+
+                        @if (!string.IsNullOrWhiteSpace(prod.SafetyInstructions))
+                        {
+                            <div class="safety-tip">
+                                <span style="font-size: 13px;">🛡️</span>
+                                <span>@prod.SafetyInstructions</span>
+                            </div>
+                        }
+
+                        <div class="pricing-container">
+                            @if (off?.AllowPurchase == true)
+                            {
+                                <div class="price-box">
+                                    <div class="price-lbl">BUY TO KEEP</div>
+                                    <div class="price-val">₹@off.PurchasePrice.ToString("N0")</div>
+                                </div>
+                            }
+
+                            @if (off?.AllowBorrow == true)
+                            {
+                                <div class="price-box borrow">
+                                    <div class="price-lbl">BORROW KIT</div>
+                                    <div class="price-val">
+                                        ₹@off.RentalFee.ToString("N0")
+                                        <span class="loan-period">/@(off.DefaultLoanDurationDays)d</span>
+                                    </div>
+                                    @if (off.RefundableDeposit > 0)
+                                    {
+                                        <div class="deposit-note">+ ₹@off.RefundableDeposit.ToString("N0") deposit</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="card-actions">
+                            <button class="btn secondary" @onclick="() => OpenProductModal(prod)">
+                                Details &amp; Safety
+                            </button>
+                            <button class="primary" @onclick="() => OpenOrderDrawer(prod)">
+                                + Add to Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- ADD TO CART / ORDER MODAL -->
+@if (_selectedProduct != null && _isOrderModalOpen)
+{
+    var prod = _selectedProduct;
+    var off = prod.Offering;
+
+    <div class="modal-backdrop" @onclick="CloseOrderModal">
+        <div class="modal-window" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <span class="type-badge @prod.MaterialType.ToLowerInvariant()">@prod.MaterialType</span>
+                    <h2 style="margin: 6px 0 2px; font-size: 20px; font-weight: 800; color: var(--text);">@prod.Name</h2>
+                    <div style="font-size: 12px; color: var(--muted);">SKU: @prod.Sku · Category: @prod.Category</div>
+                </div>
+                <button class="close-btn" @onclick="CloseOrderModal">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <div style="margin-bottom: 18px;">
+                    <label class="form-label">Select Fulfilment Model</label>
+                    <div class="model-selector">
+                        @if (off?.AllowPurchase == true)
+                        {
+                            <label class="model-option @(_orderMode == "Purchase" ? "selected" : "")">
+                                <input type="radio" name="orderMode" value="Purchase" checked="@(_orderMode == "Purchase")" @onchange='() => SetOrderMode("Purchase")' />
+                                <div>
+                                    <div class="option-title">🛒 Purchase &amp; Keep</div>
+                                    <div class="option-desc">Consumable supplies owned by your daycare.</div>
+                                    <div class="option-price">₹@off.PurchasePrice.ToString("N0") / unit</div>
+                                </div>
+                            </label>
+                        }
+
+                        @if (off?.AllowBorrow == true)
+                        {
+                            <label class="model-option @(_orderMode == "Borrow" ? "selected" : "")">
+                                <input type="radio" name="orderMode" value="Borrow" checked="@(_orderMode == "Borrow")" @onchange='() => SetOrderMode("Borrow")' />
+                                <div>
+                                    <div class="option-title">📦 Borrow Reusable Kit</div>
+                                    <div class="option-desc">Use for activity period, then return to warehouse.</div>
+                                    <div class="option-price">
+                                        ₹@off.RentalFee.ToString("N0") rental
+                                        <span style="font-size: 11px; font-weight: normal; color: var(--muted);">+ ₹@off.RefundableDeposit.ToString("N0") dep.</span>
+                                    </div>
+                                </div>
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px;">
+                    <div>
+                        <label class="form-label">Quantity</label>
+                        <input type="number" min="1" max="50" @bind="_orderQuantity" class="form-input" />
+                    </div>
+
+                    @if (_orderMode == "Borrow")
+                    {
+                        <div>
+                            <label class="form-label">Rental Duration (Days)</label>
+                            <select @bind="_orderDuration" class="form-input">
+                                <option value="7">7 Days (1 Week)</option>
+                                <option value="14">14 Days (2 Weeks - Recommended)</option>
+                                <option value="21">21 Days (3 Weeks)</option>
+                                <option value="30">30 Days (1 Month)</option>
+                            </select>
+                        </div>
+                    }
+                </div>
+
+                <div style="margin-bottom: 18px;">
+                    <label class="form-label">Assign to Classroom (Optional)</label>
+                    <select @bind="_selectedClassroomId" class="form-input">
+                        <option value="">Select a classroom...</option>
+                        @foreach (var c in _classrooms)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="price-calc-box">
+                    <div class="calc-row">
+                        <span>Items Total:</span>
+                        <strong>₹@CalculateItemSubtotal().ToString("N2")</strong>
+                    </div>
+                    @if (_orderMode == "Borrow" && (off?.RefundableDeposit ?? 0) > 0)
+                    {
+                        <div class="calc-row deposit">
+                            <span>Refundable Deposit (returnable):</span>
+                            <strong>₹@((off!.RefundableDeposit * _orderQuantity).ToString("N2"))</strong>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseOrderModal">Cancel</button>
+                <button class="primary" @onclick="AddToCart">Add to Cart</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- CART CHECKOUT DRAWER -->
+@if (_isCartDrawerOpen)
+{
+    <div class="modal-backdrop" @onclick="() => _isCartDrawerOpen = false">
+        <div class="cart-drawer" @onclick:stopPropagation="true">
+            <div class="drawer-header">
+                <div>
+                    <h2 style="margin: 0; font-size: 19px; font-weight: 800;">Review Order</h2>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                        @_cartItems.Count item(s) selected
+                    </div>
+                </div>
+                <button class="close-btn" @onclick="() => _isCartDrawerOpen = false">✕</button>
+            </div>
+
+            <div class="drawer-body">
+                <div class="cart-items-list">
+                    @foreach (var item in _cartItems)
+                    {
+                        <div class="cart-item">
+                            <div style="flex-grow: 1;">
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <span class="type-badge @item.FulfilmentMode.ToLowerInvariant()">@item.FulfilmentMode</span>
+                                    <strong style="font-size: 13.5px; color: var(--text);">@item.ProductName</strong>
+                                </div>
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                                    Qty: @item.Quantity
+                                    @if (item.FulfilmentMode == "Borrow")
+                                    {
+                                        <span>· @item.LoanDurationDays days loan</span>
+                                    }
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-weight: 750; font-size: 14px; color: var(--text);">₹@item.LineTotal.ToString("N2")</div>
+                                <button class="link-btn" @onclick="() => RemoveFromCart(item)">Remove</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="checkout-form" style="margin-top: 20px;">
+                    <h3 style="font-size: 14px; font-weight: 750; margin: 0 0 10px; color: var(--text);">Delivery Information</h3>
+                    
+                    <div style="margin-bottom: 10px;">
+                        <label class="form-label">Delivery Address *</label>
+                        <textarea class="form-input" @bind="_deliveryAddress" rows="2" placeholder="Street address, building, daycare branch..."></textarea>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label class="form-label">Contact Person</label>
+                            <input class="form-input" @bind="_contactName" placeholder="Staff Name" />
+                        </div>
+                        <div>
+                            <label class="form-label">Phone Number</label>
+                            <input class="form-input" @bind="_contactPhone" placeholder="+91 98765 43210" />
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label class="form-label">Required By Date</label>
+                        <input type="date" class="form-input" @bind="_deliveryDate" />
+                    </div>
+
+                    <div style="margin-bottom: 10px;">
+                        <label class="form-label">Order Notes / Activity Request</label>
+                        <input class="form-input" @bind="_orderNotes" placeholder="e.g. For next Tuesday sensory science activity" />
+                    </div>
+                </div>
+
+                <div class="summary-box">
+                    <div class="calc-row">
+                        <span>Purchases Subtotal:</span>
+                        <span>₹@((_cartItems.Where(i => i.FulfilmentMode == "Purchase").Sum(i => i.LineTotal)).ToString("N2"))</span>
+                    </div>
+                    <div class="calc-row">
+                        <span>Rentals Subtotal:</span>
+                        <span>₹@((_cartItems.Where(i => i.FulfilmentMode == "Borrow").Sum(i => i.LineTotal - (i.Deposit * i.Quantity))).ToString("N2"))</span>
+                    </div>
+                    <div class="calc-row">
+                        <span>Refundable Deposits:</span>
+                        <span>₹@((_cartItems.Where(i => i.FulfilmentMode == "Borrow").Sum(i => i.Deposit * i.Quantity)).ToString("N2"))</span>
+                    </div>
+                    <div class="calc-row">
+                        <span>Standard Delivery:</span>
+                        <span>₹150.00</span>
+                    </div>
+                    <div class="calc-row total">
+                        <strong>Grand Total:</strong>
+                        <strong>₹@((GetCartTotal() + 150.00m).ToString("N2"))</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="drawer-footer">
+                @if (!string.IsNullOrWhiteSpace(_submitError))
+                {
+                    <div class="error-banner">@_submitError</div>
+                }
+                <button class="primary" style="width: 100%; padding: 13px;" @onclick="SubmitCartOrder" disabled="@_isSubmitting">
+                    @(_isSubmitting ? "Placing Order..." : "Confirm & Place Order")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .tab-btn {
+        background: transparent;
+        border: none;
+        padding: 8px 16px;
+        font-weight: 700;
+        font-size: 13.5px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .product-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 22px;
+    }
+
+    .product-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .product-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 35px rgba(40, 55, 47, 0.1);
+    }
+
+    .card-media {
+        height: 150px;
+        background: linear-gradient(135deg, #f0f4f1, #e6ede8);
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .media-placeholder {
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        background: white;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    }
+
+    .type-badge {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 3px 8px;
+        border-radius: 6px;
+    }
+
+    .type-badge.consumable {
+        background: #fbf7ee;
+        color: #8a6e32;
+        border: 1px solid #eedec3;
+    }
+
+    .type-badge.activitykit, .type-badge.reusable {
+        background: #e6eee9;
+        color: #3e6253;
+        border: 1px solid #c8dacd;
+    }
+
+    .stock-badge {
+        position: absolute;
+        bottom: 10px;
+        right: 12px;
+        font-size: 10.5px;
+        font-weight: 750;
+        padding: 2px 7px;
+        border-radius: 6px;
+    }
+
+    .stock-badge.available {
+        background: rgba(255, 255, 255, 0.9);
+        color: #2e6930;
+    }
+
+    .stock-badge.request {
+        background: rgba(255, 255, 255, 0.9);
+        color: #8a6e32;
+    }
+
+    .card-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+    }
+
+    .category-tag {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--muted, #6c7870);
+        margin-bottom: 4px;
+    }
+
+    .product-name {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        line-height: 1.3;
+    }
+
+    .product-desc {
+        font-size: 13px;
+        color: var(--muted, #6c7870);
+        line-height: 1.45;
+        margin: 0 0 12px;
+        flex-grow: 1;
+    }
+
+    .safety-tip {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 11.5px;
+        color: #49574f;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 14px;
+    }
+
+    .pricing-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        background: #f7f9f7;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 16px;
+    }
+
+    .price-box {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .price-lbl {
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.6px;
+        color: var(--muted, #6c7870);
+    }
+
+    .price-val {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+    }
+
+    .loan-period {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--muted, #6c7870);
+    }
+
+    .deposit-note {
+        font-size: 10px;
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .card-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .card-actions button {
+        flex: 1;
+        font-size: 12px;
+        padding: 9px 12px;
+    }
+
+    /* Modal & Drawer Styles */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 28, 24, 0.45);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 999;
+    }
+
+    .modal-window {
+        background: white;
+        border-radius: 20px;
+        width: 90%;
+        max-width: 540px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        overflow: hidden;
+    }
+
+    .cart-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 480px;
+        background: white;
+        box-shadow: -10px 0 30px rgba(0,0,0,0.15);
+        display: flex;
+        flex-direction: column;
+        z-index: 1000;
+    }
+
+    .modal-header, .drawer-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-body, .drawer-body {
+        padding: 20px 24px;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .modal-footer, .drawer-footer {
+        padding: 16px 24px;
+        border-top: 1px solid var(--border);
+        background: var(--surface-soft);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        color: var(--muted);
+    }
+
+    .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 750;
+        color: var(--text);
+        margin-bottom: 6px;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        font-family: inherit;
+        font-size: 13px;
+        color: var(--text);
+        background: white;
+        box-sizing: border-box;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+        border-color: var(--accent);
+    }
+
+    select.form-input {
+        background-color: white;
+        color: var(--text);
+        cursor: pointer;
+    }
+
+    select.form-input option {
+        background-color: white;
+        color: var(--text);
+        padding: 6px 10px;
+    }
+
+    .model-selector {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .model-option {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        cursor: pointer;
+        display: flex;
+        gap: 8px;
+        background: var(--surface-soft);
+    }
+
+    .model-option.selected {
+        border-color: var(--accent);
+        background: var(--accent-light);
+    }
+
+    .option-title {
+        font-size: 13px;
+        font-weight: 750;
+        color: var(--text);
+    }
+
+    .option-desc {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 2px 0 6px;
+    }
+
+    .option-price {
+        font-size: 13px;
+        font-weight: 800;
+        color: var(--accent-dark);
+    }
+
+    .price-calc-box, .summary-box {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+    }
+
+    .calc-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12.5px;
+        margin-bottom: 6px;
+        color: var(--muted);
+    }
+
+    .calc-row.deposit {
+        color: var(--accent-dark);
+    }
+
+    .calc-row.total {
+        border-top: 1px solid var(--border);
+        padding-top: 8px;
+        margin-top: 8px;
+        font-size: 14px;
+        color: var(--text);
+    }
+
+    .cart-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .link-btn {
+        background: none;
+        border: none;
+        color: #b91c1c;
+        font-size: 11px;
+        cursor: pointer;
+        padding: 0;
+        margin-top: 4px;
+    }
+
+    .error-banner {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        margin-bottom: 10px;
+    }
+</style>
+
+@code {
+    private List<MaterialProduct> _allProducts = new();
+    private List<Classroom> _classrooms = new();
+    private bool _isLoading = true;
+    private int _activeOrdersCount = 0;
+
+    private string _searchQuery = "";
+    private string _selectedCategory = "All";
+    private string _selectedModelFilter = "All";
+    private string _activeTypeTab = "All";
+
+    // Cart and order drawer state
+    private MaterialProduct? _selectedProduct;
+    private bool _isOrderModalOpen = false;
+    private bool _isCartDrawerOpen = false;
+
+    private string _orderMode = "Purchase";
+    private int _orderQuantity = 1;
+    private int _orderDuration = 14;
+    private string _selectedClassroomId = "";
+
+    private List<CartItemModel> _cartItems = new();
+    private string _deliveryAddress = "Primary Daycare Facility, Central Branch, Classroom Area";
+    private string _contactName = "Daycare Teacher";
+    private string _contactPhone = "+91 98450 12345";
+    private DateTime? _deliveryDate = DateTime.Today.AddDays(3);
+    private string _orderNotes = "";
+    private bool _isSubmitting = false;
+    private string? _submitError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProductsAsync();
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _allProducts = await MaterialService.GetCatalogProductsAsync();
+
+            try
+            {
+                _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading classrooms: {ex.Message}");
+            }
+
+            var userOrgId = UserContext.OrganizationId ?? Guid.Empty;
+            if (userOrgId != Guid.Empty)
+            {
+                var orders = await MaterialService.GetOrdersForOrganizationAsync(userOrgId);
+                _activeOrdersCount = orders.Count(o => o.WorkflowStatus != MaterialWorkflowStatus.Completed && o.WorkflowStatus != MaterialWorkflowStatus.Cancelled);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading marketplace: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private IEnumerable<MaterialProduct> FilteredProducts
+    {
+        get
+        {
+            var query = _allProducts.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                query = query.Where(p =>
+                    p.Name.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    p.Description.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    p.Category.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                    (p.SafetyInstructions?.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            if (_selectedCategory != "All")
+            {
+                query = query.Where(p => p.Category.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (_selectedModelFilter == "Buy")
+            {
+                query = query.Where(p => p.Offering?.AllowPurchase == true);
+            }
+            else if (_selectedModelFilter == "Borrow")
+            {
+                query = query.Where(p => p.Offering?.AllowBorrow == true);
+            }
+
+            if (_activeTypeTab == "Consumables")
+            {
+                query = query.Where(p => p.MaterialType == "Consumable");
+            }
+            else if (_activeTypeTab == "Reusable Kits")
+            {
+                query = query.Where(p => p.MaterialType == "ActivityKit" || p.MaterialType == "Reusable");
+            }
+
+            return query;
+        }
+    }
+
+    private void SetTypeTab(string tab)
+    {
+        _activeTypeTab = tab;
+    }
+
+    private void OpenProductModal(MaterialProduct prod)
+    {
+        _selectedProduct = prod;
+        _orderMode = prod.Offering?.AllowBorrow == true ? "Borrow" : "Purchase";
+        _orderQuantity = 1;
+        _orderDuration = prod.Offering?.DefaultLoanDurationDays ?? 14;
+        _isOrderModalOpen = true;
+    }
+
+    private void OpenOrderDrawer(MaterialProduct prod)
+    {
+        OpenProductModal(prod);
+    }
+
+    private void CloseOrderModal()
+    {
+        _isOrderModalOpen = false;
+        _selectedProduct = null;
+    }
+
+    private void SetOrderMode(string mode)
+    {
+        _orderMode = mode;
+    }
+
+    private decimal CalculateItemSubtotal()
+    {
+        if (_selectedProduct?.Offering == null) return 0;
+        var off = _selectedProduct.Offering;
+        if (_orderMode == "Purchase")
+        {
+            return off.PurchasePrice * _orderQuantity;
+        }
+        else
+        {
+            return (off.RentalFee + off.RefundableDeposit) * _orderQuantity;
+        }
+    }
+
+    private void AddToCart()
+    {
+        if (_selectedProduct == null || _selectedProduct.Offering == null) return;
+
+        var off = _selectedProduct.Offering;
+        decimal price = _orderMode == "Purchase" ? off.PurchasePrice : off.RentalFee;
+        decimal deposit = _orderMode == "Borrow" ? off.RefundableDeposit : 0;
+        decimal lineTotal = (price + deposit) * _orderQuantity;
+
+        _cartItems.Add(new CartItemModel
+        {
+            ProductId = _selectedProduct.Id,
+            ProductName = _selectedProduct.Name,
+            FulfilmentMode = _orderMode,
+            Quantity = _orderQuantity,
+            UnitPrice = price,
+            Deposit = deposit,
+            LineTotal = lineTotal,
+            LoanDurationDays = _orderDuration,
+            ClassroomId = string.IsNullOrWhiteSpace(_selectedClassroomId) ? null : Guid.Parse(_selectedClassroomId)
+        });
+
+        CloseOrderModal();
+        _isCartDrawerOpen = true;
+    }
+
+    private void RemoveFromCart(CartItemModel item)
+    {
+        _cartItems.Remove(item);
+    }
+
+    private void OpenCartDrawer()
+    {
+        _isCartDrawerOpen = true;
+    }
+
+    private decimal GetCartTotal()
+    {
+        return _cartItems.Sum(c => c.LineTotal);
+    }
+
+    private async Task SubmitCartOrder()
+    {
+        _submitError = null;
+        if (string.IsNullOrWhiteSpace(_deliveryAddress))
+        {
+            _submitError = "Please specify a delivery address.";
+            return;
+        }
+
+        _isSubmitting = true;
+        try
+        {
+            var orgId = UserContext.OrganizationId ?? Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+            var req = new CreateMaterialOrderRequest
+            {
+                OrganizationId = orgId,
+                ClassroomId = _cartItems.FirstOrDefault(c => c.ClassroomId.HasValue)?.ClassroomId,
+                DeliveryAddress = _deliveryAddress,
+                DeliveryContactName = _contactName,
+                DeliveryContactPhone = _contactPhone,
+                RequiredDeliveryDate = _deliveryDate.HasValue 
+                    ? new DateTimeOffset(DateTime.SpecifyKind(_deliveryDate.Value, DateTimeKind.Utc)) 
+                    : DateTimeOffset.UtcNow.AddDays(3),
+                Notes = _orderNotes,
+                Items = _cartItems.Select(c => new CreateMaterialOrderItemRequest
+                {
+                    ProductId = c.ProductId,
+                    FulfilmentMode = c.FulfilmentMode,
+                    Quantity = c.Quantity,
+                    LoanDurationDays = c.LoanDurationDays
+                }).ToList()
+            };
+
+            var order = await MaterialService.SubmitMaterialOrderAsync(req);
+            _cartItems.Clear();
+            _isCartDrawerOpen = false;
+
+            NavigationManager.NavigateTo("/materials-orders");
+        }
+        catch (Exception ex)
+        {
+            _submitError = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private class CartItemModel
+    {
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public string FulfilmentMode { get; set; } = "Purchase";
+        public int Quantity { get; set; } = 1;
+        public decimal UnitPrice { get; set; }
+        public decimal Deposit { get; set; }
+        public decimal LineTotal { get; set; }
+        public int LoanDurationDays { get; set; }
+        public Guid? ClassroomId { get; set; }
+    }
+}

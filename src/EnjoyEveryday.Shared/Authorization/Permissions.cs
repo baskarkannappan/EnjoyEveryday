@@ -17,8 +17,14 @@ public static class Permissions
     public const string PlatformRolesManage = "platform.roles.manage";
     public const string PlatformBillingManage = "platform.billing.manage";
     public const string PlatformCashCollect = "platform.billing.cash_collect";
+    public const string PlatformWarehouseManage = "platform.warehouse.manage";
+    public const string PlatformMarketplaceOperations = "platform.marketplace.operations";
     /// <summary>Required (plus an active, purpose-limited support grant) for any tenant business-data access.</summary>
     public const string PlatformSupportAccess = "platform.support.access";
+
+    // ---- Materials Marketplace & Warehouse ----
+    public const string MaterialsView = "materials.view";
+    public const string MaterialsOrder = "materials.order";
 
     // ---- Organization / branch / classroom administration ----
     public const string OrganizationManage = "organization.manage";
@@ -106,6 +112,7 @@ public static class Permissions
     public static IReadOnlySet<string> PlatformOnly { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         PlatformConfigure, TenantManage, PlatformPlans, PlatformHealth,
-        PlatformSecurityEvents, PlatformRolesManage, PlatformBillingManage, PlatformSupportAccess
+        PlatformSecurityEvents, PlatformRolesManage, PlatformBillingManage, PlatformSupportAccess,
+        PlatformWarehouseManage, PlatformMarketplaceOperations
     };
 }

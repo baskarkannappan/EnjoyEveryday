@@ -12,6 +12,7 @@
 @inject OrganizationService OrganizationService
 @inject TimeProvider TimeProvider
 @inject EventService EventService
+@inject IMaterialMarketplaceService MaterialMarketplaceService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager NavigationManager
 
@@ -63,6 +64,9 @@
             <button class="btn" @onclick="() => _isWeeklyAssistantOpen = !_isWeeklyAssistantOpen" style="border: 1px solid #52745e; background: #edf4ee; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 700; color: #31523c; cursor: pointer; display: flex; align-items: center; gap: 6px;">
                 ✦ AI Weekly Assistant
             </button>
+            <a href="/marketplace" class="btn" style="border: 1px solid var(--line, #e1e6e0); background: #fff; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #47534c; text-decoration: none; display: flex; align-items: center; gap: 6px;">
+                📦 Materials
+            </a>
             <button class="btn" style="border: 1px solid var(--line, #e1e6e0); background: #fff; border-radius: 11px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #47534c;">
                 Preview plan
             </button>
@@ -135,11 +139,16 @@
                             var experience = _experiences.ContainsKey(schedule.ExperienceId) ? _experiences[schedule.ExperienceId] : null;
                             if (experience != null)
                             {
-                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "") @(schedule.Status == "Completed" || schedule.Status == "Closed" ? "completed" : "")" style="cursor: pointer;" @onclick="() => EditSchedule(schedule)">
-                                    <strong>@experience.Title</strong>
-                                    <span>
-                                        @GetExperienceType(experience) &middot; @schedule.TimeOfDay
-                                    </span>
+                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "") @(schedule.Status == "Completed" || schedule.Status == "Closed" ? "completed" : "")" style="cursor: pointer; position: relative;" @onclick="() => EditSchedule(schedule)">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;">
+                                        <strong style="flex: 1;">@experience.Title</strong>
+                                        <span @onclick:stopPropagation="true" @onclick="() => OpenMaterialReadiness(schedule, experience)" title="Check Material Readiness" style="display: inline-flex; align-items: center; justify-content: center; background: #eef4f0; color: #3d604e; border-radius: 6px; padding: 2px 6px; font-size: 10px; font-weight: 750; cursor: pointer; border: 1px solid #d5e2d8;">
+                                            📦 Kit
+                                        </span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px;">
+                                        <span>@GetExperienceType(experience) &middot; @schedule.TimeOfDay</span>
+                                    </div>
                                 </div>
                             }
                         }
@@ -150,6 +159,31 @@
 
         <div class="side-column">
             
+            <SidePanel Title="Materials & Warehouse" Subtitle="Activity supply chain">
+                <div style="background: #fafbf9; border: 1px solid var(--line, #e1e6e0); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 32px; height: 32px; border-radius: 8px; background: #e6eee9; color: #3e6253; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                            📦
+                        </div>
+                        <div>
+                            <div style="font-weight: 750; font-size: 13px; color: var(--text);">Materials Marketplace</div>
+                            <div style="font-size: 11px; color: var(--muted);">Central warehouse delivery</div>
+                        </div>
+                    </div>
+                    <p style="margin: 0; font-size: 12px; color: #47534c; line-height: 1.45;">
+                        Buy craft consumables or borrow reusable STEM & sensory kits without leaving your planning calendar.
+                    </p>
+                    <div style="display: flex; gap: 6px;">
+                        <a href="/marketplace" class="btn secondary" style="flex: 1; text-align: center; text-decoration: none; padding: 7px 10px; font-size: 11px; font-weight: 700; border-radius: 8px;">
+                            Browse Catalog
+                        </a>
+                        <a href="/marketplace/orders" class="btn secondary" style="flex: 1; text-align: center; text-decoration: none; padding: 7px 10px; font-size: 11px; font-weight: 700; border-radius: 8px;">
+                            Track Orders
+                        </a>
+                    </div>
+                </div>
+            </SidePanel>
+
             <SidePanel Title="Management Direction" Subtitle="Focus areas for this month">
                 <ManagementDirection 
                     Label="This month"
@@ -364,7 +398,255 @@
     </div>
 }
 
+@if (_isMaterialReadinessModalOpen && _selectedReadinessExperience != null)
+{
+    <div class="event-modal-backdrop" @onclick="CloseMaterialReadiness">
+        <div class="event-modal-card" style="max-width: 680px;" @onclick:stopPropagation="true">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #edf0ec; padding-bottom: 16px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; letter-spacing: 1.2px; color: #52745e; text-transform: uppercase;">
+                        Material Readiness Check
+                    </div>
+                    <h2 style="margin: 4px 0 0 0; font-size: 22px; font-weight: 750; color: #1a251e;">
+                        📦 @_selectedReadinessExperience.Title
+                    </h2>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                        Scheduled: @(_selectedReadinessSchedule?.ScheduledDate.ToString("MMMM dd, yyyy") ?? "Planned Activity") &middot; Classroom: @(_classroom?.Name ?? "Selected Classroom")
+                    </div>
+                </div>
+                <button type="button" @onclick="CloseMaterialReadiness" style="background: transparent; border: none; font-size: 20px; color: #7c877f; cursor: pointer; padding: 4px;">✕</button>
+            </div>
+
+            @if (_isLoadingReadiness)
+            {
+                <div style="padding: 40px; text-align: center; color: var(--muted); font-size: 14px;">
+                    Checking classroom stock and central warehouse orders...
+                </div>
+            }
+            else if (_readinessSummary != null)
+            {
+                @if (_readinessSummary.IsFullyReady)
+                {
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: #eef6f0; border: 1px solid #c2dec9; border-radius: 12px; padding: 12px 16px; margin-top: 14px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">✅</span>
+                            <div>
+                                <div style="font-weight: 750; color: #215934; font-size: 13px;">Fully Ready for Scheduled Date</div>
+                                <div style="font-size: 12px; color: #356e49;">All @_readinessSummary.TotalRequired required materials are on hand in the classroom or delivered.</div>
+                            </div>
+                        </div>
+                        <span style="background: #52745e; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;">@_readinessSummary.TotalOnHandOrDelivered / @_readinessSummary.TotalRequired READY</span>
+                    </div>
+                }
+                else if (_readinessSummary.OverallStatusBadge == "Dispatched")
+                {
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: #fefce8; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; margin-top: 14px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">🚚</span>
+                            <div>
+                                <div style="font-weight: 750; color: #854d0e; font-size: 13px;">Supplies Dispatched & In Transit</div>
+                                <div style="font-size: 12px; color: #a16207;">A central warehouse order has shipped and is awaiting classroom delivery.</div>
+                            </div>
+                        </div>
+                        <span style="background: #d97706; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;">IN TRANSIT</span>
+                    </div>
+                }
+                else
+                {
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: #fff8f5; border: 1px solid #fed7aa; border-radius: 12px; padding: 12px 16px; margin-top: 14px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 20px;">⚠️</span>
+                            <div>
+                                <div style="font-weight: 750; color: #9a3412; font-size: 13px;">Action Required — Missing Materials</div>
+                                <div style="font-size: 12px; color: #c2410c;">@(_readinessSummary.TotalRequired - _readinessSummary.TotalOnHandOrDelivered) required materials need to be purchased or borrowed.</div>
+                            </div>
+                        </div>
+                        <span style="background: #ea580c; color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;">MISSING SUPPLIES</span>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_readinessActionMessage))
+                {
+                    <div style="margin-top: 12px; padding: 10px 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; color: #065f46; font-size: 12px; font-weight: 650;">
+                        @_readinessActionMessage
+                    </div>
+                }
+
+                <div style="margin-top: 16px;">
+                    <div style="font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px;">
+                        Activity Material Requirements
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        @foreach (var mat in _readinessSummary.Materials)
+                        {
+                            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #fafbf9; border: 1px solid #e1e6e0; border-radius: 10px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 16px;">
+                                        @(mat.IsAvailableInStock ? "🟢" : (mat.IsOrdered ? "🚚" : (mat.CanBorrow ? "📦" : "🛒")))
+                                    </span>
+                                    <div>
+                                        <div style="font-weight: 700; font-size: 13px; color: var(--text);">@mat.MaterialName</div>
+                                        <div style="font-size: 11px; color: var(--muted);">
+                                            @if (mat.IsAvailableInStock)
+                                            {
+                                                <span>Available in classroom stock</span>
+                                            }
+                                            else if (mat.IsOrdered)
+                                            {
+                                                <span>Linked Order: @mat.OrderNumber &middot; Status: @mat.FulfilmentStatus</span>
+                                            }
+                                            else if (mat.CanBorrow)
+                                            {
+                                                <span>Warehouse Reusable Kit &middot; Rental: ₹@mat.RentalFee (Return required)</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Consumable Supply &middot; Buy: ₹@mat.PurchasePrice</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    @if (mat.IsAvailableInStock)
+                                    {
+                                        <span style="background: #e6eee9; color: #3e6253; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">
+                                            ✓ Ready
+                                        </span>
+                                    }
+                                    else if (mat.IsOrdered)
+                                    {
+                                        <span style="background: #fef3c7; color: #92400e; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">
+                                            @mat.FulfilmentStatus
+                                        </span>
+                                    }
+                                    else if (mat.CanBorrow)
+                                    {
+                                        <span style="background: #eff6ff; color: #1e40af; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">
+                                            Borrow Required
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span style="background: #fff7ed; color: #c2410c; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">
+                                            Purchase Required
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #edf0ec; padding-top: 16px; margin-top: 18px;">
+                    <div>
+                        <a href="/marketplace/orders" class="btn secondary" style="text-decoration: none; font-size: 12px; font-weight: 650; padding: 8px 14px; border-radius: 9px;">
+                            View Active Orders &rarr;
+                        </a>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" @onclick="CloseMaterialReadiness" class="btn secondary" style="padding: 8px 16px; font-size: 12px; font-weight: 650; border-radius: 9px;">
+                            Close
+                        </button>
+                        @if (!_readinessSummary.IsFullyReady)
+                        {
+                            <button type="button" class="btn primary" @onclick="OneClickOrderMissingMaterials" disabled="@_isSubmittingOrder" style="padding: 8px 18px; font-size: 12px; font-weight: 700; border-radius: 9px; background: #456a55; color: white;">
+                                @(_isSubmittingOrder ? "Submitting Order..." : "⚡ Order Missing Supplies")
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
 @code {
+    private bool _isMaterialReadinessModalOpen = false;
+    private ExperienceSchedule? _selectedReadinessSchedule;
+    private Experience? _selectedReadinessExperience;
+    private ExperienceMaterialReadinessSummary? _readinessSummary;
+    private bool _isLoadingReadiness = false;
+    private bool _isSubmittingOrder = false;
+    private string? _readinessActionMessage;
+
+    private async Task OpenMaterialReadiness(ExperienceSchedule schedule, Experience experience)
+    {
+        _selectedReadinessSchedule = schedule;
+        _selectedReadinessExperience = experience;
+        _readinessActionMessage = null;
+        _isLoadingReadiness = true;
+        _isMaterialReadinessModalOpen = true;
+
+        try
+        {
+            _readinessSummary = await MaterialMarketplaceService.CheckExperienceMaterialReadinessAsync(experience.Id, _classroom?.Id ?? Guid.Empty);
+        }
+        catch (Exception ex)
+        {
+            _readinessActionMessage = $"Error checking stock: {ex.Message}";
+        }
+        finally
+        {
+            _isLoadingReadiness = false;
+        }
+    }
+
+    private void CloseMaterialReadiness()
+    {
+        _isMaterialReadinessModalOpen = false;
+        _selectedReadinessSchedule = null;
+        _selectedReadinessExperience = null;
+        _readinessSummary = null;
+        _readinessActionMessage = null;
+    }
+
+    private async Task OneClickOrderMissingMaterials()
+    {
+        if (_readinessSummary == null || _selectedReadinessExperience == null) return;
+        var missing = _readinessSummary.Materials.Where(m => !m.IsAvailableInStock && !m.IsOrdered).ToList();
+        if (!missing.Any())
+        {
+            _readinessActionMessage = "All materials are already accounted for!";
+            return;
+        }
+
+        _isSubmittingOrder = true;
+        _readinessActionMessage = null;
+        try
+        {
+            var targetOrgId = UserContext.OrganizationId ?? _classroom?.BranchId ?? Guid.Empty;
+            var req = new CreateMaterialOrderRequest
+            {
+                OrganizationId = targetOrgId,
+                ClassroomId = _classroom?.Id,
+                PlannedExperienceId = _selectedReadinessExperience.Id,
+                RequiredDeliveryDate = _selectedReadinessSchedule?.ScheduledDate != null
+                    ? new DateTimeOffset(_selectedReadinessSchedule.ScheduledDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
+                    : DateTimeOffset.UtcNow.AddDays(3),
+                DeliveryAddress = _classroom?.Name ?? "Main Daycare Center",
+                Notes = $"Order generated from Experience Planning for activity '{_selectedReadinessExperience.Title}'",
+                Items = missing.Select(m => new CreateMaterialOrderItemRequest
+                {
+                    ProductId = m.MatchedProductId ?? Guid.NewGuid(),
+                    Quantity = 1,
+                    FulfilmentMode = m.CanBorrow ? MaterialFulfilmentMode.Borrow : MaterialFulfilmentMode.Purchase,
+                    LoanDurationDays = m.CanBorrow ? 14 : 0
+                }).ToList()
+            };
+
+            var order = await MaterialMarketplaceService.SubmitMaterialOrderAsync(req);
+            _readinessActionMessage = $"Order {order.OrderNumber} submitted successfully! Central warehouse has received your request.";
+            _readinessSummary = await MaterialMarketplaceService.CheckExperienceMaterialReadinessAsync(_selectedReadinessExperience.Id, _classroom?.Id ?? Guid.Empty);
+        }
+        catch (Exception ex)
+        {
+            _readinessActionMessage = $"Unable to place order: {ex.Message}";
+        }
+        finally
+        {
+            _isSubmittingOrder = false;
+        }
+    }
     private string _activeFilter = "all";
     private bool _isPlanWizardOpen = false;
     private Guid? _wizardScheduleId;

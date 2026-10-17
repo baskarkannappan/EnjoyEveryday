@@ -1,0 +1,1091 @@
+@page "/marketplace-operations"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Materials
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IMaterialMarketplaceService MaterialService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+
+<PageTitle>Marketplace Operations — EnjoyEveryday</PageTitle>
+
+<div class="content" style="padding: 32px 36px 70px; max-width: 1550px; margin: auto;">
+    <PageHero Eyebrow="SELLER &amp; WAREHOUSE OPERATOR"
+              Title="Marketplace Operations"
+              Subtitle="Central operations center for incoming material orders, quotations, picking &amp; dispatch, delivery tracking, and loan return inspections.">
+        <RightContent>
+            <a href="/warehouse-inventory" class="btn secondary" style="display: flex; align-items: center; gap: 8px;">
+                <span>🏭 Warehouse Stock Balances</span>
+            </a>
+            <button class="primary" @onclick="RefreshQueue">
+                ↻ Refresh Queue
+            </button>
+        </RightContent>
+    </PageHero>
+
+    <!-- OPERATIONAL STATS BAR -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-val">@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted)</div>
+            <div class="stat-lbl">New Requests</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val">@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)</div>
+            <div class="stat-lbl">Quotations Offered</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val">@_orders.Count(o => (o.WorkflowStatus == MaterialWorkflowStatus.Confirmed || o.WorkflowStatus == MaterialWorkflowStatus.PickingPacking) && o.FulfilmentStatus != "Dispatched")</div>
+            <div class="stat-lbl">Ready for Fulfilment</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val">@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.Dispatched)</div>
+            <div class="stat-lbl">Dispatched / In Transit</div>
+        </div>
+        <div class="stat-card highlight">
+            <div class="stat-val">@_loans.Count(l => l.ReturnStatus == MaterialLoanStatus.ReturnInTransit || l.ReturnStatus == MaterialLoanStatus.Received)</div>
+            <div class="stat-lbl">Returns Awaiting Inspection</div>
+        </div>
+    </div>
+
+    <!-- ERROR / INSUFFICIENT STOCK BANNER -->
+    @if (!string.IsNullOrWhiteSpace(_operationErrorMessage))
+    {
+        <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <div style="font-size: 22px;">⚠️</div>
+                <div>
+                    <strong style="color: #991b1b; font-size: 13.5px;">Warehouse Allocation Notice</strong>
+                    <div style="color: #7f1d1d; font-size: 12.5px; margin-top: 2px;">@_operationErrorMessage</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                @if (_insufficientStockOrder != null)
+                {
+                    <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick="QuickReplenishAndAllocate">
+                        ⚡ Quick Restock &amp; Allocate
+                    </button>
+                }
+                <a href="/warehouse-inventory" class="btn secondary" style="font-size: 12px; padding: 6px 12px;">
+                    Warehouse Inventory ➔
+                </a>
+                <button class="close-btn" @onclick="() => { _operationErrorMessage = null; _insufficientStockOrder = null; }">✕</button>
+            </div>
+        </div>
+    }
+
+    <!-- TABS -->
+    <div class="ops-tabs">
+        <button class="ops-tab @(_activeQueue == "Requests" ? "active" : "")" @onclick='() => SetQueue("Requests")'>
+            📋 Requests for Review (@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || o.WorkflowStatus == MaterialWorkflowStatus.UnderReview))
+        </button>
+        <button class="ops-tab @(_activeQueue == "Fulfilment" ? "active" : "")" @onclick='() => SetQueue("Fulfilment")'>
+            📦 Picking &amp; Packing (@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.Confirmed || o.WorkflowStatus == MaterialWorkflowStatus.PickingPacking))
+        </button>
+        <button class="ops-tab @(_activeQueue == "Shipments" ? "active" : "")" @onclick='() => SetQueue("Shipments")'>
+            🚚 Dispatched Packages (@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.Dispatched || o.WorkflowStatus == MaterialWorkflowStatus.InTransit))
+        </button>
+        <button class="ops-tab @(_activeQueue == "Returns" ? "active" : "")" @onclick='() => SetQueue("Returns")'>
+            🔍 Return Inspections (@_loans.Count(l => l.ReturnStatus == MaterialLoanStatus.ReturnInTransit || l.ReturnStatus == MaterialLoanStatus.Received || l.ReturnStatus == MaterialLoanStatus.InUse))
+        </button>
+        <button class="ops-tab @(_activeQueue == "All" ? "active" : "")" @onclick='() => SetQueue("All")'>
+            All Orders (@_orders.Count)
+        </button>
+    </div>
+
+    <!-- CONTENT QUEUES -->
+    @if (_isLoading)
+    {
+        <div style="padding: 50px; text-align: center; color: var(--muted);">Loading operations queue...</div>
+    }
+    else if (_activeQueue == "Returns")
+    {
+        <!-- LOAN RETURNS & INSPECTIONS QUEUE -->
+        <div class="returns-container">
+            @if (!_loans.Any())
+            {
+                <div class="empty-box">No reusable kit loans found.</div>
+            }
+            else
+            {
+                <div class="orders-table">
+                    @foreach (var loan in _loans)
+                    {
+                        var isReceived = loan.ReturnStatus == MaterialLoanStatus.Received;
+                        var isInTransit = loan.ReturnStatus == MaterialLoanStatus.ReturnInTransit;
+
+                        <div class="table-card @(isReceived ? "received-highlight" : "")">
+                            <div style="flex-grow: 1;">
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <strong style="font-size: 14.5px;">@loan.ProductName</strong>
+                                    <span class="loan-status @loan.ReturnStatus.ToLowerInvariant()">@loan.ReturnStatus</span>
+                                    <span style="font-size: 11.5px; color: var(--muted);">Qty: @loan.QuantityIssued</span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                                    Order: <strong>@loan.OrderNumber</strong> · Due: <strong>@loan.DueDate.ToLocalTime().ToString("d MMM yyyy")</strong>
+                                    · Deposit: <strong>₹@loan.DepositAmount.ToString("N0")</strong> (@loan.DepositStatus)
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                @if (isInTransit)
+                                {
+                                    <button class="btn secondary" @onclick="() => ReceiveReturnAtWarehouse(loan)">
+                                        📥 Receive Package at Warehouse
+                                    </button>
+                                }
+                                else if (isReceived)
+                                {
+                                    <button class="primary" @onclick="() => OpenInspectionModal(loan)">
+                                        🔍 Perform Quality &amp; Clean Inspection
+                                    </button>
+                                }
+                                <button class="btn secondary" @onclick="() => OpenOrderFromLoan(loan)">
+                                    Order Details
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <!-- ORDERS QUEUE -->
+        <div class="orders-queue-list">
+            @if (!FilteredOrders.Any())
+            {
+                <div class="empty-box">No orders currently waiting in this operational queue.</div>
+            }
+            else
+            {
+                @foreach (var order in FilteredOrders)
+                {
+                    <div class="queue-card">
+                        <div class="queue-card-top">
+                            <div>
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <strong style="font-size: 16px; color: var(--text);">@order.OrderNumber</strong>
+                                    <span class="status-pill @order.WorkflowStatus.ToLowerInvariant()">@order.WorkflowStatus</span>
+                                    <span class="org-badge">@order.OrganizationName</span>
+                                    @if (order.PaymentStatus == "Completed")
+                                    {
+                                        <span class="paid-badge">✓ Paid</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="unpaid-badge">₹ Payment Due</span>
+                                    }
+                                </div>
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                                    Requested by @order.RequestingUserEmail on @order.CreatedAt.ToLocalTime().ToString("d MMM, h:mm tt")
+                                    · Delivery Address: <em>@order.DeliveryAddress</em>
+                                </div>
+                            </div>
+
+                            <div style="text-align: right;">
+                                <div style="font-size: 18px; font-weight: 800; color: var(--text);">₹@order.TotalAmount.ToString("N2")</div>
+                                <div style="font-size: 11px; color: var(--muted);">@order.Items.Count line items</div>
+                            </div>
+                        </div>
+
+                        <!-- ITEMS SUMMARY -->
+                        <div class="queue-items-box">
+                            @foreach (var itm in order.Items)
+                            {
+                                <div class="queue-item-pill">
+                                    <span class="mode-tag @itm.FulfilmentMode.ToLowerInvariant()">@itm.FulfilmentMode</span>
+                                    <span>@itm.ProductName</span>
+                                    <strong>× @itm.Quantity</strong>
+                                    @if (itm.FulfilmentMode == "Borrow")
+                                    {
+                                        <span style="color: var(--muted);">(@itm.LoanDurationDays d)</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <!-- OPERATIONAL ACTION BUTTONS -->
+                        <div class="queue-card-actions">
+                            <div>
+                                @if (!string.IsNullOrWhiteSpace(order.QuotationNotes))
+                                {
+                                    <span style="font-size: 12px; color: #854d0e;">📝 Note: @order.QuotationNotes</span>
+                                }
+                            </div>
+
+                            <div style="display: flex; gap: 8px;">
+                                @if (order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted)
+                                {
+                                    <button class="btn secondary" @onclick="() => RejectOrder(order)">✕ Reject</button>
+                                    <button class="btn secondary" @onclick="() => OpenQuotationModal(order)">🏷️ Issue Quotation</button>
+                                    <button class="primary" @onclick="() => ApproveOrderDirectly(order)">✓ Approve &amp; Confirm</button>
+                                }
+                                else if (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && order.PaymentStatus != "Completed")
+                                {
+                                    <button class="btn secondary" @onclick="() => OpenManualPaymentModal(order)">💵 Record Cash Receipt</button>
+                                    <button class="primary" @onclick="() => AllocateStock(order)">📦 Allocate Warehouse Stock</button>
+                                }
+                                else if (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed || order.WorkflowStatus == MaterialWorkflowStatus.PickingPacking)
+                                {
+                                    @if (order.WorkflowStatus != MaterialWorkflowStatus.PickingPacking)
+                                    {
+                                        <button class="btn secondary" @onclick="() => AllocateStock(order)">📦 Allocate Stock</button>
+                                    }
+                                    <button class="dispatch-btn" @onclick="() => OpenDispatchModal(order)">🚚 Dispatch Shipment</button>
+                                }
+                                else if (order.WorkflowStatus == MaterialWorkflowStatus.Dispatched)
+                                {
+                                    <button class="btn secondary" @onclick="() => MarkDelivered(order)">✓ Mark Delivered</button>
+                                }
+
+                                <button class="btn secondary" @onclick="() => OpenOrderDetails(order)">View Timeline</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+<!-- ISSUE QUOTATION MODAL -->
+@if (_quotationModalOrder != null)
+{
+    var ord = _quotationModalOrder;
+
+    <div class="modal-backdrop" @onclick="() => _quotationModalOrder = null">
+        <div class="modal-window" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 style="margin: 0; font-weight: 800;">Issue Quotation &amp; Terms — @ord.OrderNumber</h3>
+                <button class="close-btn" @onclick="() => _quotationModalOrder = null">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                    <div>
+                        <label class="form-label">Purchases Amount (₹)</label>
+                        <input type="number" step="10" @bind="_quotePurchaseAmount" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Rental Fees (₹)</label>
+                        <input type="number" step="10" @bind="_quoteRentalFee" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Refundable Deposit (₹)</label>
+                        <input type="number" step="50" @bind="_quoteDeposit" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Shipping Charges (₹)</label>
+                        <input type="number" step="10" @bind="_quoteShippingFee" class="form-input" />
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Quotation Validity</label>
+                    <input type="date" @bind="_quoteValidUntil" class="form-input" />
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Quotation Notes &amp; Loan Terms for Daycare</label>
+                    <textarea @bind="_quoteNotes" class="form-input" rows="3" placeholder="Condition requirements, kit contents checklist, and return guidelines..."></textarea>
+                </div>
+
+                <div style="background: var(--surface-soft); padding: 12px; border-radius: 8px; font-weight: 750; font-size: 15px; display: flex; justify-content: space-between;">
+                    <span>Total Quoted Amount:</span>
+                    <span>₹@((_quotePurchaseAmount + _quoteRentalFee + _quoteDeposit + _quoteShippingFee).ToString("N2"))</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _quotationModalOrder = null">Cancel</button>
+                <button class="primary" @onclick="SubmitQuotation">Issue Quotation to Daycare</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- RECORD MANUAL CASH PAYMENT MODAL -->
+@if (_manualPaymentOrder != null)
+{
+    var ord = _manualPaymentOrder;
+
+    <div class="modal-backdrop" @onclick="() => _manualPaymentOrder = null">
+        <div class="modal-window" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 style="margin: 0; font-weight: 800;">Record In-Person / Bank Payment — @ord.OrderNumber</h3>
+                <button class="close-btn" @onclick="() => _manualPaymentOrder = null">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Payment Amount (₹)</label>
+                    <input type="number" @bind="_manualPaymentAmount" class="form-input" />
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Payment Method</label>
+                    <select @bind="_manualPaymentMethod" class="form-input">
+                        <option value="Cash">Cash Receipt</option>
+                        <option value="BankTransfer">Direct Bank Transfer / NEFT</option>
+                        <option value="Check">Cheque / Demand Draft</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Official Receipt Number</label>
+                    <input @bind="_manualReceiptNumber" class="form-input" placeholder="e.g. RCP-2026-0042" />
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Audit Notes</label>
+                    <input @bind="_manualPaymentNotes" class="form-input" placeholder="Received from Daycare Director" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _manualPaymentOrder = null">Cancel</button>
+                <button class="primary" @onclick="SubmitManualPayment">Record &amp; Verify Payment</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- DISPATCH SHIPMENT MODAL -->
+@if (_dispatchOrder != null)
+{
+    var ord = _dispatchOrder;
+
+    <div class="modal-backdrop" @onclick="() => _dispatchOrder = null">
+        <div class="modal-window" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 style="margin: 0; font-weight: 800;">Dispatch Shipment — @ord.OrderNumber</h3>
+                <button class="close-btn" @onclick="() => _dispatchOrder = null">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Logistics Carrier *</label>
+                    <select @bind="_dispatchCarrier" class="form-input">
+                        <option value="Blue Dart Express">Blue Dart Express</option>
+                        <option value="DTDC Courier">DTDC Courier</option>
+                        <option value="Delhivery Logistics">Delhivery Logistics</option>
+                        <option value="EnjoyEveryday Local Fleet">EnjoyEveryday Center Fleet</option>
+                        <option value="India Post SpeedPost">India Post SpeedPost</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Tracking Number / AWB *</label>
+                    <input @bind="_dispatchTrackingNumber" class="form-input" placeholder="e.g. BLU-789456123" />
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Estimated Delivery Date</label>
+                    <input type="date" @bind="_dispatchEstDelivery" class="form-input" />
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Warehouse Packing Notes</label>
+                    <input @bind="_dispatchNotes" class="form-input" placeholder="Checked & sealed with security tape" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _dispatchOrder = null">Cancel</button>
+                <button class="dispatch-btn" @onclick="SubmitDispatch">Confirm Dispatch &amp; Notify Daycare</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- RETURN QUALITY INSPECTION MODAL -->
+@if (_inspectionLoan != null)
+{
+    var loan = _inspectionLoan;
+
+    <div class="modal-backdrop" @onclick="() => _inspectionLoan = null">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 540px;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-weight: 800;">Return Inspection — @loan.ProductName</h3>
+                    <div style="font-size: 12px; color: var(--muted);">Order @loan.OrderNumber · Returned Qty: @loan.QuantityIssued</div>
+                </div>
+                <button class="close-btn" @onclick="() => _inspectionLoan = null">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Overall Returned Condition</label>
+                    <select @bind="_inspectCondition" class="form-input">
+                        <option value="Excellent">Excellent (Like New)</option>
+                        <option value="Good">Good (Normal wear, ready for use)</option>
+                        <option value="RequiresCleaning">Requires Sanitization &amp; Cleaning</option>
+                        <option value="Damaged">Damaged Parts</option>
+                        <option value="MissingParts">Missing Components</option>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                    <div>
+                        <label class="form-label">Approved to Available Stock</label>
+                        <input type="number" min="0" max="@loan.QuantityIssued" @bind="_inspectApprovedQty" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Send to Cleaning Station</label>
+                        <input type="number" min="0" max="@loan.QuantityIssued" @bind="_inspectCleaningQty" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Damaged Quantity</label>
+                        <input type="number" min="0" max="@loan.QuantityIssued" @bind="_inspectDamagedQty" class="form-input" />
+                    </div>
+                    <div>
+                        <label class="form-label">Missing Quantity</label>
+                        <input type="number" min="0" max="@loan.QuantityIssued" @bind="_inspectMissingQty" class="form-input" />
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Deposit Disposition</label>
+                    <select @bind="_inspectDepositDisposition" class="form-input">
+                        <option value="FullRefund">Full Deposit Refund to Daycare</option>
+                        <option value="PartialDeduction">Partial Deduction for Repair/Replacement</option>
+                        <option value="FullForfeiture">Full Deposit Forfeiture</option>
+                        <option value="NoDeposit">No Deposit Required</option>
+                    </select>
+                </div>
+
+                @if (_inspectDepositDisposition == "PartialDeduction")
+                {
+                    <div style="margin-bottom: 14px;">
+                        <label class="form-label">Deduction Amount (₹)</label>
+                        <input type="number" @bind="_inspectDeductionAmount" class="form-input" />
+                    </div>
+                }
+
+                <div style="margin-bottom: 14px;">
+                    <label class="form-label">Inspection &amp; Sanitization Notes</label>
+                    <textarea @bind="_inspectNotes" class="form-input" rows="2" placeholder="Accessories verified against checklist, sanitized with food-grade disinfectant spray..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _inspectionLoan = null">Cancel</button>
+                <button class="primary" @onclick="SubmitInspection">Complete Inspection &amp; Update Stock</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- TIMELINE & DETAILS MODAL -->
+@if (_selectedOrder != null && _isTimelineOpen)
+{
+    var ord = _selectedOrder;
+
+    <div class="modal-backdrop" @onclick="() => _isTimelineOpen = false">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 600px;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-weight: 800;">Order History &amp; Timeline — @ord.OrderNumber</h3>
+                    <div style="font-size: 12px; color: var(--muted);">Daycare: @ord.OrganizationName</div>
+                </div>
+                <button class="close-btn" @onclick="() => _isTimelineOpen = false">✕</button>
+            </div>
+            <div class="modal-body" style="max-height: 65vh; overflow-y: auto;">
+                <MaterialOrderTimeline Events="@_orderTimeline" />
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _isTimelineOpen = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .stat-card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px 20px;
+        box-shadow: var(--shadow);
+    }
+
+    .stat-card.highlight {
+        border-color: #557c6c;
+        background: #f4f8f5;
+    }
+
+    .stat-val {
+        font-size: 26px;
+        font-weight: 800;
+        color: var(--text);
+    }
+
+    .stat-lbl {
+        font-size: 11.5px;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-weight: 750;
+        letter-spacing: 0.5px;
+        margin-top: 4px;
+    }
+
+    .ops-tabs {
+        display: flex;
+        gap: 8px;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 8px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .ops-tab {
+        background: transparent;
+        border: none;
+        padding: 8px 16px;
+        font-weight: 750;
+        font-size: 13.5px;
+        color: var(--muted);
+        cursor: pointer;
+        border-radius: 8px;
+    }
+
+    .ops-tab.active {
+        background: var(--text);
+        color: white;
+    }
+
+    .orders-queue-list, .orders-table {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .queue-card, .table-card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px 22px;
+        box-shadow: var(--shadow);
+    }
+
+    .table-card.received-highlight {
+        border-left: 4px solid #557c6c;
+        background: #fbfcfa;
+    }
+
+    .queue-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+    }
+
+    .org-badge {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 6px;
+    }
+
+    .paid-badge {
+        background: #dcfce7;
+        color: #15803d;
+        font-size: 10.5px;
+        font-weight: 750;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .unpaid-badge {
+        background: #fef3c7;
+        color: #92400e;
+        font-size: 10.5px;
+        font-weight: 750;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .queue-items-box {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+
+    .queue-item-pill {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .mode-tag {
+        font-size: 9px;
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 1px 4px;
+        border-radius: 3px;
+    }
+
+    .mode-tag.purchase {
+        background: #fef9c3;
+        color: #854d0e;
+    }
+
+    .mode-tag.borrow {
+        background: #e0e7ff;
+        color: #3730a3;
+    }
+
+    .queue-card-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+    }
+
+    .dispatch-btn {
+        background: #0284c7;
+        color: white;
+        border: none;
+        border-radius: 11px;
+        padding: 8px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .dispatch-btn:hover {
+        background: #0369a1;
+    }
+
+    .empty-box {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 40px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13.5px;
+    }
+
+    .loan-status {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .loan-status.inuse {
+        background: #e6eee9;
+        color: #3e6253;
+    }
+
+    .loan-status.returnintransit {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+    .loan-status.received {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    /* Modal styles */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 28, 24, 0.45);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 999;
+    }
+
+    .modal-window {
+        background: white;
+        border-radius: 20px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        overflow: hidden;
+    }
+
+    .modal-header {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-body {
+        padding: 20px 22px;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .modal-footer {
+        padding: 14px 22px;
+        border-top: 1px solid var(--border);
+        background: var(--surface-soft);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        color: var(--muted);
+    }
+
+    .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 750;
+        color: var(--text);
+        margin-bottom: 5px;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 9px 11px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        font-family: inherit;
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+</style>
+
+@code {
+    private string _activeQueue = "Requests";
+    private bool _isLoading = true;
+
+    private List<MaterialOrder> _orders = new();
+    private List<MaterialLoan> _loans = new();
+
+    // Quotation modal
+    private MaterialOrder? _quotationModalOrder;
+    private decimal _quotePurchaseAmount;
+    private decimal _quoteRentalFee;
+    private decimal _quoteDeposit;
+    private decimal _quoteShippingFee = 150m;
+    private DateTime? _quoteValidUntil = DateTime.Today.AddDays(7);
+    private string _quoteNotes = "";
+
+    // Manual Payment modal
+    private MaterialOrder? _manualPaymentOrder;
+    private decimal _manualPaymentAmount;
+    private string _manualPaymentMethod = "Cash";
+    private string _manualReceiptNumber = "";
+    private string _manualPaymentNotes = "";
+
+    // Dispatch modal
+    private MaterialOrder? _dispatchOrder;
+    private string _dispatchCarrier = "Blue Dart Express";
+    private string _dispatchTrackingNumber = "";
+    private DateTime? _dispatchEstDelivery = DateTime.Today.AddDays(2);
+    private string _dispatchNotes = "";
+
+    // Inspection modal
+    private MaterialLoan? _inspectionLoan;
+    private string _inspectCondition = "Good";
+    private int _inspectApprovedQty = 1;
+    private int _inspectCleaningQty = 0;
+    private int _inspectDamagedQty = 0;
+    private int _inspectMissingQty = 0;
+    private string _inspectDepositDisposition = "FullRefund";
+    private decimal _inspectDeductionAmount = 0;
+    private string _inspectNotes = "";
+
+    // Timeline modal
+    private MaterialOrder? _selectedOrder;
+    private List<MaterialOrderHistory> _orderTimeline = new();
+    private bool _isTimelineOpen = false;
+
+    // Operation notices
+    private string? _operationErrorMessage;
+    private MaterialOrder? _insufficientStockOrder;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadQueueDataAsync();
+    }
+
+    private async Task LoadQueueDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _orders = await MaterialService.GetPlatformOrderQueueAsync();
+            _loans = await MaterialService.GetPlatformLoanQueueAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading platform queue: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task RefreshQueue()
+    {
+        await LoadQueueDataAsync();
+    }
+
+    private void SetQueue(string queue)
+    {
+        _activeQueue = queue;
+    }
+
+    private IEnumerable<MaterialOrder> FilteredOrders
+    {
+        get
+        {
+            return _activeQueue switch
+            {
+                "Requests" => _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || o.WorkflowStatus == MaterialWorkflowStatus.UnderReview),
+                "Fulfilment" => _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Confirmed || o.WorkflowStatus == MaterialWorkflowStatus.PickingPacking),
+                "Shipments" => _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Dispatched || o.WorkflowStatus == MaterialWorkflowStatus.InTransit),
+                _ => _orders
+            };
+        }
+    }
+
+    private async Task OpenOrderDetails(MaterialOrder order)
+    {
+        _selectedOrder = order;
+        _orderTimeline = await MaterialService.GetOrderTimelineAsync(order.Id);
+        _isTimelineOpen = true;
+    }
+
+    private async Task OpenOrderFromLoan(MaterialLoan loan)
+    {
+        var ord = _orders.FirstOrDefault(o => o.Id == loan.OrderId) ?? await MaterialService.GetOrderDetailsAsync(loan.OrderId);
+        if (ord != null)
+        {
+            await OpenOrderDetails(ord);
+        }
+    }
+
+    private void OpenQuotationModal(MaterialOrder order)
+    {
+        _quotationModalOrder = order;
+        _quotePurchaseAmount = order.TotalPurchaseAmount;
+        _quoteRentalFee = order.TotalRentalFee;
+        _quoteDeposit = order.TotalDeposit;
+        _quoteShippingFee = order.ShippingFee > 0 ? order.ShippingFee : 150m;
+        _quoteValidUntil = DateTime.Today.AddDays(7);
+        _quoteNotes = order.QuotationNotes ?? "Quotation and loan period terms approved by Platform Warehouse Operations.";
+    }
+
+    private async Task SubmitQuotation()
+    {
+        if (_quotationModalOrder == null) return;
+
+        var req = new IssueQuotationRequest
+        {
+            OrderId = _quotationModalOrder.Id,
+            TotalPurchaseAmount = _quotePurchaseAmount,
+            TotalRentalFee = _quoteRentalFee,
+            TotalDeposit = _quoteDeposit,
+            ShippingFee = _quoteShippingFee,
+            QuotationNotes = _quoteNotes,
+            ValidUntil = _quoteValidUntil.HasValue ? new DateTimeOffset(_quoteValidUntil.Value) : DateTimeOffset.UtcNow.AddDays(7)
+        };
+
+        await MaterialService.IssueOrderQuotationAsync(req);
+        _quotationModalOrder = null;
+        await LoadQueueDataAsync();
+    }
+
+    private async Task RejectOrder(MaterialOrder order)
+    {
+        await MaterialService.ReviewMaterialOrderAsync(new ReviewOrderRequest
+        {
+            OrderId = order.Id,
+            Approve = false,
+            RejectionReason = "Item or rental capacity unavailable for selected dates."
+        });
+        await LoadQueueDataAsync();
+    }
+
+    private async Task ApproveOrderDirectly(MaterialOrder order)
+    {
+        await MaterialService.ApproveAndConfirmMaterialOrderAsync(order.Id);
+        await LoadQueueDataAsync();
+    }
+
+    private void OpenManualPaymentModal(MaterialOrder order)
+    {
+        _manualPaymentOrder = order;
+        _manualPaymentAmount = order.TotalAmount;
+        _manualPaymentMethod = "Cash";
+        _manualReceiptNumber = $"RCP-MAT-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
+        _manualPaymentNotes = "In-person cash receipt verified by Platform Admin";
+    }
+
+    private async Task SubmitManualPayment()
+    {
+        if (_manualPaymentOrder == null) return;
+
+        await MaterialService.RecordManualMaterialPaymentAsync(new RecordManualOrderPaymentRequest
+        {
+            OrderId = _manualPaymentOrder.Id,
+            Amount = _manualPaymentAmount,
+            PaymentMethod = _manualPaymentMethod,
+            ReceiptNumber = _manualReceiptNumber,
+            Notes = _manualPaymentNotes
+        });
+
+        _manualPaymentOrder = null;
+        await LoadQueueDataAsync();
+    }
+
+    private async Task AllocateStock(MaterialOrder order)
+    {
+        _operationErrorMessage = null;
+        _insufficientStockOrder = null;
+        try
+        {
+            await MaterialService.AllocateStockAndPrepareOrderAsync(order.Id);
+            await LoadQueueDataAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _operationErrorMessage = ex.Message;
+            _insufficientStockOrder = order;
+        }
+        catch (Exception ex)
+        {
+            _operationErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task QuickReplenishAndAllocate()
+    {
+        if (_insufficientStockOrder == null) return;
+        try
+        {
+            var locations = await MaterialService.GetWarehouseLocationsAsync();
+            var central = locations.FirstOrDefault(l => l.IsCentralWarehouse) ?? locations.FirstOrDefault();
+            if (central == null) return;
+
+            var balances = await MaterialService.GetWarehouseInventoryBalancesAsync(central.Id);
+
+            foreach (var item in _insufficientStockOrder.Items)
+            {
+                var itemBal = balances.FirstOrDefault(b => b.MaterialProductId == item.MaterialProductId);
+                int available = itemBal?.AvailableStock ?? 0;
+                if (available < item.Quantity)
+                {
+                    int replenishAmount = Math.Max(20, item.Quantity - available + 10);
+                    await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+                    {
+                        ProductId = item.MaterialProductId,
+                        LocationId = central.Id,
+                        TransactionType = "Receipt",
+                        QuantityDelta = replenishAmount,
+                        Notes = $"Operational quick-replenishment for Order {_insufficientStockOrder.OrderNumber}"
+                    });
+                }
+            }
+
+            // Retry allocation
+            await MaterialService.AllocateStockAndPrepareOrderAsync(_insufficientStockOrder.Id);
+            _insufficientStockOrder = null;
+            _operationErrorMessage = null;
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _operationErrorMessage = $"Quick replenish failed: {ex.Message}";
+        }
+    }
+
+    private void OpenDispatchModal(MaterialOrder order)
+    {
+        _dispatchOrder = order;
+        _dispatchCarrier = "Blue Dart Express";
+        _dispatchTrackingNumber = $"BLU-{Random.Shared.Next(100000, 999999)}";
+        _dispatchEstDelivery = DateTime.Today.AddDays(2);
+        _dispatchNotes = "Picked, double-checked, packed in recyclable carton";
+    }
+
+    private async Task SubmitDispatch()
+    {
+        if (_dispatchOrder == null) return;
+
+        await MaterialService.DispatchOrderShipmentAsync(new DispatchShipmentRequest
+        {
+            OrderId = _dispatchOrder.Id,
+            CarrierName = _dispatchCarrier,
+            TrackingReference = _dispatchTrackingNumber,
+            EstimatedDeliveryDate = _dispatchEstDelivery.HasValue ? new DateTimeOffset(_dispatchEstDelivery.Value) : DateTimeOffset.UtcNow.AddDays(2),
+            DispatchNotes = _dispatchNotes
+        });
+
+        _dispatchOrder = null;
+        await LoadQueueDataAsync();
+    }
+
+    private async Task MarkDelivered(MaterialOrder order)
+    {
+        await MaterialService.ConfirmDeliveryReceiptAsync(new ConfirmDeliveryReceiptRequest
+        {
+            OrderId = order.Id,
+            IsDeliveredSuccessfully = true,
+            Notes = "Carrier delivery update recorded by Platform Operations"
+        });
+        await LoadQueueDataAsync();
+    }
+
+    private async Task ReceiveReturnAtWarehouse(MaterialLoan loan)
+    {
+        await MaterialService.ReceiveLoanReturnAtWarehouseAsync(loan.Id, loan.QuantityIssued, "Package received at central intake dock");
+        await LoadQueueDataAsync();
+    }
+
+    private void OpenInspectionModal(MaterialLoan loan)
+    {
+        _inspectionLoan = loan;
+        _inspectCondition = "Good";
+        _inspectApprovedQty = loan.QuantityIssued;
+        _inspectCleaningQty = 0;
+        _inspectDamagedQty = 0;
+        _inspectMissingQty = 0;
+        _inspectDepositDisposition = "FullRefund";
+        _inspectDeductionAmount = 0;
+        _inspectNotes = "Kit contents verified against inventory list; sanitized before restocking.";
+    }
+
+    private async Task SubmitInspection()
+    {
+        if (_inspectionLoan == null) return;
+
+        await MaterialService.CompleteReturnInspectionAsync(new CompleteReturnInspectionRequest
+        {
+            LoanId = _inspectionLoan.Id,
+            ReturnedQuantity = _inspectionLoan.QuantityIssued,
+            Condition = _inspectCondition,
+            QuantityApprovedForStock = _inspectApprovedQty,
+            QuantityRequiringCleaning = _inspectCleaningQty,
+            QuantityDamaged = _inspectDamagedQty,
+            QuantityMissing = _inspectMissingQty,
+            DepositDisposition = _inspectDepositDisposition,
+            DepositDeductionAmount = _inspectDeductionAmount,
+            InspectionNotes = _inspectNotes
+        });
+
+        _inspectionLoan = null;
+        await LoadQueueDataAsync();
+    }
+}

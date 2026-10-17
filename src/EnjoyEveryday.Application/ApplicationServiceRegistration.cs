@@ -59,6 +59,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<PlatformAdminService>();
         services.AddScoped<IBillingService, BillingService>();
         services.AddScoped<BillingService>();
+        services.AddScoped<IMaterialMarketplaceService, MaterialMarketplaceService>();
+        services.AddScoped<MaterialMarketplaceService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>(sp => new AppIdentityContext(

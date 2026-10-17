@@ -59,7 +59,8 @@ public static class RoleTemplates
         Permissions.EventCreate, Permissions.EventManage, Permissions.EventApproved, Permissions.EventPublished, Permissions.EventCancelled,
         Permissions.CommsDraft, Permissions.CommsSend, Permissions.CommsApprove, Permissions.CommsView,
         Permissions.InsightsOrgView, Permissions.InsightsBranchView, Permissions.InsightsClassroomView,
-        Permissions.InsightsOrgGenerate, Permissions.ExportOrgReports, Permissions.ExportChildReports
+        Permissions.InsightsOrgGenerate, Permissions.ExportOrgReports, Permissions.ExportChildReports,
+        Permissions.MaterialsView, Permissions.MaterialsOrder
     };
 
     private static readonly string[] BranchAdminPermissions =
@@ -77,7 +78,8 @@ public static class RoleTemplates
         Permissions.ConsentIssue, Permissions.ConsentReview, Permissions.ConsentView,
         Permissions.EventCreate, Permissions.EventManage, Permissions.EventApproved, Permissions.EventPublished, Permissions.EventCancelled,
         Permissions.CommsDraft, Permissions.CommsSend, Permissions.CommsApprove, Permissions.CommsView,
-        Permissions.InsightsBranchView, Permissions.InsightsClassroomView
+        Permissions.InsightsBranchView, Permissions.InsightsClassroomView,
+        Permissions.MaterialsView
     };
 
     // Daycare and classroom teachers share the same default template in the matrix; they differ only
@@ -91,7 +93,8 @@ public static class RoleTemplates
         Permissions.CareView, Permissions.CareRecord,
         Permissions.SafetyMapView, Permissions.SafetyReport,
         Permissions.ConsentView,
-        Permissions.CommsDraft, Permissions.CommsView
+        Permissions.CommsDraft, Permissions.CommsView,
+        Permissions.MaterialsView
     };
 
     private static readonly string[] ParentPermissions =

@@ -1,0 +1,1296 @@
+@page "/materials-orders"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Materials
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@inject IMaterialMarketplaceService MaterialService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Orders, Loans &amp; Deliveries — EnjoyEveryday</PageTitle>
+
+<div class="content" style="padding: 32px 36px 70px; max-width: 1550px; margin: auto;">
+    <PageHero Eyebrow="FULFILMENT &amp; TRACKING"
+              Title="Materials Orders &amp; Loans"
+              Subtitle="Track your material requests, view quotation terms, verify deliveries, and manage reusable kits and return deadlines.">
+        <RightContent>
+            <a href="/materials-marketplace" class="btn primary" style="display: flex; align-items: center; gap: 8px;">
+                <span>+ Browse Marketplace</span>
+            </a>
+        </RightContent>
+    </PageHero>
+
+    <!-- TOP NAVIGATION TABS -->
+    <div class="filter-row" style="display: flex; gap: 10px; margin-bottom: 24px; border-bottom: 1px solid var(--border, #e4e7df); padding-bottom: 8px; flex-wrap: wrap;">
+        <button class="nav-tab @(_activeTab == "Orders" ? "active" : "")" @onclick='() => SetTab("Orders")'>
+            📦 All Orders (@_orders.Count)
+        </button>
+        <button class="nav-tab @(_activeTab == "Loans" ? "active" : "")" @onclick='() => SetTab("Loans")'>
+            🔄 Reusable Loans in Use (@_loans.Count(l => l.ReturnStatus == MaterialLoanStatus.InUse || l.ReturnStatus == MaterialLoanStatus.ReturnDue))
+        </button>
+        <button class="nav-tab @(_activeTab == "Recurring" ? "active" : "")" @onclick='() => SetTab("Recurring")'>
+            🔁 Recurring Schedules (@_schedules.Count)
+        </button>
+    </div>
+
+    @if (_activeTab == "Orders")
+    {
+        <!-- ORDER STATUS FILTER -->
+        <div style="display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;">
+            @foreach (var filter in new[] { "All", "Pending Review", "Quotation Offered", "Payment Pending", "Dispatched", "Receipt Confirmed", "Completed" })
+            {
+                <button class="pill-btn @(_selectedStatusFilter == filter ? "active" : "")" @onclick="() => FilterOrders(filter)">
+                    @filter
+                </button>
+            }
+        </div>
+
+        @if (_isLoading)
+        {
+            <div style="padding: 50px; text-align: center; color: var(--muted);">Loading orders...</div>
+        }
+        else if (!FilteredOrders.Any())
+        {
+            <div style="background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center;">
+                <div style="font-size: 28px; margin-bottom: 10px;">📋</div>
+                <h3 style="margin: 0 0 6px; font-weight: 750;">No orders found in this category</h3>
+                <p style="color: var(--muted); font-size: 13px; margin: 0 0 16px;">Browse the Materials Marketplace to request supplies or borrow kits.</p>
+                <a href="/materials-marketplace" class="btn primary">+ Go to Marketplace</a>
+            </div>
+        }
+        else
+        {
+            <div class="orders-list">
+                @foreach (var order in FilteredOrders)
+                {
+                    var isLoanOrder = order.Items.Any(i => i.FulfilmentMode == "Borrow");
+                    var isPurchaseOrder = order.Items.Any(i => i.FulfilmentMode == "Purchase");
+
+                    <div class="order-card">
+                        <div class="order-header">
+                            <div>
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <strong style="font-size: 16px; color: var(--text);">@order.OrderNumber</strong>
+                                    <span class="status-pill @GetStatusClass(order.WorkflowStatus)">
+                                        @FormatStatus(order.WorkflowStatus)
+                                    </span>
+                                    @if (order.PaymentStatus == "Completed")
+                                    {
+                                        <span class="payment-pill paid">✓ Paid</span>
+                                    }
+                                    else if (order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || order.WorkflowStatus == MaterialWorkflowStatus.UnderReview)
+                                    {
+                                        <span class="payment-pill review">Awaiting Review</span>
+                                    }
+                                    else if (order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)
+                                    {
+                                        <span class="payment-pill quote">Quote Offered</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="payment-pill unpaid">Payment Pending</span>
+                                    }
+                                </div>
+                                <div class="order-meta">
+                                    Placed on @order.CreatedAt.ToLocalTime().ToString("d MMM yyyy, h:mm tt")
+                                    @if (order.RequiredDeliveryDate.HasValue)
+                                    {
+                                        <span>· Needed by: @order.RequiredDeliveryDate.Value.ToLocalTime().ToString("d MMM yyyy")</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(order.ClassroomName))
+                                    {
+                                        <span>· Classroom: <strong>@order.ClassroomName</strong></span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(order.PlannedExperienceTitle))
+                                    {
+                                        <span>· Activity: <strong>@order.PlannedExperienceTitle</strong></span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div style="text-align: right;">
+                                <div style="font-size: 18px; font-weight: 800; color: var(--text);">₹@order.TotalAmount.ToString("N2")</div>
+                                <div style="font-size: 11.5px; color: var(--muted);">
+                                    @order.Items.Sum(i => i.Quantity) items (@(isLoanOrder && isPurchaseOrder ? "Buy & Borrow" : (isLoanOrder ? "Borrow Loan" : "Purchase")))
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ITEMS PREVIEW -->
+                        <div class="order-items-preview">
+                            @foreach (var itm in order.Items)
+                            {
+                                <div class="item-chip">
+                                    <span class="item-mode @itm.FulfilmentMode.ToLowerInvariant()">@itm.FulfilmentMode</span>
+                                    <span>@itm.ProductName × @itm.Quantity</span>
+                                    @if (itm.FulfilmentMode == "Borrow")
+                                    {
+                                        <span class="chip-duration">(@itm.LoanDurationDays d)</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <!-- FOOTER ACTIONS -->
+                        <div class="order-footer">
+                            <div class="next-action-hint">
+                                @GetNextActionHint(order)
+                            </div>
+
+                            <div style="display: flex; gap: 8px;">
+                                @if (order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)
+                                {
+                                    <button class="primary" @onclick="() => AcceptQuotation(order)">
+                                        ✓ Accept Quotation
+                                    </button>
+                                }
+
+                                @if (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && order.PaymentStatus != "Completed")
+                                {
+                                    <button class="pay-btn" @onclick="() => PayOrderDirectly(order)" disabled="@(_isProcessingPayment && _processingOrderId == order.Id)">
+                                        @if (_isProcessingPayment && _processingOrderId == order.Id)
+                                        {
+                                            <span>⏳ Launching Razorpay...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>💳 Pay with Razorpay (₹@order.TotalAmount.ToString("N0"))</span>
+                                        }
+                                    </button>
+                                }
+
+                                @if (order.WorkflowStatus == MaterialWorkflowStatus.Dispatched)
+                                {
+                                    <button class="btn secondary" @onclick="() => ConfirmReceipt(order, true)">
+                                        ✓ Confirm Delivery Receipt
+                                    </button>
+                                }
+
+                                <button class="btn secondary" @onclick="() => OpenOrderDetails(order)">
+                                    View Details &amp; Timeline ➔
+                                </button>
+
+                                @if (order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || 
+                                     order.WorkflowStatus == MaterialWorkflowStatus.UnderReview || 
+                                     order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered || 
+                                     (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && order.PaymentStatus != "Completed"))
+                                {
+                                    <button class="btn-cancel" @onclick="() => PromptCancelOrder(order)">
+                                        ✕ Cancel Order
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else if (_activeTab == "Loans")
+    {
+        <!-- ACTIVE LOANS SECTION -->
+        <div class="loans-grid">
+            @if (!_loans.Any())
+            {
+                <div style="background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center; grid-column: 1 / -1;">
+                    <div style="font-size: 28px; margin-bottom: 10px;">📦</div>
+                    <h3 style="margin: 0 0 6px; font-weight: 750;">No active borrowed resources</h3>
+                    <p style="color: var(--muted); font-size: 13px; margin: 0;">Borrow reusable STEM sets and activity kits from the marketplace.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var loan in _loans)
+                {
+                    var isDueSoon = loan.DueDate <= DateTimeOffset.UtcNow.AddDays(3);
+                    var isOverdue = loan.DueDate < DateTimeOffset.UtcNow;
+
+                    <div class="loan-card @(isOverdue ? "overdue" : (isDueSoon ? "due-soon" : ""))">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div>
+                                <span class="loan-status @loan.ReturnStatus.ToLowerInvariant()">
+                                    @loan.ReturnStatus
+                                </span>
+                                <h3 style="margin: 8px 0 2px; font-size: 16px; font-weight: 750;">@loan.ProductName</h3>
+                                <div style="font-size: 11.5px; color: var(--muted);">Order: @loan.OrderNumber · Qty: @loan.QuantityIssued</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Due Date</div>
+                                <div style="font-size: 14px; font-weight: 800; color: @(isOverdue ? "#b91c1c" : "var(--text)");">
+                                    @loan.DueDate.ToLocalTime().ToString("d MMM yyyy")
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="font-size: 12.5px; color: #4b5850; background: var(--surface-soft); padding: 8px 12px; border-radius: 8px; margin-bottom: 14px;">
+                            @if (loan.DepositAmount > 0)
+                            {
+                                <div><strong>Deposit:</strong> ₹@loan.DepositAmount.ToString("N0") (@loan.DepositStatus)</div>
+                            }
+                            <div>Keep all accessories clean and repack in original kit container prior to dispatch.</div>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                            @if (loan.ReturnStatus == MaterialLoanStatus.InUse || loan.ReturnStatus == MaterialLoanStatus.ReturnDue)
+                            {
+                                <button class="primary" @onclick="() => InitiateReturn(loan)">
+                                    🔄 Initiate Kit Return
+                                </button>
+                            }
+                            else if (loan.ReturnStatus == MaterialLoanStatus.ReturnInTransit)
+                            {
+                                <span style="font-size: 12px; font-weight: 700; color: #0369a1; padding: 6px 12px;">
+                                    🚚 In transit to EnjoyEveryday Warehouse
+                                </span>
+                            }
+                            else if (loan.ReturnStatus == MaterialLoanStatus.Received)
+                            {
+                                <span style="font-size: 12px; font-weight: 700; color: #3e6253; padding: 6px 12px;">
+                                    🔍 Under Quality &amp; Sanitization Inspection
+                                </span>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+    else if (_activeTab == "Recurring")
+    {
+        <!-- RECURRING REPLENISHMENTS -->
+        <div style="background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h3 style="margin: 0 0 4px; font-size: 17px; font-weight: 750;">Scheduled Material Replenishments</h3>
+                    <p style="margin: 0; font-size: 13px; color: var(--muted);">Automated orders for consumable supplies or recurring kit rental periods.</p>
+                </div>
+                <button class="primary" @onclick="OpenNewRecurringModal">+ Schedule Replenishment</button>
+            </div>
+
+            @if (!_schedules.Any())
+            {
+                <div style="padding: 30px; text-align: center; color: var(--muted); font-size: 13.5px;">
+                    No recurring material replenishment schedules configured.
+                </div>
+            }
+            else
+            {
+                <div class="schedules-table">
+                    @foreach (var sch in _schedules)
+                    {
+                        <div class="schedule-row">
+                            <div style="flex-grow: 1;">
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <strong style="font-size: 14px; color: var(--text);">@sch.ProductName</strong>
+                                    <span class="type-badge @(sch.ScheduleType == "RecurringPurchase" ? "consumable" : "activitykit")">
+                                        @(sch.ScheduleType == "RecurringPurchase" ? "Consumable Purchase" : "Rental Kit")
+                                    </span>
+                                    <span class="schedule-badge @sch.Status.ToLowerInvariant()">@sch.Status</span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                                    Frequency: <strong>@sch.Frequency</strong> · Qty: @sch.Quantity · Next Shipment: <strong>@sch.NextRunDate.ToLocalTime().ToString("d MMM yyyy")</strong>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                @if (sch.Status == "Active")
+                                {
+                                    <button class="btn secondary" style="font-size: 11px; padding: 6px 10px;" @onclick='() => ToggleScheduleStatus(sch, "Paused")'>Pause</button>
+                                }
+                                else if (sch.Status == "Paused")
+                                {
+                                    <button class="btn secondary" style="font-size: 11px; padding: 6px 10px;" @onclick='() => ToggleScheduleStatus(sch, "Active")'>Resume</button>
+                                }
+                                <button class="btn secondary" style="font-size: 11px; padding: 6px 10px; color: #b91c1c;" @onclick='() => ToggleScheduleStatus(sch, "Cancelled")'>Cancel</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- ORDER DETAILS DRAWER WITH LIVE SHARED TIMELINE -->
+@if (_selectedOrder != null && _isDetailsDrawerOpen)
+{
+    var order = _selectedOrder;
+
+    <div class="modal-backdrop" @onclick="() => _isDetailsDrawerOpen = false">
+        <div class="details-drawer" @onclick:stopPropagation="true">
+            <div class="drawer-header">
+                <div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <h2 style="margin: 0; font-size: 19px; font-weight: 800;">Order @order.OrderNumber</h2>
+                        <span class="status-pill @GetStatusClass(order.WorkflowStatus)">@FormatStatus(order.WorkflowStatus)</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 3px;">
+                        Placed @order.CreatedAt.ToLocalTime().ToString("d MMM yyyy, h:mm tt")
+                    </div>
+                </div>
+                <button class="close-btn" @onclick="() => _isDetailsDrawerOpen = false">✕</button>
+            </div>
+
+            <div class="drawer-body">
+                <!-- SHIPMENT CARD -->
+                @if (order.Shipment != null)
+                {
+                    <div class="shipment-info-card">
+                        <div style="font-size: 12px; font-weight: 800; color: #0369a1; text-transform: uppercase;">Shipment &amp; Tracking</div>
+                        <div style="font-size: 14px; font-weight: 750; margin: 4px 0;">
+                            Carrier: @order.Shipment.CarrierName · Tracking #: <span style="font-family: monospace;">@order.Shipment.TrackingReference</span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--muted);">
+                            Dispatched on @order.Shipment.DispatchDate.ToLocalTime().ToString("d MMM yyyy") · Status: <strong>@order.Shipment.DeliveryStatus</strong>
+                        </div>
+                    </div>
+                }
+
+                <!-- ITEMS LIST -->
+                <h3 style="font-size: 14px; font-weight: 750; margin: 18px 0 10px;">Order Items</h3>
+                <div class="drawer-items-list">
+                    @foreach (var itm in order.Items)
+                    {
+                        <div class="drawer-item">
+                            <div>
+                                <div style="font-weight: 750; font-size: 13.5px;">@itm.ProductName</div>
+                                <div style="font-size: 12px; color: var(--muted);">
+                                    Mode: @itm.FulfilmentMode · Qty: @itm.Quantity
+                                    @if (itm.FulfilmentMode == "Borrow")
+                                    {
+                                        <span>· Loan duration: @itm.LoanDurationDays days</span>
+                                    }
+                                </div>
+                            </div>
+                            <div style="font-weight: 750; font-size: 13.5px;">
+                                ₹@itm.LineTotal.ToString("N2")
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- FINANCIALS -->
+                <div class="financials-box" style="margin-top: 14px;">
+                    <div class="calc-row">
+                        <span>Items Total:</span>
+                        <span>₹@((order.TotalPurchaseAmount + order.TotalRentalFee).ToString("N2"))</span>
+                    </div>
+                    @if (order.TotalDeposit > 0)
+                    {
+                        <div class="calc-row">
+                            <span>Refundable Deposits:</span>
+                            <span>₹@order.TotalDeposit.ToString("N2")</span>
+                        </div>
+                    }
+                    <div class="calc-row">
+                        <span>Shipping Charges:</span>
+                        <span>₹@order.ShippingFee.ToString("N2")</span>
+                    </div>
+                    <div class="calc-row total">
+                        <strong>Total Amount:</strong>
+                        <strong>₹@order.TotalAmount.ToString("N2")</strong>
+                    </div>
+                </div>
+
+                <!-- SHARED DATABASE TIMELINE -->
+                <h3 style="font-size: 14px; font-weight: 750; margin: 24px 0 10px; display: flex; align-items: center; gap: 6px;">
+                    <span>🕒 Shared Order Progression &amp; Timeline</span>
+                </h3>
+                <MaterialOrderTimeline Events="@_orderTimeline" />
+            </div>
+
+            <div class="drawer-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    @if (order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || 
+                         order.WorkflowStatus == MaterialWorkflowStatus.UnderReview || 
+                         order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered || 
+                         (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && order.PaymentStatus != "Completed"))
+                    {
+                        <button class="btn-cancel" @onclick="() => PromptCancelOrder(order)">
+                            ✕ Cancel Order
+                        </button>
+                    }
+                </div>
+                <button class="btn secondary" @onclick="() => _isDetailsDrawerOpen = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- RAZORPAY SECURE PAYMENT MODAL -->
+@if (_paymentModalOrder != null)
+{
+    <div class="modal-backdrop" @onclick="ClosePaymentModal">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 460px;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 800;">Razorpay Secure Payment</h3>
+                    <div style="font-size: 12px; color: var(--muted);">Order @_paymentModalOrder.OrderNumber</div>
+                </div>
+                <button class="close-btn" @onclick="ClosePaymentModal">✕</button>
+            </div>
+            <div class="modal-body" style="text-align: center; padding: 24px;">
+                <div style="width: 50px; height: 50px; border-radius: 12px; background: #e0f2fe; color: #0284c7; display: grid; place-items: center; font-size: 24px; margin: 0 auto 12px;">
+                    💳
+                </div>
+                <div style="font-size: 13px; color: var(--muted); margin-bottom: 6px;">Total Payable Amount</div>
+                <div style="font-size: 28px; font-weight: 800; color: var(--text); margin-bottom: 16px;">
+                    ₹@_paymentModalOrder.TotalAmount.ToString("N2")
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_paymentErrorMessage))
+                {
+                    <div style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-bottom: 16px; text-align: left;">
+                        ⚠️ @_paymentErrorMessage
+                    </div>
+                }
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; color: #405248; text-align: left; margin-bottom: 20px;">
+                    <div>• 256-bit encrypted Razorpay checkout</div>
+                    <div>• Instant payment confirmation &amp; verified webhook processing</div>
+                    <div>• Automatic warehouse notification upon payment capture</div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button class="primary" style="width: 100%; padding: 12px; font-weight: 750;" @onclick="PayOrderWithRazorpay" disabled="@_isProcessingPayment">
+                        @if (_isProcessingPayment)
+                        {
+                            <span>Launching Razorpay Checkout...</span>
+                        }
+                        else
+                        {
+                            <span>💳 Pay with Razorpay Checkout (₹@_paymentModalOrder.TotalAmount.ToString("N0"))</span>
+                        }
+                    </button>
+
+                    <button class="btn secondary" style="width: 100%; padding: 10px; font-size: 12.5px;" @onclick="SimulateRazorpayPayment" disabled="@_isProcessingPayment">
+                        ⚡ Quick Test Payment (Instant Simulation)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- CANCEL ORDER CONFIRMATION MODAL -->
+@if (_orderToCancel != null)
+{
+    <div class="modal-backdrop" @onclick="() => _orderToCancel = null">
+        <div class="modal-window" @onclick:stopPropagation="true" style="max-width: 440px;">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #991b1b;">Cancel Order</h3>
+                    <div style="font-size: 12px; color: var(--muted);">Order @_orderToCancel.OrderNumber</div>
+                </div>
+                <button class="close-btn" @onclick="() => _orderToCancel = null">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <p style="font-size: 13.5px; color: var(--text); margin-top: 0; line-height: 1.5;">
+                    Are you sure you want to cancel order <strong>@_orderToCancel.OrderNumber</strong>? Any reserved warehouse inventory will be released back to the catalog.
+                </p>
+
+                <label class="form-label">Cancellation Reason</label>
+                <input @bind="_cancelReason" class="form-input" placeholder="e.g. Activity schedule changed or ordered by mistake" />
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="btn secondary" @onclick="() => _orderToCancel = null">Keep Order</button>
+                <button class="primary" style="background: #b91c1c; border-color: #991b1b;" @onclick="ConfirmCancelOrder">
+                    Yes, Cancel Order
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .nav-tab {
+        background: transparent;
+        border: none;
+        padding: 9px 18px;
+        font-weight: 750;
+        font-size: 14px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+
+    .nav-tab.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .pill-btn {
+        background: white;
+        border: 1px solid var(--border, #e4e7df);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+    }
+
+    .pill-btn.active {
+        background: var(--text, #26332d);
+        color: white;
+        border-color: var(--text, #26332d);
+    }
+
+    .orders-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .order-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 20px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .order-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+    }
+
+    .order-meta {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+        margin-top: 4px;
+    }
+
+    .status-pill {
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+
+    .status-pill.confirmed, .status-pill.completed, .status-pill.receiptconfirmed {
+        background: #e6eee9;
+        color: #3e6253;
+        border: 1px solid #c0d8cb;
+    }
+
+    .status-pill.requestsubmitted, .status-pill.underreview, .status-pill.quotationoffered {
+        background: #fbf7ee;
+        color: #8a6e32;
+        border: 1px solid #eedec3;
+    }
+
+    .status-pill.dispatched, .status-pill.intransit {
+        background: #e0f2fe;
+        color: #0369a1;
+        border: 1px solid #bae6fd;
+    }
+
+    .payment-pill {
+        padding: 2px 7px;
+        border-radius: 6px;
+        font-size: 10.5px;
+        font-weight: 750;
+    }
+
+    .payment-pill.paid {
+        background: #dcfce7;
+        color: #15803d;
+    }
+
+    .payment-pill.unpaid {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .payment-pill.review, .payment-pill.quote {
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+        border: 1px solid var(--border, #e4e7df);
+    }
+
+    .order-items-preview {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 10px 0 16px;
+    }
+
+    .item-chip {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .item-mode {
+        font-size: 9px;
+        font-weight: 800;
+        text-transform: uppercase;
+        padding: 1px 4px;
+        border-radius: 4px;
+    }
+
+    .item-mode.purchase {
+        background: #fef9c3;
+        color: #854d0e;
+    }
+
+    .item-mode.borrow {
+        background: #e0e7ff;
+        color: #3730a3;
+    }
+
+    .chip-duration {
+        font-size: 11px;
+        color: var(--muted);
+    }
+
+    .order-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid var(--border, #e4e7df);
+        padding-top: 14px;
+    }
+
+    .next-action-hint {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .pay-btn {
+        background: #0284c7;
+        color: white;
+        border: none;
+        border-radius: 11px;
+        padding: 9px 16px;
+        font-weight: 750;
+        font-size: 12.5px;
+        cursor: pointer;
+    }
+
+    .pay-btn:hover {
+        background: #0369a1;
+    }
+
+    .btn-cancel {
+        background: white;
+        border: 1px solid #fed7d7;
+        color: #b91c1c;
+        padding: 8px 14px;
+        border-radius: 11px;
+        font-weight: 700;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-cancel:hover {
+        background: #fff5f5;
+        border-color: #fca5a5;
+    }
+
+    /* Loans grid */
+    .loans-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 18px;
+    }
+
+    .loan-card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px;
+        box-shadow: var(--shadow);
+    }
+
+    .loan-card.due-soon {
+        border-color: #f59e0b;
+        background: #fffdf8;
+    }
+
+    .loan-card.overdue {
+        border-color: #ef4444;
+        background: #fff8f8;
+    }
+
+    .loan-status {
+        padding: 2px 7px;
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .loan-status.inuse {
+        background: #e6eee9;
+        color: #3e6253;
+    }
+
+    .loan-status.returndue {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .loan-status.returnintransit {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+    /* Recurring schedules */
+    .schedules-table {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .schedule-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface-soft);
+    }
+
+    .schedule-badge.active {
+        background: #dcfce7;
+        color: #15803d;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 750;
+    }
+
+    .schedule-badge.paused {
+        background: #fef3c7;
+        color: #92400e;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 750;
+    }
+
+    .schedule-badge.cancelled {
+        background: #fee2e2;
+        color: #991b1b;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 750;
+    }
+
+    /* Details Drawer */
+    .details-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 560px;
+        background: white;
+        box-shadow: -10px 0 30px rgba(0,0,0,0.15);
+        display: flex;
+        flex-direction: column;
+        z-index: 1000;
+    }
+
+    .shipment-info-card {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+    }
+
+    .drawer-items-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .drawer-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface-soft);
+    }
+
+    .financials-box {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+    }
+
+    /* Modal Backdrop & Windows */
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(20, 30, 25, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .modal-window {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22);
+        width: 100%;
+        max-width: 480px;
+        overflow: hidden;
+        animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        text-align: left;
+    }
+
+    @@keyframes modalFadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.96) translateY(6px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+    }
+
+    .modal-header h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 18px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 6px;
+        line-height: 1;
+    }
+
+    .close-btn:hover {
+        background: rgba(0, 0, 0, 0.05);
+        color: var(--text, #26332d);
+    }
+
+    .modal-body {
+        padding: 22px 20px;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+    }
+
+    .form-label {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+        margin-bottom: 6px;
+    }
+
+    .form-input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 14px;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 10px;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        background: white;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+        border-color: var(--accent, #557c6c);
+        box-shadow: 0 0 0 3px rgba(85, 124, 108, 0.15);
+    }
+</style>
+
+@code {
+    private string _activeTab = "Orders";
+    private string _selectedStatusFilter = "All";
+    private bool _isLoading = true;
+
+    private List<MaterialOrder> _orders = new();
+    private List<MaterialLoan> _loans = new();
+    private List<MaterialRecurringSchedule> _schedules = new();
+
+    private MaterialOrder? _selectedOrder;
+    private List<MaterialOrderHistory> _orderTimeline = new();
+    private bool _isDetailsDrawerOpen = false;
+
+    private MaterialOrder? _paymentModalOrder;
+    private bool _isProcessingPayment = false;
+    private Guid? _processingOrderId;
+    private string? _paymentErrorMessage;
+    private DotNetObjectReference<MaterialOrdersPage>? _dotNetRef;
+
+    private MaterialOrder? _orderToCancel;
+    private string _cancelReason = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var orgId = UserContext.OrganizationId ?? Guid.Parse("00000000-0000-0000-0000-000000000001");
+            _orders = await MaterialService.GetOrdersForOrganizationAsync(orgId);
+            _loans = await MaterialService.GetOrganizationLoansAsync(orgId);
+            _schedules = await MaterialService.GetRecurringSchedulesAsync(orgId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading orders: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private IEnumerable<MaterialOrder> FilteredOrders
+    {
+        get
+        {
+            if (_selectedStatusFilter == "Pending Review")
+                return _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || o.WorkflowStatus == MaterialWorkflowStatus.UnderReview);
+            if (_selectedStatusFilter == "Quotation Offered")
+                return _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered);
+            if (_selectedStatusFilter == "Payment Pending")
+                return _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Confirmed && o.PaymentStatus != "Completed");
+            if (_selectedStatusFilter == "Dispatched")
+                return _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Dispatched || o.WorkflowStatus == MaterialWorkflowStatus.InTransit);
+            if (_selectedStatusFilter == "Receipt Confirmed")
+                return _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.ReceiptConfirmed);
+            if (_selectedStatusFilter == "Completed")
+                return _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Completed);
+
+            return _orders;
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private void FilterOrders(string filter)
+    {
+        _selectedStatusFilter = filter;
+    }
+
+    private async Task OpenOrderDetails(MaterialOrder order)
+    {
+        _selectedOrder = order;
+        _orderTimeline = await MaterialService.GetOrderTimelineAsync(order.Id);
+        _isDetailsDrawerOpen = true;
+    }
+
+    private async Task AcceptQuotation(MaterialOrder order)
+    {
+        await MaterialService.AcceptOrderQuotationAsync(order.Id);
+        await LoadDataAsync();
+    }
+
+    private void OpenPaymentModal(MaterialOrder order)
+    {
+        _paymentModalOrder = order;
+        _paymentErrorMessage = null;
+        _isProcessingPayment = false;
+    }
+
+    private void ClosePaymentModal()
+    {
+        _paymentModalOrder = null;
+        _paymentErrorMessage = null;
+        _isProcessingPayment = false;
+    }
+
+    private async Task PayOrderDirectly(MaterialOrder order)
+    {
+        if (_isProcessingPayment) return;
+        _paymentModalOrder = order;
+        _processingOrderId = order.Id;
+        _paymentErrorMessage = null;
+        _isProcessingPayment = true;
+        StateHasChanged();
+
+        try
+        {
+            var rzpOrder = await MaterialService.CreateMaterialRazorpayOrderAsync(order.Id);
+            var options = new
+            {
+                key = rzpOrder.KeyId,
+                amount = rzpOrder.AmountInPaise,
+                currency = rzpOrder.Currency,
+                name = "EnjoyEveryday Materials",
+                description = $"Payment for Order {order.OrderNumber}",
+                orderId = rzpOrder.OrderId,
+                invoiceId = order.Id.ToString(),
+                invoiceNumber = order.OrderNumber,
+                organizationId = order.OrganizationId.ToString(),
+                prefillName = order.OrganizationName ?? "Daycare Admin",
+                prefillEmail = order.RequestingUserEmail ?? ""
+            };
+
+            await JS.InvokeVoidAsync("initiateRazorpayPayment", options, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            _paymentErrorMessage = $"Could not launch Razorpay: {ex.Message}";
+            _isProcessingPayment = false;
+            // Leave _paymentModalOrder open so the user sees the error and can click Quick Simulation
+            StateHasChanged();
+        }
+    }
+
+    private async Task PayOrderWithRazorpay()
+    {
+        if (_paymentModalOrder == null || _isProcessingPayment) return;
+        await PayOrderDirectly(_paymentModalOrder);
+    }
+
+    [JSInvokable]
+    public async Task OnRazorpaySuccess(RazorpayCallbackPayload payload)
+    {
+        _isProcessingPayment = true;
+        StateHasChanged();
+
+        try
+        {
+            if (_paymentModalOrder == null) return;
+
+            var rzpReq = new VerifyMaterialOrderPaymentRequest
+            {
+                OrderId = _paymentModalOrder.Id,
+                RazorpayOrderId = payload.OrderId,
+                RazorpayPaymentId = payload.PaymentId,
+                RazorpaySignature = payload.Signature
+            };
+
+            var verified = await MaterialService.VerifyMaterialRazorpayPaymentAsync(rzpReq);
+            if (!verified)
+            {
+                _paymentErrorMessage = "Razorpay payment verification failed on server.";
+                _isProcessingPayment = false;
+                _processingOrderId = null;
+                StateHasChanged();
+                return;
+            }
+
+            _paymentModalOrder = null;
+            _processingOrderId = null;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _paymentErrorMessage = $"Error confirming payment: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessingPayment = false;
+            _processingOrderId = null;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnRazorpayDismiss()
+    {
+        _isProcessingPayment = false;
+        _processingOrderId = null;
+        if (string.IsNullOrWhiteSpace(_paymentErrorMessage))
+        {
+            _paymentModalOrder = null;
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnRazorpayError(string message)
+    {
+        _paymentErrorMessage = message;
+        _isProcessingPayment = false;
+        _processingOrderId = null;
+        StateHasChanged();
+    }
+
+    private async Task SimulateRazorpayPayment()
+    {
+        if (_paymentModalOrder == null || _isProcessingPayment) return;
+        _isProcessingPayment = true;
+        _paymentErrorMessage = null;
+
+        try
+        {
+            var rzpReq = new VerifyMaterialOrderPaymentRequest
+            {
+                OrderId = _paymentModalOrder.Id,
+                RazorpayOrderId = $"order_rzp_{Random.Shared.Next(10000, 99999)}",
+                RazorpayPaymentId = $"pay_rzp_{Random.Shared.Next(10000, 99999)}",
+                RazorpaySignature = "mock_sig_valid"
+            };
+
+            var verified = await MaterialService.VerifyMaterialRazorpayPaymentAsync(rzpReq);
+            if (!verified)
+            {
+                _paymentErrorMessage = "Payment signature verification failed. Please check payment gateway settings.";
+                _isProcessingPayment = false;
+                return;
+            }
+
+            _paymentModalOrder = null;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _paymentErrorMessage = $"Payment processing failed: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessingPayment = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private void PromptCancelOrder(MaterialOrder order)
+    {
+        _orderToCancel = order;
+        _cancelReason = "Requested by daycare admin";
+    }
+
+    private async Task ConfirmCancelOrder()
+    {
+        if (_orderToCancel == null) return;
+        await MaterialService.CancelOrderAsync(_orderToCancel.Id, string.IsNullOrWhiteSpace(_cancelReason) ? "Cancelled by user" : _cancelReason);
+        _orderToCancel = null;
+        _isDetailsDrawerOpen = false;
+        await LoadDataAsync();
+    }
+
+    public class RazorpayCallbackPayload
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public string PaymentId { get; set; } = string.Empty;
+        public string Signature { get; set; } = string.Empty;
+    }
+
+    private async Task ConfirmReceipt(MaterialOrder order, bool success)
+    {
+        await MaterialService.ConfirmDeliveryReceiptAsync(new ConfirmDeliveryReceiptRequest
+        {
+            OrderId = order.Id,
+            IsDeliveredSuccessfully = success,
+            Notes = "Confirmed received in good condition by Daycare Admin."
+        });
+        await LoadDataAsync();
+    }
+
+    private async Task InitiateReturn(MaterialLoan loan)
+    {
+        await MaterialService.InitiateLoanReturnAsync(loan.Id, "Packed in original box, dispatched back via courier");
+        await LoadDataAsync();
+    }
+
+    private async Task ToggleScheduleStatus(MaterialRecurringSchedule schedule, string newStatus)
+    {
+        await MaterialService.UpdateRecurringScheduleStatusAsync(schedule.Id, newStatus);
+        await LoadDataAsync();
+    }
+
+    private void OpenNewRecurringModal()
+    {
+        // Route to marketplace to pick product for schedule
+        NavigationManager.NavigateTo("/materials-marketplace");
+    }
+
+    private string FormatStatus(string status) => status switch
+    {
+        "RequestSubmitted" => "Request Submitted",
+        "UnderReview" => "Under Platform Review",
+        "QuotationOffered" => "Quotation Offered",
+        "Confirmed" => "Confirmed",
+        "PickingPacking" => "Picking & Packing",
+        "Dispatched" => "Dispatched / In Transit",
+        "Delivered" => "Delivered",
+        "ReceiptConfirmed" => "Receipt Confirmed",
+        "Completed" => "Completed",
+        "Rejected" => "Request Rejected",
+        "Cancelled" => "Cancelled",
+        _ => status
+    };
+
+    private string GetStatusClass(string status) => status.ToLowerInvariant();
+
+    private string GetNextActionHint(MaterialOrder order) => order.WorkflowStatus switch
+    {
+        "RequestSubmitted" => "Waiting for EnjoyEveryday platform operations to review feasibility and terms.",
+        "UnderReview" => "Platform admin is checking warehouse stock and preparing loan/quotation terms.",
+        "QuotationOffered" => "Please review and accept quoted price & terms to proceed.",
+        "Confirmed" when order.PaymentStatus != "Completed" => "Payment pending. Complete Razorpay checkout to start warehouse picking.",
+        "Confirmed" => "Payment verified. Warehouse is scheduling allocation.",
+        "PickingPacking" => "Warehouse staff is picking, packing, and preparing your shipment.",
+        "Dispatched" => "Package is on its way. Confirm receipt when delivered to your center.",
+        "ReceiptConfirmed" => "Delivered! Borrowed kits remain active until due date.",
+        "Completed" => "All items received / returned. Order completed.",
+        _ => ""
+    };
+}
