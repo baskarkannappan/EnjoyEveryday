@@ -21,11 +21,11 @@
         </RightContent>
     </PageHero>
 
-    <!-- LOCATION BAR -->
+    <!-- LOCATION & SEARCH BAR -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
         <div style="display: flex; gap: 10px; align-items: center;">
             <span style="font-size: 13px; font-weight: 750; color: var(--text);">Warehouse Location:</span>
-            <select @bind="_selectedLocationId" @bind:after="LoadInventoryDataAsync" class="location-select">
+            <select @bind="_selectedLocationId" @bind:after="OnLocationChangedAsync" class="location-select">
                 @foreach (var loc in _locations)
                 {
                     <option value="@loc.Id">@loc.Name (@loc.Code)</option>
@@ -33,9 +33,17 @@
             </select>
         </div>
 
-        <div style="display: flex; gap: 10px;">
-            <input @bind="_searchFilter" @bind:event="oninput" placeholder="Search by product SKU, name, category..." 
-                   style="padding: 9px 14px; border-radius: 9px; border: 1px solid var(--border); font-size: 13px; min-width: 250px;" />
+        <div class="search-input-wrap" style="max-width: 320px;">
+            <span class="search-icon">🔍</span>
+            <input class="search-input"
+                   @bind="_searchFilter"
+                   @bind:event="oninput"
+                   @bind:after="OnFilterChanged"
+                   placeholder="Search by product SKU, name, category..." />
+            @if (!string.IsNullOrWhiteSpace(_searchFilter))
+            {
+                <button class="clear-search-btn" @onclick="ClearSearch" title="Clear search">✕</button>
+            }
         </div>
     </div>
 
@@ -67,10 +75,73 @@
         </div>
     </div>
 
-    <!-- INVENTORY TABLE -->
+    <!-- FILTER TOOLBAR (CATEGORY, TYPE, STOCK STATUS, RESET) -->
+    <div class="filter-toolbar">
+        <div class="filter-group">
+            <div class="filter-item">
+                <span class="filter-label">Category:</span>
+                <select class="filter-select" @bind="_categoryFilter" @bind:after="OnFilterChanged">
+                    <option value="All">All Categories</option>
+                    @foreach (var cat in AvailableCategories)
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <span class="filter-label">Type:</span>
+                <select class="filter-select" @bind="_typeFilter" @bind:after="OnFilterChanged">
+                    <option value="All">All Types</option>
+                    <option value="Consumable">Consumable</option>
+                    <option value="Reusable">Reusable</option>
+                    <option value="ActivityKit">Activity Kit</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <span class="filter-label">Stock Status:</span>
+                <select class="filter-select" @bind="_stockStatusFilter" @bind:after="OnFilterChanged">
+                    <option value="All">All Statuses</option>
+                    <option value="InStock">In Stock (&gt; 0)</option>
+                    <option value="LowStock">Low Stock (≤ 10)</option>
+                    <option value="OutOfStock">Out of Stock (= 0)</option>
+                    <option value="OnLoan">Active On Loan</option>
+                    <option value="UnderCleaning">Under Sanitization</option>
+                    <option value="Damaged">Damaged / Missing</option>
+                    <option value="Active">Active Catalog Only</option>
+                    <option value="Discontinued">Discontinued Only</option>
+                </select>
+            </div>
+
+            @if (HasActiveFilters)
+            {
+                <button class="btn-clear-filters" @onclick="ResetAllFilters" title="Reset all search and filter conditions">
+                    ✕ Reset All Filters
+                </button>
+            }
+
+            <div style="margin-left: auto; font-size: 13px; color: var(--muted); font-weight: 600;">
+                Showing <strong>@FilteredBalances.Count()</strong> of <strong>@_balances.Count</strong> materials
+            </div>
+        </div>
+    </div>
+
+    <!-- INVENTORY TABLE WITH VERTICAL GRID LINES -->
     @if (_isLoading)
     {
-        <div style="padding: 50px; text-align: center; color: var(--muted);">Loading warehouse stock balances...</div>
+        <div style="padding: 50px; text-align: center; color: var(--muted); background: white; border-radius: var(--radius); border: 1px solid var(--border);">
+            ⏳ Loading warehouse stock balances...
+        </div>
+    }
+    else if (!FilteredBalances.Any())
+    {
+        <div style="padding: 60px 20px; text-align: center; background: white; border-radius: var(--radius); border: 1px solid var(--border);">
+            <div style="font-size: 32px; margin-bottom: 10px;">🔍</div>
+            <h3 style="margin: 0 0 6px; font-size: 16px; font-weight: 800; color: var(--text);">No matching materials found</h3>
+            <p style="margin: 0 0 16px; font-size: 13px; color: var(--muted);">Try adjusting your search criteria or resetting filters.</p>
+            <button class="btn secondary" @onclick="ResetAllFilters">Reset All Filters</button>
+        </div>
     }
     else
     {
@@ -78,32 +149,54 @@
             <table class="inv-table">
                 <thead>
                     <tr>
-                        <th>Material Product</th>
-                        <th>Category</th>
-                        <th>Type</th>
-                        <th style="text-align: center;">Status</th>
-                        <th style="text-align: right;">Total</th>
-                        <th style="text-align: right;">Available</th>
-                        <th style="text-align: right;">Reserved</th>
-                        <th style="text-align: right;">Dispatched</th>
-                        <th style="text-align: right;">On Loan</th>
-                        <th style="text-align: right;">Cleaning</th>
-                        <th style="text-align: right;">Damaged</th>
-                        <th style="text-align: center;">Actions</th>
+                        <th @onclick='() => SortTable("ProductName")' class="sortable" title="Click to sort by Product Name" style="min-width: 200px;">
+                            Material Product <span class="sort-indicator">@GetSortIcon("ProductName")</span>
+                        </th>
+                        <th @onclick='() => SortTable("Category")' class="sortable" title="Click to sort by Category" style="min-width: 120px; white-space: nowrap;">
+                            Category <span class="sort-indicator">@GetSortIcon("Category")</span>
+                        </th>
+                        <th @onclick='() => SortTable("MaterialType")' class="sortable" title="Click to sort by Type" style="text-align: center; min-width: 95px; white-space: nowrap;">
+                            Type <span class="sort-indicator">@GetSortIcon("MaterialType")</span>
+                        </th>
+                        <th style="text-align: center; min-width: 85px; white-space: nowrap;" @onclick='() => SortTable("Status")' class="sortable" title="Click to sort by Status">
+                            Status <span class="sort-indicator">@GetSortIcon("Status")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("TotalStock")' class="sortable" title="Click to sort by Total Physical Units">
+                            Total <span class="sort-indicator">@GetSortIcon("TotalStock")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("AvailableStock")' class="sortable" title="Click to sort by Available Stock">
+                            Available <span class="sort-indicator">@GetSortIcon("AvailableStock")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("ReservedStock")' class="sortable" title="Click to sort by Reserved in Packing">
+                            Reserved <span class="sort-indicator">@GetSortIcon("ReservedStock")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("DispatchedStock")' class="sortable" title="Click to sort by Dispatched Units">
+                            Dispatched <span class="sort-indicator">@GetSortIcon("DispatchedStock")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("OnLoanStock")' class="sortable" title="Click to sort by Active On Loan">
+                            On Loan <span class="sort-indicator">@GetSortIcon("OnLoanStock")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("UnderCleaningStock")' class="sortable" title="Click to sort by Units in Cleaning">
+                            Cleaning <span class="sort-indicator">@GetSortIcon("UnderCleaningStock")</span>
+                        </th>
+                        <th style="text-align: right; white-space: nowrap;" @onclick='() => SortTable("DamagedStock")' class="sortable" title="Click to sort by Damaged / Missing">
+                            Damaged <span class="sort-indicator">@GetSortIcon("DamagedStock")</span>
+                        </th>
+                        <th style="text-align: center; width: 175px; min-width: 175px; white-space: nowrap;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in FilteredBalances)
+                    @foreach (var item in PagedBalances)
                     {
                         var prod = _products.FirstOrDefault(p => p.Id == item.MaterialProductId);
 
                         <tr>
                             <td>
                                 <strong style="font-size: 13.5px; color: var(--text);">@item.ProductName</strong>
-                                <div style="font-size: 11.5px; color: var(--muted);">SKU: @item.ProductSku</div>
+                                <div style="font-size: 11.5px; color: var(--muted); font-family: monospace; margin-top: 2px;">SKU: @item.ProductSku</div>
                             </td>
                             <td>
-                                <span class="cat-pill">@(prod?.Category ?? "General")</span>
+                                <span class="cat-pill" title="@(prod?.Category ?? "General")">@(prod?.Category ?? "General")</span>
                             </td>
                             <td>
                                 <span class="type-pill @(prod?.MaterialType.ToLowerInvariant() ?? "")">
@@ -120,14 +213,14 @@
                                     <span class="status-discontinued-pill">Discontinued</span>
                                 }
                             </td>
-                            <td style="text-align: right; font-weight: 750; color: var(--text);">@item.TotalStock</td>
-                            <td style="text-align: right; font-weight: 800; color: var(--accent-dark);">
+                            <td style="text-align: right; font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums;">@item.TotalStock</td>
+                            <td style="text-align: right; font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums;">
                                 @item.AvailableStock
                             </td>
-                            <td style="text-align: right; font-weight: 650; color: var(--text);">@item.ReservedStock</td>
-                            <td style="text-align: right; color: var(--muted);">@item.DispatchedStock</td>
-                            <td style="text-align: right; font-weight: 700; color: var(--text);">@item.OnLoanStock</td>
-                            <td style="text-align: right;">
+                            <td style="text-align: right; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums;">@item.ReservedStock</td>
+                            <td style="text-align: right; color: var(--muted); font-variant-numeric: tabular-nums;">@item.DispatchedStock</td>
+                            <td style="text-align: right; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;">@item.OnLoanStock</td>
+                            <td style="text-align: right; font-variant-numeric: tabular-nums;">
                                 @if (item.UnderCleaningStock > 0)
                                 {
                                     <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); padding: 2px 7px; border-radius: 6px; font-weight: 700; font-size: 11px;">
@@ -139,7 +232,7 @@
                                     <span style="color: var(--muted);">0</span>
                                 }
                             </td>
-                            <td style="text-align: right;">
+                            <td style="text-align: right; font-variant-numeric: tabular-nums;">
                                 @if (item.DamagedStock + item.MissingStock > 0)
                                 {
                                     <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 2px 7px; border-radius: 6px; font-weight: 700; font-size: 11px;">
@@ -152,13 +245,7 @@
                                 }
                             </td>
                             <td style="text-align: center;">
-                                <div style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
-                                    @if (item.UnderCleaningStock > 0)
-                                    {
-                                        <button class="sanitize-btn" @onclick="() => SanitizeCleaningStock(item)" title="Sanitize and restore to Available stock">
-                                            ✨ Restock (@item.UnderCleaningStock)
-                                        </button>
-                                    }
+                                <div class="action-grid">
                                     <button class="action-btn" @onclick="() => OpenEditProductModal(item, prod)" title="Edit product details & pricing">
                                         ✏️ Edit
                                     </button>
@@ -177,18 +264,57 @@
                                             </button>
                                         }
                                     }
-                                    <button class="action-btn" @onclick="() => OpenAdjustModal(item)">
-                                        Adjust Stock
+                                    <button class="action-btn" @onclick="() => OpenAdjustModal(item)" title="Adjust physical inventory">
+                                        📊 Adjust
                                     </button>
-                                    <button class="action-btn" @onclick="() => OpenLedgerDrawer(item)">
+                                    <button class="action-btn" @onclick="() => OpenLedgerDrawer(item)" title="View audit history ledger">
                                         📜 Ledger
                                     </button>
                                 </div>
+                                @if (item.UnderCleaningStock > 0)
+                                {
+                                    <div style="margin-top: 4px;">
+                                        <button class="sanitize-btn" style="width: 100%;" @onclick="() => SanitizeCleaningStock(item)" title="Sanitize and restore to Available stock">
+                                            ✨ Restock (@item.UnderCleaningStock)
+                                        </button>
+                                    </div>
+                                }
                             </td>
                         </tr>
                     }
                 </tbody>
             </table>
+
+            <!-- PAGINATION BAR -->
+            <div class="pagination-bar">
+                <div class="pagination-info">
+                    Showing <strong>@ItemRangeStart</strong> to <strong>@ItemRangeEnd</strong> of <strong>@TotalFilteredCount</strong> items
+                    <span style="margin: 0 10px; color: var(--border);">|</span>
+                    <span style="font-size: 12px; color: var(--muted);">Per page:</span>
+                    <select @bind="_pageSize" @bind:after="OnPageSizeChanged" class="page-size-select">
+                        <option value="5">5</option>
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+
+                <div class="pagination-controls">
+                    <button class="page-btn" @onclick="() => GoToPage(1)" disabled="@(_currentPage <= 1)" title="First Page">«</button>
+                    <button class="page-btn" @onclick="() => GoToPage(_currentPage - 1)" disabled="@(_currentPage <= 1)" title="Previous Page">‹</button>
+
+                    @foreach (var p in VisiblePages)
+                    {
+                        <button class="page-btn @(p == _currentPage ? "active" : "")" @onclick="() => GoToPage(p)">
+                            @p
+                        </button>
+                    }
+
+                    <button class="page-btn" @onclick="() => GoToPage(_currentPage + 1)" disabled="@(_currentPage >= TotalPages)" title="Next Page">›</button>
+                    <button class="page-btn" @onclick="() => GoToPage(TotalPages)" disabled="@(_currentPage >= TotalPages)" title="Last Page">»</button>
+                </div>
+            </div>
         </div>
     }
 </div>
@@ -532,82 +658,105 @@
         margin-top: 4px;
     }
 
+    /* VERTICAL GRID LINES ONLY FOR THIS PAGE */
     .inventory-table-container {
         background: white;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: var(--radius, 18px);
         box-shadow: var(--shadow);
         overflow-x: auto;
     }
 
     .inv-table {
         width: 100%;
-        border-collapse: collapse;
+        border-collapse: separate;
+        border-spacing: 0;
         font-size: 13px;
     }
 
     .inv-table th {
-        background: var(--surface-soft);
-        padding: 12px 16px;
+        background: var(--surface-soft, #f8f9f6);
+        padding: 12px 14px;
         font-size: 11px;
         font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--muted);
-        border-bottom: 1px solid var(--border);
+        letter-spacing: 0.4px;
+        color: var(--muted, #7d8981);
+        border-bottom: 2px solid var(--border, #e1e6df);
+        border-right: 1px solid var(--border, #e1e6df);
+        white-space: nowrap;
+        user-select: none;
+    }
+
+    .inv-table th.sortable {
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .inv-table th.sortable:hover {
+        background: #f0f3ed;
+        color: var(--text, #27352e);
+    }
+
+    .inv-table th:last-child {
+        border-right: none;
+    }
+
+    .sort-indicator {
+        display: inline-block;
+        margin-left: 4px;
+        font-size: 10px;
+        color: var(--accent, #587d6c);
     }
 
     .inv-table td {
-        padding: 14px 16px;
-        border-bottom: 1px solid var(--border);
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border, #e1e6df);
+        border-right: 1px solid var(--border, #e1e6df);
+        vertical-align: middle;
+        background: white;
+    }
+
+    .inv-table td:last-child {
+        border-right: none;
     }
 
     .inv-table tr:last-child td {
         border-bottom: none;
     }
 
-    .cat-pill {
-        background: var(--surface-soft);
-        border: 1px solid var(--border);
-        padding: 2px 7px;
-        border-radius: 6px;
-        font-size: 11px;
-        font-weight: 650;
+    .inv-table tr:hover td {
+        background: #fafbf9;
     }
 
-    .type-pill {
-        font-size: 10px;
-        font-weight: 800;
-        text-transform: uppercase;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-
-    .type-pill.consumable {
-        background: var(--warm, #f4eee1);
-        color: #5c4d34;
-        border: 1px solid #e5ded2;
-    }
-    .type-pill.activitykit, .type-pill.reusable {
-        background: var(--accent-light, #e6eee9);
-        color: var(--accent-dark, #3e6253);
-        border: 1px solid #c8dacd;
+    /* Action buttons grid layout */
+    .action-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        width: 165px;
+        margin: auto;
     }
 
     .action-btn {
         background: white;
-        border: 1px solid var(--border);
-        padding: 6px 12px;
-        border-radius: 8px;
-        font-size: 12px;
-        font-weight: 650;
-        color: var(--text);
+        border: 1px solid var(--border, #e1e6df);
+        padding: 5px 8px;
+        border-radius: 7px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text, #27352e);
         cursor: pointer;
-        transition: all 0.2s;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
     }
 
     .action-btn:hover {
-        background: var(--surface-soft);
+        background: var(--surface-soft, #f8f9f6);
         border-color: #cbd3cc;
     }
 
@@ -628,7 +777,195 @@
 
     .action-btn.reactivate:hover {
         background: var(--accent-light, #e6eee9);
-        border-color: var(--accent);
+        border-color: var(--accent, #587d6c);
+    }
+
+    /* Filter Toolbar Styles */
+    .filter-toolbar {
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 14px;
+        padding: 14px 18px;
+        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        box-shadow: 0 4px 14px rgba(40, 55, 47, 0.03);
+    }
+
+    .filter-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+    }
+
+    .filter-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .filter-label {
+        font-size: 12.5px;
+        font-weight: 750;
+        color: var(--text, #27352e);
+        white-space: nowrap;
+    }
+
+    .filter-select {
+        padding: 7px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border, #e1e6df);
+        background: var(--surface-soft, #f8f9f6);
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--text, #27352e);
+        outline: none;
+        cursor: pointer;
+    }
+
+    .filter-select:focus {
+        border-color: var(--green, #587d6c);
+    }
+
+    .filter-search-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+
+    .search-input-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        flex: 1;
+        max-width: 480px;
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 12px;
+        font-size: 13px;
+        color: var(--muted, #7d8981);
+        pointer-events: none;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 8px 32px 8px 34px;
+        border-radius: 8px;
+        border: 1px solid var(--border, #e1e6df);
+        background: white;
+        font-size: 13px;
+        color: var(--text, #27352e);
+        outline: none;
+    }
+
+    .search-input:focus {
+        border-color: var(--green, #587d6c);
+        box-shadow: 0 0 0 3px rgba(88, 125, 108, 0.12);
+    }
+
+    .clear-search-btn {
+        position: absolute;
+        right: 8px;
+        background: none;
+        border: none;
+        font-size: 13px;
+        color: var(--muted, #7d8981);
+        cursor: pointer;
+        padding: 2px 6px;
+    }
+
+    .btn-clear-filters {
+        background: #fff5f5;
+        border: 1px solid #fed7d7;
+        color: #b91c1c;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: background 0.15s;
+    }
+
+    .btn-clear-filters:hover {
+        background: #fee2e2;
+    }
+
+    /* Pagination Bar Styles */
+    .pagination-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        border-top: 1px solid var(--border, #e1e6df);
+        background: var(--surface-soft, #f8f9f6);
+        border-radius: 0 0 var(--radius, 18px) var(--radius, 18px);
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .pagination-info {
+        font-size: 13px;
+        color: var(--text, #27352e);
+        display: flex;
+        align-items: center;
+    }
+
+    .page-size-select {
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border, #e1e6df);
+        background: white;
+        font-size: 12px;
+        margin-left: 6px;
+        cursor: pointer;
+    }
+
+    .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .page-btn {
+        min-width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid var(--border, #e1e6df);
+        background: white;
+        color: var(--text, #27352e);
+        font-size: 12.5px;
+        font-weight: 750;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 6px;
+        transition: all 0.15s ease;
+    }
+
+    .page-btn:hover:not(:disabled) {
+        background: var(--surface-soft, #f8f9f6);
+        border-color: #cbd3cc;
+    }
+
+    .page-btn.active {
+        background: var(--green, #587d6c);
+        color: white;
+        border-color: var(--green, #587d6c);
+    }
+
+    .page-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
     }
 
     .status-active-pill {
@@ -848,16 +1185,216 @@
         }
     }
 
+    // Filtering, Sorting, and Pagination state
+    private string _categoryFilter = "All";
+    private string _typeFilter = "All";
+    private string _stockStatusFilter = "All";
+
+    private string _sortColumn = "ProductName";
+    private bool _sortAscending = true;
+
+    private int _currentPage = 1;
+    private int _pageSize = 10;
+
+    private List<string> AvailableCategories => _products
+        .Select(p => p.Category)
+        .Where(c => !string.IsNullOrWhiteSpace(c))
+        .Distinct()
+        .OrderBy(c => c)
+        .ToList();
+
+    private bool HasActiveFilters =>
+        !string.IsNullOrWhiteSpace(_searchFilter) ||
+        _categoryFilter != "All" ||
+        _typeFilter != "All" ||
+        _stockStatusFilter != "All";
+
+    private void OnFilterChanged()
+    {
+        _currentPage = 1;
+    }
+
+    private void ClearSearch()
+    {
+        _searchFilter = "";
+        _currentPage = 1;
+    }
+
+    private void ResetAllFilters()
+    {
+        _searchFilter = "";
+        _categoryFilter = "All";
+        _typeFilter = "All";
+        _stockStatusFilter = "All";
+        _currentPage = 1;
+    }
+
+    private void SortTable(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortAscending = !_sortAscending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+    }
+
+    private string GetSortIcon(string column)
+    {
+        if (_sortColumn != column) return "↕";
+        return _sortAscending ? "▲" : "▼";
+    }
+
+    private async Task OnLocationChangedAsync()
+    {
+        _currentPage = 1;
+        await LoadInventoryDataAsync();
+    }
+
+    private void OnPageSizeChanged()
+    {
+        _currentPage = 1;
+    }
+
+    private void GoToPage(int page)
+    {
+        _currentPage = Math.Clamp(page, 1, TotalPages);
+    }
+
     private IEnumerable<InventoryBalance> FilteredBalances
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(_searchFilter))
-                return _balances;
+            var query = _balances.AsEnumerable();
 
-            return _balances.Where(b => 
-                (b.ProductName?.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (b.ProductSku?.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ?? false));
+            // Search filter (SKU, Name, Category)
+            if (!string.IsNullOrWhiteSpace(_searchFilter))
+            {
+                var term = _searchFilter.Trim();
+                query = query.Where(b =>
+                {
+                    var p = _products.FirstOrDefault(prod => prod.Id == b.MaterialProductId);
+                    return (b.ProductName?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                           (b.ProductSku?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                           (p?.Category?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false);
+                });
+            }
+
+            // Category filter
+            if (_categoryFilter != "All")
+            {
+                query = query.Where(b =>
+                {
+                    var p = _products.FirstOrDefault(prod => prod.Id == b.MaterialProductId);
+                    return string.Equals(p?.Category, _categoryFilter, StringComparison.OrdinalIgnoreCase);
+                });
+            }
+
+            // Type filter
+            if (_typeFilter != "All")
+            {
+                query = query.Where(b =>
+                {
+                    var p = _products.FirstOrDefault(prod => prod.Id == b.MaterialProductId);
+                    return string.Equals(p?.MaterialType, _typeFilter, StringComparison.OrdinalIgnoreCase);
+                });
+            }
+
+            // Stock status filter
+            if (_stockStatusFilter != "All")
+            {
+                query = _stockStatusFilter switch
+                {
+                    "InStock" => query.Where(b => b.AvailableStock > 0),
+                    "LowStock" => query.Where(b => b.AvailableStock > 0 && b.AvailableStock <= 10),
+                    "OutOfStock" => query.Where(b => b.AvailableStock <= 0),
+                    "OnLoan" => query.Where(b => b.OnLoanStock > 0),
+                    "UnderCleaning" => query.Where(b => b.UnderCleaningStock > 0),
+                    "Damaged" => query.Where(b => (b.DamagedStock + b.MissingStock) > 0),
+                    "Active" => query.Where(b => {
+                        var p = _products.FirstOrDefault(prod => prod.Id == b.MaterialProductId);
+                        return p?.IsActive ?? true;
+                    }),
+                    "Discontinued" => query.Where(b => {
+                        var p = _products.FirstOrDefault(prod => prod.Id == b.MaterialProductId);
+                        return !(p?.IsActive ?? true);
+                    }),
+                    _ => query
+                };
+            }
+
+            // Sorting
+            query = (_sortColumn, _sortAscending) switch
+            {
+                ("ProductName", true) => query.OrderBy(b => b.ProductName),
+                ("ProductName", false) => query.OrderByDescending(b => b.ProductName),
+
+                ("Category", true) => query.OrderBy(b => _products.FirstOrDefault(p => p.Id == b.MaterialProductId)?.Category ?? ""),
+                ("Category", false) => query.OrderByDescending(b => _products.FirstOrDefault(p => p.Id == b.MaterialProductId)?.Category ?? ""),
+
+                ("MaterialType", true) => query.OrderBy(b => _products.FirstOrDefault(p => p.Id == b.MaterialProductId)?.MaterialType ?? ""),
+                ("MaterialType", false) => query.OrderByDescending(b => _products.FirstOrDefault(p => p.Id == b.MaterialProductId)?.MaterialType ?? ""),
+
+                ("Status", true) => query.OrderBy(b => _products.FirstOrDefault(p => p.Id == b.MaterialProductId)?.IsActive ?? true),
+                ("Status", false) => query.OrderByDescending(b => _products.FirstOrDefault(p => p.Id == b.MaterialProductId)?.IsActive ?? true),
+
+                ("TotalStock", true) => query.OrderBy(b => b.TotalStock),
+                ("TotalStock", false) => query.OrderByDescending(b => b.TotalStock),
+
+                ("AvailableStock", true) => query.OrderBy(b => b.AvailableStock),
+                ("AvailableStock", false) => query.OrderByDescending(b => b.AvailableStock),
+
+                ("ReservedStock", true) => query.OrderBy(b => b.ReservedStock),
+                ("ReservedStock", false) => query.OrderByDescending(b => b.ReservedStock),
+
+                ("DispatchedStock", true) => query.OrderBy(b => b.DispatchedStock),
+                ("DispatchedStock", false) => query.OrderByDescending(b => b.DispatchedStock),
+
+                ("OnLoanStock", true) => query.OrderBy(b => b.OnLoanStock),
+                ("OnLoanStock", false) => query.OrderByDescending(b => b.OnLoanStock),
+
+                ("UnderCleaningStock", true) => query.OrderBy(b => b.UnderCleaningStock),
+                ("UnderCleaningStock", false) => query.OrderByDescending(b => b.UnderCleaningStock),
+
+                ("DamagedStock", true) => query.OrderBy(b => b.DamagedStock + b.MissingStock),
+                ("DamagedStock", false) => query.OrderByDescending(b => b.DamagedStock + b.MissingStock),
+
+                _ => query.OrderBy(b => b.ProductName)
+            };
+
+            return query;
+        }
+    }
+
+    private int TotalFilteredCount => FilteredBalances.Count();
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)TotalFilteredCount / _pageSize));
+
+    private IEnumerable<InventoryBalance> PagedBalances =>
+        FilteredBalances.Skip((_currentPage - 1) * _pageSize).Take(_pageSize);
+
+    private int ItemRangeStart => TotalFilteredCount == 0 ? 0 : (_currentPage - 1) * _pageSize + 1;
+    private int ItemRangeEnd => Math.Min(_currentPage * _pageSize, TotalFilteredCount);
+
+    private IEnumerable<int> VisiblePages
+    {
+        get
+        {
+            var total = TotalPages;
+            var current = _currentPage;
+            var start = Math.Max(1, current - 2);
+            var end = Math.Min(total, start + 4);
+            if (end - start < 4)
+            {
+                start = Math.Max(1, end - 4);
+            }
+            for (int i = start; i <= end; i++)
+            {
+                yield return i;
+            }
         }
     }
 
