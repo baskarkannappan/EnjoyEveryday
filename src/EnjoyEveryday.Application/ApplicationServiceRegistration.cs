@@ -61,6 +61,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<BillingService>();
         services.AddScoped<IMaterialMarketplaceService, MaterialMarketplaceService>();
         services.AddScoped<MaterialMarketplaceService>();
+        services.AddScoped<IAccountBookService, AccountBookService>();
+        services.AddScoped<AccountBookService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>(sp => new AppIdentityContext(

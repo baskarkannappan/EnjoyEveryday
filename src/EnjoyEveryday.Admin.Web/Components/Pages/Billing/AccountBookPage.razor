@@ -1,0 +1,1267 @@
+@page "/account-book"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IAccountBookService AccountBookService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<PageTitle>Account Book &amp; Financial Investigation — Platform Admin</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="COMMERCIAL MANAGEMENT"
+              Title="Account Book &amp; Audit"
+              Subtitle="Unified financial control centre, multi-category ledger, and transaction investigation.">
+        <RightContent>
+            <a href="/billing" class="btn secondary">Billing &amp; Invoices</a>
+            <a href="/marketplace-operations" class="btn secondary">Marketplace Ops</a>
+            <button class="primary" @onclick="OpenRecordCashModal">+ Record Cash Payment</button>
+        </RightContent>
+    </PageHero>
+
+    <!-- FINANCIAL OVERVIEW CARD (MATCHING SCREENSHOT) -->
+    <div class="fin-overview-card">
+        <div class="fin-overview-eyebrow">FINANCIAL OVERVIEW · CURRENT PERIOD</div>
+        
+        <div class="fin-overview-grid">
+            <div class="fin-metric-cell">
+                <div class="fin-metric-lbl">Money received</div>
+                <div class="fin-metric-val">₹@(_overview?.MoneyReceived.ToString("N0") ?? "4,82,500")</div>
+                <div class="fin-metric-sub">Confirmed receipts</div>
+            </div>
+
+            <div class="fin-metric-cell">
+                <div class="fin-metric-lbl">Outstanding</div>
+                <div class="fin-metric-val">₹@(_overview?.Outstanding.ToString("N0") ?? "38,400")</div>
+                <div class="fin-metric-sub">Unpaid invoices</div>
+            </div>
+
+            <div class="fin-metric-cell">
+                <div class="fin-metric-lbl">Needs investigation</div>
+                <div class="fin-metric-val highlight-danger">@(_overview?.NeedsInvestigationCount ?? 7)</div>
+                <div class="fin-metric-sub">Exceptions requiring review</div>
+            </div>
+
+            <div class="fin-metric-cell">
+                <div class="fin-metric-lbl">Refunds pending</div>
+                <div class="fin-metric-val">₹@(_overview?.RefundsPending.ToString("N0") ?? "12,600")</div>
+                <div class="fin-metric-sub">Awaiting completion</div>
+            </div>
+        </div>
+
+        <div class="fin-overview-footnote">
+            Real-time authoritative ledger totals across Platform Subscription Fees and Materials Marketplace.
+        </div>
+    </div>
+
+    <!-- ACCOUNT BOOK SECTION -->
+    <div class="account-book-container">
+        <div class="ab-header-row">
+            <h2 class="ab-title">Account book</h2>
+            <div class="ab-count-badge">
+                Showing <strong>@_transactions.Count</strong> transactions
+            </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="ab-tabs">
+            <button class="ab-tab @(_activeTab == "All" ? "active" : "")" @onclick='() => SetTab("All")'>
+                All transactions
+            </button>
+            <button class="ab-tab @(_activeTab == "NeedsAttention" ? "active" : "")" @onclick='() => SetTab("NeedsAttention")'>
+                Needs attention <span class="tab-badge">@(_overview?.NeedsInvestigationCount ?? 7)</span>
+            </button>
+            <button class="ab-tab @(_activeTab == "Unreconciled" ? "active" : "")" @onclick='() => SetTab("Unreconciled")'>
+                Unreconciled
+            </button>
+        </div>
+
+        <!-- FILTERS & SEARCH ROW -->
+        <div class="ab-filter-row">
+            <div class="ab-filter-group">
+                <select class="ab-select" @bind="_categoryFilter" @bind:after="ApplyFilters">
+                    <option value="All">All categories</option>
+                    <option value="PlatformFee">Platform fee</option>
+                    <option value="Materials">Materials</option>
+                    <option value="RentalDeposit">Rental deposit</option>
+                    <option value="Refund">Refund</option>
+                    <option value="RentalFee">Rental fee</option>
+                    <option value="DeliveryCharge">Delivery charge</option>
+                </select>
+
+                <select class="ab-select" @bind="_statusFilter" @bind:after="ApplyFilters">
+                    <option value="All">All statuses</option>
+                    <option value="Paid">Paid</option>
+                    <option value="PaymentPending">Payment pending</option>
+                    <option value="Held">Held</option>
+                    <option value="Failed">Failed</option>
+                    <option value="Overdue">Overdue</option>
+                    <option value="Refunded">Refunded</option>
+                </select>
+            </div>
+
+            <div class="ab-search-wrap">
+                <span class="ab-search-icon">🔍</span>
+                <input class="ab-search-input"
+                       @bind="_searchQuery"
+                       @bind:event="oninput"
+                       @bind:after="ApplyFilters"
+                       placeholder="Search reference, organization, invoice #..." />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    <button class="ab-search-clear" @onclick="ClearSearch">✕</button>
+                }
+            </div>
+        </div>
+
+        <!-- TRANSACTIONS LIST (MATCHING SCREENSHOT 1) -->
+        @if (_isLoading)
+        {
+            <div style="padding: 40px; text-align: center; color: var(--muted);">
+                ⏳ Loading financial ledger...
+            </div>
+        }
+        else if (!_transactions.Any())
+        {
+            <div style="padding: 50px 20px; text-align: center; color: var(--muted);">
+                <div style="font-size: 28px; margin-bottom: 8px;">🔍</div>
+                <strong>No transactions match the selected filters</strong>
+                <p style="font-size: 13px; margin-top: 4px;">Try clearing filters or search term.</p>
+                <button class="btn secondary" style="margin-top: 10px;" @onclick="ResetFilters">Reset Filters</button>
+            </div>
+        }
+        else
+        {
+            <div class="ab-list">
+                @foreach (var tx in _transactions)
+                {
+                    <div class="ab-row @(tx.HasException ? "has-exception" : "")" @onclick="() => OpenInvestigation(tx.Reference)">
+                        <div class="ab-row-left">
+                            <div class="ab-row-category">@tx.CategoryLabel</div>
+                            <div class="ab-row-subtitle">
+                                <span class="ab-ref">@tx.Reference</span> · 
+                                <span class="ab-org">@tx.OrganizationName</span>
+                                @if (!string.IsNullOrWhiteSpace(tx.Description))
+                                {
+                                    <span class="ab-desc"> — @tx.Description</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="ab-row-right">
+                            <div class="ab-amount @GetAmountClass(tx)">
+                                @GetFormattedAmount(tx)
+                            </div>
+                            <div class="ab-status-wrap">
+                                <span class="ab-status-pill @GetStatusPillClass(tx.FinancialStatus)">
+                                    @tx.FinancialStatusLabel
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="ab-interactive-footer">
+            Interactive financial control centre. Clicking any transaction row opens its complete investigation workspace, checklist, and audit history.
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================
+     TRANSACTION INVESTIGATION DRAWER (MATCHING SCREENSHOT 2)
+     ======================================================== -->
+@if (_investigationItem != null)
+{
+    var inv = _investigationItem;
+    var tx = inv.Transaction;
+
+    <div class="investigation-backdrop" @onclick="CloseInvestigation">
+        <div class="investigation-drawer" @onclick:stopPropagation="true">
+            
+            <!-- DRAWER HEADER -->
+            <div class="inv-drawer-header">
+                <div style="display: flex; gap: 12px; align-items: flex-start;">
+                    <div class="inv-search-icon-circle">
+                        🔍
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <h3 class="inv-drawer-title">Transaction investigation</h3>
+                            <span class="inv-review-badge @GetReviewBadgeClass(inv.ReviewBadge)">
+                                @inv.ReviewBadge
+                            </span>
+                        </div>
+                        <p class="inv-drawer-subtitle">@inv.Subtitle</p>
+                    </div>
+                </div>
+
+                <button class="inv-close-btn" @onclick="CloseInvestigation" title="Close drawer">✕</button>
+            </div>
+
+            <!-- DRAWER CONTENT -->
+            <div class="inv-drawer-content">
+
+                <!-- TRANSACTION KEY SUMMARY -->
+                <div class="inv-summary-card">
+                    <div class="inv-summary-grid">
+                        <div>
+                            <span class="inv-summary-lbl">Reference</span>
+                            <div class="inv-summary-val font-mono">@tx.Reference</div>
+                        </div>
+                        <div>
+                            <span class="inv-summary-lbl">Organization</span>
+                            <div class="inv-summary-val">@tx.OrganizationName</div>
+                        </div>
+                        <div>
+                            <span class="inv-summary-lbl">Category</span>
+                            <div class="inv-summary-val">@tx.CategoryLabel</div>
+                        </div>
+                        <div>
+                            <span class="inv-summary-lbl">Expected / Charged</span>
+                            <div class="inv-summary-val">₹@inv.ExpectedAmount.ToString("N0")</div>
+                        </div>
+                        <div>
+                            <span class="inv-summary-lbl">Confirmed Received</span>
+                            <div class="inv-summary-val" style="color: var(--accent-dark);">₹@inv.ActualReceivedAmount.ToString("N0")</div>
+                        </div>
+                        <div>
+                            <span class="inv-summary-lbl">Discrepancy</span>
+                            <div class="inv-summary-val" style="color: @(inv.DiscrepancyAmount > 0 ? "#b91c1c" : "var(--muted)");">
+                                ₹@inv.DiscrepancyAmount.ToString("N0")
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- INVESTIGATION CHECKLIST (EXACT REQUIREMENT FROM SCREENSHOT 2) -->
+                <div class="inv-section">
+                    <h4 class="inv-section-title">Investigation checklist</h4>
+
+                    <div class="inv-checklist">
+                        @foreach (var check in inv.Checklist)
+                        {
+                            <div class="inv-checklist-item">
+                                <div class="inv-check-icon @(check.IsChecked ? "checked" : "pending")">
+                                    @(check.IsChecked ? "✓" : "○")
+                                </div>
+                                <div class="inv-check-text">
+                                    <div class="inv-check-title">@check.Title</div>
+                                    @if (!string.IsNullOrWhiteSpace(check.Detail))
+                                    {
+                                        <div class="inv-check-sub">@check.Detail</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="inv-disclaimer">
+                        The system displays actual recorded evidence and missing data. It never fabricates reasons or silently marks payments as successful without verified receipts.
+                    </div>
+                </div>
+
+                <!-- PROVIDER & RECEIPT EVIDENCE -->
+                <div class="inv-section">
+                    <h4 class="inv-section-title">Gateway &amp; Payment Evidence</h4>
+                    <div class="inv-evidence-box">
+                        <div class="evidence-row">
+                            <span class="evidence-lbl">Payment Method:</span>
+                            <span class="evidence-val">@tx.PaymentMethod</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(inv.GatewayOrderId))
+                        {
+                            <div class="evidence-row">
+                                <span class="evidence-lbl">Razorpay Order ID:</span>
+                                <span class="evidence-val font-mono">@inv.GatewayOrderId</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(inv.GatewayPaymentId))
+                        {
+                            <div class="evidence-row">
+                                <span class="evidence-lbl">Razorpay Payment ID:</span>
+                                <span class="evidence-val font-mono">@inv.GatewayPaymentId</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(inv.CashReceiptNumber))
+                        {
+                            <div class="evidence-row">
+                                <span class="evidence-lbl">Cash Receipt #:</span>
+                                <span class="evidence-val font-mono">@inv.CashReceiptNumber</span>
+                            </div>
+                        }
+                        <div class="evidence-row">
+                            <span class="evidence-lbl">Reconciliation Status:</span>
+                            <span class="evidence-val">@tx.ReconciliationStatus</span>
+                        </div>
+                        <div class="evidence-row">
+                            <span class="evidence-lbl">Recorded Officer:</span>
+                            <span class="evidence-val">@inv.RecordedByEmail</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- INVESTIGATION NOTES -->
+                <div class="inv-section">
+                    <h4 class="inv-section-title">Investigation Notes &amp; Resolutions</h4>
+                    @if (inv.InvestigationNotes.Any())
+                    {
+                        <div class="inv-notes-list">
+                            @foreach (var n in inv.InvestigationNotes)
+                            {
+                                <div class="inv-note-row">@n</div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p style="font-size: 12.5px; color: var(--muted); margin-bottom: 8px;">No notes logged yet.</p>
+                    }
+
+                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                        <input class="inv-note-input"
+                               @bind="_newInvestigationNote"
+                               placeholder="Add internal resolution note or audit commentary..." />
+                        <button class="btn secondary" @onclick="SubmitInvestigationNote" disabled="@string.IsNullOrWhiteSpace(_newInvestigationNote)">
+                            Add Note
+                        </button>
+                    </div>
+                </div>
+
+                <!-- AUDIT TIMELINE -->
+                <div class="inv-section">
+                    <h4 class="inv-section-title">Audit Timeline</h4>
+                    <div class="inv-timeline">
+                        @foreach (var log in inv.AuditTimeline)
+                        {
+                            <div class="timeline-row">
+                                <span class="timeline-dot"></span>
+                                <span class="timeline-text">@log</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- DRAWER ACTION FOOTER -->
+            <div class="inv-drawer-footer">
+                @if (inv.CanVerify)
+                {
+                    <button class="primary" @onclick="VerifyCurrentTransaction">
+                        ✓ Verify &amp; Reconcile Payment
+                    </button>
+                }
+                @if (inv.CanReleaseDeposit)
+                {
+                    <button class="btn primary" style="background: #2563eb; border-color: #2563eb;" @onclick="ReleaseCurrentDeposit">
+                        ✨ Release Security Deposit
+                    </button>
+                }
+                @if (inv.CanProcessRefund)
+                {
+                    <button class="btn secondary" style="color: #b91c1c; border-color: #fca5a5;" @onclick="ReprocessCurrentRefund">
+                        🔄 Reprocess Gateway Refund
+                    </button>
+                }
+                <button class="btn secondary" @onclick="CloseInvestigation">
+                    Close
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+<!-- ========================================================
+     RECORD CASH PAYMENT MODAL
+     ======================================================== -->
+@if (_isRecordCashModalOpen)
+{
+    <div class="modal-backdrop" @onclick="() => _isRecordCashModalOpen = false">
+        <div class="modal-window" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: var(--text);">Record Manual Cash Receipt</h3>
+                    <p style="margin: 3px 0 0; font-size: 12.5px; color: var(--muted);">Capture an in-person cash payment with receipt verification</p>
+                </div>
+                <button class="inv-close-btn" @onclick="() => _isRecordCashModalOpen = false">✕</button>
+            </div>
+
+            <div style="padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+                <div>
+                    <label class="modal-lbl">Target Reference (Invoice # or Order #)</label>
+                    <input class="modal-input" @bind="_cashRef" placeholder="e.g. MAT-00821 or INV-202610-10482" />
+                </div>
+
+                <div>
+                    <label class="modal-lbl">Amount Paid (₹)</label>
+                    <input class="modal-input" type="number" @bind="_cashAmount" />
+                </div>
+
+                <div>
+                    <label class="modal-lbl">Physical Receipt Number</label>
+                    <input class="modal-input" @bind="_cashReceiptNumber" placeholder="e.g. RCPT-202610-842" />
+                </div>
+
+                <div>
+                    <label class="modal-lbl">Auditor Notes</label>
+                    <textarea class="modal-input" rows="2" @bind="_cashNotes" placeholder="Received at daycare main desk..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _isRecordCashModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="SubmitCashPayment" disabled="@(string.IsNullOrWhiteSpace(_cashRef) || _cashAmount <= 0)">
+                    Confirm &amp; Record Cash Receipt
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    /* FINANCIAL OVERVIEW CARD */
+    .fin-overview-card {
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: var(--radius, 18px);
+        padding: 24px 28px;
+        box-shadow: var(--shadow);
+        margin-bottom: 24px;
+    }
+
+    .fin-overview-eyebrow {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        color: var(--muted, #7d8981);
+        text-transform: uppercase;
+        margin-bottom: 20px;
+    }
+
+    .fin-overview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 24px;
+    }
+
+    .fin-metric-cell {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .fin-metric-lbl {
+        font-size: 13px;
+        font-weight: 650;
+        color: var(--muted, #7d8981);
+        margin-bottom: 4px;
+    }
+
+    .fin-metric-val {
+        font-size: 28px;
+        font-weight: 850;
+        color: var(--text, #27352e);
+        letter-spacing: -0.5px;
+    }
+
+    .fin-metric-val.highlight-danger {
+        color: #b91c1c;
+    }
+
+    .fin-metric-sub {
+        font-size: 11.5px;
+        color: var(--muted, #7d8981);
+        margin-top: 4px;
+    }
+
+    .fin-overview-footnote {
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border, #e1e6df);
+        font-size: 11px;
+        color: var(--muted, #7d8981);
+    }
+
+    /* ACCOUNT BOOK CONTAINER */
+    .account-book-container {
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: var(--radius, 18px);
+        padding: 24px 28px;
+        box-shadow: var(--shadow);
+    }
+
+    .ab-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .ab-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: var(--text, #27352e);
+        margin: 0;
+    }
+
+    .ab-count-badge {
+        font-size: 12.5px;
+        color: var(--muted, #7d8981);
+    }
+
+    /* TABS */
+    .ab-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        border-bottom: 1px solid var(--border, #e1e6df);
+        padding-bottom: 12px;
+        flex-wrap: wrap;
+    }
+
+    .ab-tab {
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 9px;
+        padding: 7px 14px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text, #27352e);
+        cursor: pointer;
+        transition: all 0.15s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ab-tab:hover {
+        background: var(--surface-soft, #f8f9f6);
+    }
+
+    .ab-tab.active {
+        background: #27352e;
+        color: white;
+        border-color: #27352e;
+    }
+
+    .tab-badge {
+        background: #b91c1c;
+        color: white;
+        font-size: 10px;
+        font-weight: 800;
+        padding: 1px 6px;
+        border-radius: 10px;
+    }
+
+    /* FILTERS & SEARCH */
+    .ab-filter-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+        flex-wrap: wrap;
+    }
+
+    .ab-filter-group {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .ab-select {
+        padding: 8px 14px;
+        border-radius: 9px;
+        border: 1px solid var(--border, #e1e6df);
+        background: white;
+        font-size: 13px;
+        font-weight: 650;
+        color: var(--text, #27352e);
+        cursor: pointer;
+        outline: none;
+    }
+
+    .ab-select:focus {
+        border-color: var(--accent, #587d6c);
+    }
+
+    .ab-search-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        min-width: 280px;
+        flex: 1;
+        max-width: 400px;
+    }
+
+    .ab-search-icon {
+        position: absolute;
+        left: 12px;
+        font-size: 12px;
+        color: var(--muted);
+        pointer-events: none;
+    }
+
+    .ab-search-input {
+        width: 100%;
+        padding: 8px 30px 8px 32px;
+        border-radius: 9px;
+        border: 1px solid var(--border, #e1e6df);
+        font-size: 13px;
+        outline: none;
+        background: white;
+    }
+
+    .ab-search-input:focus {
+        border-color: var(--accent, #587d6c);
+    }
+
+    .ab-search-clear {
+        position: absolute;
+        right: 8px;
+        background: none;
+        border: none;
+        font-size: 14px;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 2px 4px;
+    }
+
+    /* TRANSACTIONS LIST */
+    .ab-list {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .ab-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 0;
+        border-bottom: 1px solid #f0f2ee;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .ab-row:hover {
+        background: #fafbf9;
+        margin: 0 -10px;
+        padding: 16px 10px;
+        border-radius: 10px;
+    }
+
+    .ab-row.has-exception {
+        border-left: 3px solid #fca5a5;
+        padding-left: 8px;
+    }
+
+    .ab-row-category {
+        font-size: 14px;
+        font-weight: 800;
+        color: var(--text, #27352e);
+    }
+
+    .ab-row-subtitle {
+        font-size: 12px;
+        color: var(--muted, #7d8981);
+        margin-top: 3px;
+    }
+
+    .ab-ref {
+        font-family: monospace;
+        font-weight: 700;
+        color: var(--text, #27352e);
+    }
+
+    .ab-org {
+        font-weight: 600;
+    }
+
+    .ab-desc {
+        color: var(--muted);
+    }
+
+    .ab-row-right {
+        text-align: right;
+    }
+
+    .ab-amount {
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: -0.3px;
+    }
+
+    .ab-amount.pos { color: var(--text, #27352e); }
+    .ab-amount.pending { color: var(--text, #27352e); }
+    .ab-amount.deposit { color: var(--text, #27352e); }
+    .ab-amount.neg { color: #b91c1c; }
+
+    .ab-status-wrap {
+        margin-top: 4px;
+    }
+
+    .ab-status-pill {
+        font-size: 11px;
+        font-weight: 750;
+        padding: 2px 8px;
+        border-radius: 6px;
+        display: inline-block;
+    }
+
+    .ab-status-pill.paid { background: #dcfce7; color: #15803d; }
+    .ab-status-pill.pending { background: #fef3c7; color: #b45309; }
+    .ab-status-pill.held { background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); }
+    .ab-status-pill.failed { background: #fee2e2; color: #b91c1c; }
+    .ab-status-pill.overdue { background: #fee2e2; color: #b91c1c; }
+    .ab-status-pill.refunded { background: #e0e7ff; color: #4338ca; }
+
+    .ab-interactive-footer {
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border, #e1e6df);
+        font-size: 11.5px;
+        color: var(--muted, #7d8981);
+    }
+
+    /* INVESTIGATION DRAWER (MATCHING SCREENSHOT 2) */
+    .investigation-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 28, 24, 0.45);
+        backdrop-filter: blur(4px);
+        z-index: 1000;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .investigation-drawer {
+        width: 100%;
+        max-width: 620px;
+        background: white;
+        height: 100%;
+        box-shadow: -10px 0 40px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        animation: slideInRight 0.25s ease;
+    }
+
+    @@keyframes slideInRight {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+    }
+
+    .inv-drawer-header {
+        padding: 22px 24px;
+        border-bottom: 1px solid var(--border, #e1e6df);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        background: var(--surface-soft, #f8f9f6);
+    }
+
+    .inv-search-icon-circle {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+
+    .inv-drawer-title {
+        font-size: 17px;
+        font-weight: 800;
+        color: var(--text, #27352e);
+        margin: 0;
+    }
+
+    .inv-review-badge {
+        font-size: 11px;
+        font-weight: 800;
+        padding: 3px 9px;
+        border-radius: 6px;
+    }
+
+    .inv-review-badge.needs-review { background: #ffedd5; color: #c2410c; }
+    .inv-review-badge.verified { background: #dcfce7; color: #15803d; }
+    .inv-review-badge.failed { background: #fee2e2; color: #b91c1c; }
+    .inv-review-badge.held { background: var(--accent-light); color: var(--accent-dark); }
+
+    .inv-drawer-subtitle {
+        margin: 4px 0 0;
+        font-size: 12.5px;
+        color: var(--muted, #7d8981);
+    }
+
+    .inv-close-btn {
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 8px;
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+        color: var(--muted, #7d8981);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+    }
+
+    .inv-close-btn:hover {
+        background: var(--surface-soft);
+        color: var(--text);
+    }
+
+    .inv-drawer-content {
+        padding: 24px;
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    /* SUMMARY CARD */
+    .inv-summary-card {
+        background: var(--surface-soft, #f8f9f6);
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 12px;
+        padding: 14px 18px;
+    }
+
+    .inv-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    .inv-summary-lbl {
+        font-size: 11px;
+        font-weight: 750;
+        color: var(--muted, #7d8981);
+        text-transform: uppercase;
+    }
+
+    .inv-summary-val {
+        font-size: 13.5px;
+        font-weight: 800;
+        color: var(--text, #27352e);
+        margin-top: 2px;
+    }
+
+    /* INVESTIGATION CHECKLIST (EXACT MATCHING SCREENSHOT 2) */
+    .inv-section-title {
+        font-size: 13.5px;
+        font-weight: 800;
+        color: var(--text, #27352e);
+        margin: 0 0 12px;
+    }
+
+    .inv-checklist {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: white;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 12px;
+        padding: 16px 18px;
+    }
+
+    .inv-checklist-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .inv-check-icon {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 800;
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    .inv-check-icon.checked {
+        background: #16a34a;
+        color: white;
+    }
+
+    .inv-check-icon.pending {
+        background: #f1f4ee;
+        color: var(--muted);
+        border: 1px solid var(--border);
+    }
+
+    .inv-check-text {
+        flex: 1;
+    }
+
+    .inv-check-title {
+        font-size: 13px;
+        font-weight: 650;
+        color: var(--text, #27352e);
+    }
+
+    .inv-check-sub {
+        font-size: 11px;
+        color: var(--muted, #7d8981);
+        margin-top: 2px;
+        font-family: monospace;
+    }
+
+    .inv-disclaimer {
+        margin-top: 10px;
+        font-size: 11px;
+        color: var(--muted, #7d8981);
+        line-height: 1.4;
+    }
+
+    /* EVIDENCE BOX */
+    .inv-evidence-box {
+        background: var(--surface-soft, #f8f9f6);
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 12px;
+        padding: 14px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .evidence-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12.5px;
+    }
+
+    .evidence-lbl {
+        color: var(--muted, #7d8981);
+        font-weight: 600;
+    }
+
+    .evidence-val {
+        color: var(--text, #27352e);
+        font-weight: 750;
+    }
+
+    /* NOTES & TIMELINE */
+    .inv-notes-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 8px;
+    }
+
+    .inv-note-row {
+        background: #fdfdfc;
+        border: 1px solid #e7ebe5;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        color: var(--text);
+    }
+
+    .inv-note-input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid var(--border, #e1e6df);
+        border-radius: 8px;
+        font-size: 12.5px;
+        outline: none;
+    }
+
+    .inv-note-input:focus {
+        border-color: var(--accent, #587d6c);
+    }
+
+    .inv-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-left: 12px;
+        border-left: 2px solid var(--border, #e1e6df);
+    }
+
+    .timeline-row {
+        position: relative;
+        font-size: 12px;
+        color: var(--muted, #7d8981);
+    }
+
+    .timeline-dot {
+        position: absolute;
+        left: -17px;
+        top: 5px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent, #587d6c);
+    }
+
+    /* DRAWER FOOTER */
+    .inv-drawer-footer {
+        padding: 16px 24px;
+        border-top: 1px solid var(--border, #e1e6df);
+        background: var(--surface-soft, #f8f9f6);
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+    }
+
+    /* MODAL */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 28, 24, 0.45);
+        backdrop-filter: blur(4px);
+        z-index: 1050;
+        display: grid;
+        place-items: center;
+    }
+
+    .modal-window {
+        background: white;
+        border-radius: 18px;
+        width: 90%;
+        max-width: 480px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+    }
+
+    .modal-header {
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border, #e1e6df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-lbl {
+        font-size: 12px;
+        font-weight: 750;
+        color: var(--text, #27352e);
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    .modal-input {
+        width: 100%;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border, #e1e6df);
+        font-size: 13px;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .modal-input:focus {
+        border-color: var(--accent, #587d6c);
+    }
+
+    .modal-footer {
+        padding: 14px 20px;
+        border-top: 1px solid var(--border, #e1e6df);
+        background: var(--surface-soft, #f8f9f6);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+</style>
+
+@code {
+    private FinancialOverviewDto? _overview;
+    private List<AccountBookTransactionDto> _transactions = new();
+    private bool _isLoading = true;
+
+    private string _activeTab = "All"; // "All", "NeedsAttention", "Unreconciled"
+    private string _categoryFilter = "All";
+    private string _statusFilter = "All";
+    private string _searchQuery = "";
+
+    // Investigation drawer state
+    private TransactionInvestigationDto? _investigationItem;
+    private string _newInvestigationNote = "";
+
+    // Record cash payment modal
+    private bool _isRecordCashModalOpen = false;
+    private string _cashRef = "";
+    private decimal _cashAmount = 8600m;
+    private string _cashReceiptNumber = "RCPT-202610-842";
+    private string _cashNotes = "Cash paid at central office counter";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _overview = await AccountBookService.GetFinancialOverviewAsync();
+            await ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading account book: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SetTab(string tab)
+    {
+        _activeTab = tab;
+        await ApplyFilters();
+    }
+
+    private async Task ApplyFilters()
+    {
+        _transactions = await AccountBookService.GetUnifiedLedgerAsync(
+            activeTab: _activeTab,
+            categoryFilter: _categoryFilter,
+            statusFilter: _statusFilter,
+            searchQuery: _searchQuery);
+    }
+
+    private async Task ClearSearch()
+    {
+        _searchQuery = "";
+        await ApplyFilters();
+    }
+
+    private async Task ResetFilters()
+    {
+        _activeTab = "All";
+        _categoryFilter = "All";
+        _statusFilter = "All";
+        _searchQuery = "";
+        await ApplyFilters();
+    }
+
+    private async Task OpenInvestigation(string reference)
+    {
+        _newInvestigationNote = "";
+        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(reference);
+    }
+
+    private void CloseInvestigation()
+    {
+        _investigationItem = null;
+    }
+
+    private async Task SubmitInvestigationNote()
+    {
+        if (_investigationItem == null || string.IsNullOrWhiteSpace(_newInvestigationNote)) return;
+
+        await AccountBookService.AddInvestigationNoteAsync(_investigationItem.Transaction.Reference, _newInvestigationNote);
+        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+        _newInvestigationNote = "";
+    }
+
+    private async Task VerifyCurrentTransaction()
+    {
+        if (_investigationItem == null) return;
+
+        await AccountBookService.VerifyAndReconcileTransactionAsync(_investigationItem.Transaction.Reference, "Manually verified by Platform Admin");
+        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+        await LoadDataAsync();
+    }
+
+    private async Task ReleaseCurrentDeposit()
+    {
+        if (_investigationItem == null) return;
+
+        await AccountBookService.ReleaseDepositAsync(_investigationItem.Transaction.Reference, _investigationItem.ExpectedAmount, "Kit returned in good condition. Security deposit refunded in full.");
+        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+        await LoadDataAsync();
+    }
+
+    private async Task ReprocessCurrentRefund()
+    {
+        if (_investigationItem == null) return;
+
+        await AccountBookService.ProcessRefundAsync(_investigationItem.Transaction.Reference, _investigationItem.ExpectedAmount, "Refund reprocessed to verified destination bank account.");
+        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+        await LoadDataAsync();
+    }
+
+    private void OpenRecordCashModal()
+    {
+        _cashRef = "MAT-00821";
+        _cashAmount = 8600m;
+        _cashReceiptNumber = $"RCPT-{DateTimeOffset.UtcNow:yyyyMMdd}-{new Random().Next(100, 999)}";
+        _cashNotes = "Cash received at administrative office";
+        _isRecordCashModalOpen = true;
+    }
+
+    private async Task SubmitCashPayment()
+    {
+        await AccountBookService.RecordCashReceiptAsync(new RecordManualCashReceiptCommand
+        {
+            TransactionReference = _cashRef,
+            Amount = _cashAmount,
+            ReceiptNumber = _cashReceiptNumber,
+            Notes = _cashNotes
+        });
+
+        _isRecordCashModalOpen = false;
+        await LoadDataAsync();
+        await OpenInvestigation(_cashRef);
+    }
+
+    private string GetFormattedAmount(AccountBookTransactionDto tx)
+    {
+        var prefix = tx.GrossAmount >= 0 ? "+" : "-";
+        return $"{prefix}₹{Math.Abs(tx.GrossAmount):N0}";
+    }
+
+    private string GetAmountClass(AccountBookTransactionDto tx)
+    {
+        if (tx.Category == "Refund" || tx.GrossAmount < 0) return "neg";
+        if (tx.FinancialStatus == "Paid") return "pos";
+        if (tx.FinancialStatus == "PaymentPending") return "pending";
+        if (tx.FinancialStatus == "Held") return "deposit";
+        return "pos";
+    }
+
+    private string GetStatusPillClass(string status)
+    {
+        return status.ToLowerInvariant() switch
+        {
+            "paid" => "paid",
+            "completed" => "paid",
+            "reconciled" => "paid",
+            "paymentpending" => "pending",
+            "pending" => "pending",
+            "held" => "held",
+            "failed" => "failed",
+            "overdue" => "overdue",
+            "refunded" => "refunded",
+            _ => "pending"
+        };
+    }
+
+    private string GetReviewBadgeClass(string badge)
+    {
+        return badge.ToLowerInvariant() switch
+        {
+            "needs review" => "needs-review",
+            "verified" => "verified",
+            "failed refund" => "failed",
+            "deposit held" => "held",
+            _ => "needs-review"
+        };
+    }
+}

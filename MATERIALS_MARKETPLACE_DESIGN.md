@@ -1,12 +1,102 @@
-# EnjoyEveryday — Materials Marketplace and Warehouse Management Design Document
+# EnjoyEveryday — Materials Marketplace, Warehouse Management & Central Account Book Architecture
 
-**Document Version**: 1.0  
-**Status**: Approved Architecture & Implementation Plan  
+**Document Version**: 2.0  
+**Status**: Approved Architecture & Implementation Blueprint  
 **Target Projects**: `EnjoyEveryday.Domain`, `EnjoyEveryday.Infrastructure`, `EnjoyEveryday.Application`, `EnjoyEveryday.Daycare.Web`, `EnjoyEveryday.Admin.Web`, `EnjoyEveryday.UI.Shared`
 
 ---
 
-## 1. System Vision & Operating Model
+## 1. Confirmed Business Decisions (Mandatory)
+
+### Rule 1: Product Pricing
+Support two distinct pricing models:
+1. **Standard Products — Fixed Price**:
+   - The Platform Admin publishes products with fixed prices in the catalog.
+   - Organization Admins order eligible, in-stock items at displayed prices.
+   - The server calculates authoritative totals (items, quantities, taxes, delivery charges).
+   - Price updates by Platform Admin never retroactively alter already confirmed orders.
+2. **Special Requests — Quotation Required**:
+   - Custom quantities, non-catalog requests, or large orders enter the Platform Admin review queue.
+   - Platform Admin prepares an itemized quotation with item prices, delivery charges, taxes, rental fees, and deposits with an explicit validity period (`QuotationValidUntil`).
+   - The Organization Admin explicitly accepts or declines the quotation.
+   - Acceptance records the acting user, timestamp, and quotation version.
+   - Only after explicit acceptance does the request transition to a confirmed order.
+
+### Rule 2: Organization Pays Delivery Charges
+- Delivery charges are paid by the purchasing/borrowing daycare organization.
+- Delivery charges are calculated on the server and displayed separately from material prices.
+- Stored authoritatively with the order and itemized on invoices and financial ledgers.
+- Changes in delivery charges (due to address or volume adjustments) require explicit organization re-confirmation.
+
+### Rule 3: Borrowing — Rental Fee Plus Optional Refundable Deposit
+- Borrowed materials are reusable assets owned/controlled by the Platform Admin.
+- Financial components are strictly separated:
+  1. **Rental Fee**: Earned revenue for using the materials during the loan term.
+  2. **Refundable Deposit**: Balance sheet liability (**money held temporarily**, never treated as earned revenue upon receipt).
+  3. **Delivery Charge**: Organization's transportation expense.
+- After return quality inspection:
+  - Full refund approved when items meet agreed condition.
+  - Authorized deduction requires documented inspection evidence (damaged/missing items), approver identity, and policy reference.
+  - Deposit refund has its own distinct financial status, audit trail, and gateway/manual disbursement record.
+
+---
+
+## 2. Seven Core Operational Workflow Rules
+
+1. **Independent Lifecycles**: Do not conflate order, payment, delivery, and loan statuses into one field. An order can be `Dispatched`, payment `Paid`, shipment `InTransit`, and loan `ReturnNotYetDue`.
+2. **Mixed Orders**: An order may contain both purchases (craft paper) and loans (reusable sorting trays). Track purchase vs borrow rules per line item.
+3. **Delivery Date as Anchor**: Organizations select the planned activity and required date. The system validates stock availability and delivery feasibility against that date.
+4. **Reusable Kit Tracking**: Track kits individually with unique identifiers, condition history, and cleaning status.
+5. **Cash & Manual Payments as First-Class Records**: Support controlled manual receipt recording (amount, date, method, receiver, receipt #, and verification) alongside Razorpay gateway webhooks.
+6. **Predictable Recurring Orders**: Show upcoming scheduled orders, estimated amounts, and stock readiness. Background jobs are idempotent and never double-charge.
+7. **First-Class Exception Handling**: Built-in workflows for stock shortages, late deliveries, damaged returns, missing items, payment discrepancies, and cancellations.
+
+---
+
+## 3. Central Account Book & Financial Investigation Architecture
+
+### Vision & Objective
+Provide the Platform Admin with a single financial control center (`/account-book`) to audit, reconcile, and investigate money across both **Platform Subscription Fees** and the **Materials Marketplace** without digging through individual orders.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        FINANCIAL OVERVIEW · CURRENT PERIOD                             │
+├────────────────────┬────────────────────┬────────────────────┬─────────────────────────┤
+│   Money Received   │    Outstanding     │Needs Investigation │     Refunds Pending     │
+│     ₹4,82,500      │      ₹38,400       │         7          │         ₹12,600         │
+│ Confirmed Receipts │  Unpaid Invoices   │ Exceptions Review  │   Awaiting Completion   │
+└────────────────────┴────────────────────┴────────────────────┴─────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Account Book                                                                          │
+│  [All Transactions]   [Needs Attention (7)]   [Unreconciled]                           │
+│  Filter by Category: [All Categories ▼]   Filter by Status: [All Statuses ▼]           │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ • Platform fee       +₹12,500  [Paid]            PAY-10482 · Bluebird Daycare          │
+│ • Materials          +₹8,600   [Payment Pending] MAT-00821 · Little Steps Daycare      │
+│ • Rental deposit     +₹3,000   [Held]            DEP-00194 · Bluebird Daycare          │
+│ • Refund             -₹2,400   [Failed]          REF-00217 · Happy Nest Daycare        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Investigation Workspace Checklist
+Selecting any transaction opens an interactive investigation drawer displaying:
+1. **Invoice & Order Matching**: Verifies whether an invoice, payment attempt, and receipt exist.
+2. **Amount Discrepancy Check**: Compares expected amount vs actual received amount.
+3. **Gateway / Bank Evidence**: Inspects Razorpay Payment ID, signature, webhook payload, or cash receipt number.
+4. **Duplicate & Retry Detection**: Inspects idempotency keys and retry timestamps.
+5. **Timeline & State Transitions**: Chronological log of state changes, actors, and error codes.
+6. **Tenant & Allocation Check**: Verifies payment was allocated to the correct organization and account.
+7. **Resolution Actions**:
+   - Verify & Reconcile Payment
+   - Record Manual Cash Receipt
+   - Release / Deduct Refundable Deposit
+   - Process / Retry Refund
+   - Add Internal Investigation Note
+
+---
+
+## 4. System Vision & Operating Model
 
 EnjoyEveryday Materials Marketplace connects daycare educational activities directly with physical materials supply.
 - **Seller & Warehouse Operator**: EnjoyEveryday Platform Admin team.
