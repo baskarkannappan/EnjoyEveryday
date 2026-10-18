@@ -34,13 +34,32 @@ public class BillingRepository : IBillingRepository
             "ORDER BY issue_date DESC, created_at DESC";
 
         var invoices = (await conn.QueryAsync<InvoiceRow>(sql, new { OrganizationId = organizationId, TenantId = tenantId })).ToList();
-        var result = new List<Invoice>();
+        if (invoices.Count == 0) return new List<Invoice>();
 
+        var invoiceIds = invoices.Select(x => x.Id).ToArray();
+        const string lineItemsSql = @"
+            SELECT id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
+            FROM invoice_line_items
+            WHERE invoice_id = ANY(@InvoiceIds)
+            ORDER BY line_number ASC";
+        var lineItemsLookup = (await conn.QueryAsync<InvoiceLineItem>(lineItemsSql, new { InvoiceIds = invoiceIds }))
+            .ToLookup(x => x.InvoiceId);
+
+        var paymentsSql = @"
+            SELECT " + PaymentSelectColumns + @"
+            FROM payments
+            WHERE invoice_id = ANY(@InvoiceIds)
+            ORDER BY payment_date ASC";
+        var paymentsLookup = (await conn.QueryAsync<Payment>(paymentsSql, new { InvoiceIds = invoiceIds }))
+            .Where(p => p.InvoiceId.HasValue)
+            .ToLookup(p => p.InvoiceId!.Value);
+
+        var result = new List<Invoice>(invoices.Count);
         foreach (var row in invoices)
         {
             var inv = MapToInvoice(row);
-            inv.LineItems = await GetLineItemsForInvoiceInternalAsync(conn, inv.Id);
-            inv.Payments = await GetPaymentsForInvoiceInternalAsync(conn, inv.Id);
+            inv.LineItems = lineItemsLookup[inv.Id].ToList();
+            inv.Payments = paymentsLookup[inv.Id].ToList();
             result.Add(inv);
         }
 
@@ -73,13 +92,32 @@ public class BillingRepository : IBillingRepository
 
         var statusString = status?.ToString();
         var invoices = (await conn.QueryAsync<InvoiceRow>(sql, new { TenantId = tenantId, OrganizationId = organizationId, Status = statusString })).ToList();
-        var result = new List<Invoice>();
+        if (invoices.Count == 0) return new List<Invoice>();
 
+        var invoiceIds = invoices.Select(x => x.Id).ToArray();
+        const string lineItemsSql = @"
+            SELECT id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
+            FROM invoice_line_items
+            WHERE invoice_id = ANY(@InvoiceIds)
+            ORDER BY line_number ASC";
+        var lineItemsLookup = (await conn.QueryAsync<InvoiceLineItem>(lineItemsSql, new { InvoiceIds = invoiceIds }))
+            .ToLookup(x => x.InvoiceId);
+
+        var paymentsSql = @"
+            SELECT " + PaymentSelectColumns + @"
+            FROM payments
+            WHERE invoice_id = ANY(@InvoiceIds)
+            ORDER BY payment_date ASC";
+        var paymentsLookup = (await conn.QueryAsync<Payment>(paymentsSql, new { InvoiceIds = invoiceIds }))
+            .Where(p => p.InvoiceId.HasValue)
+            .ToLookup(p => p.InvoiceId!.Value);
+
+        var result = new List<Invoice>(invoices.Count);
         foreach (var row in invoices)
         {
             var inv = MapToInvoice(row);
-            inv.LineItems = await GetLineItemsForInvoiceInternalAsync(conn, inv.Id);
-            inv.Payments = await GetPaymentsForInvoiceInternalAsync(conn, inv.Id);
+            inv.LineItems = lineItemsLookup[inv.Id].ToList();
+            inv.Payments = paymentsLookup[inv.Id].ToList();
             result.Add(inv);
         }
 
