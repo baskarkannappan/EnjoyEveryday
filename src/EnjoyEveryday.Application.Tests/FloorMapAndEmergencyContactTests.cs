@@ -610,6 +610,8 @@ public class MockOrganizationRepository : IOrganizationRepository
     public Task<Organization> AddAsync(Organization org, CancellationToken ct = default) { Organizations.Add(org); return Task.FromResult(org); }
     public Task UpdateAsync(Organization org, CancellationToken ct = default) => Task.CompletedTask;
     public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<IEnumerable<Organization>> GetOrganizationsByUserIdAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult<IEnumerable<Organization>>(Organizations);
 }
 
 public class MockAuditService : IAuditService

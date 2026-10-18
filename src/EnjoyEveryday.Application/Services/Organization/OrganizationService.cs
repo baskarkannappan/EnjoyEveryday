@@ -45,7 +45,10 @@ public class OrganizationService
         return orgs;
     }
 
-
+    public Task<IEnumerable<Organization>> GetUserOrganizationsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        return _organizationRepository.GetOrganizationsByUserIdAsync(userId, cancellationToken);
+    }
 
     public async Task<Organization?> GetOrganizationByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {

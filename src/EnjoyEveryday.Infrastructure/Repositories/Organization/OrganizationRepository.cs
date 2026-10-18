@@ -82,4 +82,17 @@ public class OrganizationRepository : IOrganizationRepository
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
     }
+
+    public async Task<IEnumerable<Organization>> GetOrganizationsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT o.id, o.tenant_id as TenantId, o.name, o.location, o.is_active as IsActive, o.created_at as CreatedAt, o.updated_at as UpdatedAt
+            FROM organization_memberships om
+            JOIN organizations o ON om.organization_id = o.id
+            WHERE om.user_id = @UserId AND om.status = 'Active'
+            ORDER BY o.name";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryAsync<Organization>(sql, new { UserId = userId });
+    }
 }

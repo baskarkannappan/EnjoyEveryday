@@ -289,6 +289,8 @@ public class OrganizationIntelligenceTests
         public Task<Organization> AddAsync(Organization org, CancellationToken cancellationToken = default) => Task.FromResult(org);
         public Task UpdateAsync(Organization org, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IEnumerable<Organization>> GetOrganizationsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IEnumerable<Organization>>(Organizations.Values);
     }
 
     private class MockBranchRepository : IBranchRepository

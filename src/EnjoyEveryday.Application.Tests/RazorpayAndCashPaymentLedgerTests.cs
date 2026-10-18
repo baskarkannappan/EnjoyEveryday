@@ -605,6 +605,9 @@ public class RazorpayAndCashPaymentLedgerTests
             Organizations.RemoveAll(o => o.Id == id);
             return Task.CompletedTask;
         }
+
+        public Task<IEnumerable<Organization>> GetOrganizationsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Organizations.AsEnumerable());
     }
 
     private class MockAuditService : IAuditService

@@ -564,6 +564,11 @@ public class ManualAndAutomaticBillingSecurityTests
             Organizations.RemoveAll(o => o.Id == id);
             return Task.CompletedTask;
         }
+
+        public Task<IEnumerable<Organization>> GetOrganizationsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Organizations.AsEnumerable());
+        }
     }
 
     private class MockAuditService : IAuditService
