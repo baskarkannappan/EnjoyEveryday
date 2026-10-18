@@ -1,128 +1,13 @@
 @page "/journey"
-@using EnjoyEveryday.Application.Services
-@using EnjoyEveryday.Domain.Entities
-@inject ChildService ChildService
-@inject JourneyService JourneyService
-@inject OrganizationService OrganizationService
-@inject BranchService BranchService
-@inject ClassroomService ClassroomService
+@page "/journey/{ChildId:guid}"
 @rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Views.Children
 
-<PageHero 
-    Eyebrow="CHILD JOURNEY" 
-    Title="Aarav's Little World" 
-    Subtitle="Experiences, accomplishments and memories.">
-</PageHero>
+<PageTitle>Child Journey — EnjoyEveryday</PageTitle>
 
-<div class="journey">
-    <div class="journey-header">
-        <div class="journey-large-avatar">
-            @(_activeChild?.FirstName.Substring(0,1) ?? "A")
-        </div>
-        <div>
-            <h2>@(_activeChild?.FirstName ?? "Aarav")</h2>
-            <p>Age 3 &middot; Bluebirds</p>
-        </div>
-    </div>
+<ChildJourneyView InitialChildId="ChildId" />
 
-    <div class="memory-area">
-        @if (_stories != null && _stories.Count > 0) {
-            int count = 1;
-            foreach (var story in _stories) {
-                var css = "m" + count;
-                <MemoryCard CssClass="@css" Icon="✦" Action="Discovered" Detail="Story Update" />
-                count++;
-                if(count > 5) break;
-            }
-        }
-        @if (_stories == null || _stories.Count == 0) {
-            <MemoryCard CssClass="m1" Icon="✦" Action="Discovered" Detail="tiny insects" />
-            <MemoryCard CssClass="m2" Icon="♡" Action="Helped" Detail="a friend" />
-            <MemoryCard CssClass="m3" Icon="◆" Action="Created" Detail="a building" />
-            <MemoryCard CssClass="m4" Icon="↻" Action="Tried again" Detail="after it fell" />
-            <MemoryCard CssClass="m5" Icon="☀" Action="Explored" Detail="the garden" />
-        }
-    </div>
-</div>
- 
 @code {
-    private List<Child> _children = new();
-    private Child? _activeChild;
-    private Classroom? _classroom;
-    private string? _selectedChildId;
-    
-    private List<ChildStory> _stories = new();
-    private List<ChildInterest> _interests = new();
-
-    private string _newInterest = string.Empty;
-    
-    private string _newStoryContent = string.Empty;
-
-    protected override async Task OnInitializedAsync()
-    {
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
-        {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
-            {
-                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-                _classroom = classrooms.FirstOrDefault();
-                
-                if (_classroom != null)
-                {
-                    _children = (await ChildService.GetChildrenByClassroomAsync(_classroom.Id)).ToList();
-                    _activeChild = _children.FirstOrDefault();
-                    if (_activeChild != null)
-                    {
-                        _selectedChildId = _activeChild.Id.ToString();
-                        await LoadChildData();
-                    }
-                }
-            }
-        }
-    }
-
-    private async Task LoadChildData()
-    {
-        if (Guid.TryParse(_selectedChildId, out var id))
-        {
-            _activeChild = _children.FirstOrDefault(c => c.Id == id);
-            if (_activeChild != null)
-            {
-                _stories = (await JourneyService.GetChildStoriesAsync(_activeChild.Id)).ToList();
-                _interests = (await JourneyService.GetChildInterestsAsync(_activeChild.Id)).ToList();
-            }
-        }
-    }
-
-    private async Task AddInterest()
-    {
-        if (!string.IsNullOrWhiteSpace(_newInterest) && _activeChild != null)
-        {
-            await JourneyService.AddInterestAsync(_activeChild.Id, _newInterest.Trim());
-            _newInterest = string.Empty;
-            await LoadChildData();
-        }
-    }
-
-    private void OpenNewStoryDialog()
-    {
-        _newStoryContent = string.Empty;
-    }
-
-    private void CloseNewStoryDialog()
-    {
-    }
-
-    private async Task SaveStoryAsync()
-    {
-        if (!string.IsNullOrWhiteSpace(_newStoryContent) && _activeChild != null)
-        {
-            await JourneyService.CreateStoryAsync(_activeChild.Id, Guid.Empty, null, _newStoryContent);
-            await LoadChildData();
-        }
-    }
+    [Parameter]
+    public Guid? ChildId { get; set; }
 }

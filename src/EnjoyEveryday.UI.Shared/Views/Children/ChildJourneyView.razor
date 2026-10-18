@@ -1,0 +1,241 @@
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Journey
+@using EnjoyEveryday.UI.Shared.Components.Planning
+@using EnjoyEveryday.UI.Shared.Components.ChildJourney
+@using EnjoyEveryday.UI.Shared.Components.Communication
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+
+<section class="content" style="max-width: 1380px; margin: auto; padding: 34px;">
+    
+    <div style="margin-bottom: 24px; display: flex; gap: 12px; background: #f9faf9; padding: 16px; border-radius: 12px; border: 1px solid #e1e6e0;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: #6e7973; text-transform: uppercase;">Branch</label>
+            <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer; min-width: 200px;">
+                <option value="@Guid.Empty">Select Branch</option>
+                @foreach (var branch in _branches.Values)
+                {
+                    <option value="@branch.Id">@branch.Name</option>
+                }
+            </select>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: #6e7973; text-transform: uppercase;">Classroom</label>
+            <select @bind="SelectedClassroomId" disabled="@(_selectedBranchId == Guid.Empty)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer; min-width: 200px;">
+                <option value="@Guid.Empty">Select Classroom</option>
+                @foreach (var cls in _classrooms.Values.Where(c => c.BranchId == _selectedBranchId))
+                {
+                    <option value="@cls.Id">@cls.Name</option>
+                }
+            </select>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-size: 11px; font-weight: 700; color: #6e7973; text-transform: uppercase;">Child</label>
+            <select @bind="SelectedChildId" disabled="@(_selectedClassroomId == Guid.Empty)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer; min-width: 200px;">
+                <option value="@Guid.Empty">Select Child</option>
+                @foreach (var child in _children.Where(c => c.ClassroomId == _selectedClassroomId))
+                {
+                    <option value="@child.Id">@child.FullName</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (_selectedChildId != Guid.Empty && _selectedChild != null)
+    {
+        <div class="child-header">
+            <div class="child-identity">
+                <div class="child-avatar">@(_selectedChild.FirstName?.FirstOrDefault().ToString() ?? "?")</div>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span class="child-name">@_selectedChild.FullName</span>
+                        @if (_portfolio != null)
+                        {
+                            <span class="consent-pill @GetConsentClass(_portfolio.Consent.Status)" title="@_portfolio.Consent.Description">
+                                <i class="bi @GetConsentIcon(_portfolio.Consent.Status)"></i> @_portfolio.Consent.StatusLabel
+                            </span>
+                        }
+                    </div>
+                    <div class="child-meta">
+                        <span>@(GetAgeString(_selectedChild.DateOfBirth))</span>
+                        <span>@(_classrooms.TryGetValue(_selectedClassroomId, out var cls) ? cls.Name : "Unassigned")</span>
+                    </div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="secondary-btn" @onclick='() => _isCommAssistantOpen = true' style="display: flex; align-items: center; gap: 6px; border-color: #52745e; color: #31523c; font-weight: 650; background: #edf4ee;">
+                    <span style="color: #d98a2c;">✦</span> AI Parent Communication
+                </button>
+                <button class="secondary-btn" @onclick='() => _isConferenceModalOpen = true' style="display: flex; align-items: center; gap: 6px; font-weight: 650; color: #26332d;">
+                    <i class="bi bi-mortarboard" style="color: #52745e;"></i> Conference Portfolio
+                </button>
+                <button class="primary-btn" @onclick="OpenAddMomentDialog">Log Moment</button>
+            </div>
+        </div>
+        
+    <div class="journey-summary">
+        <JourneySummaryCard Label="Total Moments" Value="@_totalMoments.ToString()" Text="Total guided and free play moments captured." />
+        <JourneySummaryCard Label="Current Focus" Value="@_currentFocus" Text="Most frequent area of development observed recently." IsFeatured="true" />
+        <JourneySummaryCard Label="Recent Activity" Value="@_recentActivity.ToString()" Text="Observations logged in the last 7 days." />
+        <JourneySummaryCard Label="Unique Areas" Value="@_uniqueAreas.ToString()" Text="Different developmental areas touched upon." />
+    </div>
+
+    <ChildJourneyInsightPanel ChildId="@_selectedChildId" ChildName="@_selectedChild.FirstName" />
+
+    <div class="main-grid">
+        <div>
+            <div class="portfolio-filters-row">
+                <div class="domain-tabs-group">
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "all" ? "active" : "")" @onclick='() => SetDomainFilter("all")'>
+                        <i class="bi bi-grid"></i> All Activity
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Language & Communication" ? "active" : "")" @onclick='() => SetDomainFilter("Language & Communication")'>
+                        <i class="bi bi-chat-quote"></i> Language
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Social & Emotional" ? "active" : "")" @onclick='() => SetDomainFilter("Social & Emotional")'>
+                        <i class="bi bi-people"></i> Social
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Physical & Motor" ? "active" : "")" @onclick='() => SetDomainFilter("Physical & Motor")'>
+                        <i class="bi bi-activity"></i> Motor
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Cognitive & Problem Solving" ? "active" : "")" @onclick='() => SetDomainFilter("Cognitive & Problem Solving")'>
+                        <i class="bi bi-lightbulb"></i> Cognitive
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Creative Arts & Sensory" ? "active" : "")" @onclick='() => SetDomainFilter("Creative Arts & Sensory")'>
+                        <i class="bi bi-palette"></i> Arts
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "DailyCare" ? "active" : "")" @onclick='() => SetDomainFilter("DailyCare")'>
+                        <i class="bi bi-cup-hot"></i> Daily Care (@_careEvents.Count)
+                    </button>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <select class="visibility-filter-select" @bind="_selectedVisibilityFilter" @bind:after="ApplyFilter">
+                        <option value="all">All Visibility</option>
+                        <option value="parent">Parent Visible</option>
+                        <option value="internal">Internal Only</option>
+                    </select>
+
+                    <input type="date" @bind="_selectedDate" @bind:after="ApplyFilter" style="padding: 6px 10px; border: 1px solid #e4e7df; border-radius: 8px; outline: none; font-size: 12px; font-family: inherit; color: #26332d;" />
+                    @if (_selectedDate.HasValue)
+                    {
+                        <button style="background: none; border: none; cursor: pointer; color: #666; font-size: 13px;" @onclick="ClearDateFilter">✕</button>
+                    }
+                </div>
+            </div>
+
+            <div class="timeline">
+                @if (_displayTimeline != null && _displayTimeline.Any())
+                {
+                    @foreach (var item in _displayTimeline)
+                    {
+                        <JourneyTimelineCard 
+                            DateString="@item.DateString" 
+                            Type="@item.BadgeType" 
+                            Title="@item.Title" 
+                            Time="@item.TimeString"
+                            Description="@item.Description"
+                            Quote="@item.Quote" 
+                            TeacherReflection="@item.TeacherReflection"
+                            TeacherName="@item.TeacherName"
+                            IsParentVisible="@item.IsParentVisible"
+                            IsMediaBlockedByConsent="@item.IsMediaBlockedByConsent"
+                            Tags="@item.Tags"
+                            Photos="@item.Photos"
+                            OnDelete="@(item.CanDelete ? EventCallback.Factory.Create(this, () => HandleDelete(item)) : EventCallback.Empty)" />
+                    }
+                }
+                else
+                {
+                    <div style="padding: 24px; text-align: center; color: #666; background: #f9faf9; border-radius: 8px;">
+                        No moments or daily care activities logged yet matching selected filter.
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div>
+            <SidePanel Title="Growing Interests" Subtitle="Based on recorded observations">
+                @foreach (var interest in _growingInterests)
+                {
+                    <InterestBar Name="@interest.Name" Value="@interest.Score" Note="@interest.Note" />
+                }
+            </SidePanel>
+            
+            <div class="card ai-card">
+                <div class="ai-heading">
+                    <div class="ai-icon">🧠</div>
+                    <div>
+                        <strong>@($"Build on {_currentFocus}")</strong>
+                        <small>AI Analysis</small>
+                    </div>
+                </div>
+                <div class="ai-text">
+                    @($"{_selectedChild.FirstName} shows great interest in {_currentFocus}. Try introducing new materials to extend this learning experience further.")
+                </div>
+                <div class="ai-suggestion">
+                    Experience: @($"{_currentFocus} Exploration")
+                </div>
+                <button class="ai-button" @onclick='() => OpenModal("idea")'>Create this experience</button>
+            </div>
+
+            <SidePanel Title="Recent Accomplishments">
+                @foreach (var acc in _recentAccomplishments)
+                {
+                    <AccomplishmentRow Icon="🌟" Title="@acc.Title" Description="@acc.Description" />
+                }
+            </SidePanel>
+
+            @if (_notableMemory != null)
+            {
+                <JourneyMemoryCard Title="Memorable Moment" Text="@_notableMemory" />
+            }
+        </div>
+    </div>
+    
+    <div class="journey-note">
+        Every child's journey is unique. <strong>EnjoyEveryday</strong> helps you see the patterns.
+    </div>
+    }
+    else
+    {
+        <div style="padding: 48px; text-align: center; color: #6e7973; font-size: 16px; background: #f9faf9; border-radius: 12px; border: 1px dashed #e1e6e0;">
+            Please select a Branch, Classroom, and Child to view their journey.
+        </div>
+    }
+
+</section>
+
+@if (_isModalOpen)
+{
+    <div class="modal-overlay show" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <button class="modal-close" @onclick="CloseModal">✕</button>
+            <h2>@_modalTitle</h2>
+            <p>@_modalText</p>
+            <div class="modal-options">
+                <button class="modal-option" @onclick="CloseModal">Add another memory</button>
+                <button class="modal-option" @onclick="CloseModal">Create an experience from this</button>
+                <button class="modal-option" @onclick="CloseModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<AddJourneyMomentDialog @ref="_addMomentDialog" ChildId="@_childId" TeacherId="@(UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001"))" OnSaved="OnMomentSaved" />
+
+<ParentCommunicationAssistantModal 
+    IsOpen="_isCommAssistantOpen"
+    ChildId="@_childId"
+    ChildName="@(_selectedChild?.FullName ?? "Child")"
+    ClassroomId="@_selectedClassroomId"
+    ClassroomName="@(_classrooms.TryGetValue(_selectedClassroomId, out var curCls) ? curCls.Name : "Classroom")"
+    OnClose="@(() => _isCommAssistantOpen = false)"
+    OnSent="@(() => _isCommAssistantOpen = false)" />
+
+<ConferencePortfolioModal 
+    IsOpen="_isConferenceModalOpen" 
+    Portfolio="_portfolio" 
+    OnClose="() => _isConferenceModalOpen = false" />
