@@ -49,6 +49,7 @@ public class SqlMigrationRunner
         }
 
         var migrationFiles = Directory.GetFiles(migrationsPath, "*.sql")
+            .Where(f => !f.EndsWith(".down.sql", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => Path.GetFileName(f))
             .ToList();
 
@@ -83,6 +84,63 @@ public class SqlMigrationRunner
                 throw;
             }
         }
+        }
+        finally
+        {
+            await connection.ExecuteAsync("SELECT pg_advisory_unlock(hashtext('enjoyeveryday_migrations'))");
+        }
+    }
+
+    /// <summary>
+    /// Rolls back the most recently applied migration using its corresponding *.down.sql file.
+    /// </summary>
+    public async Task<bool> RollbackLastMigrationAsync(string migrationsPath, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
+        await connection.ExecuteAsync("SELECT pg_advisory_lock(hashtext('enjoyeveryday_migrations'))");
+
+        try
+        {
+            var lastMigration = await connection.QueryFirstOrDefaultAsync<string>(
+                "SELECT filename FROM _migrations ORDER BY id DESC LIMIT 1");
+
+            if (string.IsNullOrWhiteSpace(lastMigration))
+            {
+                _logger.LogInformation("No applied migrations found to rollback.");
+                return false;
+            }
+
+            var baseName = Path.GetFileNameWithoutExtension(lastMigration);
+            var downFilename = $"{baseName}.down.sql";
+            var downFilePath = Path.Combine(migrationsPath, downFilename);
+
+            if (!File.Exists(downFilePath))
+            {
+                throw new FileNotFoundException($"Rollback script '{downFilename}' not found for migration '{lastMigration}'.");
+            }
+
+            _logger.LogWarning("Rolling back migration: {Filename} using {DownFile}", lastMigration, downFilename);
+            var sql = await File.ReadAllTextAsync(downFilePath, cancellationToken);
+
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                await connection.ExecuteAsync(sql, transaction: transaction);
+                await connection.ExecuteAsync(
+                    "DELETE FROM _migrations WHERE filename = @Filename",
+                    new { Filename = lastMigration },
+                    transaction: transaction);
+                transaction.Commit();
+                _logger.LogInformation("Migration {Filename} rolled back successfully.", lastMigration);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                _logger.LogError(ex, "Rollback failed for migration: {Filename}", lastMigration);
+                throw;
+            }
         }
         finally
         {
