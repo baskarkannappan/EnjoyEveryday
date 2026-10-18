@@ -1,0 +1,66 @@
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+<div class="content">
+    <PageHero Eyebrow="ENVIRONMENT"
+              Title="Classrooms"
+              Subtitle="Experiences begin with the environment.">
+        <RightContent>
+            <button id="addClassroomButton" class="primary" @onclick="HandleAddClassroom">
+                + Add classroom
+            </button>
+        </RightContent>
+    </PageHero>
+
+    <div class="search-row" style="margin-bottom: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+        <select @bind="SelectedBranchId" class="filter" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+            <option value="@Guid.Empty">All Branches</option>
+            @foreach (var branch in _branches.Values)
+            {
+                <option value="@branch.Id">@branch.Name</option>
+            }
+        </select>
+        <input class="search" @bind="_searchQuery" @bind:event="oninput" placeholder="Search classrooms by name or age..." style="padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-size: 13px; min-width: 250px; background: white;" />
+    </div>
+
+    @if (_classrooms == null)
+    {
+        <LoadingState Message="Loading classrooms..." />
+    }
+    else if (!FilteredClassrooms.Any())
+    {
+        <EmptyState Icon="🏫"
+                    Title="No classrooms found"
+                    Description="Set up your learning environments and age ratios."
+                    ActionText="+ Add classroom"
+                    OnAction="HandleAddClassroom" />
+    }
+    else
+    {
+        <div id="classroomGrid" class="people-grid">
+            @foreach (var classroom in FilteredClassrooms)
+            {
+                var branchName = _branches.TryGetValue(classroom.BranchId, out var b) ? b.Name : "Unassigned Branch";
+                <div @onclick="() => HandleClassroomClick(classroom)" style="cursor: pointer;">
+                    <PersonCard AvatarInitials="@(classroom.Name?.FirstOrDefault().ToString() ?? "C")"
+                                PhotoUrl="@classroom.PhotoUrl"
+                                Name="@classroom.Name"
+                                Subtitle="@($"{branchName} • {classroom.Capacity ?? 18} children · Ages {classroom.AgeGroup ?? "3–4"}")"
+                                Status="@(classroom.Status)"
+                                Progress="@classroom.ProfileCompletionPercentage"
+                                HighlightTitle="Environment"
+                                HighlightText="@(classroom.Environment ?? "Indoor")" />
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<ClassroomFormModal IsOpen="_isModalOpen"
+                    IsEditing="_isEditing"
+                    @bind-Name="_currentClassroom.Name"
+                    @bind-AgeGroup="_currentClassroom.AgeGroup"
+                    @bind-Capacity="_currentClassroom.Capacity"
+                    OnClose="CloseDialog"
+                    OnSave="SaveClassroomAsync"
+                    OnDelete="DeleteClassroomAsync" />
