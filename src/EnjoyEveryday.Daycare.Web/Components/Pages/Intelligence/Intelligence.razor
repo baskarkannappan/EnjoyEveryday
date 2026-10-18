@@ -637,73 +637,12 @@
     }
 </div>
 
-<!-- MODAL: ADD OPERATIONAL GOAL -->
-@if (_isAddGoalModalOpen)
-{
-    <div class="modal-backdrop-pipeline" @onclick="() => _isAddGoalModalOpen = false">
-        <div class="modal-card-pipeline" @onclick:stopPropagation="true" style="max-width: 520px;">
-            <div class="modal-header-pipeline">
-                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Add Branch Operational Goal</h3>
-                <button class="close-x" @onclick="() => _isAddGoalModalOpen = false">✕</button>
-            </div>
-            <div class="modal-body-pipeline">
-                <div class="form-group">
-                    <label>Goal Title *</label>
-                    <input class="input-field" @bind="_newGoal.Title" placeholder="e.g. Achieve 95% ratio compliance during afternoon peak" />
-                </div>
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Category</label>
-                        <select class="input-field" @bind="_newGoal.Category">
-                            <option value="Enrollment">Enrollment &amp; Occupancy</option>
-                            <option value="StaffingRatios">Staffing &amp; Statutory Ratios</option>
-                            <option value="Attendance">Attendance Health</option>
-                            <option value="Financial">Billing &amp; Collection</option>
-                            <option value="QualityCurriculum">Curriculum &amp; Quality</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Target Branch</label>
-                        <select class="input-field" @bind="_newGoal.BranchId">
-                            <option value="">All Branches</option>
-                            @foreach (var b in _branches)
-                            {
-                                <option value="@b.Id">@b.Name</option>
-                            }
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Target Metric</label>
-                        <input class="input-field" @bind="_newGoal.TargetMetric" placeholder="e.g. Ratio Compliance" />
-                    </div>
-                    <div class="form-group">
-                        <label>Current Value → Target Value</label>
-                        <div style="display: flex; gap: 6px;">
-                            <input class="input-field" style="width: 50%;" @bind="_newGoal.CurrentValue" placeholder="e.g. 91%" />
-                            <input class="input-field" style="width: 50%;" @bind="_newGoal.TargetValue" placeholder="e.g. 100%" />
-                        </div>
-                    </div>
-                </div>
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Owner / Lead Person</label>
-                        <input class="input-field" @bind="_newGoal.OwnerName" placeholder="e.g. Director Sarah" />
-                    </div>
-                    <div class="form-group">
-                        <label>Target Completion Date</label>
-                        <input type="date" class="input-field" @bind="_newGoal.TargetDate" />
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer-pipeline">
-                <button class="btn secondary" @onclick="() => _isAddGoalModalOpen = false">Cancel</button>
-                <button class="primary" @onclick="SaveGoal">Save Goal</button>
-            </div>
-        </div>
-    </div>
-}
+<AddOperationalGoalModal 
+    IsOpen="_isAddGoalModalOpen"
+    Branches="_branches"
+    Goal="_newGoal"
+    OnClose="() => _isAddGoalModalOpen = false"
+    OnSave="SaveGoal" />
 
 @code {
     private List<Organization> _organizations = new();
@@ -876,13 +815,13 @@
         }
     }
 
-    private async Task SaveGoal()
+    private async Task SaveGoal(BranchOperationalGoal goal)
     {
-        if (string.IsNullOrWhiteSpace(_newGoal.Title)) return;
+        if (string.IsNullOrWhiteSpace(goal.Title)) return;
         try
         {
-            _newGoal.OrganizationId = _selectedOrgId;
-            await BenchmarkingService.CreateOperationalGoalAsync(_newGoal);
+            goal.OrganizationId = _selectedOrgId;
+            await BenchmarkingService.CreateOperationalGoalAsync(goal);
             _isAddGoalModalOpen = false;
             _newGoal = new() { TargetDate = DateTime.UtcNow.Date.AddDays(30) };
             _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();

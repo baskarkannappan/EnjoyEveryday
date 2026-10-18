@@ -1,0 +1,86 @@
+@using EnjoyEveryday.Domain.Entities
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop-pipeline" @onclick="HandleClose">
+        <div class="modal-card-pipeline" @onclick:stopPropagation="true" style="max-width: 520px;">
+            <div class="modal-header-pipeline">
+                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Add Branch Operational Goal</h3>
+                <button class="close-x" @onclick="HandleClose">✕</button>
+            </div>
+            <div class="modal-body-pipeline">
+                <div class="form-group">
+                    <label>Goal Title *</label>
+                    <input class="input-field" @bind="Goal.Title" placeholder="e.g. Achieve 95% ratio compliance during afternoon peak" />
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select class="input-field" @bind="Goal.Category">
+                            <option value="Enrollment">Enrollment &amp; Occupancy</option>
+                            <option value="StaffingRatios">Staffing &amp; Statutory Ratios</option>
+                            <option value="Attendance">Attendance Health</option>
+                            <option value="Financial">Billing &amp; Collection</option>
+                            <option value="QualityCurriculum">Curriculum &amp; Quality</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Branch</label>
+                        <select class="input-field" @bind="Goal.BranchId">
+                            <option value="">All Branches</option>
+                            @foreach (var b in Branches)
+                            {
+                                <option value="@b.Id">@b.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Target Metric</label>
+                        <input class="input-field" @bind="Goal.TargetMetric" placeholder="e.g. Ratio Compliance" />
+                    </div>
+                    <div class="form-group">
+                        <label>Current Value → Target Value</label>
+                        <div style="display: flex; gap: 6px;">
+                            <input class="input-field" style="width: 50%;" @bind="Goal.CurrentValue" placeholder="e.g. 91%" />
+                            <input class="input-field" style="width: 50%;" @bind="Goal.TargetValue" placeholder="e.g. 100%" />
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Owner / Lead Person</label>
+                        <input class="input-field" @bind="Goal.OwnerName" placeholder="e.g. Director Sarah" />
+                    </div>
+                    <div class="form-group">
+                        <label>Target Completion Date</label>
+                        <input type="date" class="input-field" @bind="Goal.TargetDate" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer-pipeline">
+                <button class="btn secondary" @onclick="HandleClose">Cancel</button>
+                <button class="primary" @onclick="HandleSave">Save Goal</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public List<Branch> Branches { get; set; } = new();
+    [Parameter] public BranchOperationalGoal Goal { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<BranchOperationalGoal> OnSave { get; set; }
+
+    private async Task HandleClose()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandleSave()
+    {
+        await OnSave.InvokeAsync(Goal);
+    }
+}

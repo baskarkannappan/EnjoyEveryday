@@ -1,0 +1,193 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+@using System.Text.Json
+
+@if (IsOpen)
+{
+    <div class="version-modal-backdrop" @onclick="HandleClose">
+        <div class="version-modal" @onclick:stopPropagation="true">
+            <div class="version-modal-header">
+                <div>
+                    <div class="version-modal-eyebrow">VERSION HISTORY &amp; AUDIT</div>
+                    <h3 class="version-modal-title">Compare Versions</h3>
+                    <p class="version-modal-subtitle">Review developmental iterations and audit changes against current draft.</p>
+                </div>
+                <button class="version-modal-close" @onclick="HandleClose" aria-label="Close dialog">&times;</button>
+            </div>
+
+            @if (Versions == null)
+            {
+                <div class="version-modal-loading">
+                    <LoadingState Message="Loading version history..." />
+                </div>
+            }
+            else
+            {
+                <div class="version-modal-body">
+                    <!-- Version selection sidebar -->
+                    <div class="version-sidebar">
+                        @foreach (var v in Versions.OrderByDescending(x => x.VersionNumber))
+                        {
+                            var isSelected = SelectedVersion?.Id == v.Id;
+                            <div class="version-item @(isSelected ? "selected" : "")" @onclick="() => SelectVersion(v)">
+                                <div class="version-item-header">
+                                    <strong class="version-num">Version @v.VersionNumber</strong>
+                                    <span class="version-time">@v.CreatedAt.ToString("MMM dd, yyyy")</span>
+                                </div>
+                                <div class="version-reason">@(string.IsNullOrWhiteSpace(v.ChangeReason) ? "Iterative update" : v.ChangeReason)</div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Comparison workspace -->
+                    <div class="version-content">
+                        @if (SelectedVersion != null)
+                        {
+                            <div class="compare-columns-header">
+                                <div class="col-title previous">Previous (v@(SelectedVersion.VersionNumber))</div>
+                                <div class="col-title current">Current Draft</div>
+                            </div>
+
+                            @if (SelectedVersion.Title != CurrentTitle)
+                            {
+                                <div class="diff-block">
+                                    <div class="diff-label">Title</div>
+                                    <div class="diff-columns">
+                                        <div class="diff-card previous">@SelectedVersion.Title</div>
+                                        <div class="diff-card current">@CurrentTitle</div>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (SelectedVersion.Description != CurrentDescription)
+                            {
+                                <div class="diff-block">
+                                    <div class="diff-label">Description</div>
+                                    <div class="diff-columns">
+                                        <div class="diff-card previous">@SelectedVersion.Description</div>
+                                        <div class="diff-card current">@CurrentDescription</div>
+                                    </div>
+                                </div>
+                            }
+
+                            @foreach (var key in GetAllDnaKeys(SelectedVersion.DnaPayload))
+                            {
+                                var oldVal = GetPayloadValue(SelectedVersion.DnaPayload, key);
+                                var newVal = GetPayloadValue(CurrentDnaJson ?? "{}", key);
+
+                                if (oldVal != newVal)
+                                {
+                                    <div class="diff-block">
+                                        <div class="diff-label">@key</div>
+                                        <div class="diff-columns">
+                                            <div class="diff-card previous">@(string.IsNullOrWhiteSpace(oldVal) ? "(Empty)" : oldVal)</div>
+                                            <div class="diff-card current">@(string.IsNullOrWhiteSpace(newVal) ? "(Empty)" : newVal)</div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+
+                            @if (IsIdentical(SelectedVersion))
+                            {
+                                <div class="version-empty-diff">
+                                    <EmptyState Icon="🌱" Title="No Differences" Description="@($"Version {SelectedVersion.VersionNumber} matches your current draft exactly.")" />
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="version-empty-diff">
+                                <EmptyState Icon="📋" Title="Select a Version" Description="Choose an earlier version on the left to compare changes." />
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public IEnumerable<ExperienceVersion>? Versions { get; set; }
+    [Parameter] public string? CurrentTitle { get; set; }
+    [Parameter] public string? CurrentDescription { get; set; }
+    [Parameter] public string? CurrentDnaJson { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ExperienceVersion? SelectedVersion { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Versions != null && (SelectedVersion == null || !Versions.Any(v => v.Id == SelectedVersion.Id)))
+        {
+            SelectedVersion = Versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
+        }
+    }
+
+    private void SelectVersion(ExperienceVersion version)
+    {
+        SelectedVersion = version;
+    }
+
+    private async Task HandleClose()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private List<string> GetAllDnaKeys(string? jsonPayload)
+    {
+        var keys = new HashSet<string>();
+        if (!string.IsNullOrWhiteSpace(jsonPayload))
+        {
+            try
+            {
+                var oldDict = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (oldDict != null) foreach (var k in oldDict.Keys) keys.Add(k);
+            }
+            catch { }
+        }
+
+        if (!string.IsNullOrWhiteSpace(CurrentDnaJson))
+        {
+            try
+            {
+                var newDict = JsonSerializer.Deserialize<Dictionary<string, object>>(CurrentDnaJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (newDict != null) foreach (var k in newDict.Keys) keys.Add(k);
+            }
+            catch { }
+        }
+
+        return keys.ToList();
+    }
+
+    private string GetPayloadValue(string jsonPayload, string key)
+    {
+        if (string.IsNullOrWhiteSpace(jsonPayload)) return "";
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (dict != null && dict.TryGetValue(key, out var val))
+            {
+                if (val.ValueKind == JsonValueKind.Array)
+                    return string.Join(", ", val.EnumerateArray().Select(x => x.GetString()));
+                return val.GetString() ?? "";
+            }
+        }
+        catch { }
+        return "";
+    }
+
+    private bool IsIdentical(ExperienceVersion v)
+    {
+        if (v.Title != CurrentTitle) return false;
+        if (v.Description != CurrentDescription) return false;
+        foreach (var key in GetAllDnaKeys(v.DnaPayload))
+        {
+            var oldVal = GetPayloadValue(v.DnaPayload, key);
+            var newVal = GetPayloadValue(CurrentDnaJson ?? "{}", key);
+            if (oldVal != newVal) return false;
+        }
+        return true;
+    }
+}

@@ -593,205 +593,23 @@
 <!-- ========================================== -->
 <!-- PRINTABLE INVOICE PREVIEW MODAL -->
 <!-- ========================================== -->
-@if (_showPreviewModal && _selectedInvoiceForAction != null)
-{
-    <div class="modal-backdrop" @onclick="CloseModals">
-        <div class="modal-card modal-large" @onclick:stopPropagation="true">
-            <div class="modal-header">
-                <div>
-                    <div class="modal-eyebrow">DOCUMENT PREVIEW</div>
-                    <h3 class="modal-title">Invoice @_selectedInvoiceForAction.InvoiceNumber</h3>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="action-btn" @onclick="PrintInvoice">🖨️ Print / PDF</button>
-                    <button class="modal-close" @onclick="CloseModals">✕</button>
-                </div>
-            </div>
-            <div class="modal-body">
-                <div class="printable-invoice" id="printableInvoice">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #557c6c; padding-bottom: 20px; margin-bottom: 24px;">
-                        <div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-size: 24px;">🌿</span>
-                                <span style="font-size: 22px; font-weight: 800; color: #26332d;">EnjoyEveryday</span>
-                            </div>
-                            <div style="font-size: 12px; color: #6c7870; margin-top: 4px;">Daycare &amp; Early-Childhood Platform</div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 24px; font-weight: 800; color: #557c6c;">INVOICE</div>
-                            <div style="font-size: 13px; font-weight: 750; font-family: monospace;">@_selectedInvoiceForAction.InvoiceNumber</div>
-                            <div style="font-size: 12px; color: #6c7870;">Status: @_selectedInvoiceForAction.Status</div>
-                        </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
-                        <div>
-                            <div style="font-size: 11px; font-weight: 800; color: #6c7870; text-transform: uppercase;">Billed To:</div>
-                            <div style="font-size: 16px; font-weight: 800; color: #26332d; margin-top: 4px;">@GetOrgName(_selectedInvoiceForAction.OrganizationId)</div>
-                            <div style="font-size: 13px; color: #6c7870;">@_selectedInvoiceForAction.BillingContactEmail</div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 13px;"><strong>Issue Date:</strong> @_selectedInvoiceForAction.IssueDate.ToString("MMMM dd, yyyy")</div>
-                            <div style="font-size: 13px; margin-top: 4px;"><strong>Due Date:</strong> @_selectedInvoiceForAction.DueDate.ToString("MMMM dd, yyyy")</div>
-                            @if (!string.IsNullOrWhiteSpace(_selectedInvoiceForAction.BillingPeriod))
-                            {
-                                <div style="font-size: 13px; margin-top: 4px;"><strong>Billing Period:</strong> @_selectedInvoiceForAction.BillingPeriod</div>
-                            }
-                        </div>
-                    </div>
-
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
-                        <thead>
-                            <tr style="background: #f8f9f5; border-bottom: 1px solid #e4e7df; text-align: left; font-size: 11px; text-transform: uppercase; color: #6c7870;">
-                                <th style="padding: 10px 12px;">#</th>
-                                <th style="padding: 10px 12px;">Description</th>
-                                <th style="padding: 10px 12px; text-align: right;">Qty</th>
-                                <th style="padding: 10px 12px; text-align: right;">Unit Price</th>
-                                <th style="padding: 10px 12px; text-align: right;">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (_selectedInvoiceForAction.LineItems.Any())
-                            {
-                                @foreach (var li in _selectedInvoiceForAction.LineItems)
-                                {
-                                    <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
-                                        <td style="padding: 12px; color: #6c7870;">@li.LineNumber</td>
-                                        <td style="padding: 12px; font-weight: 600;">@li.Description</td>
-                                        <td style="padding: 12px; text-align: right;">@li.Quantity</td>
-                                        <td style="padding: 12px; text-align: right;">@li.UnitPrice.ToString("C2")</td>
-                                        <td style="padding: 12px; text-align: right; font-weight: 700;">@li.LineTotal.ToString("C2")</td>
-                                    </tr>
-                                }
-                            }
-                            else
-                            {
-                                <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
-                                    <td style="padding: 12px; color: #6c7870;">1</td>
-                                    <td style="padding: 12px; font-weight: 600;">@(_selectedInvoiceForAction.Description ?? "Platform Subscription Fee")</td>
-                                    <td style="padding: 12px; text-align: right;">1</td>
-                                    <td style="padding: 12px; text-align: right;">@_selectedInvoiceForAction.Subtotal.ToString("C2")</td>
-                                    <td style="padding: 12px; text-align: right; font-weight: 700;">@_selectedInvoiceForAction.Subtotal.ToString("C2")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-
-                    <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
-                        <div style="width: 260px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px;">
-                            <div style="display: flex; justify-content: space-between;">
-                                <span style="color: #6c7870;">Subtotal:</span>
-                                <strong>@_selectedInvoiceForAction.Subtotal.ToString("C2")</strong>
-                            </div>
-                            @if (_selectedInvoiceForAction.TaxAmount > 0)
-                            {
-                                <div style="display: flex; justify-content: space-between;">
-                                    <span style="color: #6c7870;">Tax:</span>
-                                    <span>@_selectedInvoiceForAction.TaxAmount.ToString("C2")</span>
-                                </div>
-                            }
-                            <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; border-top: 1px solid #e4e7df; padding-top: 8px;">
-                                <span>Total Amount:</span>
-                                <span>@_selectedInvoiceForAction.TotalAmount.ToString("C2")</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; color: #557c6c;">
-                                <span>Amount Paid:</span>
-                                <span>@_selectedInvoiceForAction.AmountPaid.ToString("C2")</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #b55a5a; border-top: 1px solid #e4e7df; padding-top: 6px;">
-                                <span>Balance Due:</span>
-                                <span>@_selectedInvoiceForAction.BalanceDue.ToString("C2")</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    @if (!string.IsNullOrWhiteSpace(_selectedInvoiceForAction.PaymentInstructions))
-                    {
-                        <div style="background: #f8f9f5; border: 1px solid #e4e7df; border-radius: 8px; padding: 14px; font-size: 12.5px; color: #6c7870;">
-                            <div style="font-weight: 750; color: #26332d; margin-bottom: 4px;">Payment Instructions:</div>
-                            @_selectedInvoiceForAction.PaymentInstructions
-                        </div>
-                    }
-
-                    <!-- RECORDED PAYMENTS LEDGER -->
-                    <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 18px;">
-                        <div style="font-size: 14px; font-weight: 750; color: var(--text); margin-bottom: 10px;">Payment Ledger (@_invoicePayments.Count transaction(s))</div>
-                        @if (_invoicePayments.Any())
-                        {
-                            <table style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
-                                <thead>
-                                    <tr style="background: #f8f9f5; border-bottom: 1px solid #e4e7df; text-align: left; color: #6c7870;">
-                                        <th style="padding: 8px 10px;">Date</th>
-                                        <th style="padding: 8px 10px;">Method</th>
-                                        <th style="padding: 8px 10px;">Reference / Receipt</th>
-                                        <th style="padding: 8px 10px; text-align: right;">Amount</th>
-                                        <th style="padding: 8px 10px; text-align: center;">Status</th>
-                                        <th style="padding: 8px 10px; text-align: right;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var p in _invoicePayments)
-                                    {
-                                        <tr style="border-bottom: 1px solid #edf1ec; opacity: @(p.IsReversed ? "0.6" : "1.0");">
-                                            <td style="padding: 8px 10px;">@p.PaymentDate.ToString("yyyy-MM-dd")</td>
-                                            <td style="padding: 8px 10px; font-weight: 600;">
-                                                @if (p.PaymentMethod == "Cash")
-                                                {
-                                                    <span>💵 Cash</span>
-                                                }
-                                                else if (p.PaymentMethod == "Razorpay")
-                                                {
-                                                    <span>💳 Razorpay</span>
-                                                }
-                                                else
-                                                {
-                                                    <span>🏦 @p.PaymentMethod</span>
-                                                }
-                                            </td>
-                                            <td style="padding: 8px 10px; font-family: monospace;">
-                                                @(p.ReceiptNumber ?? p.PaymentReference)
-                                                @if (p.IsReversed)
-                                                {
-                                                    <span style="color: #9b2c2c; display: block; font-size: 11px;">[REVERSED: @p.ReversalReason]</span>
-                                                }
-                                            </td>
-                                            <td style="padding: 8px 10px; text-align: right; font-weight: 700;">@p.Amount.ToString("C2")</td>
-                                            <td style="padding: 8px 10px; text-align: center;">
-                                                @if (p.IsReversed)
-                                                {
-                                                    <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Reversed</span>
-                                                }
-                                                else
-                                                {
-                                                    <span style="background: var(--accent-light); color: var(--accent-dark); padding: 2px 6px; border-radius: 4px; font-size: 11px;">@p.Status</span>
-                                                }
-                                            </td>
-                                            <td style="padding: 8px 10px; text-align: right;">
-                                                <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                                                    <a href="/api/billing/payments/@p.Id/receipt" target="_blank" class="action-btn" style="text-decoration: none;">📄 Receipt</a>
-                                                    @if (!p.IsReversed && p.Status == PaymentStatus.Completed)
-                                                    {
-                                                        <button class="action-btn" style="color: #9b2c2c;" @onclick="() => OpenReverseModal(p)">⚠️ Reverse</button>
-                                                    }
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        }
-                        else
-                        {
-                            <div style="font-size: 12.5px; color: var(--muted); font-style: italic;">No payments recorded for this invoice yet.</div>
-                        }
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn secondary" @onclick="CloseModals">Close Preview</button>
-            </div>
+<InvoiceDetailsModal 
+    IsOpen="@(_showPreviewModal && _selectedInvoiceForAction != null)"
+    Invoice="@_selectedInvoiceForAction"
+    OrganizationName="@(_selectedInvoiceForAction != null ? GetOrgName(_selectedInvoiceForAction.OrganizationId) : "")"
+    Payments="@_invoicePayments"
+    OnClose="CloseModals"
+    OnPrint="PrintInvoice">
+    <PaymentActions Context="p">
+        <div style="display: flex; gap: 6px; justify-content: flex-end;">
+            <a href="/api/billing/payments/@p.Id/receipt" target="_blank" class="invoice-receipt-link">📄 Receipt</a>
+            @if (!p.IsReversed && p.Status == PaymentStatus.Completed)
+            {
+                <button class="btn secondary" style="color: #9b2c2c; padding: 2px 7px; font-size: 11px;" @onclick="() => OpenReverseModal(p)">⚠️ Reverse</button>
+            }
         </div>
-    </div>
-}
+    </PaymentActions>
+</InvoiceDetailsModal>
+
 
 

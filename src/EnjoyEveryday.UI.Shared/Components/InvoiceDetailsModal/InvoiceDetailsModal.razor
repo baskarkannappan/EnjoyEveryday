@@ -1,0 +1,228 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+@if (IsOpen && Invoice != null)
+{
+    <div class="invoice-modal-backdrop" @onclick="HandleClose">
+        <div class="invoice-modal-card" @onclick:stopPropagation="true">
+            <div class="invoice-modal-header">
+                <div>
+                    <div class="invoice-modal-eyebrow">INVOICE STATEMENT</div>
+                    <h3 class="invoice-modal-title">@Invoice.InvoiceNumber</h3>
+                </div>
+                <div class="invoice-modal-header-actions">
+                    <button class="btn secondary invoice-print-btn" @onclick="HandlePrint">🖨️ Print / Download PDF</button>
+                    <button class="invoice-modal-close" @onclick="HandleClose" aria-label="Close dialog">&times;</button>
+                </div>
+            </div>
+
+            <div class="invoice-modal-body">
+                <div class="printable-invoice" id="printableInvoice">
+                    <!-- Brand Header -->
+                    <div class="invoice-brand-header">
+                        <div>
+                            <div class="invoice-brand-logo">
+                                <span class="invoice-logo-icon">🌿</span>
+                                <span class="invoice-brand-name">EnjoyEveryday</span>
+                            </div>
+                            <div class="invoice-brand-sub">Early-Childhood &amp; Daycare Platform</div>
+                        </div>
+                        <div class="invoice-meta-right">
+                            <div class="invoice-heading-badge">INVOICE</div>
+                            <div class="invoice-number-tag">@Invoice.InvoiceNumber</div>
+                            <div class="invoice-status-tag">
+                                <StatusBadge Status="@Invoice.Status.ToString()" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Organization & Dates -->
+                    <div class="invoice-party-grid">
+                        <div>
+                            <div class="party-label">Billed Daycare Organization</div>
+                            <div class="party-name">@(string.IsNullOrWhiteSpace(OrganizationName) ? "Daycare Organization" : OrganizationName)</div>
+                            <div class="party-email">@Invoice.BillingContactEmail</div>
+                        </div>
+                        <div class="invoice-dates-right">
+                            <div><strong>Issue Date:</strong> @Invoice.IssueDate.ToString("MMMM dd, yyyy")</div>
+                            <div><strong>Due Date:</strong> @Invoice.DueDate.ToString("MMMM dd, yyyy")</div>
+                            @if (!string.IsNullOrWhiteSpace(Invoice.BillingPeriod))
+                            {
+                                <div><strong>Billing Cycle:</strong> @Invoice.BillingPeriod</div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Line Items Table -->
+                    <div class="invoice-table-wrapper">
+                        <table class="invoice-line-items">
+                            <thead>
+                                <tr>
+                                    <th>Description</th>
+                                    <th class="col-numeric" style="width: 70px;">Qty</th>
+                                    <th class="col-numeric" style="width: 120px;">Unit Price</th>
+                                    <th class="col-numeric" style="width: 130px;">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (Invoice.LineItems != null && Invoice.LineItems.Any())
+                                {
+                                    @foreach (var li in Invoice.LineItems)
+                                    {
+                                        <tr>
+                                            <td class="item-desc">@li.Description</td>
+                                            <td class="col-numeric">@li.Quantity</td>
+                                            <td class="col-numeric">@li.UnitPrice.ToString("C2")</td>
+                                            <td class="col-numeric item-total">@li.LineTotal.ToString("C2")</td>
+                                        </tr>
+                                    }
+                                }
+                                else
+                                {
+                                    <tr>
+                                        <td class="item-desc">@(!string.IsNullOrWhiteSpace(Invoice.Description) ? Invoice.Description : "Platform Subscription Service")</td>
+                                        <td class="col-numeric">1</td>
+                                        <td class="col-numeric">@Invoice.Subtotal.ToString("C2")</td>
+                                        <td class="col-numeric item-total">@Invoice.Subtotal.ToString("C2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Totals Breakdown -->
+                    <div class="invoice-totals-wrapper">
+                        <div class="invoice-totals-box">
+                            <div class="total-row">
+                                <span class="total-label">Subtotal:</span>
+                                <strong>@Invoice.Subtotal.ToString("C2")</strong>
+                            </div>
+                            @if (Invoice.TaxAmount > 0)
+                            {
+                                <div class="total-row">
+                                    <span class="total-label">Tax:</span>
+                                    <span>@Invoice.TaxAmount.ToString("C2")</span>
+                                </div>
+                            }
+                            <div class="total-row total-highlight">
+                                <span>Total Amount:</span>
+                                <span>@Invoice.TotalAmount.ToString("C2")</span>
+                            </div>
+                            <div class="total-row total-paid">
+                                <span>Total Paid:</span>
+                                <strong>@Invoice.AmountPaid.ToString("C2")</strong>
+                            </div>
+                            <div class="total-row total-due">
+                                <span>Balance Due:</span>
+                                <span>@Invoice.BalanceDue.ToString("C2")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Remittance Notice -->
+                    @if (!string.IsNullOrWhiteSpace(Invoice.PaymentInstructions))
+                    {
+                        <div class="invoice-instructions">
+                            <div class="instructions-header">Payment Remittance Instructions:</div>
+                            <div class="instructions-text">@Invoice.PaymentInstructions</div>
+                        </div>
+                    }
+
+                    <!-- Payment Ledger History -->
+                    @{
+                        var paymentsList = Payments ?? Invoice.Payments;
+                    }
+                    @if (paymentsList != null && paymentsList.Any())
+                    {
+                        <div class="invoice-payments-section">
+                            <div class="payments-title">
+                                Payment Ledger History (@paymentsList.Count)
+                            </div>
+                            <table class="payments-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Method</th>
+                                        <th>Reference / Receipt</th>
+                                        <th class="col-numeric">Amount</th>
+                                        <th style="text-align: center;">Status</th>
+                                        <th style="text-align: right;">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var p in paymentsList)
+                                    {
+                                        <tr style="@(p.IsReversed ? "opacity: 0.65;" : "")">
+                                            <td>@p.PaymentDate.ToString("MMM dd, yyyy")</td>
+                                            <td><span class="payment-method-pill">@(p.PaymentMethod ?? p.Method)</span></td>
+                                            <td style="font-family: monospace;">
+                                                @(!string.IsNullOrWhiteSpace(p.PaymentReference) ? p.PaymentReference : !string.IsNullOrWhiteSpace(p.ReceiptNumber) ? p.ReceiptNumber : "—")
+                                                @if (p.IsReversed)
+                                                {
+                                                    <span style="color: #9b2c2c; display: block; font-size: 11px;">[REVERSED: @p.ReversalReason]</span>
+                                                }
+                                            </td>
+                                            <td class="col-numeric payment-amount">@p.Amount.ToString("C2")</td>
+                                            <td style="text-align: center;">
+                                                @if (p.IsReversed)
+                                                {
+                                                    <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">Reversed</span>
+                                                }
+                                                else
+                                                {
+                                                    <StatusBadge Status="@p.Status.ToString()" />
+                                                }
+                                            </td>
+                                            <td style="text-align: right;">
+                                                @if (PaymentActions != null)
+                                                {
+                                                    @PaymentActions(p)
+                                                }
+                                                else
+                                                {
+                                                    <a href="/api/billing/payments/@p.Id/receipt" target="_blank" class="invoice-receipt-link">📄 Receipt</a>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="invoice-modal-footer">
+                @if (FooterContent != null)
+                {
+                    @FooterContent
+                }
+                else
+                {
+                    <button class="btn secondary" @onclick="HandleClose">Close</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Invoice? Invoice { get; set; }
+    [Parameter] public string? OrganizationName { get; set; }
+    [Parameter] public IReadOnlyList<Payment>? Payments { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnPrint { get; set; }
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+    [Parameter] public RenderFragment<Payment>? PaymentActions { get; set; }
+
+    private async Task HandleClose()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandlePrint()
+    {
+        await OnPrint.InvokeAsync();
+    }
+}
