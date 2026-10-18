@@ -1,7 +1,9 @@
 @page "/events"
 @attribute [Authorize]
+@namespace EnjoyEveryday.Parent.Web.Components.Pages.Learning
 @inject IParentService ParentService
 @inject ParentSessionState SessionState
+@inject NavigationManager Navigation
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -9,77 +11,57 @@
 
 @if (_loading)
 {
-    <div style="padding: 40px; text-align: center; color: #64748b;">
-        <FluentSpinner />
-        <p style="margin-top: 12px; font-weight: 500;">Loading events &amp; celebrations...</p>
-    </div>
+    <LoadingState Message="Loading celebrations &amp; events..." 
+                  SubMessage="Retrieving classroom gatherings, dates, and RSVP status" />
 }
 else if (SessionState.SelectedChild == null)
 {
-    <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
-        <div style="font-size: 40px; margin-bottom: 12px;">🎈</div>
-        <FluentText Size="TextSize.Size500" Weight="TextWeight.Bold">No Authorized Child Selected</FluentText>
-    </FluentCard>
+    <EmptyState Icon="🎈"
+                Title="No Authorized Child Selected"
+                Description="Please connect an active child enrollment to see classroom events."
+                ActionText="Connect Demo Child"
+                OnAction='() => Navigation.NavigateTo("/auth/login")' />
 }
 else
 {
     <!-- HEADER -->
-    <div style="background: linear-gradient(135deg, #eef5ef 0%, #f7faf8 100%); border: 1px solid #dce8df; border-radius: 20px; padding: 26px 30px; margin-bottom: 24px;">
-        <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #3b6b4a; text-transform: uppercase; margin-bottom: 4px;">
-            COMMUNITY &middot; CELEBRATIONS &amp; MEMORIES
-        </div>
-        <h1 style="font-size: 26px; font-weight: 800; color: #1c2b20; margin: 0 0 6px 0; letter-spacing: -0.5px;">
-            Classroom &amp; Daycare Events
-        </h1>
-        <p style="font-size: 14px; color: #475569; margin: 0; max-width: 600px;">
-            Join in celebrations, respond to classroom invitations, and browse approved memories.
-        </p>
-    </div>
+    <ParentPageHeader Eyebrow="COMMUNITY · CELEBRATIONS & MEMORIES"
+                      Title="Classroom & Daycare Events"
+                      Subtitle="Join in celebrations, respond to classroom invitations, and browse approved memories." />
 
     @if (!string.IsNullOrEmpty(_feedbackMessage))
     {
-        <div style="background: #eef5ef; border: 1px solid #bbf7d0; border-radius: 12px; padding: 12px 18px; margin-bottom: 20px; color: #166534; font-size: 14px; font-weight: 600;">
-            ✓ @_feedbackMessage
+        <div class="events-feedback-banner">
+            <span>✓ @_feedbackMessage</span>
+            <button class="events-feedback-close" @onclick="() => _feedbackMessage = null">✕</button>
         </div>
     }
 
     <!-- EVENTS LIST -->
     @if (_events.Count == 0)
     {
-        <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
-            <div style="font-size: 32px; margin-bottom: 8px;">🎈</div>
-            <FluentText Size="TextSize.Size400" Weight="TextWeight.Bold">No Published Events</FluentText>
-            <p style="color: #64748b; font-size: 13px; margin: 8px auto 0; max-width: 400px;">
-                When upcoming celebrations or classroom gatherings are scheduled, invitations will appear here.
-            </p>
-        </FluentCard>
+        <EmptyState Icon="🎈"
+                    Title="No Published Events"
+                    Description="When upcoming celebrations, field experiences, or classroom gatherings are scheduled, invitations will appear here."
+                    MinHeightPx="180" />
     }
     else
     {
-        <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div class="events-card-list">
             @foreach (var evt in _events)
             {
                 var isCompleted = string.Equals(evt.Status, "Completed", StringComparison.OrdinalIgnoreCase);
 
-                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 18px; padding: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.02);">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                <div class="event-card">
+                    <div class="event-card-top">
                         <div>
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <h3 style="font-size: 18px; font-weight: 750; color: #1e293b; margin: 0;">@evt.Title</h3>
-                                @if (isCompleted)
-                                {
-                                    <span style="font-size: 11px; font-weight: 700; background: #eef5ef; color: #2d5a3c; padding: 2px 8px; border-radius: 10px;">
-                                        Completed
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span style="font-size: 11px; font-weight: 700; background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 10px;">
-                                        Upcoming
-                                    </span>
-                                }
+                            <div class="event-title-row">
+                                <h3 class="event-title">@evt.Title</h3>
+                                <span class="event-status-pill @(isCompleted ? "completed" : "upcoming")">
+                                    @(isCompleted ? "Completed" : "Upcoming")
+                                </span>
                             </div>
-                            <div style="font-size: 13px; color: #64748b; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;">
+                            <div class="event-meta-row">
                                 <span>📅 @evt.EventDate.ToString("dddd, MMMM dd, yyyy")</span>
                                 @if (!string.IsNullOrEmpty(evt.Location))
                                 {
@@ -91,7 +73,7 @@ else
 
                     @if (!string.IsNullOrEmpty(evt.Description))
                     {
-                        <p style="font-size: 14px; color: #334155; line-height: 1.5; margin: 0 0 16px 0;">
+                        <p class="event-description">
                             @evt.Description
                         </p>
                     }
@@ -99,12 +81,15 @@ else
                     <!-- PHOTOS FOR COMPLETED EVENTS -->
                     @if (isCompleted && evt.PhotoUrls != null && evt.PhotoUrls.Length > 0)
                     {
-                        <div style="margin-top: 14px; margin-bottom: 16px;">
-                            <div style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px;">Celebration Memories &amp; Photos:</div>
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                                @foreach (var photo in evt.PhotoUrls)
+                        <div class="event-photos-section">
+                            <div class="event-photos-label">Celebration Memories &amp; Photos:</div>
+                            <div class="event-photos-grid">
+                                @for (int i = 0; i < evt.PhotoUrls.Length; i++)
                                 {
-                                    <img src="@photo" alt="Celebration photo" style="width: 140px; height: 100px; object-fit: cover; border-radius: 10px; border: 1px solid #e2e8f0;" />
+                                    var photo = evt.PhotoUrls[i];
+                                    <div class="event-photo-wrap" @onclick="() => OpenPhoto(photo, evt.Title, evt.EventDate)">
+                                        <img src="@photo" alt="@evt.Title photo" class="event-photo-img" loading="lazy" />
+                                    </div>
                                 }
                             </div>
                         </div>
@@ -113,18 +98,17 @@ else
                     <!-- RSVP INTERACTION IF UPCOMING -->
                     @if (!isCompleted)
                     {
-                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 18px; margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                            <div>
-                                <span style="font-size: 13px; font-weight: 700; color: #1e293b;">Family RSVP:</span>
-                                <span style="font-size: 12px; color: #64748b; margin-left: 6px;">Will your family attend this celebration?</span>
+                        <div class="event-rsvp-bar">
+                            <div class="event-rsvp-prompt">
+                                <span class="event-rsvp-label">Family RSVP:</span>
+                                <span class="event-rsvp-hint">Will your family attend this celebration?</span>
                             </div>
-                            <div style="display: flex; gap: 8px;">
-                                <button class="primary" 
-                                        style="font-size: 12px; padding: 6px 14px; border-radius: 10px; border: 0; background: #2d5a3c; color: white; cursor: pointer; font-weight: 600;"
+                            <div class="event-rsvp-actions">
+                                <button class="primary event-rsvp-btn attending" 
                                         @onclick='() => SubmitRsvp(evt.Id, "Attending")'>
                                     ✓ Attending
                                 </button>
-                                <button style="font-size: 12px; padding: 6px 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer; font-weight: 600;"
+                                <button class="secondary event-rsvp-btn decline" 
                                         @onclick='() => SubmitRsvp(evt.Id, "Declined")'>
                                     Cannot Attend
                                 </button>
@@ -135,12 +119,215 @@ else
             }
         </div>
     }
+
+    <!-- LIGHTBOX FOR EVENT PHOTOS -->
+    <MediaViewer IsOpen="@_viewerOpen"
+                 CurrentItem="@_activePhoto"
+                 HasPrevious="false"
+                 HasNext="false"
+                 OnClose="() => _viewerOpen = false" />
 }
+
+<style>
+    .events-feedback-banner {
+        background: #eef5ef;
+        border: 1px solid #bbf7d0;
+        border-radius: 12px;
+        padding: 12px 18px;
+        margin-bottom: 20px;
+        color: #166534;
+        font-size: 13.5px;
+        font-weight: 650;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .events-feedback-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #166534;
+        font-size: 14px;
+    }
+
+    .events-card-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .event-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 20px 22px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .05));
+    }
+
+    .event-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+    }
+
+    .event-title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .event-title {
+        font-size: 16.5px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        margin: 0;
+    }
+
+    .event-status-pill {
+        font-size: 10px;
+        font-weight: 750;
+        padding: 2px 8px;
+        border-radius: 8px;
+    }
+
+    .event-status-pill.completed {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .event-status-pill.upcoming {
+        background: #f0fdf4;
+        color: #15803d;
+        border: 1px solid #bbf7d0;
+    }
+
+    .event-meta-row {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+        margin-top: 4px;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .event-description {
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        line-height: 1.5;
+        margin: 0 0 14px 0;
+    }
+
+    .event-photos-section {
+        margin-top: 14px;
+        margin-bottom: 14px;
+    }
+
+    .event-photos-label {
+        font-size: 11.5px;
+        font-weight: 750;
+        color: var(--muted, #6c7870);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .event-photos-grid {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .event-photo-wrap {
+        width: 130px;
+        height: 95px;
+        border-radius: 10px;
+        overflow: hidden;
+        cursor: pointer;
+        border: 1px solid var(--border, #e4e7df);
+        transition: transform 0.15s ease;
+    }
+
+    .event-photo-wrap:hover {
+        transform: scale(1.03);
+    }
+
+    .event-photo-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .event-rsvp-bar {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .event-rsvp-prompt {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .event-rsvp-label {
+        font-size: 13px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .event-rsvp-hint {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+    }
+
+    .event-rsvp-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .event-rsvp-btn {
+        padding: 6px 14px !important;
+        font-size: 12px !important;
+        border-radius: 8px !important;
+    }
+
+    @@media (max-width: 640px) {
+        .event-card {
+            padding: 14px 16px;
+        }
+
+        .event-rsvp-bar {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .event-rsvp-actions {
+            width: 100%;
+        }
+
+        .event-rsvp-btn {
+            flex: 1;
+            text-align: center;
+        }
+    }
+</style>
 
 @code {
     private List<Event> _events = new();
     private bool _loading = true;
     private string? _feedbackMessage;
+    private bool _viewerOpen;
+    private MediaItemModel? _activePhoto;
 
     protected override async Task OnInitializedAsync()
     {
@@ -191,6 +378,18 @@ else
         {
             _feedbackMessage = $"Could not update RSVP: {ex.Message}";
         }
+    }
+
+    private void OpenPhoto(string url, string title, DateOnly date)
+    {
+        _activePhoto = new MediaItemModel
+        {
+            Url = url,
+            Title = title,
+            Date = date.ToDateTime(TimeOnly.MinValue),
+            Category = "Celebration"
+        };
+        _viewerOpen = true;
     }
 
     public void Dispose()

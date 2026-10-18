@@ -1,0 +1,119 @@
+@namespace EnjoyEveryday.Parent.Web.Components.Shared
+@using EnjoyEveryday.UI.Shared.Components
+
+<div class="media-gallery-container">
+    @if (ShowFilters && Items != null && Items.Any())
+    {
+        <div class="media-gallery-filters">
+            <button class="media-filter-btn @(_activeFilter == "All" ? "active" : "")" 
+                    @onclick='() => SetFilter("All")'>
+                All (@Items.Count)
+            </button>
+            <button class="media-filter-btn @(_activeFilter == "Celebration" ? "active" : "")" 
+                    @onclick='() => SetFilter("Celebration")'>
+                Celebrations (@Items.Count(i => i.Category == "Celebration"))
+            </button>
+            <button class="media-filter-btn @(_activeFilter == "Journey" ? "active" : "")" 
+                    @onclick='() => SetFilter("Journey")'>
+                Journey &amp; Discoveries (@Items.Count(i => i.Category == "Journey"))
+            </button>
+        </div>
+    }
+
+    @if (FilteredItems == null || !FilteredItems.Any())
+    {
+        <EmptyState Icon="📸"
+                    Title="No Memories Found"
+                    Description="Photos and videos captured by educators during activities and celebrations will appear here."
+                    MinHeightPx="180" />
+    }
+    else
+    {
+        <div class="media-gallery-grid">
+            @foreach (var item in FilteredItems)
+            {
+                <MediaThumbnail ImageUrl="@item.Url"
+                                ThumbnailUrl="@item.ThumbnailUrl"
+                                Title="@item.Title"
+                                DateLabel="@item.Date.ToString("MMM dd, yyyy")"
+                                Category="@item.Category"
+                                IsVideo="@item.IsVideo"
+                                OnClick="@(() => OnSelectMedia.InvokeAsync(item))" />
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .media-gallery-container {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .media-gallery-filters {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+
+    .media-filter-btn {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 20px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .media-filter-btn:hover {
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--text, #26332d);
+    }
+
+    .media-filter-btn.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border-color: #bcd3c5;
+        font-weight: 750;
+    }
+
+    .media-gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+    }
+
+    @@media (min-width: 768px) {
+        .media-gallery-grid {
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 16px;
+        }
+    }
+</style>
+
+@code {
+    [Parameter] public IReadOnlyList<MediaItemModel>? Items { get; set; }
+    [Parameter] public bool ShowFilters { get; set; } = true;
+    [Parameter] public EventCallback<MediaItemModel> OnSelectMedia { get; set; }
+
+    private string _activeFilter = "All";
+
+    private IEnumerable<MediaItemModel> FilteredItems
+    {
+        get
+        {
+            if (Items == null) return Enumerable.Empty<MediaItemModel>();
+            if (_activeFilter == "All") return Items;
+            return Items.Where(i => string.Equals(i.Category, _activeFilter, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void SetFilter(string filter)
+    {
+        _activeFilter = filter;
+    }
+}

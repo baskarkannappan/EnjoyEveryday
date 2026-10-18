@@ -1,0 +1,305 @@
+@inject IParentService ParentService
+@inject ParentLocalizationService Localization
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <span class="modal-eyebrow">@Localization.T("Action.ReportAbsence")</span>
+                    <h3 class="modal-title">Notify Classroom Educators</h3>
+                </div>
+                <button class="close-btn" @onclick="Close" aria-label="Close">✕</button>
+            </div>
+
+            @if (isSubmitted)
+            {
+                <div class="success-message">
+                    <span class="success-icon">✓</span>
+                    <h4>Notice Sent Successfully</h4>
+                    <p>Classroom teachers have been notified. This notice is saved to your child's attendance log for staff review.</p>
+                    <button class="primary" style="margin-top: 16px; width: 100%;" @onclick="Close">@Localization.T("Action.Close")</button>
+                </div>
+            }
+            else
+            {
+                <div class="modal-body">
+                    @if (!string.IsNullOrWhiteSpace(errorMessage))
+                    {
+                        <div class="error-banner">@errorMessage</div>
+                    }
+
+                    <p class="intro-note">
+                        Let teachers know in advance if <strong>@ChildName</strong> will be absent or arriving late.
+                    </p>
+
+                    <div class="form-group">
+                        <label>Reason for Absence</label>
+                        <select class="form-input" @bind="reason">
+                            <option value="Illness / Recovery">Illness / Recovery (Cold, Fever, etc.)</option>
+                            <option value="Family Travel / Vacation">Family Travel / Vacation</option>
+                            <option value="Doctor or Dental Appointment">Doctor or Dental Appointment</option>
+                            <option value="Late Arrival (after 10:00 AM)">Late Arrival (after 10:00 AM)</option>
+                            <option value="Family Event / Personal Day">Family Event / Personal Day</option>
+                            <option value="Inclement Weather / Transport">Inclement Weather / Transport</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>From Date</label>
+                            <input type="date" class="form-input" @bind="startDate" />
+                        </div>
+                        <div class="form-group">
+                            <label>To Date</label>
+                            <input type="date" class="form-input" @bind="endDate" />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Additional Notes (Optional)</label>
+                        <textarea class="form-input" rows="3" placeholder="e.g. Expected pickup time or symptoms..." @bind="notes"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="secondary" @onclick="Close" disabled="@isSubmitting">Cancel</button>
+                    <button class="primary" @onclick="SubmitNotice" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span>@Localization.T("Action.Saving")</span>
+                        }
+                        else
+                        {
+                            <span>@Localization.T("Action.Submit")</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid ChildId { get; set; }
+    [Parameter] public string ChildName { get; set; } = "Your child";
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+
+    private DateTime startDate = DateTime.Today;
+    private DateTime endDate = DateTime.Today;
+    private string reason = "Illness / Recovery";
+    private string notes = string.Empty;
+    private bool isSubmitting = false;
+    private bool isSubmitted = false;
+    private string? errorMessage = null;
+
+    private async Task Close()
+    {
+        IsOpen = false;
+        isSubmitted = false;
+        errorMessage = null;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task SubmitNotice()
+    {
+        if (ChildId == Guid.Empty) return;
+
+        isSubmitting = true;
+        errorMessage = null;
+
+        try
+        {
+            if (endDate < startDate)
+            {
+                endDate = startDate;
+            }
+
+            await ParentService.ReportAbsenceAsync(ChildId, startDate, endDate, reason, notes);
+            isSubmitted = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Unable to submit notice: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1100;
+        padding: 16px;
+    }
+
+    .modal-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        width: 100%;
+        max-width: 480px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        background: var(--surface-soft, #f8f9f5);
+    }
+
+    .modal-eyebrow {
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--accent, #557c6c);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+
+    .modal-title {
+        font-size: 17px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        margin: 2px 0 0;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 16px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        padding: 4px;
+        line-height: 1;
+    }
+
+    .modal-body {
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .intro-note {
+        font-size: 13.5px;
+        color: var(--muted, #6c7870);
+        margin: 0;
+        line-height: 1.45;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .form-group label {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 10px;
+        background: var(--surface, #ffffff);
+        color: var(--text, #26332d);
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .form-input:focus {
+        border-color: var(--accent, #557c6c);
+        box-shadow: 0 0 0 3px var(--accent-light, #e6eee9);
+    }
+
+    .modal-footer {
+        padding: 14px 22px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .modal-footer button {
+        padding: 9px 18px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .error-banner {
+        background: #fff5f5;
+        border: 1px solid #fed7d7;
+        color: #9b2c2c;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+    }
+
+    .success-message {
+        padding: 36px 24px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .success-icon {
+        width: 48px;
+        height: 48px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 14px;
+    }
+
+    .success-message h4 {
+        margin: 0 0 8px;
+        color: var(--text, #26332d);
+        font-size: 18px;
+    }
+
+    .success-message p {
+        margin: 0;
+        font-size: 14px;
+        color: var(--muted, #6c7870);
+        line-height: 1.5;
+        max-width: 320px;
+    }
+</style>

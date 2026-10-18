@@ -687,10 +687,14 @@ public class ChildDailyCareService : IChildDailyCareService
         var totalRest = naps.Where(n => n.ParentVisible && n.DurationMinutes.HasValue).Sum(n => n.DurationMinutes!.Value);
 
         var lunchEvent = timeline.FirstOrDefault(e => e.Title.Contains("Lunch", StringComparison.OrdinalIgnoreCase));
-        var lunchStatus = lunchEvent != null ? lunchEvent.Description : "Meal routine completed";
+        var lunchStatus = lunchEvent != null 
+            ? lunchEvent.Description 
+            : (timeline.Any(e => e.Category == CareEventTypes.Meal) ? "Meal routine recorded" : "Not recorded yet");
 
         var moodEvent = timeline.LastOrDefault(e => e.Category == CareEventTypes.Comfort);
-        var primaryMood = moodEvent != null ? moodEvent.Title.Replace("Comfort observation (", "").Replace(")", "") : "Happy & Engaged";
+        var primaryMood = moodEvent != null 
+            ? moodEvent.Title.Replace("Comfort observation (", "").Replace(")", "") 
+            : (timeline.Any() ? "Content & Settled" : "Not recorded yet");
 
         var supplies = (await _repository.GetSuppliesByChildAsync(_tenantContext.TenantId, childId, ct))
             .Where(s => s.Status == "Low" || s.Status == "Depleted")
@@ -698,10 +702,20 @@ public class ChildDailyCareService : IChildDailyCareService
 
         // Construct factual reassuring paragraph from actual persisted records (never invented)
         var name = child.FirstName;
-        var reassurance = $"{name} had a calm and engaging day at Little Stars. " +
-            (diaperCount > 0 ? $"{name} had {diaperCount} routine diaper checks. " : "") +
-            (lunchEvent != null ? $"{lunchEvent.Description} " : "") +
-            (totalRest > 0 ? $"{name} rested well ({totalRest / 60}h {totalRest % 60}m of sleep)." : "Participated happily in classroom learning and playtime.");
+        string reassurance;
+        var hasAnyCareRecords = diaperCount > 0 || totalRest > 0 || lunchEvent != null || moodEvent != null;
+
+        if (!hasAnyCareRecords)
+        {
+            reassurance = $"Not yet updated today. Care notes and observations will appear here once recorded by {name}'s teachers.";
+        }
+        else
+        {
+            reassurance = $"{name} had a calm and engaging day at Little Stars. " +
+                (diaperCount > 0 ? $"{name} had {diaperCount} routine diaper checks. " : "") +
+                (lunchEvent != null ? $"{lunchEvent.Description} " : "") +
+                (totalRest > 0 ? $"{name} rested well ({totalRest / 60}h {totalRest % 60}m of sleep)." : "");
+        }
 
         return new ParentDailyCareReport
         {

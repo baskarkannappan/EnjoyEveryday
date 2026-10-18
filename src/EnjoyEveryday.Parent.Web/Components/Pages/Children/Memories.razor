@@ -1,0 +1,136 @@
+@page "/memories"
+@attribute [Authorize]
+@namespace EnjoyEveryday.Parent.Web.Components.Pages.Children
+@inject IParentService ParentService
+@inject ParentSessionState SessionState
+@inject NavigationManager Navigation
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Memories &amp; Photos — EnjoyEveryday</PageTitle>
+
+@if (_loading)
+{
+    <LoadingState Message="Loading child memories..." 
+                  SubMessage="Retrieving authorized photos &amp; celebration moments" />
+}
+else if (SessionState.SelectedChild == null)
+{
+    <EmptyState Icon="🌱"
+                Title="No Authorized Child Selected"
+                Description="Please connect an active child enrollment to view photos and memories."
+                ActionText="Connect Demo Child"
+                OnAction='() => Navigation.NavigateTo("/auth/login")' />
+}
+else
+{
+    <!-- HEADER -->
+    <ParentPageHeader Eyebrow="MEMORIES & PHOTOS"
+                      Title="@($"{SessionState.SelectedChild.FirstName}'s Memories & Photos")"
+                      Subtitle="Explore classroom moments, celebration photos, and learning discoveries captured by educators." />
+
+    <!-- MEDIA GALLERY -->
+    <MediaGallery Items="@_mediaItems" 
+                  ShowFilters="true" 
+                  OnSelectMedia="OpenMediaViewer" />
+
+    <!-- FULL SCREEN ACCESSIBLE LIGHTBOX VIEWER -->
+    <MediaViewer IsOpen="@_viewerOpen"
+                 CurrentItem="@_activeItem"
+                 HasPrevious="@(ActiveItemIndex > 0)"
+                 HasNext="@(ActiveItemIndex < (_mediaItems.Count - 1))"
+                 OnClose="CloseMediaViewer"
+                 OnPrevious="NavigatePrevious"
+                 OnNext="NavigateNext" />
+}
+
+@code {
+    private List<MediaItemModel> _mediaItems = new();
+    private bool _loading = true;
+    private bool _viewerOpen;
+    private MediaItemModel? _activeItem;
+
+    private int ActiveItemIndex => _activeItem != null ? _mediaItems.IndexOf(_activeItem) : -1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        SessionState.OnChildChanged += OnChildSelectionChanged;
+        await LoadMemoriesAsync();
+    }
+
+    private async void OnChildSelectionChanged()
+    {
+        await LoadMemoriesAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadMemoriesAsync()
+    {
+        if (SessionState.SelectedChild == null)
+        {
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _loading = true;
+            var memories = await ParentService.GetChildMemoriesAsync(SessionState.SelectedChild.ChildId);
+            _mediaItems = memories.Select(m => new MediaItemModel
+            {
+                Id = m.Id,
+                Url = m.Url,
+                ThumbnailUrl = m.ThumbnailUrl,
+                Title = m.Title,
+                Caption = m.Caption,
+                Date = m.Date,
+                Category = m.Category,
+                ChildName = SessionState.SelectedChild.FirstName,
+                IsVideo = m.IsVideo
+            }).ToList();
+        }
+        catch (Exception)
+        {
+            _mediaItems = new List<MediaItemModel>();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenMediaViewer(MediaItemModel item)
+    {
+        _activeItem = item;
+        _viewerOpen = true;
+    }
+
+    private void CloseMediaViewer()
+    {
+        _viewerOpen = false;
+        _activeItem = null;
+    }
+
+    private void NavigatePrevious()
+    {
+        var idx = ActiveItemIndex;
+        if (idx > 0)
+        {
+            _activeItem = _mediaItems[idx - 1];
+        }
+    }
+
+    private void NavigateNext()
+    {
+        var idx = ActiveItemIndex;
+        if (idx >= 0 && idx < _mediaItems.Count - 1)
+        {
+            _activeItem = _mediaItems[idx + 1];
+        }
+    }
+
+    public void Dispose()
+    {
+        SessionState.OnChildChanged -= OnChildSelectionChanged;
+    }
+}

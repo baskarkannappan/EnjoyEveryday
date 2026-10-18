@@ -1,0 +1,155 @@
+@inject ParentLocalizationService Localization
+
+<div class="lang-selector-container">
+    <button class="lang-pill-btn" @onclick="ToggleDropdown" aria-label="Select language" title="Select language">
+        <span class="globe-icon">🌐</span>
+        <span class="lang-label">@CurrentLanguageName</span>
+        <span class="chevron">▾</span>
+    </button>
+
+    @if (isOpen)
+    {
+        <div class="lang-dropdown-menu">
+            @foreach (var opt in ParentLocalizationService.SupportedLanguages)
+            {
+                <button class="lang-option @(Localization.CurrentLanguage == opt.Code ? "active" : "")"
+                        @onclick="() => SelectLanguage(opt.Code)">
+                    <span class="native-name">@opt.NativeName</span>
+                    <span class="eng-name">(@opt.DisplayName)</span>
+                    @if (Localization.CurrentLanguage == opt.Code)
+                    {
+                        <span class="check-mark">✓</span>
+                    }
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool isOpen = false;
+
+    private string CurrentLanguageName
+    {
+        get
+        {
+            var current = ParentLocalizationService.SupportedLanguages
+                .FirstOrDefault(l => l.Code.Equals(Localization.CurrentLanguage, StringComparison.OrdinalIgnoreCase));
+            return current?.NativeName ?? "English";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Localization.OnLanguageChanged += StateHasChanged;
+    }
+
+    private void ToggleDropdown()
+    {
+        isOpen = !isOpen;
+    }
+
+    private void SelectLanguage(string code)
+    {
+        Localization.SetLanguage(code);
+        isOpen = false;
+    }
+}
+
+<style>
+    .lang-selector-container {
+        position: relative;
+        display: inline-block;
+    }
+
+    .lang-pill-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 20px;
+        padding: 5px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text, #26332d);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .lang-pill-btn:hover {
+        background: var(--surface-soft, #f8f9f5);
+        border-color: var(--accent, #557c6c);
+    }
+
+    .globe-icon {
+        font-size: 14px;
+    }
+
+    .lang-label {
+        color: var(--accent-dark, #3e6253);
+        font-weight: 700;
+    }
+
+    .chevron {
+        font-size: 10px;
+        color: var(--muted, #6c7870);
+    }
+
+    .lang-dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(40, 55, 47, 0.12);
+        padding: 6px;
+        min-width: 170px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .lang-option {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--text, #26332d);
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        gap: 6px;
+    }
+
+    .lang-option:hover {
+        background: var(--surface-soft, #f8f9f5);
+    }
+
+    .lang-option.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        font-weight: 700;
+    }
+
+    .native-name {
+        font-weight: 700;
+    }
+
+    .eng-name {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        flex: 1;
+    }
+
+    .check-mark {
+        color: var(--accent, #557c6c);
+        font-weight: bold;
+    }
+</style>

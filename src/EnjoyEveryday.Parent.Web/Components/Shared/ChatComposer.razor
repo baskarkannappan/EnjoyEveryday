@@ -1,0 +1,119 @@
+@namespace EnjoyEveryday.Parent.Web.Components.Shared
+
+<div class="chat-composer-wrap">
+    <input type="text"
+           class="chat-composer-input"
+           @bind="_messageText"
+           @bind:event="oninput"
+           @onkeyup="HandleKeyUp"
+           placeholder="@Placeholder"
+           disabled="@IsSending"
+           aria-label="Message text" />
+
+    <button class="chat-composer-send-btn"
+            @onclick="HandleSend"
+            disabled="@(IsSending || string.IsNullOrWhiteSpace(_messageText))"
+            aria-label="Send message">
+        @if (IsSending)
+        {
+            <span class="chat-send-spinner"></span>
+        }
+        else
+        {
+            <span>➤</span>
+        }
+    </button>
+</div>
+
+<style>
+    .chat-composer-wrap {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 14px;
+        padding: 6px 8px 6px 14px;
+        box-shadow: 0 2px 8px rgba(40, 55, 47, 0.04);
+        box-sizing: border-box;
+    }
+
+    .chat-composer-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 14px;
+        color: var(--text, #26332d);
+        font-family: inherit;
+        padding: 8px 0;
+        min-height: 24px;
+    }
+
+    .chat-composer-input::placeholder {
+        color: var(--muted, #6c7870);
+    }
+
+    .chat-composer-send-btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        background: var(--accent, #557c6c);
+        color: #ffffff;
+        border: none;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        font-size: 15px;
+        transition: background 0.15s ease, opacity 0.15s ease;
+        flex-shrink: 0;
+    }
+
+    .chat-composer-send-btn:hover:not(:disabled) {
+        background: var(--accent-dark, #3e6253);
+    }
+
+    .chat-composer-send-btn:disabled {
+        background: var(--border, #e4e7df);
+        color: var(--muted, #6c7870);
+        cursor: not-allowed;
+    }
+
+    .chat-send-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-top-color: #ffffff;
+        border-radius: 50%;
+        animation: chatSpin 0.8s linear infinite;
+    }
+
+    @@keyframes chatSpin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+@code {
+    [Parameter] public string Placeholder { get; set; } = "Type a message to your child's teachers...";
+    [Parameter] public bool IsSending { get; set; }
+    [Parameter] public EventCallback<string> OnSend { get; set; }
+
+    private string _messageText = string.Empty;
+
+    private async Task HandleSend()
+    {
+        if (string.IsNullOrWhiteSpace(_messageText) || IsSending) return;
+
+        var textToSend = _messageText.Trim();
+        _messageText = string.Empty;
+        await OnSend.InvokeAsync(textToSend);
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await HandleSend();
+        }
+    }
+}

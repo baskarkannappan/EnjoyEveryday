@@ -1,0 +1,277 @@
+@inject IParentService ParentService
+@inject ParentLocalizationService Localization
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <span class="modal-eyebrow">@Localization.T("Action.ViewInvoices")</span>
+                    <h3 class="modal-title">Tuition & Billing Statements</h3>
+                </div>
+                <button class="close-btn" @onclick="Close" aria-label="Close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (isLoading)
+                {
+                    <div class="loading-wrap">
+                        <LoadingState Message="Loading invoices..." />
+                    </div>
+                }
+                else if (invoices.Count == 0)
+                {
+                    <EmptyState Title="No Invoices Found"
+                                Message="All tuition and fee accounts are settled. No outstanding invoices for your family."
+                                Icon="💳" />
+                }
+                else
+                {
+                    <div class="invoices-list">
+                        @foreach (var inv in invoices)
+                        {
+                            <div class="invoice-item-card">
+                                <div class="invoice-info">
+                                    <div class="invoice-num">#@inv.InvoiceNumber</div>
+                                    <div class="invoice-desc">@(string.IsNullOrWhiteSpace(inv.Description) ? "Daycare Monthly Tuition" : inv.Description)</div>
+                                    <div class="invoice-date">Due: @inv.DueDate.ToString("d MMM yyyy")</div>
+                                </div>
+                                <div class="invoice-amount-block">
+                                    <div class="amount">₹@inv.TotalAmount.ToString("N0")</div>
+                                    @if (inv.Status == InvoiceStatus.Paid)
+                                    {
+                                        <span class="status-badge paid">Paid</span>
+                                    }
+                                    else if (inv.Status == InvoiceStatus.PartiallyPaid)
+                                    {
+                                        <span class="status-badge partial">Bal: ₹@inv.BalanceDue.ToString("N0")</span>
+                                    }
+                                    else if (inv.Status == InvoiceStatus.Overdue)
+                                    {
+                                        <span class="status-badge overdue">Overdue</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="status-badge unpaid">Due</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="modal-footer">
+                <span class="footer-note">Online payments via Razorpay / UPI are supported through the finance office.</span>
+                <button class="primary" @onclick="Close">@Localization.T("Action.Close")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid ChildId { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+
+    private bool isLoading = true;
+    private List<Invoice> invoices = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && ChildId != Guid.Empty)
+        {
+            isLoading = true;
+            try
+            {
+                invoices = await ParentService.GetChildInvoicesAsync(ChildId);
+            }
+            catch
+            {
+                invoices = new();
+            }
+            finally
+            {
+                isLoading = false;
+            }
+        }
+    }
+
+    private async Task Close()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1100;
+        padding: 16px;
+    }
+
+    .modal-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        width: 100%;
+        max-width: 520px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        max-height: 85vh;
+    }
+
+    .modal-header {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        background: var(--surface-soft, #f8f9f5);
+    }
+
+    .modal-eyebrow {
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--accent, #557c6c);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+
+    .modal-title {
+        font-size: 17px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        margin: 2px 0 0;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 16px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        padding: 4px;
+        line-height: 1;
+    }
+
+    .modal-body {
+        padding: 20px 22px;
+        overflow-y: auto;
+    }
+
+    .loading-wrap {
+        padding: 24px;
+        text-align: center;
+    }
+
+    .invoices-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .invoice-item-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 16px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+    }
+
+    .invoice-num {
+        font-size: 14px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .invoice-desc {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+        margin: 2px 0 4px;
+    }
+
+    .invoice-date {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .invoice-amount-block {
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+    }
+
+    .amount {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+    }
+
+    .status-badge {
+        font-size: 11px;
+        font-weight: 750;
+        padding: 3px 8px;
+        border-radius: 6px;
+    }
+
+    .status-badge.paid {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .status-badge.partial {
+        background: #fefcbf;
+        color: #744210;
+    }
+
+    .status-badge.overdue {
+        background: #fff5f5;
+        color: #9b2c2c;
+    }
+
+    .status-badge.unpaid {
+        background: #ebf8ff;
+        color: #2b6cb0;
+    }
+
+    .modal-footer {
+        padding: 14px 22px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .footer-note {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+        line-height: 1.35;
+        flex: 1;
+    }
+
+    .modal-footer button {
+        padding: 8px 18px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        font-weight: 700;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+</style>

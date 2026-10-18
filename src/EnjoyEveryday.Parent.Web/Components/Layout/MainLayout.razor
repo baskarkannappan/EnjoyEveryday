@@ -1,29 +1,64 @@
 @inherits LayoutComponentBase
-@using Microsoft.FluentUI.AspNetCore.Components
+@namespace EnjoyEveryday.Parent.Web.Components.Layout
+@inject ParentSessionState SessionState
+@implements IDisposable
 
-<FluentLayout>
-    <!-- MOBILE ONLY HEADER -->
-    <FluentLayoutItem Area="LayoutArea.Header" class="mobile-header">
-        <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalGap="15">
-            <FluentLayoutHamburger />
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <div style="width: 24px; height: 24px; border-radius: 6px; background: #eef5ef; color: #2d5a3c; display: grid; place-items: center; font-size: 14px;">
-                    🌱
-                </div>
-                <div style="font-weight: 750; font-size: 14px; letter-spacing: -0.5px; color: var(--text, #1c2b20);">EnjoyEveryday Parents</div>
-            </div>
-        </FluentStack>
-    </FluentLayoutItem>
-
-    <FluentLayoutItem Area="LayoutArea.Navigation" Width="260px">
-        <NavMenu />
-    </FluentLayoutItem>
-
-    <FluentLayoutItem Area="LayoutArea.Content">
-        <div style="padding: 24px 32px; max-width: 1200px; margin: 0 auto;">
-            @Body
+<div class="parent-portal-app">
+    <!-- MOBILE TOPBAR -->
+    <header class="mobile-portal-topbar" aria-label="Mobile Header">
+        <div class="mobile-brand">
+            <div class="mobile-brand-icon">🌱</div>
+            <div class="mobile-brand-title">EnjoyEveryday</div>
         </div>
-    </FluentLayoutItem>
-</FluentLayout>
 
+        <div class="mobile-top-right">
+            @if (SessionState.SelectedChild != null)
+            {
+                <a href="/family" class="mobile-child-pill" title="Active Child">
+                    <span class="mobile-child-dot"></span>
+                    <span class="mobile-child-name">@SessionState.SelectedChild.FirstName</span>
+                </a>
+            }
+            <a href="/auth/logout" data-enhance-nav="false" class="mobile-signout-icon" title="Sign Out" aria-label="Sign Out">
+                <span style="font-size: 15px;">🚪</span>
+            </a>
+        </div>
+    </header>
+
+    <div class="parent-portal-body">
+        <!-- DESKTOP SIDEBAR -->
+        <aside class="parent-portal-sidebar">
+            <NavMenu />
+        </aside>
+
+        <!-- MAIN SCROLLABLE CONTENT -->
+        <main class="parent-portal-main">
+            <div class="parent-content-wrapper">
+                @Body
+            </div>
+        </main>
+    </div>
+
+    <!-- MOBILE BOTTOM NAVIGATION -->
+    <ParentMobileNav />
+</div>
+
+<ReconnectModal />
 <FluentProviders />
+
+@code {
+    protected override void OnInitialized()
+    {
+        SessionState.OnChildChanged += HandleChildChanged;
+    }
+
+    private void HandleChildChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        SessionState.OnChildChanged -= HandleChildChanged;
+    }
+}

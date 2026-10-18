@@ -1,76 +1,45 @@
+@namespace EnjoyEveryday.Parent.Web.Components.Layout
 @inject IParentService ParentService
 @inject ParentSessionState SessionState
+@inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
 @implements IDisposable
 
-<nav class="custom-nav" style="padding: 16px; height: 100%; display: flex; flex-direction: column; justify-content: space-between;">
-    <div>
+<nav class="custom-nav" aria-label="Desktop Navigation">
+    <div class="nav-content-top">
         <!-- BRANDING HEADER -->
-        <div style="display: flex; gap: 12px; align-items: center; padding: 8px 6px 20px;">
-            <div style="width: 40px; height: 40px; border-radius: 13px; background: #eef5ef; color: #2d5a3c; display: grid; place-items: center; font-size: 20px; font-weight: bold;">
+        <div class="brand-header">
+            <div class="brand-avatar">
                 🌱
             </div>
             <div>
-                <div style="font-weight: 750; font-size: 16px; letter-spacing: -0.4px; color: var(--text, #1c2b20);">EnjoyEveryday</div>
-                <div style="font-size: 11px; color: var(--muted, #64748b); font-weight: 500;">Parent &amp; Family Portal</div>
+                <div class="brand-name">EnjoyEveryday</div>
+                <div class="brand-sub">Parent &amp; Family Portal</div>
             </div>
         </div>
 
-        <!-- CHILD SELECTOR CARD -->
-        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin: 0 0 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-            <div style="color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0.8px; margin-bottom: 6px; text-transform: uppercase;">
-                My Child
-            </div>
-            @if (_loading)
-            {
-                <div style="font-size: 13px; color: #94a3b8;">Loading children...</div>
-            }
-            else if (_children.Count == 0)
-            {
-                <div style="font-size: 12px; color: #ef4444; font-weight: 500;">
-                    No children linked
-                    <div style="margin-top: 6px;">
-                        <a href="/auth/login" style="color: #2d5a3c; text-decoration: underline; font-weight: 600; font-size: 11px;">Connect Demo Child</a>
-                    </div>
-                </div>
-            }
-            else if (_children.Count == 1)
-            {
-                <div style="font-weight: 700; color: #1e293b; font-size: 14px; display: flex; align-items: center; gap: 8px;">
-                    <span>🧒</span>
-                    <span>@_children[0].FirstName @_children[0].LastName</span>
-                </div>
-                <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
-                    @(_children[0].ClassroomName ?? "Classroom") · @(_children[0].OrganizationName ?? "Daycare")
-                </div>
-            }
-            else
-            {
-                <select style="width: 100%; border: 0; outline: none; background: transparent; font-weight: 700; color: #1e293b; font-size: 14px; cursor: pointer; padding: 2px 0;"
-                        value="@SessionState.SelectedChild?.ChildId"
-                        @onchange="OnChildSelectChanged">
-                    @foreach (var child in _children)
-                    {
-                        <option value="@child.ChildId">@child.FirstName @child.LastName (@child.ClassroomName)</option>
-                    }
-                </select>
-                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">
-                    @(SessionState.SelectedChild?.OrganizationName ?? "Daycare")
-                </div>
-            }
-        </div>
+        <!-- CHILD SELECTOR CARD USING REUSABLE CHILDSWITCHER -->
+        <ChildSwitcher SelectedChild="@SessionState.SelectedChild" 
+                       Children="@_children" 
+                       Loading="@_loading" 
+                       OnChildSelected="OnChildSelectChanged" />
 
         <!-- NAVIGATION LINKS -->
-        <div class="nav-section" style="font-size: 10px; font-weight: 800; color: #94a3b8; letter-spacing: 0.8px; margin: 16px 8px 8px;">MY FAMILY</div>
+        <div class="nav-section-label">MY FAMILY</div>
 
         <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
-            <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Color="Color.Custom" CustomColor="#ea580c" />
-            <span>My Child Today</span>
+            <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Color="Color.Custom" CustomColor="#d97706" />
+            <span>@Localization.T("Nav.Today")</span>
         </NavLink>
 
         <NavLink class="nav-item" href="/journey">
             <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#e11d48" />
-            <span>Child Journey</span>
+            <span>@Localization.T("Nav.Journey")</span>
+        </NavLink>
+
+        <NavLink class="nav-item" href="/memories">
+            <FluentIcon Value="@(new Icons.Regular.Size20.Image())" Color="Color.Custom" CustomColor="#059669" />
+            <span>@Localization.T("Nav.Memories")</span>
         </NavLink>
 
         <NavLink class="nav-item" href="/events">
@@ -80,23 +49,93 @@
 
         <NavLink class="nav-item" href="/messages">
             <FluentIcon Value="@(new Icons.Regular.Size20.ChatMultiple())" Color="Color.Custom" CustomColor="#0284c7" />
-            <span>Messages</span>
+            <span>@Localization.T("Nav.Messages")</span>
         </NavLink>
 
         <NavLink class="nav-item" href="/family">
-            <FluentIcon Value="@(new Icons.Regular.Size20.PersonHeart())" Color="Color.Custom" CustomColor="#059669" />
-            <span>Family Profile</span>
+            <FluentIcon Value="@(new Icons.Regular.Size20.PersonHeart())" Color="Color.Custom" CustomColor="#52745e" />
+            <span>@Localization.T("Nav.Family")</span>
         </NavLink>
     </div>
 
     <!-- LOGOUT / AUTH FOOTER -->
-    <div style="border-top: 1px solid #f1f5f9; padding-top: 14px; margin-top: 20px;">
-        <a href="/auth/logout" data-enhance-nav="false" class="nav-item" style="color: #64748b; text-decoration: none; display: flex; align-items: center; gap: 10px;">
+    <div class="nav-footer">
+        <a href="/auth/logout" data-enhance-nav="false" class="nav-item signout-btn">
             <FluentIcon Value="@(new Icons.Regular.Size20.SignOut())" Color="Color.Custom" CustomColor="#dc2626" />
             <span>Sign Out</span>
         </a>
     </div>
 </nav>
+
+<style>
+    .custom-nav {
+        padding: 18px 16px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background: #fbfcf9;
+        box-sizing: border-box;
+    }
+
+    .brand-header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 6px 4px 18px;
+    }
+
+    .brand-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        display: grid;
+        place-items: center;
+        font-size: 20px;
+        font-weight: bold;
+        box-shadow: 0 1px 3px rgba(40, 55, 47, 0.05);
+    }
+
+    .brand-name {
+        font-weight: 800;
+        font-size: 15.5px;
+        letter-spacing: -0.4px;
+        color: var(--text, #26332d);
+    }
+
+    .brand-sub {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        font-weight: 500;
+        margin-top: 1px;
+    }
+
+    .nav-section-label {
+        font-size: 9.5px;
+        font-weight: 800;
+        color: var(--muted, #6c7870);
+        letter-spacing: 1px;
+        margin: 18px 8px 8px;
+        text-transform: uppercase;
+    }
+
+    .nav-footer {
+        border-top: 1px solid var(--border, #e4e7df);
+        padding-top: 14px;
+        margin-top: 20px;
+    }
+
+    .signout-btn {
+        color: #b91c1c !important;
+        font-weight: 650;
+    }
+
+    .signout-btn:hover {
+        background: #fef2f2 !important;
+    }
+</style>
 
 @code {
     private List<ParentAuthorizedChild> _children = new();
@@ -105,6 +144,7 @@
     protected override async Task OnInitializedAsync()
     {
         SessionState.OnChildChanged += StateHasChanged;
+        Localization.OnLanguageChanged += StateHasChanged;
         await LoadChildrenAsync();
     }
 
@@ -127,16 +167,14 @@
         }
     }
 
-    private void OnChildSelectChanged(ChangeEventArgs e)
+    private void OnChildSelectChanged(Guid childId)
     {
-        if (e.Value != null && Guid.TryParse(e.Value.ToString(), out var childId))
-        {
-            SessionState.SelectChild(childId);
-        }
+        SessionState.SelectChild(childId);
     }
 
     public void Dispose()
     {
         SessionState.OnChildChanged -= StateHasChanged;
+        Localization.OnLanguageChanged -= StateHasChanged;
     }
 }

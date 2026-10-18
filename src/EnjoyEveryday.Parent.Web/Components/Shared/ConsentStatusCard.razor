@@ -1,0 +1,160 @@
+@namespace EnjoyEveryday.Parent.Web.Components.Shared
+@using EnjoyEveryday.Domain.Entities
+
+<div class="consent-card">
+    <div class="consent-card-left">
+        <div class="consent-card-icon">
+            @GetDocumentIcon(Document.DocumentTitle)
+        </div>
+        <div class="consent-card-content">
+            <div class="consent-card-title">@Document.DocumentTitle</div>
+            <div class="consent-card-meta">
+                Version @Document.TemplateVersion &middot; Updated @Document.CreatedAt.ToString("MMM dd, yyyy")
+            </div>
+            @if (Document.SigningDeadline.HasValue && Document.Status != "Signed")
+            {
+                <div class="consent-card-deadline">
+                    Due by @Document.SigningDeadline.Value.ToString("MMM dd, yyyy")
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="consent-card-right">
+        <span class="consent-badge @GetStatusClass(Document.Status)">
+            @Document.Status
+        </span>
+
+        @if (Document.Status == "Sent" || Document.Status == "PendingReview")
+        {
+            <button class="primary consent-action-btn" @onclick="HandleAction">
+                Review &amp; Sign
+            </button>
+        }
+        else if (Document.Status == "Signed")
+        {
+            <span class="consent-signed-date">Signed @(Document.SignedAt?.ToString("MMM dd, yyyy") ?? "")</span>
+        }
+    </div>
+</div>
+
+<style>
+    .consent-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 14px;
+        padding: 14px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        box-shadow: 0 1px 3px rgba(40, 55, 47, 0.03);
+    }
+
+    .consent-card-left {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex: 1;
+        min-width: 220px;
+    }
+
+    .consent-card-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+
+    .consent-card-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .consent-card-title {
+        font-weight: 750;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+    }
+
+    .consent-card-meta {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        margin-top: 2px;
+    }
+
+    .consent-card-deadline {
+        font-size: 11px;
+        color: #b45309;
+        font-weight: 650;
+        margin-top: 2px;
+    }
+
+    .consent-card-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .consent-badge {
+        font-size: 10.5px;
+        font-weight: 750;
+        padding: 3px 9px;
+        border-radius: 10px;
+    }
+
+    .consent-badge.signed {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .consent-badge.pending {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .consent-badge.draft {
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+    }
+
+    .consent-action-btn {
+        padding: 6px 14px !important;
+        font-size: 12px !important;
+        border-radius: 9px !important;
+    }
+
+    .consent-signed-date {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public ChildConsentDocument Document { get; set; } = default!;
+    [Parameter] public EventCallback<Guid> OnReview { get; set; }
+
+    private async Task HandleAction() => await OnReview.InvokeAsync(Document.Id);
+
+    private string GetDocumentIcon(string title) => title.ToLowerInvariant() switch
+    {
+        var t when t.Contains("photo") || t.Contains("media") => "📷",
+        var t when t.Contains("medical") || t.Contains("emergency") => "🩺",
+        var t when t.Contains("pickup") || t.Contains("custody") => "🛡️",
+        _ => "📄"
+    };
+
+    private string GetStatusClass(string status) => status switch
+    {
+        "Signed" or "Approved" => "signed",
+        "Sent" or "PendingReview" => "pending",
+        _ => "draft"
+    };
+}

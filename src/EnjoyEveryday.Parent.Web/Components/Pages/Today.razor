@@ -1,8 +1,10 @@
 @page "/"
 @page "/today"
 @attribute [Authorize]
+@namespace EnjoyEveryday.Parent.Web.Components.Pages
 @inject IParentService ParentService
 @inject ParentSessionState SessionState
+@inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
 @implements IDisposable
 @rendermode InteractiveServer
@@ -11,242 +13,169 @@
 
 @if (_loading)
 {
-    <div style="padding: 40px; text-align: center; color: #64748b;">
-        <FluentSpinner />
-        <p style="margin-top: 12px; font-weight: 500;">Loading today's moments...</p>
-    </div>
+    <LoadingState Message="Loading today's moments..." 
+                  SubMessage="Retrieving verified classroom activities &amp; wellbeing routines" />
 }
 else if (SessionState.SelectedChild == null)
 {
-    <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
-        <div style="font-size: 40px; margin-bottom: 12px;">🌱</div>
-        <FluentText Size="TextSize.Size500" Weight="TextWeight.Bold">No Authorized Children Found</FluentText>
-        <p style="color: #64748b; max-width: 450px; margin: 12px auto 16px;">
-            Your account is not currently linked to an active child enrollment. Please contact your daycare center administrator to verify your family relationship.
-        </p>
-        <div>
-            <a href="/auth/login" style="display: inline-block; padding: 8px 18px; background: #2d5a3c; color: white; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">Connect Demo Child</a>
-        </div>
-    </FluentCard>
+    <EmptyState Icon="🌱"
+                Title="No Authorized Children Linked"
+                Description="Your account is not currently linked to an active child enrollment. Please contact your daycare center administrator to verify your family relationship."
+                ActionText="Connect Demo Child"
+                OnAction='() => Navigation.NavigateTo("/auth/login")' />
 }
 else
 {
-    <!-- HERO / WELCOME CARD -->
-    <div style="background: linear-gradient(135deg, #eef5ef 0%, #f7faf8 100%); border: 1px solid #dce8df; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
-            <div>
-                <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1px; color: #3b6b4a; text-transform: uppercase; margin-bottom: 3px;">
-                    TODAY &middot; @DateTime.Today.ToString("dddd, MMMM dd, yyyy").ToUpper()
-                </div>
-                <h1 style="font-size: 22px; font-weight: 800; color: #1c2b20; margin: 0 0 4px 0; letter-spacing: -0.4px;">
-                    @SessionState.SelectedChild.FirstName's Day
-                </h1>
-                <div style="font-size: 13px; color: #475569; display: flex; align-items: center; gap: 8px;">
-                    <span>📍 @(SessionState.SelectedChild.ClassroomName ?? "Classroom")</span>
-                    <span>&middot;</span>
-                    <span>@(SessionState.SelectedChild.OrganizationName ?? "Daycare")</span>
-                </div>
-            </div>
+    <!-- HERO HEADER -->
+    <ParentPageHeader Eyebrow="@($"TODAY · {DateTime.Today:dddd, MMMM dd, yyyy}".ToUpper())"
+                      Title="@($"{SessionState.SelectedChild.FirstName}'s Day")"
+                      Subtitle="@($"📍 {SessionState.SelectedChild.ClassroomName ?? "Classroom"} · {SessionState.SelectedChild.OrganizationName ?? "Daycare"}")">
+        <RightContent>
+            <LanguageSwitcher />
 
             <!-- ATTENDANCE BADGE -->
-            <div style="background: white; border: 1px solid #dce8df; border-radius: 11px; padding: 8px 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
-                <div style="font-size: 10px; font-weight: 700; color: #64748b; margin-bottom: 3px; text-transform: uppercase;">
-                    Attendance Status
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="attendance-badge-card">
+                <div class="attendance-badge-label">Attendance Status</div>
+                <div class="attendance-badge-status">
                     @if (_summary?.Attendance?.Status == "Present")
                     {
-                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e;"></span>
-                        <strong style="color: #166534; font-size: 14px;">Checked In</strong>
+                        <span class="attendance-dot present"></span>
+                        <strong class="attendance-text present">Checked In</strong>
                         @if (_summary.Attendance.ArrivalTime.HasValue)
                         {
-                            <span style="font-size: 12px; color: #64748b;">(@DateTime.Today.Add(_summary.Attendance.ArrivalTime.Value).ToString("h:mm tt"))</span>
+                            <span class="attendance-time">(@DateTime.Today.Add(_summary.Attendance.ArrivalTime.Value).ToString("h:mm tt"))</span>
                         }
                     }
                     else if (_summary?.Attendance?.Status == "Departed")
                     {
-                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3b82f6;"></span>
-                        <strong style="color: #1e40af; font-size: 14px;">Picked Up</strong>
+                        <span class="attendance-dot departed"></span>
+                        <strong class="attendance-text departed">Picked Up</strong>
                     }
                     else if (_summary?.Attendance?.Status == "Absent")
                     {
-                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span>
-                        <strong style="color: #991b1b; font-size: 14px;">Absent</strong>
+                        <span class="attendance-dot absent"></span>
+                        <strong class="attendance-text absent">Absent</strong>
                     }
                     else
                     {
-                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1;"></span>
-                        <strong style="color: #64748b; font-size: 13px;">Not Yet Arrived</strong>
+                        <span class="attendance-dot pending"></span>
+                        <strong class="attendance-text pending">Not Yet Arrived</strong>
                     }
                 </div>
             </div>
-        </div>
+        </RightContent>
+    </ParentPageHeader>
+
+    <!-- EVERYDAY QUICK ACTIONS TOOLBAR -->
+    <div class="everyday-actions-bar">
+        <button class="action-chip" @onclick="() => _showAbsenceModal = true">
+            <span class="chip-icon">📅</span>
+            <span>@Localization.T("Action.ReportAbsence")</span>
+        </button>
+        <button class="action-chip" @onclick="() => _showPickupsModal = true">
+            <span class="chip-icon">🛡️</span>
+            <span>@Localization.T("Action.AuthorizedPickups")</span>
+        </button>
+        <button class="action-chip" @onclick="() => _showInvoicesModal = true">
+            <span class="chip-icon">💳</span>
+            <span>@Localization.T("Action.ViewInvoices")</span>
+            @if (_summary?.UnpaidInvoicesCount > 0)
+            {
+                <span class="chip-counter">@_summary.UnpaidInvoicesCount</span>
+            }
+        </button>
+        <NavLink href="/messages" class="action-chip">
+            <span class="chip-icon">💬</span>
+            <span>@Localization.T("Nav.Messages")</span>
+            @if (_summary?.UnreadMessagesCount > 0)
+            {
+                <span class="chip-counter">@_summary.UnreadMessagesCount</span>
+            }
+        </NavLink>
+        <NavLink href="/family-profile" class="action-chip">
+            <span class="chip-icon">🔒</span>
+            <span>@Localization.T("Nav.TrustCenter")</span>
+            @if (_summary?.PendingConsentCount > 0)
+            {
+                <span class="chip-counter alert">!</span>
+            }
+        </NavLink>
     </div>
 
-    <!-- MAIN TWO-COLUMN CONTENT -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px;">
-        
-        <!-- LEFT COLUMN: DAILY TIMELINE -->
-        <div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h2 style="font-size: 18px; font-weight: 800; color: #1e293b; margin: 0;">Today's Timeline</h2>
-                <span style="font-size: 12px; color: #64748b; font-weight: 500;">
-                    @(_summary?.TimelineItems.Count ?? 0) recorded updates
-                </span>
+    @if (_summary != null && (_summary.UnreadMessagesCount > 0 || _summary.PendingConsentCount > 0 || _summary.UnpaidInvoicesCount > 0))
+    {
+        <div class="today-action-alerts">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-content">
+                <strong>@Localization.T("Today.ActionRequired")</strong>
+                <div class="alert-items">
+                    @if (_summary.UnreadMessagesCount > 0)
+                    {
+                        <NavLink href="/messages" class="alert-link">
+                            • @Localization.T("Today.UnreadMessage") (@_summary.UnreadMessagesCount)
+                        </NavLink>
+                    }
+                    @if (_summary.PendingConsentCount > 0)
+                    {
+                        <NavLink href="/family-profile" class="alert-link">
+                            • @Localization.T("Today.PendingConsent")
+                        </NavLink>
+                    }
+                    @if (_summary.UnpaidInvoicesCount > 0)
+                    {
+                        <a href="javascript:void(0)" class="alert-link" @onclick="() => _showInvoicesModal = true">
+                            • @Localization.T("Today.UnpaidInvoice") (@_summary.UnpaidInvoicesCount)
+                        </a>
+                    }
+                </div>
             </div>
+        </div>
+    }
 
-            @if (_summary == null || _summary.TimelineItems.Count == 0)
-            {
-                <FluentCard Style="padding: 30px; text-align: center; border-radius: 16px;">
-                    <div style="font-size: 28px; margin-bottom: 8px;">☀️</div>
-                    <div style="font-weight: 700; color: #1e293b; margin-bottom: 4px;">Quiet Start to the Day</div>
-                    <div style="font-size: 13px; color: #64748b;">
-                        Daily activities and teacher observations will appear here as the day unfolds.
-                    </div>
-                </FluentCard>
-            }
-            else
-            {
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    @foreach (var item in _summary.TimelineItems)
-                    {
-                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; gap: 12px;">
-                            <div style="min-width: 54px; text-align: center;">
-                                <div style="font-size: 10.5px; font-weight: 750; color: #3b6b4a; background: #eef5ef; padding: 3px 5px; border-radius: 6px;">
-                                    @item.TimeLabel
-                                </div>
-                            </div>
-                            <div style="flex: 1;">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 3px;">
-                                    <div style="font-weight: 750; font-size: 14px; color: #1e293b;">@item.Title</div>
-                                    @if (item.IsCompleted)
-                                    {
-                                        <span style="font-size: 9.5px; font-weight: 700; background: #eef5ef; color: #2d5a3c; padding: 2px 7px; border-radius: 10px;">Completed</span>
-                                    }
-                                    else
-                                    {
-                                        <span style="font-size: 9.5px; font-weight: 700; background: #f8fafc; color: #64748b; padding: 2px 7px; border-radius: 10px;">Planned</span>
-                                    }
-                                </div>
-                                <div style="font-size: 12.5px; color: #475569; line-height: 1.4;">@item.Description</div>
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
+    <!-- MAIN TWO-COLUMN CONTENT (Responsive Stack on Mobile) -->
+    <div class="today-columns-grid">
+        
+        <!-- LEFT COLUMN: DAILY TIMELINE & CARE REPORT -->
+        <div class="today-column">
+            <!-- REUSABLE ACTIVITY TIMELINE -->
+            <ActivityTimeline Title="Today's Timeline" Items="@_summary?.TimelineItems" />
 
-            <!-- PARENT DAILY CARE REPORT (Matching Screenshot 3) -->
-            @if (_summary?.DailyCareReport != null)
-            {
-                <div style="margin-top: 16px; background: #ffffff; border: 1px solid #dce8df; border-radius: 14px; padding: 16px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
-                    <div style="margin-bottom: 12px;">
-                        <h3 style="font-size: 16px; font-weight: 800; color: #1c2b20; margin: 0 0 2px 0;">Today at EnjoyEveryday</h3>
-                        <span style="font-size: 11.5px; color: #64748b;">Daily care &amp; wellbeing summary</span>
-                    </div>
-
-                    <!-- 2x2 Care KPI Grid -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
-                        
-                        <!-- Diaper changes -->
-                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 10px; padding: 10px 12px;">
-                            <div style="font-size: 16px; margin-bottom: 2px;">👶</div>
-                            <div style="font-size: 20px; font-weight: 800; color: #1c2b20;">@_summary.DailyCareReport.DiaperChangesCount</div>
-                            <div style="font-size: 11.5px; color: #526157; font-weight: 600;">Diaper changes</div>
-                        </div>
-
-                        <!-- Rest time -->
-                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 10px; padding: 10px 12px;">
-                            <div style="font-size: 16px; margin-bottom: 2px;">🌙</div>
-                            <div style="font-size: 20px; font-weight: 800; color: #1c2b20;">@_summary.DailyCareReport.RestTimeFormatted</div>
-                            <div style="font-size: 11.5px; color: #526157; font-weight: 600;">Rest time</div>
-                        </div>
-
-                        <!-- Lunch / Meals -->
-                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 10px; padding: 10px 12px;">
-                            <div style="font-size: 16px; margin-bottom: 2px;">🍴</div>
-                            <div style="font-size: 16px; font-weight: 800; color: #1c2b20;">Lunch</div>
-                            <div style="font-size: 11.5px; color: #526157; font-weight: 600;">@_summary.DailyCareReport.LunchMealStatus</div>
-                        </div>
-
-                        <!-- Mood / Comfort -->
-                        <div style="background: #f8faf8; border: 1px solid #e2ece4; border-radius: 10px; padding: 10px 12px;">
-                            <div style="font-size: 16px; margin-bottom: 2px;">❤️</div>
-                            <div style="font-size: 16px; font-weight: 800; color: #1c2b20;">@_summary.DailyCareReport.PrimaryMoodObservation</div>
-                            <div style="font-size: 11.5px; color: #526157; font-weight: 600;">Comfort &amp; mood</div>
-                        </div>
-
-                    </div>
-
-                    <!-- Factual Daily Reassurance Note -->
-                    @if (!string.IsNullOrEmpty(_summary.DailyCareReport.DailyReassuranceText))
-                    {
-                        <div style="background: #edf3ee; border-left: 3px solid #52745e; border-radius: 0 10px 10px 0; padding: 12px 16px; margin-bottom: 12px;">
-                            <p style="margin: 0; font-size: 13px; color: #26332d; font-style: italic; line-height: 1.5;">
-                                &ldquo;@_summary.DailyCareReport.DailyReassuranceText&rdquo;
-                            </p>
-                        </div>
-                    }
-
-                    @if (_summary.DailyCareReport.LowSupplies.Count > 0)
-                    {
-                        <div style="background: #fff8eb; border: 1px solid #fae8c8; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 16px;">📦</span>
-                            <div style="font-size: 12px; color: #92400e;">
-                                <strong>Cubby Replenishment Needed:</strong>
-                                @string.Join(", ", _summary.DailyCareReport.LowSupplies.Select(s => s.SupplyType))
-                            </div>
-                        </div>
-                    }
-
-                    <div style="font-size: 11px; color: #8a998f; font-style: italic;">
-                        The report is generated from actual persisted records and observations, not invented by AI.
-                    </div>
-                </div>
-            }
-            else
-            {
-                <!-- DAILY CARE ROUTINES NOTICE -->
-                <div style="margin-top: 20px; background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 14px; padding: 14px 18px; display: flex; gap: 12px; align-items: center;">
-                    <span style="font-size: 20px;">🥣</span>
-                    <div style="font-size: 12px; color: #57534e;">
-                        <strong>Meals &amp; Rest Routines:</strong> Detailed feeding and nap logs are recorded during designated rest hours.
-                    </div>
-                </div>
-            }
+            <!-- REUSABLE CARE SUMMARY CARD -->
+            <CareSummaryCard Report="@_summary?.DailyCareReport" />
         </div>
 
-        <!-- RIGHT COLUMN: APPROVED MOMENTS & UPCOMING CELEBRATIONS -->
-        <div>
-            <!-- APPROVED MOMENTS -->
-            <div style="margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h2 style="font-size: 16px; font-weight: 800; color: #1e293b; margin: 0;">Captured Moments</h2>
-                    <NavLink href="/journey" style="font-size: 11.5px; font-weight: 700; color: #3b6b4a; text-decoration: none;">View All Journey &rarr;</NavLink>
+        <!-- RIGHT COLUMN: CAPTURED MOMENTS & CELEBRATIONS -->
+        <div class="today-column">
+            <!-- CAPTURED MOMENTS -->
+            <div class="today-section">
+                <div class="today-section-header">
+                    <h3 class="today-section-title">Captured Moments</h3>
+                    <NavLink href="/journey" class="today-section-link">View All Journey &rarr;</NavLink>
                 </div>
 
                 @if (_summary?.ApprovedMoments == null || _summary.ApprovedMoments.Count == 0)
                 {
-                    <FluentCard Style="padding: 16px; text-align: center; border-radius: 12px;">
-                        <div style="font-size: 20px; margin-bottom: 4px;">📸</div>
-                        <div style="font-weight: 600; font-size: 12.5px; color: #64748b;">No photos or shared moments yet today.</div>
-                        <div style="font-size: 10.5px; color: #94a3b8; margin-top: 2px;">Teacher-approved moments will show up here immediately.</div>
-                    </FluentCard>
+                    <div class="today-moments-empty">
+                        <span style="font-size: 22px;">📸</span>
+                        <div class="today-moments-empty-title">No photos or shared moments yet today.</div>
+                        <div class="today-moments-empty-sub">Teacher-approved moments will show up here immediately.</div>
+                    </div>
                 }
                 else
                 {
-                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="today-moments-list">
                         @foreach (var moment in _summary.ApprovedMoments)
                         {
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 11px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                    <span style="font-size: 15px;">✨</span>
-                                    <span style="font-weight: 750; font-size: 13.5px; color: #1e293b;">@(moment.Title ?? "Little Moment")</span>
-                                    <span style="font-size: 10.5px; color: #94a3b8; margin-left: auto;">@moment.ObservationDate.ToString("h:mm tt")</span>
+                            <div class="today-moment-card">
+                                <div class="today-moment-top">
+                                    <span class="today-moment-sparkle">✨</span>
+                                    <span class="today-moment-title">@(moment.Title ?? "Little Moment")</span>
+                                    <span class="today-moment-time">@moment.ObservationDate.ToString("h:mm tt")</span>
                                 </div>
-                                <p style="font-size: 12.5px; color: #475569; margin: 0 0 8px 0; line-height: 1.45;">@moment.Observation</p>
+                                <p class="today-moment-obs">@moment.Observation</p>
                                 @if (!string.IsNullOrEmpty(moment.ChildVoice))
                                 {
-                                    <div style="background: #f8fafc; border-left: 3px solid #3b6b4a; padding: 4px 10px; font-size: 11.5px; font-style: italic; color: #334155; border-radius: 0 6px 6px 0;">
+                                    <div class="today-moment-voice">
                                         &ldquo;@moment.ChildVoice&rdquo;
                                     </div>
                                 }
@@ -257,38 +186,36 @@ else
             </div>
 
             <!-- UPCOMING EVENTS & CELEBRATIONS -->
-            <div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h2 style="font-size: 16px; font-weight: 800; color: #1e293b; margin: 0;">Upcoming Celebrations</h2>
-                    <NavLink href="/events" style="font-size: 11.5px; font-weight: 700; color: #3b6b4a; text-decoration: none;">View All &rarr;</NavLink>
+            <div class="today-section" style="margin-top: 20px;">
+                <div class="today-section-header">
+                    <h3 class="today-section-title">Upcoming Celebrations</h3>
+                    <NavLink href="/events" class="today-section-link">View All &rarr;</NavLink>
                 </div>
 
                 @if (_summary?.UpcomingEvents == null || _summary.UpcomingEvents.Count == 0)
                 {
-                    <FluentCard Style="padding: 16px; text-align: center; border-radius: 12px;">
-                        <div style="font-size: 20px; margin-bottom: 4px;">🎈</div>
-                        <div style="font-weight: 600; font-size: 12.5px; color: #64748b;">No scheduled events this week.</div>
-                    </FluentCard>
+                    <div class="today-moments-empty">
+                        <span style="font-size: 22px;">🎈</span>
+                        <div class="today-moments-empty-title">No celebrations scheduled this week.</div>
+                    </div>
                 }
                 else
                 {
-                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="today-events-list">
                         @foreach (var evt in _summary.UpcomingEvents)
                         {
-                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 11px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                    <span style="font-weight: 750; font-size: 13.5px; color: #1e293b;">@evt.Title</span>
-                                    <span style="font-size: 10.5px; font-weight: 700; color: #2d5a3c; background: #eef5ef; padding: 2px 7px; border-radius: 8px;">
-                                        @evt.EventDate.ToString("MMM dd")
-                                    </span>
+                            <div class="today-event-card">
+                                <div class="today-event-top">
+                                    <span class="today-event-title">@evt.Title</span>
+                                    <span class="today-event-date">@evt.EventDate.ToString("MMM dd")</span>
                                 </div>
                                 @if (!string.IsNullOrEmpty(evt.Location))
                                 {
-                                    <div style="font-size: 11.5px; color: #64748b; margin-top: 3px;">📍 @evt.Location</div>
+                                    <div class="today-event-loc">📍 @evt.Location</div>
                                 }
                                 <div style="margin-top: 8px;">
-                                    <NavLink href="/events" style="font-size: 11.5px; font-weight: 700; color: #2d5a3c; text-decoration: underline;">
-                                        View Event &amp; RSVP
+                                    <NavLink href="/events" class="today-event-rsvp-link">
+                                        View Event &amp; RSVP &rarr;
                                     </NavLink>
                                 </div>
                             </div>
@@ -299,15 +226,325 @@ else
 
         </div>
     </div>
+
+    <!-- EVERYDAY ACTION MODALS -->
+    <ReportAbsenceModal @bind-IsOpen="_showAbsenceModal"
+                        ChildId="SessionState.SelectedChild.ChildId"
+                        ChildName="@SessionState.SelectedChild.FirstName" />
+
+    <InvoicesListModal @bind-IsOpen="_showInvoicesModal"
+                       ChildId="SessionState.SelectedChild.ChildId" />
+
+    <AuthorizedPickupsModal @bind-IsOpen="_showPickupsModal"
+                            ChildId="SessionState.SelectedChild.ChildId"
+                            ChildName="@SessionState.SelectedChild.FirstName" />
 }
+
+<style>
+    .attendance-badge-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 8px 14px;
+        box-shadow: 0 1px 3px rgba(40, 55, 47, 0.03);
+    }
+
+    .attendance-badge-label {
+        font-size: 10px;
+        font-weight: 750;
+        color: var(--muted, #6c7870);
+        margin-bottom: 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+
+    .attendance-badge-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .attendance-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .attendance-dot.present { background: #22c55e; }
+    .attendance-dot.departed { background: #3b82f6; }
+    .attendance-dot.absent { background: #ef4444; }
+    .attendance-dot.pending { background: #94a3b8; }
+
+    .attendance-text {
+        font-size: 13.5px;
+    }
+
+    .attendance-text.present { color: #166534; }
+    .attendance-text.departed { color: #1e40af; }
+    .attendance-text.absent { color: #991b1b; }
+    .attendance-text.pending { color: var(--muted, #6c7870); }
+
+    .attendance-time {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+    }
+
+    .today-columns-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+        gap: 20px;
+        align-items: start;
+    }
+
+    .today-column {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .today-section {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 18px 20px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .05));
+    }
+
+    .today-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 12px;
+    }
+
+    .today-section-title {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0;
+        letter-spacing: -0.3px;
+    }
+
+    .today-section-link {
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--accent, #557c6c);
+        text-decoration: none;
+    }
+
+    .today-section-link:hover {
+        text-decoration: underline;
+    }
+
+    .today-moments-empty {
+        padding: 24px 16px;
+        text-align: center;
+        background: var(--surface-soft, #f8f9f5);
+        border-radius: 12px;
+        border: 1px dashed var(--border, #e4e7df);
+    }
+
+    .today-moments-empty-title {
+        font-weight: 650;
+        font-size: 12.5px;
+        color: var(--text, #26332d);
+        margin-top: 4px;
+    }
+
+    .today-moments-empty-sub {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        margin-top: 2px;
+    }
+
+    .today-moments-list,
+    .today-events-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .today-moment-card,
+    .today-event-card {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 12px 14px;
+    }
+
+    .today-moment-top,
+    .today-event-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .today-moment-sparkle {
+        font-size: 14px;
+    }
+
+    .today-moment-title,
+    .today-event-title {
+        font-weight: 750;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        flex: 1;
+    }
+
+    .today-moment-time {
+        font-size: 10.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .today-event-date {
+        font-size: 10.5px;
+        font-weight: 750;
+        color: var(--accent-dark, #3e6253);
+        background: var(--accent-light, #e6eee9);
+        padding: 2px 7px;
+        border-radius: 6px;
+    }
+
+    .today-moment-obs {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+        margin: 0;
+        line-height: 1.45;
+    }
+
+    .today-moment-voice {
+        margin-top: 8px;
+        background: var(--surface, #ffffff);
+        border-left: 3px solid var(--accent, #557c6c);
+        padding: 6px 10px;
+        font-size: 11.5px;
+        font-style: italic;
+        color: var(--text, #26332d);
+        border-radius: 0 6px 6px 0;
+    }
+
+    .today-event-loc {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+        margin-top: 2px;
+    }
+
+    .today-event-rsvp-link {
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--accent, #557c6c);
+        text-decoration: underline;
+    }
+
+    .everyday-actions-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+        padding: 4px 0 14px;
+        margin-bottom: 12px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .action-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 20px;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        box-shadow: 0 1px 3px rgba(40, 55, 47, 0.04);
+    }
+
+    .action-chip:hover {
+        background: var(--surface-soft, #f8f9f5);
+        border-color: var(--accent, #557c6c);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .chip-icon {
+        font-size: 14px;
+    }
+
+    .chip-counter {
+        background: var(--accent-dark, #3e6253);
+        color: white;
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 10px;
+        margin-left: 2px;
+    }
+
+    .chip-counter.alert {
+        background: #c53030;
+    }
+
+    .today-action-alerts {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        background: #fffdf5;
+        border: 1px solid #f6e05e;
+        border-radius: 14px;
+        padding: 12px 16px;
+        margin-bottom: 18px;
+    }
+
+    .alert-icon {
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+
+    .alert-content strong {
+        font-size: 13px;
+        color: #744210;
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    .alert-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .alert-link {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #744210;
+        text-decoration: underline;
+        cursor: pointer;
+    }
+
+    @@media (max-width: 640px) {
+        .today-columns-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
 
 @code {
     private ChildDailySummary? _summary;
     private bool _loading = true;
+    private bool _showAbsenceModal = false;
+    private bool _showPickupsModal = false;
+    private bool _showInvoicesModal = false;
 
     protected override async Task OnInitializedAsync()
     {
         SessionState.OnChildChanged += OnChildSelectionChanged;
+        Localization.OnLanguageChanged += StateHasChanged;
         await LoadSummaryAsync();
     }
 
@@ -343,5 +580,6 @@ else
     public void Dispose()
     {
         SessionState.OnChildChanged -= OnChildSelectionChanged;
+        Localization.OnLanguageChanged -= StateHasChanged;
     }
 }

@@ -1,7 +1,10 @@
 @page "/journey"
 @attribute [Authorize]
+@namespace EnjoyEveryday.Parent.Web.Components.Pages.Children
 @inject IParentService ParentService
 @inject ParentSessionState SessionState
+@inject ParentLocalizationService Localization
+@inject NavigationManager Navigation
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -9,54 +12,79 @@
 
 @if (_loading)
 {
-    <div style="padding: 40px; text-align: center; color: #64748b;">
-        <FluentSpinner />
-        <p style="margin-top: 12px; font-weight: 500;">Loading child journey...</p>
-    </div>
+    <LoadingState Message="Loading child journey..." 
+                  SubMessage="Retrieving verified developmental highlights and teacher observations" />
 }
 else if (SessionState.SelectedChild == null)
 {
-    <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
-        <div style="font-size: 40px; margin-bottom: 12px;">🌱</div>
-        <FluentText Size="TextSize.Size500" Weight="TextWeight.Bold">No Authorized Child Selected</FluentText>
-        <p style="color: #64748b; max-width: 450px; margin: 10px auto 16px; font-size: 13px;">
-            No active child is currently linked to your session.
-        </p>
-        <div>
-            <a href="/auth/login" style="display: inline-block; padding: 8px 18px; background: #2d5a3c; color: white; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">Connect Demo Child</a>
-        </div>
-    </FluentCard>
+    <EmptyState Icon="🌱"
+                Title="No Authorized Child Selected"
+                Description="Please link an active child enrollment to explore their learning journey."
+                ActionText="Connect Demo Child"
+                OnAction='() => Navigation.NavigateTo("/auth/login")' />
 }
 else
 {
     <!-- HEADER -->
-    <div style="background: linear-gradient(135deg, #eef5ef 0%, #f7faf8 100%); border: 1px solid #dce8df; border-radius: 20px; padding: 26px 30px; margin-bottom: 24px;">
-        <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #3b6b4a; text-transform: uppercase; margin-bottom: 4px;">
-            CHILD JOURNEY &middot; LEARNING &amp; WONDER
+    <ParentPageHeader Eyebrow="CHILD JOURNEY · LEARNING & WONDER"
+                      Title="@($"{SessionState.SelectedChild.FirstName}'s Learning Journey")"
+                      Subtitle="Explore approved educator observations, developmental milestones, and child voice moments.">
+        <RightContent>
+            <LanguageSwitcher />
+        </RightContent>
+    </ParentPageHeader>
+
+    <!-- GROWTH & EXPLORATION PILLARS (Encouraging, Non-Ranking) -->
+    <div class="growth-pillars-card">
+        <div class="growth-pillars-header">
+            <div>
+                <span class="pillars-eyebrow">DEVELOPMENTAL OBSERVATIONS</span>
+                <h3 class="pillars-title">Growth &amp; Curiosity Highlights</h3>
+            </div>
+            <span class="pillars-badge">Individual Journey</span>
         </div>
-        <h1 style="font-size: 26px; font-weight: 800; color: #1c2b20; margin: 0 0 6px 0; letter-spacing: -0.5px;">
-            @SessionState.SelectedChild.FirstName's Learning Journey
-        </h1>
-        <p style="font-size: 14px; color: #475569; margin: 0; max-width: 600px;">
-            Explore approved observations, developmental highlights, and meaningful moments captured by educators.
+        <p class="pillars-intro">
+            Every child blooms on their own natural timeline. Here are the core areas our educators observe and nurture through play-based discovery:
         </p>
+        <div class="pillars-grid">
+            <div class="pillar-box">
+                <span class="pillar-icon">🗣️</span>
+                <h4>Communication</h4>
+                <p>Expressive vocabulary, active listening, asking questions, and sharing thoughts with peers.</p>
+            </div>
+            <div class="pillar-box">
+                <span class="pillar-icon">🤝</span>
+                <h4>Social Collaboration</h4>
+                <p>Turn-taking, cooperative group play, empathy, and building friendships in the classroom.</p>
+            </div>
+            <div class="pillar-box">
+                <span class="pillar-icon">🌿</span>
+                <h4>Emotional Expression</h4>
+                <p>Recognizing feelings, practicing gentle self-soothing, and finding comfort in routines.</p>
+            </div>
+            <div class="pillar-box">
+                <span class="pillar-icon">🔍</span>
+                <h4>Cognitive Discovery</h4>
+                <p>Curiosity with nature, tactile problem solving, block architectural exploration, and sensory play.</p>
+            </div>
+        </div>
     </div>
 
     <!-- MILESTONES HIGHLIGHT -->
     @if (_milestones.Count > 0)
     {
-        <div style="margin-bottom: 28px;">
-            <h2 style="font-size: 18px; font-weight: 800; color: #1e293b; margin: 0 0 14px 0;">Developmental Milestones</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+        <div class="journey-milestones-section">
+            <h2 class="journey-section-title">Developmental Milestones</h2>
+            <div class="journey-milestones-grid">
                 @foreach (var milestone in _milestones)
                 {
-                    <div style="background: #fbf7ee; border: 1px solid #e8dfc8; border-radius: 16px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                            <span style="font-size: 18px;">🏆</span>
-                            <strong style="font-size: 15px; color: #78350f;">@milestone.Title</strong>
+                    <div class="journey-milestone-card">
+                        <div class="journey-milestone-top">
+                            <span class="journey-milestone-icon">🏆</span>
+                            <strong class="journey-milestone-title">@milestone.Title</strong>
                         </div>
-                        <p style="font-size: 13px; color: #451a03; margin: 0 0 10px 0; line-height: 1.5;">@milestone.Description</p>
-                        <div style="font-size: 11px; font-weight: 700; color: #92400e;">
+                        <p class="journey-milestone-desc">@milestone.Description</p>
+                        <div class="journey-milestone-date">
                             Achieved @milestone.MilestoneDate.ToString("MMMM dd, yyyy")
                         </div>
                     </div>
@@ -66,55 +94,55 @@ else
     }
 
     <!-- MOMENTS & OBSERVATIONS TIMELINE -->
-    <div>
-        <h2 style="font-size: 18px; font-weight: 800; color: #1e293b; margin: 0 0 16px 0;">Approved Moments &amp; Experiences</h2>
+    <div class="journey-timeline-section">
+        <div class="journey-section-header">
+            <h2 class="journey-section-title">Approved Moments &amp; Experiences</h2>
+            <span class="journey-entry-count">@_entries.Count entries</span>
+        </div>
 
         @if (_entries.Count == 0)
         {
-            <FluentCard Style="padding: 40px; text-align: center; border-radius: 16px;">
-                <div style="font-size: 32px; margin-bottom: 8px;">📖</div>
-                <FluentText Size="TextSize.Size400" Weight="TextWeight.Bold">Your Child's Story is Beginning</FluentText>
-                <p style="color: #64748b; font-size: 13px; margin: 8px auto 0; max-width: 400px;">
-                    As your child's teachers document experiences and milestones, approved moments will appear here.
-                </p>
-            </FluentCard>
+            <EmptyState Icon="📖"
+                        Title="Your Child's Story is Beginning"
+                        Description="As educators document experiences and milestones, approved moments will appear here."
+                        MinHeightPx="180" />
         }
         else
         {
-            <div style="display: flex; flex-direction: column; gap: 16px;">
-                @foreach (var entry in _entries)
+            <div class="journey-entries-list">
+                @foreach (var entry in VisibleEntries)
                 {
-                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 18px; padding: 22px 24px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-                        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span style="font-size: 20px;">🌿</span>
-                                <h3 style="font-size: 17px; font-weight: 750; color: #1e293b; margin: 0;">
+                    <div class="journey-entry-card">
+                        <div class="journey-entry-top">
+                            <div class="journey-entry-title-wrap">
+                                <span class="journey-entry-leaf">🌿</span>
+                                <h3 class="journey-entry-title">
                                     @(entry.Title ?? "Observation Moment")
                                 </h3>
                             </div>
-                            <span style="font-size: 12px; font-weight: 600; color: #64748b;">
+                            <span class="journey-entry-date">
                                 @entry.ObservationDate.ToString("MMMM dd, yyyy · h:mm tt")
                             </span>
                         </div>
 
-                        <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 0 0 14px 0;">
+                        <p class="journey-entry-body">
                             @entry.Observation
                         </p>
 
                         @if (!string.IsNullOrEmpty(entry.ChildVoice))
                         {
-                            <div style="background: #f8fafc; border-left: 3px solid #2d5a3c; padding: 10px 16px; margin-bottom: 12px; border-radius: 0 10px 10px 0; font-size: 13px; color: #1e293b; font-style: italic;">
+                            <div class="journey-entry-voice">
                                 💬 Child Voice: &ldquo;@entry.ChildVoice&rdquo;
                             </div>
                         }
 
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                            <span style="font-size: 11px; font-weight: 700; background: #eef5ef; color: #2d5a3c; padding: 3px 10px; border-radius: 12px;">
+                        <div class="journey-entry-tags">
+                            <span class="journey-verified-tag">
                                 Verified Observation
                             </span>
                             @if (!string.IsNullOrEmpty(entry.ParticipationType))
                             {
-                                <span style="font-size: 11px; font-weight: 600; background: #f1f5f9; color: #475569; padding: 3px 10px; border-radius: 12px;">
+                                <span class="journey-type-tag">
                                     @entry.ParticipationType
                                 </span>
                             }
@@ -122,23 +150,294 @@ else
                     </div>
                 }
             </div>
+
+            <!-- REUSABLE PAGINATION / LOAD MORE -->
+            @if (_entries.Count > _visibleCount)
+            {
+                <PaginationOrLoadMore HasMore="@(_entries.Count > _visibleCount)"
+                                      IsLoading="@_isLoadingMore"
+                                      ButtonText="Load Older Observations"
+                                      LoadedCount="@VisibleEntries.Count()"
+                                      TotalCount="@_entries.Count"
+                                      OnLoadMore="HandleLoadMore" />
+            }
         }
     </div>
 }
+
+<style>
+    .journey-milestones-section {
+        margin-bottom: 26px;
+    }
+
+    .journey-section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 14px;
+    }
+
+    .journey-section-title {
+        font-size: 17px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0;
+        letter-spacing: -0.3px;
+    }
+
+    .journey-entry-count {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+    }
+
+    .journey-milestones-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+        margin-top: 12px;
+    }
+
+    .journey-milestone-card {
+        background: #fdfcf7;
+        border: 1px solid #eadecb;
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: 0 1px 3px rgba(40, 55, 47, 0.03);
+    }
+
+    .journey-milestone-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .journey-milestone-icon {
+        font-size: 18px;
+    }
+
+    .journey-milestone-title {
+        font-size: 14.5px;
+        color: #78350f;
+    }
+
+    .journey-milestone-desc {
+        font-size: 12.5px;
+        color: #451a03;
+        margin: 0 0 10px 0;
+        line-height: 1.5;
+    }
+
+    .journey-milestone-date {
+        font-size: 11px;
+        font-weight: 700;
+        color: #92400e;
+    }
+
+    .journey-entries-list {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .journey-entry-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 20px 22px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .05));
+    }
+
+    .journey-entry-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .journey-entry-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .journey-entry-leaf {
+        font-size: 18px;
+    }
+
+    .journey-entry-title {
+        font-size: 15.5px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        margin: 0;
+    }
+
+    .journey-entry-date {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .journey-entry-body {
+        font-size: 13.5px;
+        color: #334155;
+        line-height: 1.6;
+        margin: 0 0 12px 0;
+    }
+
+    .journey-entry-voice {
+        background: var(--surface-soft, #f8f9f5);
+        border-left: 3px solid var(--accent, #557c6c);
+        padding: 8px 14px;
+        margin-bottom: 12px;
+        border-radius: 0 8px 8px 0;
+        font-size: 12.5px;
+        color: var(--text, #26332d);
+        font-style: italic;
+    }
+
+    .journey-entry-tags {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .journey-verified-tag {
+        font-size: 10.5px;
+        font-weight: 750;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 2px 9px;
+        border-radius: 12px;
+    }
+
+    .journey-type-tag {
+        font-size: 10.5px;
+        font-weight: 650;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--muted, #6c7870);
+        padding: 2px 9px;
+        border-radius: 12px;
+    }
+
+    .growth-pillars-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 22px 24px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        margin-bottom: 24px;
+    }
+
+    .growth-pillars-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 8px;
+    }
+
+    .pillars-eyebrow {
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--accent, #557c6c);
+        letter-spacing: 0.6px;
+    }
+
+    .pillars-title {
+        font-size: 18px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        margin: 2px 0 0;
+    }
+
+    .pillars-badge {
+        font-size: 11px;
+        font-weight: 700;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 4px 10px;
+        border-radius: 12px;
+    }
+
+    .pillars-intro {
+        font-size: 13.5px;
+        color: var(--muted, #6c7870);
+        margin: 0 0 16px;
+        line-height: 1.45;
+    }
+
+    .pillars-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 14px;
+    }
+
+    .pillar-box {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 14px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .pillar-icon {
+        font-size: 22px;
+        margin-bottom: 2px;
+    }
+
+    .pillar-box h4 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .pillar-box p {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+        line-height: 1.4;
+    }
+
+    @@media (max-width: 640px) {
+        .journey-entry-card {
+            padding: 14px 16px;
+        }
+
+        .journey-milestones-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .pillars-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
 
 @code {
     private List<ChildJourneyEntry> _entries = new();
     private List<ChildMilestone> _milestones = new();
     private bool _loading = true;
+    private bool _isLoadingMore = false;
+    private int _visibleCount = 10;
+
+    private IEnumerable<ChildJourneyEntry> VisibleEntries => _entries.Take(_visibleCount);
 
     protected override async Task OnInitializedAsync()
     {
         SessionState.OnChildChanged += OnChildSelectionChanged;
+        Localization.OnLanguageChanged += StateHasChanged;
         await LoadJourneyAsync();
     }
 
     private async void OnChildSelectionChanged()
     {
+        _visibleCount = 10;
         await LoadJourneyAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -168,8 +467,16 @@ else
         }
     }
 
+    private void HandleLoadMore()
+    {
+        _isLoadingMore = true;
+        _visibleCount += 10;
+        _isLoadingMore = false;
+    }
+
     public void Dispose()
     {
         SessionState.OnChildChanged -= OnChildSelectionChanged;
+        Localization.OnLanguageChanged -= StateHasChanged;
     }
 }

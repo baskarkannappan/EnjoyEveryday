@@ -1,0 +1,228 @@
+@namespace EnjoyEveryday.Parent.Web.Components.Shared
+@using EnjoyEveryday.Domain.Repositories
+
+<div class="child-switcher-card">
+    <div class="child-switcher-header">
+        <span class="child-switcher-label">My Child</span>
+        @if (Children != null && Children.Count > 1)
+        {
+            <span class="child-switcher-badge">@Children.Count Enrolled</span>
+        }
+    </div>
+
+    @if (Loading)
+    {
+        <div class="child-switcher-loading">
+            <span class="child-switcher-dot"></span>
+            <span>Loading children...</span>
+        </div>
+    }
+    else if (Children == null || Children.Count == 0)
+    {
+        <div class="child-switcher-empty">
+            <span>No children linked</span>
+            <a href="/auth/login" class="child-switcher-link">Connect Demo Child</a>
+        </div>
+    }
+    else if (Children.Count == 1)
+    {
+        var child = Children[0];
+        <div class="child-switcher-single">
+            <div class="child-avatar">
+                @if (!string.IsNullOrEmpty(child.PhotoUrl))
+                {
+                    <img src="@child.PhotoUrl" alt="@child.FirstName" class="child-avatar-img" />
+                }
+                else
+                {
+                    <span class="child-avatar-initials">@(child.FirstName.Length > 0 ? child.FirstName[0].ToString() : "🧒")</span>
+                }
+            </div>
+            <div class="child-info">
+                <div class="child-name">@child.FirstName @child.LastName</div>
+                <div class="child-details">
+                    @(child.ClassroomName ?? "Classroom") &middot; @(child.OrganizationName ?? "Daycare")
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="child-switcher-multiple">
+            <div class="child-avatar">
+                @if (SelectedChild != null && !string.IsNullOrEmpty(SelectedChild.PhotoUrl))
+                {
+                    <img src="@SelectedChild.PhotoUrl" alt="@SelectedChild.FirstName" class="child-avatar-img" />
+                }
+                else
+                {
+                    <span class="child-avatar-initials">@(SelectedChild?.FirstName.Length > 0 ? SelectedChild.FirstName[0].ToString() : "🧒")</span>
+                }
+            </div>
+            <div class="child-select-wrap">
+                <select class="child-select"
+                        value="@SelectedChild?.ChildId"
+                        @onchange="HandleSelectionChanged"
+                        aria-label="Select active child">
+                    @foreach (var child in Children)
+                    {
+                        <option value="@child.ChildId">@child.FirstName @child.LastName (@child.ClassroomName)</option>
+                    }
+                </select>
+                <div class="child-details">
+                    @(SelectedChild?.OrganizationName ?? "Daycare")
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .child-switcher-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 14px;
+        padding: 12px 14px;
+        margin-bottom: 18px;
+        box-shadow: 0 1px 4px rgba(40, 55, 47, 0.04);
+        box-sizing: border-box;
+    }
+
+    .child-switcher-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .child-switcher-label {
+        color: var(--muted, #6c7870);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+    }
+
+    .child-switcher-badge {
+        font-size: 10px;
+        font-weight: 700;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 2px 7px;
+        border-radius: 8px;
+    }
+
+    .child-switcher-loading {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .child-switcher-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent, #557c6c);
+    }
+
+    .child-switcher-empty {
+        font-size: 12px;
+        color: #b91c1c;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .child-switcher-link {
+        color: var(--accent, #557c6c);
+        font-weight: 650;
+        text-decoration: underline;
+        font-size: 11px;
+    }
+
+    .child-switcher-single,
+    .child-switcher-multiple {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .child-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 14px;
+        overflow: hidden;
+        flex-shrink: 0;
+        border: 1px solid #d0e0d6;
+    }
+
+    .child-avatar-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .child-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .child-name {
+        font-weight: 750;
+        color: var(--text, #26332d);
+        font-size: 13.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .child-details {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .child-select-wrap {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .child-select {
+        width: 100%;
+        border: 0;
+        outline: none;
+        background: transparent;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        font-size: 13.5px;
+        cursor: pointer;
+        padding: 2px 0;
+        font-family: inherit;
+    }
+</style>
+
+@code {
+    [Parameter] public ParentAuthorizedChild? SelectedChild { get; set; }
+    [Parameter] public IReadOnlyList<ParentAuthorizedChild>? Children { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public EventCallback<Guid> OnChildSelected { get; set; }
+
+    private async Task HandleSelectionChanged(ChangeEventArgs e)
+    {
+        if (e.Value != null && Guid.TryParse(e.Value.ToString(), out var childId))
+        {
+            await OnChildSelected.InvokeAsync(childId);
+        }
+    }
+}

@@ -22,6 +22,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<EnjoyEveryday.Parent.Web.Services.ParentSessionState>();
+builder.Services.AddScoped<EnjoyEveryday.Parent.Web.Services.ParentLocalizationService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
 {
