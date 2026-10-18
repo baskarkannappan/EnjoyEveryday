@@ -66,6 +66,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IMaterialMarketplaceRepository, MaterialMarketplaceRepository>();
         services.AddScoped<IMemoryRepository, MemoryRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
+        services.AddScoped<ISecurePickupRepository, SecurePickupRepository>();
 
         // Razorpay Payment Gateway
         services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(

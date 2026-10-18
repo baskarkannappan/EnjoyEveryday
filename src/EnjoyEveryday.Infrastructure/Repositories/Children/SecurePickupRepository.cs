@@ -1,0 +1,108 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Dapper;
+using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Shared.Data;
+
+namespace EnjoyEveryday.Infrastructure.Repositories;
+
+public class SecurePickupRepository : ISecurePickupRepository
+{
+    private readonly IDbConnectionFactory _connectionFactory;
+
+    public SecurePickupRepository(IDbConnectionFactory connectionFactory)
+    {
+        _connectionFactory = connectionFactory;
+    }
+
+    public async Task<ChildPickupHeaderData?> GetChildPickupHeaderAsync(Guid tenantId, Guid childId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var childSql = @"
+            SELECT c.id, c.first_name AS FirstName, c.last_name AS LastName, c.photo_url AS PhotoUrl,
+                   cr.name AS ClassroomName, b.name AS BranchName, cr.id AS ClassroomId, b.id AS BranchId
+            FROM children c
+            LEFT JOIN classrooms cr ON c.classroom_id = cr.id
+            LEFT JOIN branches b ON cr.branch_id = b.id
+            WHERE c.tenant_id = @TenantId AND c.id = @ChildId";
+
+        return await conn.QueryFirstOrDefaultAsync<ChildPickupHeaderData>(childSql, new { TenantId = tenantId, ChildId = childId });
+    }
+
+    public async Task<IReadOnlyList<CustodyRestrictionRecord>> GetActiveCustodyRestrictionsAsync(Guid tenantId, Guid childId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var restrictionsSql = @"
+            SELECT r.id, r.restriction_type AS RestrictionType, r.notes, r.effective_from AS EffectiveFrom, r.effective_to AS EffectiveTo,
+                   COALESCE(p.first_name || ' ' || p.last_name, 'Restricted Individual') AS PersonName
+            FROM child_person_restrictions r
+            LEFT JOIN persons p ON r.person_id = p.id
+            WHERE r.tenant_id = @TenantId AND r.child_id = @ChildId
+              AND (r.effective_to IS NULL OR r.effective_to >= NOW())";
+
+        var rows = await conn.QueryAsync<CustodyRestrictionRecord>(restrictionsSql, new { TenantId = tenantId, ChildId = childId });
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<AuthorizedPickupRecord>> GetAuthorizedPickupsAsync(Guid tenantId, Guid childId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var pickupsSql = @"
+            SELECT ap.id, ap.child_id AS ChildId, ap.person_id AS PersonId, ap.relationship, ap.pickup_code AS PickupCode,
+                   ap.photo_url AS PhotoUrl, ap.is_active AS IsActive, ap.notes,
+                   COALESCE(p.first_name || ' ' || p.last_name, ap.relationship) AS FullName,
+                   p.phone AS Phone
+            FROM authorized_pickups ap
+            LEFT JOIN persons p ON ap.person_id = p.id
+            WHERE ap.tenant_id = @TenantId AND ap.child_id = @ChildId AND ap.is_active = TRUE
+            ORDER BY ap.is_active DESC";
+
+        var rows = await conn.QueryAsync<AuthorizedPickupRecord>(pickupsSql, new { TenantId = tenantId, ChildId = childId });
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<FamilyPickupRelationshipRecord>> GetFamilyPickupRelationshipsAsync(Guid tenantId, Guid childId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var familySql = @"
+            SELECT fr.id, fr.child_id AS ChildId, fr.person_id AS PersonId, fr.relationship_type AS Relationship,
+                   fr.is_primary_contact AS IsPrimary, fr.is_emergency_contact AS IsEmergency,
+                   p.first_name || ' ' || p.last_name AS FullName, p.phone AS Phone, p.photo_url AS PhotoUrl
+            FROM family_relationships fr
+            JOIN persons p ON fr.person_id = p.id
+            WHERE fr.tenant_id = @TenantId AND fr.child_id = @ChildId
+              AND (fr.is_authorized_pickup = TRUE OR fr.is_primary_contact = TRUE)";
+
+        var rows = await conn.QueryAsync<FamilyPickupRelationshipRecord>(familySql, new { TenantId = tenantId, ChildId = childId });
+        return rows.ToList();
+    }
+
+    public async Task<ChildAttendance?> GetTodayAttendanceAsync(Guid tenantId, Guid childId, DateTime date, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var attSql = @"
+            SELECT * FROM child_attendance
+            WHERE tenant_id = @TenantId AND child_id = @ChildId AND attendance_date = @Date
+            LIMIT 1";
+
+        return await conn.QueryFirstOrDefaultAsync<ChildAttendance>(attSql, new { TenantId = tenantId, ChildId = childId, Date = date.Date });
+    }
+
+    public async Task AddAuthorizedPickupAsync(AuthorizedPickup pickup, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = @"
+            INSERT INTO authorized_pickups (
+                id, tenant_id, child_id, person_id, relationship, pickup_code, photo_url, valid_from, valid_to, is_active, notes
+            )
+            VALUES (
+                @Id, @TenantId, @ChildId, @PersonId, @Relationship, @PickupCode, @PhotoUrl, @ValidFrom, @ValidTo, @IsActive, @Notes
+            )";
+
+        await conn.ExecuteAsync(sql, pickup);
+    }
+}
