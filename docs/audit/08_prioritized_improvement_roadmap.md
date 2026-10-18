@@ -6,7 +6,7 @@ The remediation plan is structured into four distinct phases prioritized by busi
 1. **Phase 1: Immediate Security & Stability Corrections** (Sprint 1) — **100% COMPLETE**
 2. **Phase 2: Build, Test Suite & Entry Point Alignment** (Sprint 2) — **100% COMPLETE**
 3. **Phase 3: Architecture, Modularity & Performance Hardening** (Sprints 3–4) — **100% COMPLETE**
-4. **Phase 4: Ongoing Engineering & Operational Excellence** (Continuous) — **P4-1 & P4-2 COMPLETE**
+4. **Phase 4: Ongoing Engineering & Operational Excellence** (Continuous) — **100% COMPLETE**
 
 ---
 
@@ -52,5 +52,5 @@ The remediation plan is structured into four distinct phases prioritized by busi
 |:---:|:---|:---:|:---:|:---|
 | **P4-1** | **Repository Root Hygiene** | Cleanup | **DONE** | Deleted 27 orphaned Python patch scripts from repository root; committed clean documentation and solution layout. |
 | **P4-2** | **Observability & Diagnostics** | Observability | **DONE** | Added `CorrelationIdMiddleware` for ambient `X-Correlation-Id` propagation and logging enrichment. Added `/healthz` (liveness) and `/health` (readiness with database verification) across `Api`, `Daycare.Web`, `Admin.Web`, and `Parent.Web`. |
-| **P4-3** | **PostgreSQL Testcontainers** | Testing | Planned (Sprint 5) | Author automated integration test suite running against real PostgreSQL containers. |
+| **P4-3** | **PostgreSQL Testcontainers** | Testing | **DONE** | Established `EnjoyEveryday.IntegrationTests` project in solution using `Testcontainers.PostgreSql`. Authored `PostgresTestcontainerFixture` and `DatabaseMigrationIntegrationTests` verifying automated PostgreSQL container lifecycle and migration schema application. |
 | **P4-4** | **Database Migration Rollback Practice** | Database | **DONE** | Updated `SqlMigrationRunner` to support atomic `RollbackLastMigrationAsync` and automatically exclude `*.down.sql` scripts from forward migrations. Authored reversible `*.down.sql` scripts for migrations 052–058 and established test coverage. |
