@@ -79,6 +79,12 @@ public static class InfrastructureServiceRegistration
             configuration.GetSection(EnjoyEveryday.Application.Services.RazorpaySettings.SectionName));
         services.AddHttpClient<EnjoyEveryday.Application.Services.IRazorpayGateway, EnjoyEveryday.Infrastructure.Services.RazorpayGateway>();
 
+        // Storage
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IBlobStorageService, EnjoyEveryday.Infrastructure.Storage.LocalDiskBlobStorageService>();
+
+        // Observability & Diagnostics
+        services.AddAppObservability();
+
         return services;
     }
 }

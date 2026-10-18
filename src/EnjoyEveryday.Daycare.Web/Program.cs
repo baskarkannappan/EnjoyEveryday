@@ -76,6 +76,8 @@ if (app.Environment.IsDevelopment())
 }
 
 // Configure the HTTP request pipeline.
+app.UseAppObservability();
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -98,6 +100,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 
+app.MapAppHealthChecks();
 app.MapAuthEndpoints();
 app.MapFloorMapEndpoints();
 app.MapStorybookEndpoints();

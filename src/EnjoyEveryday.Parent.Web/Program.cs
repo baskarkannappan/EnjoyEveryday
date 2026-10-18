@@ -84,6 +84,7 @@ if (app.Environment.IsDevelopment())
 
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
+app.UseAppObservability();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -106,6 +107,7 @@ app.UseRequestLocalization(new RequestLocalizationOptions
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapAppHealthChecks();
 EnjoyEveryday.Parent.Web.Endpoints.AuthEndpoints.MapAuthEndpoints(app);
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
