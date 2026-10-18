@@ -67,6 +67,12 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IMemoryRepository, MemoryRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
         services.AddScoped<ISecurePickupRepository, SecurePickupRepository>();
+        services.AddScoped<IEnrollmentPipelineRepository, EnrollmentPipelineRepository>();
+        services.AddScoped<IStaffRosterRepository, StaffRosterRepository>();
+        services.AddScoped<IDaycareOperationsBoardRepository, DaycareOperationsBoardRepository>();
+        services.AddScoped<IBranchBenchmarkingRepository, BranchBenchmarkingRepository>();
+        services.AddScoped<IChildDevelopmentPortfolioRepository, ChildDevelopmentPortfolioRepository>();
+        services.AddScoped<IPlatformAdminRepository, PlatformAdminRepository>();
 
         // Razorpay Payment Gateway
         services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(

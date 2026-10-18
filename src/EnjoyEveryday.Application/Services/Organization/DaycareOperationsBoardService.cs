@@ -3,10 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Authorization;
-using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
@@ -148,24 +146,24 @@ public interface IDaycareOperationsBoardService
 
 public class DaycareOperationsBoardService : IDaycareOperationsBoardService
 {
-    private readonly IDbConnectionFactory _connectionFactory;
+    private readonly IDaycareOperationsBoardRepository _boardRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IAccessScopeRepository _accessScopeRepo;
     private readonly TimeProvider _timeProvider;
 
     public DaycareOperationsBoardService(
-        IDbConnectionFactory connectionFactory,
+        IDaycareOperationsBoardRepository boardRepository,
         ITenantContext tenantContext,
         IUserContext userContext,
         IAccessScopeRepository accessScopeRepo,
         TimeProvider timeProvider)
     {
-        _connectionFactory = connectionFactory;
-        _tenantContext = tenantContext;
-        _userContext = userContext;
-        _accessScopeRepo = accessScopeRepo;
-        _timeProvider = timeProvider;
+        _boardRepository = boardRepository ?? throw new ArgumentNullException(nameof(boardRepository));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
+        _accessScopeRepo = accessScopeRepo ?? throw new ArgumentNullException(nameof(accessScopeRepo));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public async Task<OperationsBoardModel> GetOperationsBoardAsync(OperationsBoardFilter filter, CancellationToken ct = default)
@@ -173,28 +171,23 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         var tenantId = _tenantContext.TenantId;
         var now = _timeProvider.GetLocalNow();
         var date = filter.Date?.Date ?? now.Date;
-        var dateOnly = DateOnly.FromDateTime(date);
-
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
 
         // 1. Resolve Organization
         var orgId = filter.OrganizationId ?? _userContext.OrganizationId;
         if (orgId == null || orgId == Guid.Empty)
         {
-            orgId = await conn.QueryFirstOrDefaultAsync<Guid>(
-                "SELECT id FROM organizations WHERE tenant_id = @TenantId AND is_active = true ORDER BY name LIMIT 1",
-                new { TenantId = tenantId });
+            orgId = await _boardRepository.GetDefaultOrganizationIdAsync(tenantId, ct);
         }
 
-        var orgName = await conn.QueryFirstOrDefaultAsync<string>(
-            "SELECT name FROM organizations WHERE id = @Id AND tenant_id = @TenantId",
-            new { Id = orgId, TenantId = tenantId }) ?? "EnjoyEveryday Daycare";
+        var orgName = (orgId.HasValue ? await _boardRepository.GetOrganizationNameAsync(tenantId, orgId.Value, ct) : null) ?? "EnjoyEveryday Daycare";
 
         // 2. Resolve Role Scope
         var effectiveRole = ResolveEffectiveRole(filter.RoleOverride);
 
         // Get user branch/classroom assignments
-        var assignedBranchIds = (await _accessScopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId.Value, _userContext.UserId, ct)).ToList();
+        var assignedBranchIds = orgId.HasValue
+            ? (await _accessScopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId.Value, _userContext.UserId, ct)).ToList()
+            : new List<Guid>();
         var assignedClassroomIds = (await _accessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, _userContext.UserId, ct)).ToList();
 
         // If teacher, default branch/classroom if none provided
@@ -221,53 +214,33 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         {
             EffectiveRole = effectiveRole,
             BoardDate = date,
-            OrganizationId = orgId.Value,
+            OrganizationId = orgId ?? Guid.Empty,
             OrganizationName = orgName,
             SelectedBranchId = filterBranchId,
             SelectedClassroomId = filterClassroomId
         };
 
-        // 3. Classrooms & Occupancy Query
-        const string classroomsSql = @"
-            SELECT 
-                cl.id AS ClassroomId,
-                cl.name AS ClassroomName,
-                cl.age_group AS AgeGroup,
-                cl.branch_id AS BranchId,
-                b.name AS BranchName,
-                cl.capacity AS Capacity,
-                cl.current_enrollment AS EnrolledChildren,
-                COALESCE((
-                    SELECT COUNT(1) FROM child_attendance ca
-                    WHERE ca.classroom_id = cl.id AND ca.attendance_date = @Date 
-                      AND ca.status IN ('Present', 'Late') AND ca.tenant_id = @TenantId
-                ), 0) AS PresentChildren,
-                COALESCE((
-                    SELECT COUNT(1) FROM children ch
-                    WHERE ch.classroom_id = cl.id AND ch.is_active = true AND ch.tenant_id = @TenantId
-                ), 0) AS ExpectedChildren,
-                COALESCE((
-                    SELECT COUNT(1) FROM teacher_attendance ta
-                    WHERE ta.branch_id = cl.branch_id AND ta.attendance_date = @Date
-                      AND ta.status = 'Present' AND ta.tenant_id = @TenantId
-                ), 0) AS PresentStaff
-            FROM classrooms cl
-            JOIN branches b ON cl.branch_id = b.id
-            WHERE cl.tenant_id = @TenantId
-              AND b.organization_id = @OrgId
-              AND cl.is_active = true
-              AND (@BranchId IS NULL OR cl.branch_id = @BranchId)
-              AND (@ClassroomId IS NULL OR cl.id = @ClassroomId)
-            ORDER BY b.name, cl.name";
-
-        var classroomRows = (await conn.QueryAsync<ClassroomBoardItem>(classroomsSql, new
+        if (!orgId.HasValue || orgId.Value == Guid.Empty)
         {
-            TenantId = tenantId,
-            OrgId = orgId.Value,
-            Date = date,
-            BranchId = filterBranchId,
-            ClassroomId = filterClassroomId
-        })).ToList();
+            return model;
+        }
+
+        // 3. Classrooms & Occupancy Query
+        var classroomRecords = await _boardRepository.GetClassroomsAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+
+        var classroomRows = classroomRecords.Select(cl => new ClassroomBoardItem
+        {
+            ClassroomId = cl.ClassroomId,
+            ClassroomName = cl.ClassroomName,
+            AgeGroup = cl.AgeGroup,
+            BranchId = cl.BranchId,
+            BranchName = cl.BranchName,
+            Capacity = cl.Capacity,
+            EnrolledChildren = cl.EnrolledChildren,
+            PresentChildren = cl.PresentChildren,
+            ExpectedChildren = cl.ExpectedChildren,
+            PresentStaff = cl.PresentStaff
+        }).ToList();
 
         // Compute staff requirements based on age group
         foreach (var cr in classroomRows)
@@ -287,32 +260,11 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         model.UnderstaffedClassroomsCount = classroomRows.Count(c => c.IsUnderstaffed);
 
         // 4. Children Summary Query
-        const string childAttendanceSql = @"
-            SELECT 
-                COUNT(1) FILTER (WHERE ca.status IN ('Present', 'Late')) AS CheckedIn,
-                COUNT(1) FILTER (WHERE ca.departure_time IS NOT NULL OR ca.status = 'Departed') AS CheckedOut,
-                COUNT(1) FILTER (WHERE ca.status = 'Absent') AS Absent
-            FROM child_attendance ca
-            JOIN classrooms cl ON ca.classroom_id = cl.id
-            JOIN branches b ON cl.branch_id = b.id
-            WHERE ca.tenant_id = @TenantId 
-              AND b.organization_id = @OrgId
-              AND ca.attendance_date = @Date
-              AND (@BranchId IS NULL OR cl.branch_id = @BranchId)
-              AND (@ClassroomId IS NULL OR cl.id = @ClassroomId)";
+        var attSummary = await _boardRepository.GetChildAttendanceSummaryAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
 
-        var attRow = await conn.QueryFirstOrDefaultAsync<dynamic>(childAttendanceSql, new
-        {
-            TenantId = tenantId,
-            OrgId = orgId.Value,
-            Date = date,
-            BranchId = filterBranchId,
-            ClassroomId = filterClassroomId
-        });
-
-        int checkedIn = Convert.ToInt32(attRow?.checkedin ?? 0);
-        int checkedOut = Convert.ToInt32(attRow?.checkedout ?? 0);
-        int absent = Convert.ToInt32(attRow?.absent ?? 0);
+        int checkedIn = attSummary.CheckedIn;
+        int checkedOut = attSummary.CheckedOut;
+        int absent = attSummary.Absent;
 
         int totalExpected = classroomRows.Sum(c => c.ExpectedChildren);
         int expectedNotArrived = Math.Max(0, totalExpected - checkedIn - absent);
@@ -324,84 +276,39 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         model.ExpectedNotArrivedCount = expectedNotArrived;
 
         // 5. Staff Summary Query
-        const string staffSql = @"
-            SELECT 
-                COUNT(1) AS ExpectedStaff,
-                COUNT(1) FILTER (WHERE ta.status = 'Present') AS PresentStaff,
-                COUNT(1) FILTER (WHERE ta.status = 'Absent') AS AbsentStaff
-            FROM teachers t
-            LEFT JOIN teacher_attendance ta ON ta.teacher_id = t.id AND ta.attendance_date = @Date AND ta.tenant_id = @TenantId
-            WHERE t.tenant_id = @TenantId AND t.status != 'Inactive'
-              AND EXISTS (
-                  SELECT 1 FROM organization_memberships om
-                  WHERE om.user_id = t.user_id AND om.organization_id = @OrgId AND om.status = 'Active'
-              )";
+        var staffSummary = await _boardRepository.GetStaffSummaryAsync(tenantId, orgId.Value, date, ct);
 
-        var staffRow = await conn.QueryFirstOrDefaultAsync<dynamic>(staffSql, new
-        {
-            TenantId = tenantId,
-            OrgId = orgId.Value,
-            Date = date
-        });
-
-        model.ExpectedStaffCount = Convert.ToInt32(staffRow?.expectedstaff ?? 0);
-        model.PresentStaffCount = Convert.ToInt32(staffRow?.presentstaff ?? 0);
-        model.AbsentStaffCount = Convert.ToInt32(staffRow?.absentstaff ?? 0);
+        model.ExpectedStaffCount = staffSummary.ExpectedStaff;
+        model.PresentStaffCount = staffSummary.PresentStaff;
+        model.AbsentStaffCount = staffSummary.AbsentStaff;
 
         // 6. Experience & Rhythm Schedules Query
-        const string expScheduleSql = @"
-            SELECT 
-                es.id,
-                false AS IsCelebration,
-                COALESCE(e.title, 'Classroom Activity') AS Title,
-                COALESCE(es.time_of_day, 'Morning') AS TimeDisplay,
-                cl.name AS ScopeDisplay,
-                es.status AS Status,
-                es.classroom_id AS ClassroomId,
-                cl.name AS ClassroomName,
-                es.preparation_notes AS PreparationNotes
-            FROM experience_schedules es
-            JOIN classrooms cl ON es.classroom_id = cl.id
-            JOIN branches b ON cl.branch_id = b.id
-            LEFT JOIN experiences e ON es.experience_id = e.id
-            WHERE es.tenant_id = @TenantId
-              AND b.organization_id = @OrgId
-              AND es.scheduled_date = @Date
-              AND (@BranchId IS NULL OR cl.branch_id = @BranchId)
-              AND (@ClassroomId IS NULL OR cl.id = @ClassroomId)
-            ORDER BY es.planned_start_time NULLS LAST, es.time_of_day";
-
-        var schedules = (await conn.QueryAsync<RhythmScheduleItem>(expScheduleSql, new
+        var scheduleRecords = await _boardRepository.GetExperienceSchedulesAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        var schedules = scheduleRecords.Select(es => new RhythmScheduleItem
         {
-            TenantId = tenantId,
-            OrgId = orgId.Value,
-            Date = date,
-            BranchId = filterBranchId,
-            ClassroomId = filterClassroomId
-        })).ToList();
+            Id = es.Id,
+            IsCelebration = false,
+            Title = es.Title,
+            TimeDisplay = es.TimeDisplay,
+            ScopeDisplay = es.ScopeDisplay,
+            Status = es.Status,
+            ClassroomId = es.ClassroomId,
+            ClassroomName = es.ClassroomName,
+            PreparationNotes = es.PreparationNotes
+        }).ToList();
 
         // Add today's celebrations/events
-        const string eventsSql = @"
-            SELECT 
-                ev.id,
-                true AS IsCelebration,
-                ev.title AS Title,
-                COALESCE(TO_CHAR(ev.start_time, 'HH24:MI'), 'All Day') AS TimeDisplay,
-                CASE WHEN ev.is_organization_wide THEN 'All Campus' ELSE 'Classroom Event' END AS ScopeDisplay,
-                ev.status AS Status,
-                NULL::uuid AS BranchId,
-                NULL::text[] AS PhotoUrls,
-                ev.description AS PreparationNotes
-            FROM events ev
-            WHERE ev.tenant_id = @TenantId
-              AND ev.event_date = @Date
-            ORDER BY ev.start_time NULLS LAST";
-
-        var eventRows = (await conn.QueryAsync<RhythmScheduleItem>(eventsSql, new
+        var eventRecords = await _boardRepository.GetEventsAsync(tenantId, date, ct);
+        var eventRows = eventRecords.Select(ev => new RhythmScheduleItem
         {
-            TenantId = tenantId,
-            Date = date
-        })).ToList();
+            Id = ev.Id,
+            IsCelebration = true,
+            Title = ev.Title,
+            TimeDisplay = ev.TimeDisplay,
+            ScopeDisplay = ev.ScopeDisplay,
+            Status = ev.Status,
+            PreparationNotes = ev.PreparationNotes
+        }).ToList();
 
         var combinedRhythm = schedules.Concat(eventRows).ToList();
         model.TodayRhythm = combinedRhythm;
@@ -421,49 +328,18 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         }
 
         // 7. Missing Daily Care Records Query
-        const string missingCareSql = @"
-            SELECT 
-                c.id AS ChildId,
-                c.first_name || ' ' || c.last_name AS FullName,
-                c.photo_url AS PhotoUrl,
-                true AS IsCheckedIn,
-                ca.arrival_time AS ArrivalTime,
-                COALESCE((
-                    SELECT COUNT(1) FROM child_care_events cce 
-                    WHERE cce.child_id = c.id AND cce.tenant_id = @TenantId 
-                      AND cce.event_time >= @StartOfDay AND cce.event_time <= @EndOfDay
-                ), 0) AS CareEventsCount,
-                (
-                    SELECT cce.event_type FROM child_care_events cce
-                    WHERE cce.child_id = c.id AND cce.tenant_id = @TenantId 
-                      AND cce.event_time >= @StartOfDay AND cce.event_time <= @EndOfDay
-                    ORDER BY cce.event_time DESC LIMIT 1
-                ) AS LastRecordedCareType,
-                (
-                    SELECT cce.event_time FROM child_care_events cce
-                    WHERE cce.child_id = c.id AND cce.tenant_id = @TenantId 
-                      AND cce.event_time >= @StartOfDay AND cce.event_time <= @EndOfDay
-                    ORDER BY cce.event_time DESC LIMIT 1
-                ) AS LastRecordedTime
-            FROM children c
-            JOIN child_attendance ca ON c.id = ca.child_id AND ca.attendance_date = @Date AND ca.status IN ('Present', 'Late')
-            JOIN classrooms cl ON c.classroom_id = cl.id
-            JOIN branches b ON cl.branch_id = b.id
-            WHERE c.tenant_id = @TenantId
-              AND b.organization_id = @OrgId
-              AND (@BranchId IS NULL OR cl.branch_id = @BranchId)
-              AND (@ClassroomId IS NULL OR cl.id = @ClassroomId)";
-
-        var careList = (await conn.QueryAsync<TeacherChildCareItem>(missingCareSql, new
+        var careRecords = await _boardRepository.GetTeacherChildrenCareStatusAsync(tenantId, orgId.Value, date, date.Date, date.Date.AddDays(1).AddTicks(-1), filterBranchId, filterClassroomId, ct);
+        var careList = careRecords.Select(c => new TeacherChildCareItem
         {
-            TenantId = tenantId,
-            OrgId = orgId.Value,
-            Date = date,
-            StartOfDay = date.Date,
-            EndOfDay = date.Date.AddDays(1).AddTicks(-1),
-            BranchId = filterBranchId,
-            ClassroomId = filterClassroomId
-        })).ToList();
+            ChildId = c.ChildId,
+            FullName = c.FullName,
+            PhotoUrl = c.PhotoUrl,
+            IsCheckedIn = c.IsCheckedIn,
+            ArrivalTime = c.ArrivalTime,
+            CareEventsCount = c.CareEventsCount,
+            LastRecordedCareType = c.LastRecordedCareType,
+            LastRecordedTime = c.LastRecordedTime
+        }).ToList();
 
         model.TeacherChildrenCareStatus = careList;
         model.MissingCareRecordsCount = careList.Count(c => c.NeedsAttention);
@@ -475,86 +351,33 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         }
 
         // 9. Pending Enrollments Query
-        const string pendingEnrollmentsSql = @"
-            SELECT COUNT(1) FROM children c
-            LEFT JOIN classrooms cl ON c.classroom_id = cl.id
-            LEFT JOIN branches b ON cl.branch_id = b.id
-            WHERE c.tenant_id = @TenantId
-              AND (@OrgId IS NULL OR b.organization_id = @OrgId OR c.classroom_id IS NULL)
-              AND (c.enrollment_status = 'Draft' OR c.profile_completion_percentage < 100)";
-
-        model.PendingEnrollmentsCount = await conn.ExecuteScalarAsync<int>(pendingEnrollmentsSql, new
-        {
-            TenantId = tenantId,
-            OrgId = orgId.Value
-        });
+        model.PendingEnrollmentsCount = await _boardRepository.GetPendingEnrollmentsCountAsync(tenantId, orgId.Value, ct);
 
         // 10. Financial Summary (Strictly permission-gated)
         if (_userContext.HasPermission(Permissions.OrganizationBillingView) || _userContext.HasPermission(Permissions.PlatformBillingManage))
         {
             model.HasFinanceAccess = true;
-            const string finSql = @"
-                SELECT 
-                    COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE status != 'Paid' AND status != 'Void'), 0) AS Outstanding,
-                    COUNT(1) FILTER (WHERE status != 'Paid' AND status != 'Void' AND due_date < NOW()) AS OverdueCount
-                FROM invoices
-                WHERE tenant_id = @TenantId
-                  AND organization_id = @OrgId";
-
-            var finRow = await conn.QueryFirstOrDefaultAsync<dynamic>(finSql, new { TenantId = tenantId, OrgId = orgId.Value });
-            model.OutstandingReceivables = Convert.ToDecimal(finRow?.outstanding ?? 0);
-            model.OverdueInvoicesCount = Convert.ToInt32(finRow?.overduecount ?? 0);
+            var finSummary = await _boardRepository.GetFinancialSummaryAsync(tenantId, orgId.Value, ct);
+            model.OutstandingReceivables = finSummary.Outstanding;
+            model.OverdueInvoicesCount = finSummary.OverdueCount;
         }
 
         // 10b. Teacher Handovers Query
-        try
+        var pendingHandovers = await _boardRepository.GetPendingTeacherHandoversAsync(tenantId, orgId.Value, filterBranchId, filterClassroomId, ct);
+        foreach (var ho in pendingHandovers)
         {
-            const string handoversSql = @"
-                SELECT 
-                    th.id, th.classroom_id AS ClassroomId, cl.name AS ClassroomName,
-                    th.shift_type AS ShiftType, th.outgoing_teacher_name AS OutgoingTeacherName,
-                    th.is_critical AS IsCritical, th.summary_notes AS SummaryNotes,
-                    th.outstanding_care_tasks AS OutstandingTasks,
-                    th.created_at AS CreatedAt
-                FROM teacher_handovers th
-                JOIN classrooms cl ON th.classroom_id = cl.id
-                JOIN branches b ON th.branch_id = b.id
-                WHERE th.tenant_id = @TenantId
-                  AND b.organization_id = @OrgId
-                  AND th.status = 'PendingAcknowledgement'
-                  AND (@BranchId IS NULL OR th.branch_id = @BranchId)
-                  AND (@ClassroomId IS NULL OR th.classroom_id = @ClassroomId)";
+            bool isOverdue = ho.IsCritical || (DateTime.UtcNow - ho.CreatedAt).TotalMinutes > 30;
 
-            var pendingHandovers = (await conn.QueryAsync<dynamic>(handoversSql, new
+            model.Alerts.Add(new OperationalAlertItem
             {
-                TenantId = tenantId,
-                OrgId = orgId.Value,
-                BranchId = filterBranchId,
-                ClassroomId = filterClassroomId
-            })).ToList();
-
-            foreach (var ho in pendingHandovers)
-            {
-                DateTime createdAt = Convert.ToDateTime(ho.createdat);
-                bool isCritical = Convert.ToBoolean(ho.iscritical);
-                bool isOverdue = isCritical || (DateTime.UtcNow - createdAt).TotalMinutes > 30;
-
-                model.Alerts.Add(new OperationalAlertItem
-                {
-                    AlertType = "Staffing",
-                    Severity = isOverdue ? "High" : "Medium",
-                    Title = $"Shift Handover Pending: {ho.classroomname} ({ho.shifttype})",
-                    Description = $"{ho.outgoingteachername} submitted shift handover. Outstanding tasks: {ho.outstandingtasks ?? ho.summarynotes ?? "Awaiting incoming acknowledgement"}.",
-                    ActionUrl = "/daily-care",
-                    ActionText = "Acknowledge Handover",
-                    SourceContext = ho.classroomname
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            // Table may be migrating or empty
-            Console.WriteLine($"Handover query notice: {ex.Message}");
+                AlertType = "Staffing",
+                Severity = isOverdue ? "High" : "Medium",
+                Title = $"Shift Handover Pending: {ho.ClassroomName} ({ho.ShiftType})",
+                Description = $"{ho.OutgoingTeacherName} submitted shift handover. Outstanding tasks: {ho.OutstandingTasks ?? ho.SummaryNotes ?? "Awaiting incoming acknowledgement"}.",
+                ActionUrl = "/daily-care",
+                ActionText = "Acknowledge Handover",
+                SourceContext = ho.ClassroomName
+            });
         }
 
         // 11. Generate Actionable Alerts

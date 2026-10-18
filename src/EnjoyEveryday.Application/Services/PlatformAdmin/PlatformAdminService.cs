@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
-using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +12,7 @@ public class PlatformAdminService : IPlatformAdminService
     private readonly IBranchRepository _branchRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
-    private readonly IDbConnectionFactory? _dbConnectionFactory;
+    private readonly IPlatformAdminRepository? _platformAdminRepository;
     private readonly ILogger<PlatformAdminService> _logger;
 
     // Synchronized stores for commercial, lifecycle, billing, and audit records
@@ -38,14 +36,14 @@ public class PlatformAdminService : IPlatformAdminService
         ITenantContext tenantContext,
         IUserContext userContext,
         ILogger<PlatformAdminService> logger,
-        IDbConnectionFactory? dbConnectionFactory = null)
+        IPlatformAdminRepository? platformAdminRepository = null)
     {
         _organizationRepository = organizationRepository;
         _branchRepository = branchRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _logger = logger;
-        _dbConnectionFactory = dbConnectionFactory;
+        _platformAdminRepository = platformAdminRepository;
     }
 
 
@@ -86,45 +84,39 @@ public class PlatformAdminService : IPlatformAdminService
         string? lifecycleStage = null,
         CancellationToken cancellationToken = default)
     {
-        if (_dbConnectionFactory != null)
+        if (_platformAdminRepository != null)
         {
             try
             {
-                using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-                const string dbSql = @"
-                    SELECT o.id, o.tenant_id, o.name, o.location, o.is_active, o.created_at,
-                           (SELECT COUNT(*) FROM branches b WHERE b.organization_id = o.id) AS branch_count
-                    FROM organizations o
-                    ORDER BY o.name";
-                var dbRows = (await conn.QueryAsync(dbSql)).ToList();
+                var dbRows = await _platformAdminRepository.GetOrganizationsOverviewAsync(cancellationToken);
                 if (dbRows.Any())
                 {
                     foreach (var r in dbRows)
                     {
-                        Guid orgId = r.id;
+                        Guid orgId = r.Id;
                         if (!_organizations.ContainsKey(orgId))
                         {
                             _organizations[orgId] = new PlatformOrganizationDto
                             {
                                 Id = orgId,
-                                TenantId = r.tenant_id,
-                                Name = r.name,
-                                Location = r.location ?? "Daycare Center",
-                                BranchCount = (int)(r.branch_count ?? 1),
-                                AccountStatus = r.is_active ? AccountStatus.Active : AccountStatus.Suspended,
+                                TenantId = r.TenantId,
+                                Name = r.Name,
+                                Location = r.Location ?? "Daycare Center",
+                                BranchCount = r.BranchCount > 0 ? r.BranchCount : 1,
+                                AccountStatus = r.IsActive ? AccountStatus.Active : AccountStatus.Suspended,
                                 FinancialStatus = FinancialStatus.Reconciled,
                                 PlanId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
                                 PlanName = "Bloom (Growth)",
                                 MonthlyRate = 299.00m,
                                 NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
-                                AdminEmail = $"admin@{((string)r.name).ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
+                                AdminEmail = $"admin@{r.Name.ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
                                 LifecycleStageKey = "Active",
-                                CreatedAt = r.created_at != null ? (DateTimeOffset)r.created_at : DateTimeOffset.UtcNow.AddMonths(-1)
+                                CreatedAt = r.CreatedAt != null ? (DateTimeOffset)r.CreatedAt.Value : DateTimeOffset.UtcNow.AddMonths(-1)
                             };
                         }
                     }
 
-                    var validIds = dbRows.Select(r => (Guid)r.id).ToHashSet();
+                    var validIds = dbRows.Select(r => r.Id).ToHashSet();
                     var dbFiltered = _organizations.Values.Where(o => validIds.Contains(o.Id)).AsEnumerable();
 
                     if (!string.IsNullOrWhiteSpace(search))
@@ -267,96 +259,11 @@ public class PlatformAdminService : IPlatformAdminService
         _organizations[id] = dto;
 
         // Persist to relational database so Daycare Web and Api can discover and select this organization
-        if (_dbConnectionFactory != null)
+        if (_platformAdminRepository != null)
         {
             try
             {
-                using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-                
-                // Check if admin email belongs to an existing user
-                var existingUser = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId)?>(
-                    "SELECT id as Id, tenant_id as TenantId FROM users WHERE LOWER(email) = LOWER(@Email) OR normalized_email = UPPER(@Email) LIMIT 1",
-                    new { Email = adminEmail.Trim() });
-
-                Guid orgTenantId;
-                Guid? adminUserId = null;
-
-                if (existingUser.HasValue)
-                {
-                    orgTenantId = existingUser.Value.TenantId;
-                    adminUserId = existingUser.Value.Id;
-                }
-                else
-                {
-                    orgTenantId = id;
-                    var rawSlug = System.Text.RegularExpressions.Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
-                    var slug = string.IsNullOrWhiteSpace(rawSlug) ? $"org-{id.ToString()[..8]}" : rawSlug;
-
-                    var existingSlugCount = await conn.ExecuteScalarAsync<int>(
-                        "SELECT COUNT(1) FROM tenants WHERE slug = @Slug", 
-                        new { Slug = slug });
-
-                    if (existingSlugCount > 0)
-                    {
-                        slug = $"{slug}-{id.ToString()[..4]}";
-                    }
-
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO tenants (id, name, slug) 
-                        VALUES (@TenantId, @Name, @Slug) 
-                        ON CONFLICT (id) DO NOTHING",
-                        new { TenantId = orgTenantId, Name = name, Slug = slug });
-
-                    // Create new admin user
-                    adminUserId = Guid.NewGuid();
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO users (id, tenant_id, email, normalized_email, email_confirmed, first_name, last_name, display_name, is_active)
-                        VALUES (@UserId, @TenantId, @Email, UPPER(@Email), TRUE, 'Admin', @OrgName, @OrgName, TRUE)
-                        ON CONFLICT (normalized_email) DO NOTHING",
-                        new { UserId = adminUserId.Value, TenantId = orgTenantId, Email = adminEmail.Trim(), OrgName = name });
-                }
-
-                // Insert Organization
-                await conn.ExecuteAsync(@"
-                    INSERT INTO organizations (id, tenant_id, name, location, is_active)
-                    VALUES (@Id, @TenantId, @Name, @Location, TRUE)
-                    ON CONFLICT (id) DO NOTHING",
-                    new { Id = id, TenantId = orgTenantId, Name = name, Location = location });
-
-                // Insert Default Main Campus Branch
-                var branchId = Guid.NewGuid();
-                await conn.ExecuteAsync(@"
-                    INSERT INTO branches (id, tenant_id, organization_id, name, location, is_active)
-                    VALUES (@BranchId, @TenantId, @OrgId, 'Main Campus', @Location, TRUE)
-                    ON CONFLICT (id) DO NOTHING",
-                    new { BranchId = branchId, TenantId = orgTenantId, OrgId = id, Location = location });
-
-                // Link admin user membership to this organization
-                if (adminUserId.HasValue)
-                {
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status)
-                        VALUES (@UserId, @OrgId, @TenantId, 'Active')
-                        ON CONFLICT (user_id, organization_id) DO NOTHING",
-                        new { UserId = adminUserId.Value, OrgId = id, TenantId = orgTenantId });
-
-                    // Assign OrganizationAdmin role
-                    var roleId = await conn.ExecuteScalarAsync<Guid?>(
-                        @"SELECT id FROM roles 
-                          WHERE name IN ('OrganizationAdmin', 'OrganizationOwner') 
-                            AND (tenant_id = @TenantId OR tenant_id IS NULL) 
-                          ORDER BY tenant_id NULLS LAST LIMIT 1",
-                        new { TenantId = orgTenantId });
-
-                    if (roleId.HasValue)
-                    {
-                        await conn.ExecuteAsync(@"
-                            INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
-                            VALUES (@UserId, @RoleId, @OrgId, @TenantId)
-                            ON CONFLICT (user_id, role_id, organization_id) DO NOTHING",
-                            new { UserId = adminUserId.Value, RoleId = roleId.Value, OrgId = id, TenantId = orgTenantId });
-                    }
-                }
+                await _platformAdminRepository.ProvisionOrganizationAsync(id, name, location, adminEmail, cancellationToken);
             }
             catch (Exception ex)
             {

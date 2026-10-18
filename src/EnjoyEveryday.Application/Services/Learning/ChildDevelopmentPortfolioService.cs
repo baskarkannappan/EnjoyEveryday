@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
-using EnjoyEveryday.Shared.Data;
+using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
@@ -102,35 +101,23 @@ public interface IChildDevelopmentPortfolioService
 
 public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioService
 {
-    private readonly IDbConnectionFactory _connectionFactory;
+    private readonly IChildDevelopmentPortfolioRepository _portfolioRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext? _userContext;
 
     public ChildDevelopmentPortfolioService(
-        IDbConnectionFactory connectionFactory,
+        IChildDevelopmentPortfolioRepository portfolioRepository,
         ITenantContext tenantContext,
         IUserContext? userContext = null)
     {
-        _connectionFactory = connectionFactory;
-        _tenantContext = tenantContext;
+        _portfolioRepository = portfolioRepository ?? throw new ArgumentNullException(nameof(portfolioRepository));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _userContext = userContext;
     }
 
     public async Task<PortfolioConsentSummary> CheckMediaConsentAsync(Guid childId, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        
-        var sql = @"
-            SELECT d.id, d.status, d.document_title, d.signed_at, d.withdrawn_at, d.declined_at,
-                   COALESCE(t.document_type, '') AS DocumentType
-            FROM child_consent_documents d
-            LEFT JOIN consent_templates t ON d.consent_template_id = t.id
-            WHERE d.tenant_id = @TenantId AND d.child_id = @ChildId
-              AND (t.document_type = 'PhotoVideoConsent' OR d.document_title ILIKE '%Photo%' OR d.document_title ILIKE '%Media%')
-            ORDER BY d.created_at DESC
-            LIMIT 1";
-
-        var doc = await conn.QueryFirstOrDefaultAsync<dynamic>(sql, new { TenantId = _tenantContext.TenantId, ChildId = childId });
+        var doc = await _portfolioRepository.GetLatestMediaConsentDocumentAsync(_tenantContext.TenantId, childId, ct);
 
         if (doc == null)
         {
@@ -142,10 +129,10 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
             };
         }
 
-        string status = (string)(doc.status ?? "Draft");
-        DateTime? withdrawnAt = doc.withdrawn_at;
-        DateTime? declinedAt = doc.declined_at;
-        DateTimeOffset? signedAt = doc.signed_at;
+        string status = doc.Status ?? "Draft";
+        DateTime? withdrawnAt = doc.WithdrawnAt;
+        DateTime? declinedAt = doc.DeclinedAt;
+        DateTimeOffset? signedAt = doc.SignedAt;
 
         if (withdrawnAt != null || status.Equals("Withdrawn", StringComparison.OrdinalIgnoreCase))
         {
@@ -172,12 +159,7 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         if (status.Equals("Signed", StringComparison.OrdinalIgnoreCase))
         {
             // Verify if any negative choice was recorded
-            var choicesSql = @"
-                SELECT choice FROM consent_choices 
-                WHERE tenant_id = @TenantId AND consent_document_id = @DocId
-                  AND (section_key ILIKE '%photo%' OR section_key ILIKE '%media%')";
-            
-            var choices = (await conn.QueryAsync<string>(choicesSql, new { TenantId = _tenantContext.TenantId, DocId = (Guid)doc.id })).ToList();
+            var choices = await _portfolioRepository.GetConsentChoicesAsync(_tenantContext.TenantId, doc.Id, ct);
             bool hasRefusal = choices.Any(c => c.Equals("Declined", StringComparison.OrdinalIgnoreCase) || c.Equals("No", StringComparison.OrdinalIgnoreCase));
 
             if (hasRefusal)
@@ -228,98 +210,37 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         DateTime? toDate = null,
         CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var tenantId = _tenantContext.TenantId;
 
         // 1. Fetch child profile
-        var childSql = @"
-            SELECT c.id, c.first_name AS FirstName, c.last_name AS LastName, c.photo_url AS PhotoUrl, c.date_of_birth AS DateOfBirth,
-                   cr.name AS ClassroomName, b.name AS BranchName
-            FROM children c
-            LEFT JOIN classrooms cr ON c.classroom_id = cr.id
-            LEFT JOIN branches b ON cr.branch_id = b.id
-            WHERE c.tenant_id = @TenantId AND c.id = @ChildId";
-
-        var child = await conn.QueryFirstOrDefaultAsync<dynamic>(childSql, new { TenantId = _tenantContext.TenantId, ChildId = childId });
+        var child = await _portfolioRepository.GetChildProfileAsync(tenantId, childId, ct);
         if (child == null) return null;
 
         var consent = await CheckMediaConsentAsync(childId, ct);
 
         // 2. Fetch standard development areas
-        var areasSql = @"
-            SELECT id, name, icon, display_order AS DisplayOrder
-            FROM development_areas
-            WHERE (tenant_id IS NULL OR tenant_id = @TenantId) AND is_active = TRUE
-            ORDER BY display_order";
-
-        var allAreas = (await conn.QueryAsync<dynamic>(areasSql, new { TenantId = _tenantContext.TenantId })).ToList();
-        var areaDict = allAreas.ToDictionary(a => (Guid)a.id, a => (string)a.name);
-        var areaIconDict = allAreas.ToDictionary(a => (Guid)a.id, a => (string)a.icon);
+        var allAreas = await _portfolioRepository.GetDevelopmentAreasAsync(tenantId, ct);
+        var areaDict = allAreas.ToDictionary(a => a.Id, a => a.Name);
+        var areaIconDict = allAreas.ToDictionary(a => a.Id, a => a.Icon);
 
         // 3. Fetch Journey Entries
-        var entriesSql = @"
-            SELECT je.id, je.observation_date AS ObservationDate, je.journey_type AS JourneyType,
-                   je.title, je.observation, je.child_voice AS ChildVoice, je.teacher_reflection AS TeacherReflection,
-                   je.is_milestone AS IsMilestone, je.is_parent_visible AS IsParentVisible,
-                   je.parent_visibility_status AS ParentVisibilityStatus,
-                   COALESCE(t.first_name || ' ' || t.last_name, 'Teacher') AS TeacherName
-            FROM child_journey_entries je
-            LEFT JOIN teachers t ON je.teacher_id = t.id
-            WHERE je.tenant_id = @TenantId AND je.child_id = @ChildId
-            ORDER BY je.observation_date DESC";
-
-        var rawEntries = (await conn.QueryAsync<dynamic>(entriesSql, new { TenantId = _tenantContext.TenantId, ChildId = childId })).ToList();
+        var rawEntries = await _portfolioRepository.GetJourneyEntriesAsync(tenantId, childId, ct);
 
         // 4. Fetch linked development areas for entries
-        var entryAreasSql = @"
-            SELECT d.journey_entry_id, d.development_area_id, a.name, a.icon
-            FROM child_journey_developments d
-            JOIN development_areas a ON d.development_area_id = a.id
-            WHERE d.journey_entry_id IN (
-                SELECT id FROM child_journey_entries WHERE tenant_id = @TenantId AND child_id = @ChildId
-            )";
-
-        var entryAreasRows = (await conn.QueryAsync<dynamic>(entryAreasSql, new { TenantId = _tenantContext.TenantId, ChildId = childId })).ToList();
-        var entryAreasGrouped = entryAreasRows.GroupBy(r => (Guid)r.journey_entry_id)
-            .ToDictionary(g => g.Key, g => g.Select(x => new { Name = (string)x.name, Icon = (string)x.icon }).ToList());
+        var entryAreasRows = await _portfolioRepository.GetEntryDevelopmentAreasAsync(tenantId, childId, ct);
+        var entryAreasGrouped = entryAreasRows.GroupBy(r => r.JourneyEntryId)
+            .ToDictionary(g => g.Key, g => g.Select(x => new { Name = x.Name, Icon = x.Icon }).ToList());
 
         // 5. Fetch evidence photos for entries
-        var evidenceSql = @"
-            SELECT journey_entry_id, text_content
-            FROM child_journey_evidence
-            WHERE journey_entry_id IN (
-                SELECT id FROM child_journey_entries WHERE tenant_id = @TenantId AND child_id = @ChildId
-            )
-            ORDER BY created_at DESC";
-
-        var evidenceRows = (await conn.QueryAsync<dynamic>(evidenceSql, new { TenantId = _tenantContext.TenantId, ChildId = childId })).ToList();
-        var evidenceGrouped = evidenceRows.GroupBy(r => (Guid)r.journey_entry_id)
-            .ToDictionary(g => g.Key, g => g.Select(x => (string)x.text_content).Where(s => !string.IsNullOrWhiteSpace(s)).ToList());
+        var evidenceRows = await _portfolioRepository.GetEntryEvidenceAsync(tenantId, childId, ct);
+        var evidenceGrouped = evidenceRows.GroupBy(r => r.JourneyEntryId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.TextContent).Where(s => !string.IsNullOrWhiteSpace(s)).ToList());
 
         // 6. Fetch Milestones
-        var milestonesSql = @"
-            SELECT m.id, m.milestone_date AS MilestoneDate, m.title, m.description, m.evidence_summary AS EvidenceSummary,
-                   m.parent_visible AS ParentVisible, m.status, m.development_area_id AS DevelopmentAreaId,
-                   COALESCE(t.first_name || ' ' || t.last_name, 'Teacher') AS TeacherName
-            FROM child_milestones m
-            LEFT JOIN teachers t ON m.teacher_id = t.id
-            WHERE m.tenant_id = @TenantId AND m.child_id = @ChildId
-            ORDER BY m.milestone_date DESC";
-
-        var rawMilestones = (await conn.QueryAsync<dynamic>(milestonesSql, new { TenantId = _tenantContext.TenantId, ChildId = childId })).ToList();
+        var rawMilestones = await _portfolioRepository.GetMilestonesAsync(tenantId, childId, ct);
 
         // 7. Fetch Experience Participations
-        var experiencesSql = @"
-            SELECT p.id, s.session_date + COALESCE(s.end_time, s.start_time, '00:00:00'::time) AS SessionDate,
-                   e.title AS ExperienceTitle, COALESCE(p.participation_notes, s.actual_notes) AS Notes,
-                   COALESCE(t.first_name || ' ' || t.last_name, 'Teacher') AS TeacherName
-            FROM experience_participations p
-            JOIN experience_sessions s ON p.experience_session_id = s.id
-            JOIN experiences e ON s.experience_id = e.id
-            LEFT JOIN teachers t ON s.primary_teacher_id = t.id
-            WHERE s.tenant_id = @TenantId AND p.child_id = @ChildId AND p.participation_status = 'Participated'
-            ORDER BY s.session_date DESC";
-
-        var rawExperiences = (await conn.QueryAsync<dynamic>(experiencesSql, new { TenantId = _tenantContext.TenantId, ChildId = childId })).ToList();
+        var rawExperiences = await _portfolioRepository.GetExperienceParticipationsAsync(tenantId, childId, ct);
 
         // Assemble unified timeline
         var items = new List<PortfolioItem>();
@@ -327,11 +248,11 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         // Add journey entries
         foreach (var e in rawEntries)
         {
-            Guid entryId = (Guid)e.id;
-            DateTimeOffset date = (DateTimeOffset)e.ObservationDate;
-            bool isParentVis = (bool)e.IsParentVisible;
-            bool isMilestone = (bool)e.IsMilestone;
-            string jType = (string)(e.JourneyType ?? "Observation");
+            Guid entryId = e.Id;
+            DateTimeOffset date = e.ObservationDate;
+            bool isParentVis = e.IsParentVisible;
+            bool isMilestone = e.IsMilestone;
+            string jType = e.JourneyType ?? "Observation";
 
             var domainList = new List<string>();
             var domainIcons = new List<string>();
@@ -355,11 +276,11 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
                 Date = date,
                 Category = isMilestone ? "Milestone" : (jType.Equals("Moment", StringComparison.OrdinalIgnoreCase) ? "Moment" : "Observation"),
                 BadgeType = isMilestone ? "milestone" : jType.ToLower(),
-                Title = (string)(e.title ?? (isMilestone ? "Milestone Achieved" : "Observation")),
-                Description = (string)(e.observation ?? ""),
-                ChildVoice = (string?)e.ChildVoice,
-                TeacherReflection = (string?)e.TeacherReflection,
-                TeacherName = (string)e.TeacherName,
+                Title = e.Title ?? (isMilestone ? "Milestone Achieved" : "Observation"),
+                Description = e.Observation ?? "",
+                ChildVoice = e.ChildVoice,
+                TeacherReflection = e.TeacherReflection,
+                TeacherName = e.TeacherName,
                 Domains = domainList,
                 DomainIcons = domainIcons,
                 IsParentVisible = isParentVis,
@@ -373,10 +294,10 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         // Add standalone milestones
         foreach (var m in rawMilestones)
         {
-            Guid mId = (Guid)m.id;
-            DateTimeOffset date = (DateTimeOffset)m.MilestoneDate;
-            bool isParentVis = (bool)m.ParentVisible;
-            Guid? devAreaId = (Guid?)m.DevelopmentAreaId;
+            Guid mId = m.Id;
+            DateTimeOffset date = m.MilestoneDate;
+            bool isParentVis = m.ParentVisible;
+            Guid? devAreaId = m.DevelopmentAreaId;
 
             var domainList = new List<string>();
             var domainIcons = new List<string>();
@@ -395,9 +316,9 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
                 Date = date,
                 Category = "Milestone",
                 BadgeType = "milestone",
-                Title = (string)(m.title ?? "Milestone Achieved"),
-                Description = (string)(m.description ?? m.EvidenceSummary ?? "Developmental milestone achieved."),
-                TeacherName = (string)m.TeacherName,
+                Title = m.Title ?? "Milestone Achieved",
+                Description = m.Description ?? m.EvidenceSummary ?? "Developmental milestone achieved.",
+                TeacherName = m.TeacherName,
                 Domains = domainList,
                 DomainIcons = domainIcons,
                 IsParentVisible = isParentVis,
@@ -411,8 +332,8 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         // Add experience participations
         foreach (var exp in rawExperiences)
         {
-            Guid pId = (Guid)exp.id;
-            DateTimeOffset date = (DateTimeOffset)exp.SessionDate;
+            Guid pId = exp.Id;
+            DateTimeOffset date = exp.SessionDate;
 
             items.Add(new PortfolioItem
             {
@@ -420,9 +341,9 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
                 Date = date,
                 Category = "Experience",
                 BadgeType = "experience",
-                Title = (string)(exp.ExperienceTitle ?? "Learning Experience"),
-                Description = (string)(exp.Notes ?? "Actively participated in classroom learning experience."),
-                TeacherName = (string)exp.TeacherName,
+                Title = exp.ExperienceTitle ?? "Learning Experience",
+                Description = exp.Notes ?? "Actively participated in classroom learning experience.",
+                TeacherName = exp.TeacherName,
                 Domains = new List<string> { "Cognitive & Problem Solving" },
                 DomainIcons = new List<string> { "bi-lightbulb" },
                 IsParentVisible = true,
@@ -440,7 +361,7 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         var domainCounts = new Dictionary<string, DomainCountRecord>(StringComparer.OrdinalIgnoreCase);
         foreach (var area in allAreas)
         {
-            domainCounts[(string)area.name] = new DomainCountRecord();
+            domainCounts[area.Name] = new DomainCountRecord();
         }
 
         foreach (var it in items)
@@ -465,7 +386,7 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
         var domainProgressList = new List<PortfolioDomainProgress>();
         foreach (var area in allAreas)
         {
-            string aName = (string)area.name;
+            string aName = area.Name;
             var counts = domainCounts.TryGetValue(aName, out var c) ? c : new DomainCountRecord();
             int percentage = items.Count > 0 ? (int)Math.Round((double)counts.Evidence / items.Count * 100) : 0;
 
@@ -474,10 +395,10 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
 
             domainProgressList.Add(new PortfolioDomainProgress
             {
-                DomainId = (Guid)area.id,
+                DomainId = area.Id,
                 DomainName = aName,
-                Icon = (string)area.icon,
-                DisplayOrder = (int)area.DisplayOrder,
+                Icon = area.Icon,
+                DisplayOrder = area.DisplayOrder,
                 EvidenceCount = counts.Evidence,
                 MilestonesCount = counts.Milestones,
                 Percentage = percentage,

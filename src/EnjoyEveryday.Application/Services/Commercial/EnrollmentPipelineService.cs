@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
-using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.Logging;
 
@@ -126,18 +125,18 @@ public interface IEnrollmentPipelineService
 
 public class EnrollmentPipelineService : IEnrollmentPipelineService
 {
-    private readonly IDbConnectionFactory _connectionFactory;
+    private readonly IEnrollmentPipelineRepository _repository;
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
     private readonly ILogger<EnrollmentPipelineService> _logger;
 
     public EnrollmentPipelineService(
-        IDbConnectionFactory connectionFactory,
+        IEnrollmentPipelineRepository repository,
         ITenantContext tenantContext,
         IAuditService? auditService = null,
         ILogger<EnrollmentPipelineService>? logger = null)
     {
-        _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _auditService = auditService ?? new NullAuditService();
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<EnrollmentPipelineService>.Instance;
@@ -187,43 +186,8 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
     public async Task<List<EnrollmentPipelineApplicationDto>> GetApplicationsAsync(Guid? branchId = null, string? stage = null, string? search = null, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var tenantId = _tenantContext.TenantId;
-
-        var sql = @"
-            SELECT 
-                a.id,
-                a.branch_id AS BranchId,
-                b.name AS BranchName,
-                a.child_first_name AS ChildFirstName,
-                a.child_last_name AS ChildLastName,
-                a.date_of_birth AS DateOfBirth,
-                a.gender AS Gender,
-                a.parent_guardian_name AS ParentGuardianName,
-                a.parent_email AS ParentEmail,
-                a.parent_phone AS ParentPhone,
-                a.target_classroom_id AS TargetClassroomId,
-                c.name AS TargetClassroomName,
-                a.desired_start_date AS DesiredStartDate,
-                a.schedule_type AS ScheduleType,
-                a.pipeline_stage AS PipelineStage,
-                a.tour_date AS TourDate,
-                a.tuition_monthly_rate AS TuitionMonthlyRate,
-                a.deposit_amount AS DepositAmount,
-                a.sibling_discount_percent AS SiblingDiscountPercent,
-                a.registration_fee AS RegistrationFee,
-                a.internal_notes AS InternalNotes,
-                a.child_id AS ChildId,
-                a.created_at AS CreatedAt
-            FROM enrollment_pipeline_applications a
-            LEFT JOIN branches b ON a.branch_id = b.id
-            LEFT JOIN classrooms c ON a.target_classroom_id = c.id
-            WHERE a.tenant_id = @tenantId
-              AND (@branchId IS NULL OR a.branch_id = @branchId)
-              AND (@stage IS NULL OR a.pipeline_stage = @stage)
-            ORDER BY a.created_at DESC";
-
-        var list = (await conn.QueryAsync<EnrollmentPipelineApplicationDto>(sql, new { tenantId, branchId, stage })).ToList();
+        var records = await _repository.GetApplicationsAsync(_tenantContext.TenantId, branchId, stage, ct);
+        var list = records.Select(MapToDto).ToList();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -241,88 +205,44 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
     public async Task<EnrollmentPipelineApplicationDto?> GetApplicationByIdAsync(Guid applicationId, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var tenantId = _tenantContext.TenantId;
-
-        var sql = @"
-            SELECT 
-                a.id,
-                a.branch_id AS BranchId,
-                b.name AS BranchName,
-                a.child_first_name AS ChildFirstName,
-                a.child_last_name AS ChildLastName,
-                a.date_of_birth AS DateOfBirth,
-                a.gender AS Gender,
-                a.parent_guardian_name AS ParentGuardianName,
-                a.parent_email AS ParentEmail,
-                a.parent_phone AS ParentPhone,
-                a.target_classroom_id AS TargetClassroomId,
-                c.name AS TargetClassroomName,
-                a.desired_start_date AS DesiredStartDate,
-                a.schedule_type AS ScheduleType,
-                a.pipeline_stage AS PipelineStage,
-                a.tour_date AS TourDate,
-                a.tuition_monthly_rate AS TuitionMonthlyRate,
-                a.deposit_amount AS DepositAmount,
-                a.sibling_discount_percent AS SiblingDiscountPercent,
-                a.registration_fee AS RegistrationFee,
-                a.internal_notes AS InternalNotes,
-                a.child_id AS ChildId,
-                a.created_at AS CreatedAt
-            FROM enrollment_pipeline_applications a
-            LEFT JOIN branches b ON a.branch_id = b.id
-            LEFT JOIN classrooms c ON a.target_classroom_id = c.id
-            WHERE a.tenant_id = @tenantId AND a.id = @applicationId";
-
-        return await conn.QuerySingleOrDefaultAsync<EnrollmentPipelineApplicationDto>(sql, new { tenantId, applicationId });
+        var record = await _repository.GetApplicationByIdAsync(_tenantContext.TenantId, applicationId, ct);
+        return record == null ? null : MapToDto(record);
     }
 
     public async Task<Guid> CreateApplicationAsync(CreateApplicationRequest request, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         var tenantId = _tenantContext.TenantId;
         var newId = Guid.NewGuid();
 
-        var sql = @"
-            INSERT INTO enrollment_pipeline_applications (
-                id, tenant_id, branch_id, child_first_name, child_last_name, date_of_birth, gender,
-                parent_guardian_name, parent_email, parent_phone, target_classroom_id, desired_start_date,
-                schedule_type, pipeline_stage, tour_date, tuition_monthly_rate, deposit_amount,
-                sibling_discount_percent, registration_fee, internal_notes
-            ) VALUES (
-                @newId, @tenantId, @BranchId, @ChildFirstName, @ChildLastName, @DateOfBirth, @Gender,
-                @ParentGuardianName, @ParentEmail, @ParentPhone, @TargetClassroomId, @DesiredStartDate,
-                @ScheduleType, @PipelineStage, @TourDate, @TuitionMonthlyRate, @DepositAmount,
-                @SiblingDiscountPercent, @RegistrationFee, @InternalNotes
-            )";
-
-        await conn.ExecuteAsync(sql, new
+        var app = new EnrollmentPipelineApplication
         {
-            newId,
-            tenantId,
-            request.BranchId,
-            request.ChildFirstName,
-            request.ChildLastName,
-            request.DateOfBirth,
-            request.Gender,
-            request.ParentGuardianName,
-            request.ParentEmail,
-            request.ParentPhone,
-            request.TargetClassroomId,
-            request.DesiredStartDate,
-            request.ScheduleType,
-            request.PipelineStage,
-            request.TourDate,
-            request.TuitionMonthlyRate,
-            request.DepositAmount,
-            request.SiblingDiscountPercent,
-            request.RegistrationFee,
-            request.InternalNotes
-        });
+            Id = newId,
+            TenantId = tenantId,
+            BranchId = request.BranchId,
+            ChildFirstName = request.ChildFirstName,
+            ChildLastName = request.ChildLastName,
+            DateOfBirth = request.DateOfBirth,
+            Gender = request.Gender,
+            ParentGuardianName = request.ParentGuardianName,
+            ParentEmail = request.ParentEmail,
+            ParentPhone = request.ParentPhone,
+            TargetClassroomId = request.TargetClassroomId,
+            DesiredStartDate = request.DesiredStartDate,
+            ScheduleType = request.ScheduleType,
+            PipelineStage = request.PipelineStage,
+            TourDate = request.TourDate,
+            TuitionMonthlyRate = request.TuitionMonthlyRate,
+            DepositAmount = request.DepositAmount,
+            SiblingDiscountPercent = request.SiblingDiscountPercent,
+            RegistrationFee = request.RegistrationFee,
+            InternalNotes = request.InternalNotes
+        };
+
+        await _repository.CreateApplicationAsync(app, ct);
 
         await _auditService.LogAsync(new AuditEntry
         {
-            TenantId = _tenantContext.TenantId,
+            TenantId = tenantId,
             Action = "EnrollmentInquiryCreated",
             EntityType = "EnrollmentApplication",
             EntityId = newId,
@@ -334,22 +254,12 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
     public async Task UpdateStageAsync(Guid applicationId, string newStage, string? notes = null, DateTime? tourDate = null, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         var tenantId = _tenantContext.TenantId;
-
-        var sql = @"
-            UPDATE enrollment_pipeline_applications
-            SET pipeline_stage = @newStage,
-                tour_date = COALESCE(@tourDate, tour_date),
-                internal_notes = CASE WHEN @notes IS NOT NULL THEN @notes ELSE internal_notes END,
-                updated_at = NOW()
-            WHERE tenant_id = @tenantId AND id = @applicationId";
-
-        await conn.ExecuteAsync(sql, new { tenantId, applicationId, newStage, tourDate, notes });
+        await _repository.UpdateStageAsync(tenantId, applicationId, newStage, notes, tourDate, ct);
 
         await _auditService.LogAsync(new AuditEntry
         {
-            TenantId = _tenantContext.TenantId,
+            TenantId = tenantId,
             Action = "EnrollmentStageUpdated",
             EntityType = "EnrollmentApplication",
             EntityId = applicationId,
@@ -359,7 +269,6 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
     public async Task<Guid> FinalizeEnrollmentAndBillingAsync(FinalizeEnrollmentContractRequest request, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         var tenantId = _tenantContext.TenantId;
 
         var app = await GetApplicationByIdAsync(request.ApplicationId, ct);
@@ -368,56 +277,33 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         Guid childId = app.ChildId ?? Guid.NewGuid();
 
         // 1. Create or ensure child record in children table
-        var ensureChildSql = @"
-            INSERT INTO children (id, tenant_id, classroom_id, first_name, last_name, date_of_birth, enrollment_status, is_active, created_at, updated_at)
-            VALUES (@childId, @tenantId, @ClassroomId, @ChildFirstName, @ChildLastName, @DateOfBirth, 'Enrolled', TRUE, NOW(), NOW())
-            ON CONFLICT (id) DO UPDATE SET
-                classroom_id = EXCLUDED.classroom_id,
-                enrollment_status = 'Enrolled',
-                updated_at = NOW()";
-
-        await conn.ExecuteAsync(ensureChildSql, new
-        {
-            childId,
-            tenantId,
-            request.ClassroomId,
-            app.ChildFirstName,
-            app.ChildLastName,
-            app.DateOfBirth
-        });
+        await _repository.EnsureChildEnrolledAsync(childId, tenantId, request.ClassroomId, app.ChildFirstName, app.ChildLastName, app.DateOfBirth, ct);
 
         // 2. Create family billing contract
         var contractId = Guid.NewGuid();
         var effectiveRate = Math.Round(request.BaseMonthlyRate * (1 - (request.SiblingDiscountPercent / 100m)), 2);
 
-        var contractSql = @"
-            INSERT INTO family_billing_contracts (
-                id, tenant_id, branch_id, application_id, child_id, parent_name, parent_email,
-                schedule_type, billing_cycle, base_rate, discount_percent, effective_rate,
-                deposit_held, status, start_date, auto_invoice
-            ) VALUES (
-                @contractId, @tenantId, @BranchId, @ApplicationId, @childId, @ParentName, @ParentEmail,
-                @ScheduleType, @BillingCycle, @BaseMonthlyRate, @SiblingDiscountPercent, @effectiveRate,
-                @DepositHeld, 'Active', @StartDate, TRUE
-            )";
-
-        await conn.ExecuteAsync(contractSql, new
+        var contract = new FamilyBillingContract
         {
-            contractId,
-            tenantId,
+            Id = contractId,
+            TenantId = tenantId,
             BranchId = app.BranchId,
             ApplicationId = app.Id,
-            childId,
+            ChildId = childId,
             ParentName = app.ParentGuardianName,
             ParentEmail = app.ParentEmail,
-            request.ScheduleType,
-            request.BillingCycle,
-            request.BaseMonthlyRate,
-            request.SiblingDiscountPercent,
-            effectiveRate,
-            request.DepositHeld,
-            request.StartDate
-        });
+            ScheduleType = request.ScheduleType,
+            BillingCycle = request.BillingCycle,
+            BaseRate = request.BaseMonthlyRate,
+            DiscountPercent = request.SiblingDiscountPercent,
+            EffectiveRate = effectiveRate,
+            DepositHeld = request.DepositHeld,
+            Status = "Active",
+            StartDate = request.StartDate,
+            AutoInvoice = true
+        };
+
+        await _repository.CreateFamilyBillingContractAsync(contract, ct);
 
         // 3. Optional: Create initial invoice in invoices table for registration + deposit
         if (request.CreateInitialTuitionInvoice)
@@ -426,42 +312,19 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             var invoiceNum = $"INV-ENR-{DateTime.UtcNow:yyMM}-{new Random().Next(1000, 9999)}";
             var totalInvoiceAmount = app.RegistrationFee + request.DepositHeld;
 
-            var insertInvoiceSql = @"
-                INSERT INTO invoices (
-                    id, tenant_id, invoice_number, currency, issue_date, due_date, status,
-                    subtotal, tax_amount, total_amount, amount_paid, description, notes, created_by, created_at, updated_at
-                ) VALUES (
-                    @invoiceId, @tenantId, @invoiceNum, 'INR', NOW(), NOW() + INTERVAL '7 days', 'Issued',
-                    @totalInvoiceAmount, 0, @totalInvoiceAmount, 0,
-                    @desc, @notes, 'Enrollment System', NOW(), NOW()
-                )";
-
-            await conn.ExecuteAsync(insertInvoiceSql, new
-            {
+            await _repository.CreateInitialTuitionInvoiceAsync(
                 invoiceId,
                 tenantId,
                 invoiceNum,
                 totalInvoiceAmount,
-                desc = $"Admissions Enrollment Packet for {app.ChildFullName}",
-                notes = $"Registration Fee: {app.RegistrationFee:C2}, Held Tuition Deposit: {request.DepositHeld:C2}. Primary Guardian: {app.ParentGuardianName}"
-            });
+                $"Admissions Enrollment Packet for {app.ChildFullName}",
+                $"Registration Fee: {app.RegistrationFee:C2}, Held Tuition Deposit: {request.DepositHeld:C2}. Primary Guardian: {app.ParentGuardianName}",
+                ct);
         }
 
         // 4. Mark application as Enrolled
-        var updateAppSql = @"
-            UPDATE enrollment_pipeline_applications
-            SET pipeline_stage = 'Enrolled',
-                child_id = @childId,
-                target_classroom_id = @ClassroomId,
-                tuition_monthly_rate = @BaseMonthlyRate,
-                deposit_amount = @DepositHeld,
-                sibling_discount_percent = @SiblingDiscountPercent,
-                internal_notes = COALESCE(internal_notes || E'\n', '') || @enrollmentLog,
-                updated_at = NOW()
-            WHERE tenant_id = @tenantId AND id = @ApplicationId";
-
-        await conn.ExecuteAsync(updateAppSql, new
-        {
+        var enrollmentLog = $"Enrolled on {DateTime.UtcNow:yyyy-MM-dd}. Contract ID {contractId}. Initial invoice created: {request.CreateInitialTuitionInvoice}.";
+        await _repository.MarkApplicationEnrolledAsync(
             tenantId,
             request.ApplicationId,
             childId,
@@ -469,12 +332,12 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             request.BaseMonthlyRate,
             request.DepositHeld,
             request.SiblingDiscountPercent,
-            enrollmentLog = $"Enrolled on {DateTime.UtcNow:yyyy-MM-dd}. Contract ID {contractId}. Initial invoice created: {request.CreateInitialTuitionInvoice}."
-        });
+            enrollmentLog,
+            ct);
 
         await _auditService.LogAsync(new AuditEntry
         {
-            TenantId = _tenantContext.TenantId,
+            TenantId = tenantId,
             Action = "EnrollmentFinalized",
             EntityType = "Child",
             EntityId = childId,
@@ -486,43 +349,47 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
     public async Task<List<ClassroomVacancyStats>> GetClassroomVacanciesAsync(Guid? branchId = null, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var tenantId = _tenantContext.TenantId;
-
-        var sql = @"
-            SELECT 
-                c.id AS ClassroomId,
-                c.name AS ClassroomName,
-                COALESCE(c.age_group, c.classroom_type, 'Toddler') AS AgeGroup,
-                COALESCE(c.capacity, 15) AS Capacity,
-                (SELECT COUNT(*) FROM children ch WHERE ch.classroom_id = c.id AND ch.is_active = TRUE) AS CurrentEnrolled,
-                (SELECT COUNT(*) FROM enrollment_pipeline_applications a WHERE a.target_classroom_id = c.id AND a.pipeline_stage IN ('UnderReview', 'OfferSent')) AS PendingOffers
-            FROM classrooms c
-            WHERE c.tenant_id = @tenantId
-              AND (@branchId IS NULL OR c.branch_id = @branchId)
-            ORDER BY c.name";
-
-        return (await conn.QueryAsync<ClassroomVacancyStats>(sql, new { tenantId, branchId })).ToList();
+        var records = await _repository.GetClassroomVacanciesAsync(_tenantContext.TenantId, branchId, ct);
+        return records.Select(r => new ClassroomVacancyStats
+        {
+            ClassroomId = r.ClassroomId,
+            ClassroomName = r.ClassroomName,
+            AgeGroup = r.AgeGroup,
+            Capacity = r.Capacity,
+            CurrentEnrolled = r.CurrentEnrolled,
+            PendingOffers = r.PendingOffers
+        }).ToList();
     }
 
     public async Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid? branchId = null, CancellationToken ct = default)
     {
-        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var tenantId = _tenantContext.TenantId;
-
-        var sql = @"
-            SELECT 
-                id, tenant_id AS TenantId, branch_id AS BranchId, application_id AS ApplicationId,
-                child_id AS ChildId, parent_name AS ParentName, parent_email AS ParentEmail,
-                schedule_type AS ScheduleType, billing_cycle AS BillingCycle,
-                base_rate AS BaseRate, discount_percent AS DiscountPercent, effective_rate AS EffectiveRate,
-                deposit_held AS DepositHeld, status AS Status, start_date AS StartDate, end_date AS EndDate,
-                auto_invoice AS AutoInvoice, created_at AS CreatedAt, updated_at AS UpdatedAt
-            FROM family_billing_contracts
-            WHERE tenant_id = @tenantId
-              AND (@branchId IS NULL OR branch_id = @branchId)
-            ORDER BY created_at DESC";
-
-        return (await conn.QueryAsync<FamilyBillingContract>(sql, new { tenantId, branchId })).ToList();
+        return await _repository.GetActiveFamilyContractsAsync(_tenantContext.TenantId, branchId, ct);
     }
+
+    private static EnrollmentPipelineApplicationDto MapToDto(EnrollmentApplicationRecord a) => new()
+    {
+        Id = a.Id,
+        BranchId = a.BranchId,
+        BranchName = a.BranchName,
+        ChildFirstName = a.ChildFirstName,
+        ChildLastName = a.ChildLastName,
+        DateOfBirth = a.DateOfBirth,
+        Gender = a.Gender,
+        ParentGuardianName = a.ParentGuardianName,
+        ParentEmail = a.ParentEmail,
+        ParentPhone = a.ParentPhone,
+        TargetClassroomId = a.TargetClassroomId,
+        TargetClassroomName = a.TargetClassroomName,
+        DesiredStartDate = a.DesiredStartDate,
+        ScheduleType = a.ScheduleType,
+        PipelineStage = a.PipelineStage,
+        TourDate = a.TourDate,
+        TuitionMonthlyRate = a.TuitionMonthlyRate,
+        DepositAmount = a.DepositAmount,
+        SiblingDiscountPercent = a.SiblingDiscountPercent,
+        RegistrationFee = a.RegistrationFee,
+        InternalNotes = a.InternalNotes,
+        ChildId = a.ChildId,
+        CreatedAt = a.CreatedAt
+    };
 }
