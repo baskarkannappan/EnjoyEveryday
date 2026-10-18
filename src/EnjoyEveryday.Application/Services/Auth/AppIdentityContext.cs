@@ -3,6 +3,7 @@ using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -11,32 +12,43 @@ public class AppIdentityContext : IUserContext, ITenantContext
     private readonly IConfiguration _configuration;
     private readonly IServiceProvider? _serviceProvider;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IHostEnvironment? _hostEnvironment;
 
     public AppIdentityContext(
         IConfiguration configuration, 
         IServiceProvider? serviceProvider = null,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        IHostEnvironment? hostEnvironment = null)
     {
         _configuration = configuration;
         _serviceProvider = serviceProvider;
         _httpContextAccessor = httpContextAccessor;
+        _hostEnvironment = hostEnvironment;
     }
 
     private bool IsDevelopment()
     {
+        if (_hostEnvironment != null)
+        {
+            return _hostEnvironment.IsDevelopment();
+        }
+
         var envVar = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
                   ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
         if (!string.IsNullOrEmpty(envVar))
+        {
             return string.Equals(envVar, "Development", StringComparison.OrdinalIgnoreCase);
+        }
 
         var configEnv = _configuration["ASPNETCORE_ENVIRONMENT"]
                      ?? _configuration["DOTNET_ENVIRONMENT"]
                      ?? _configuration["Environment"];
         if (!string.IsNullOrEmpty(configEnv))
+        {
             return string.Equals(configEnv, "Development", StringComparison.OrdinalIgnoreCase);
+        }
 
-        // In local development, if DevUserId or DevOrganizationId is configured in appsettings.json, treat as Development
-        return !string.IsNullOrEmpty(_configuration["DevUserId"]) || !string.IsNullOrEmpty(_configuration["DevOrganizationId"]);
+        return false;
     }
 
     private ClaimsPrincipal? User => ResolveUser();
@@ -92,8 +104,6 @@ public class AppIdentityContext : IUserContext, ITenantContext
     private bool HasValidAuthenticatedIdentity => User != null && User.Identity?.IsAuthenticated == true;
 
     private bool IsAdminUser =>
-        Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase) ||
-        UserId == Guid.Parse("50000000-0000-0000-0000-000000000002") ||
         Roles.Contains("PlatformAdmin", StringComparer.OrdinalIgnoreCase) ||
         Roles.Contains("OrganizationOwner", StringComparer.OrdinalIgnoreCase);
 
@@ -109,8 +119,8 @@ public class AppIdentityContext : IUserContext, ITenantContext
                     return tenantId;
             }
             
-            // Fallback in Development
-            if (IsDevelopment() || IsAdminUser)
+            // Fallback strictly in verified Development environment
+            if (IsDevelopment())
             {
                 var devTenant = _configuration["DevTenantId"];
                 if (Guid.TryParse(devTenant, out var devTenantId))
@@ -138,13 +148,13 @@ public class AppIdentityContext : IUserContext, ITenantContext
                     return userId;
             }
             
+            // Fallback strictly in verified Development environment
             if (IsDevelopment())
             {
                 var devUser = _configuration["DevUserId"];
                 if (Guid.TryParse(devUser, out var devUserId))
                     return devUserId;
 
-                // Default to admin@littlestars.com
                 return Guid.Parse("50000000-0000-0000-0000-000000000002");
             }
 
@@ -161,11 +171,11 @@ public class AppIdentityContext : IUserContext, ITenantContext
                 var email = User!.FindFirst(ClaimTypes.Email)?.Value;
                 if (!string.IsNullOrEmpty(email)) return email;
             }
-            return IsDevelopment() ? (_configuration["DevUserEmail"] ?? "admin@littlestars.com") : string.Empty;
+            return IsDevelopment() ? (_configuration["DevUserEmail"] ?? string.Empty) : string.Empty;
         }
     }
     
-    public bool IsAuthenticated => HasValidAuthenticatedIdentity;
+    public bool IsAuthenticated => HasValidAuthenticatedIdentity || (IsDevelopment() && UserId != Guid.Empty);
 
     public IEnumerable<string> Roles
     {
@@ -175,8 +185,14 @@ public class AppIdentityContext : IUserContext, ITenantContext
             {
                 var roles = User!.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
                 if (roles.Count > 0) return roles;
-                if (IsDevelopment() || Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase))
-                    return new[] { "PlatformAdmin", "OrganizationOwner", "OrganizationAdmin", "BranchAdmin" };
+            }
+
+            if (IsDevelopment() && UserId != Guid.Empty)
+            {
+                var devRoles = _configuration.GetSection("DevRoles").Get<string[]>();
+                if (devRoles != null && devRoles.Length > 0) return devRoles;
+
+                return new[] { "PlatformAdmin", "OrganizationOwner", "OrganizationAdmin", "BranchAdmin" };
             }
 
             return Array.Empty<string>();
@@ -190,16 +206,17 @@ public class AppIdentityContext : IUserContext, ITenantContext
             if (!IsAuthenticated)
                 return Array.Empty<string>();
 
-            if (IsAdminUser)
-            {
-                return EnjoyEveryday.Shared.Authorization.Permissions.All;
-            }
-
             if (HasValidAuthenticatedIdentity)
             {
                 var perms = User!.FindAll("Permission").Select(c => c.Value).ToList();
                 if (perms.Count > 0) return perms;
             }
+
+            if (IsDevelopment() && UserId != Guid.Empty)
+            {
+                return EnjoyEveryday.Shared.Authorization.Permissions.All;
+            }
+
             return Array.Empty<string>();
         }
     }
@@ -210,17 +227,21 @@ public class AppIdentityContext : IUserContext, ITenantContext
         {
             if (HasValidAuthenticatedIdentity)
             {
-                var orgClaim = User!.FindFirst("ActiveOrganizationId")?.Value;
+                var orgClaim = User!.FindFirst("ActiveOrganizationId")?.Value ?? User!.FindFirst("OrganizationId")?.Value;
                 if (Guid.TryParse(orgClaim, out var orgId))
                     return orgId;
             }
             
-            var devOrg = _configuration["DevOrganizationId"];
-            if (Guid.TryParse(devOrg, out var devOrgId))
-                return devOrgId;
+            if (IsDevelopment())
+            {
+                var devOrg = _configuration["DevOrganizationId"];
+                if (Guid.TryParse(devOrg, out var devOrgId))
+                    return devOrgId;
 
-            // Default to Little Stars Daycare organization
-            return Guid.Parse("20000000-0000-0000-0000-000000000001");
+                return Guid.Parse("20000000-0000-0000-0000-000000000001");
+            }
+
+            return null;
         }
     }
 
@@ -232,7 +253,7 @@ public class AppIdentityContext : IUserContext, ITenantContext
         if (!IsAuthenticated)
             return false;
 
-        // admin@littlestars.com, PlatformAdmin, or OrganizationOwner has full permissions across the application
+        // PlatformAdmin or OrganizationOwner has platform/org administrative permissions
         if (IsAdminUser)
         {
             return true;
@@ -241,4 +262,5 @@ public class AppIdentityContext : IUserContext, ITenantContext
         return Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
     }
 }
+
 

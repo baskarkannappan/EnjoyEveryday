@@ -143,3 +143,34 @@ public class ChildCareSupply
     public string? ChildName { get; set; }
     public string? ClassroomName { get; set; }
 }
+
+public class TeacherHandover
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid BranchId { get; set; }
+    public Guid ClassroomId { get; set; }
+    public DateOnly HandoverDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+    public string ShiftType { get; set; } = "MorningToAfternoon"; // MorningToAfternoon, AfternoonToClosing, MiddayBreak, Substitute
+    public Guid OutgoingTeacherUserId { get; set; }
+    public string OutgoingTeacherName { get; set; } = string.Empty;
+    public Guid? IncomingTeacherUserId { get; set; }
+    public string? IncomingTeacherName { get; set; }
+    public string? SummaryNotes { get; set; }
+    public string? ChildSpecificNotes { get; set; }
+    public string? OutstandingCareTasks { get; set; }
+    public string? PendingFollowups { get; set; }
+    public string Status { get; set; } = "PendingAcknowledgement"; // PendingAcknowledgement, Acknowledged, Escalated
+    public bool IsCritical { get; set; }
+    public DateTime? AcknowledgedAt { get; set; }
+    public Guid? AcknowledgedByUserId { get; set; }
+    public string? AcknowledgedByName { get; set; }
+    public string? AcknowledgementNotes { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // Projection helpers
+    public string? ClassroomName { get; set; }
+    public string? BranchName { get; set; }
+}

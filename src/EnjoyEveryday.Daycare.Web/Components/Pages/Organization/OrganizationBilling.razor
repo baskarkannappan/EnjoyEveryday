@@ -24,6 +24,17 @@
         </RightContent>
     </PageHero>
 
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div style="padding: 12px 18px; border-radius: 12px; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 16px;">⚠️</span>
+                <span>@_errorMessage</span>
+            </div>
+            <button style="background: none; border: none; cursor: pointer; color: inherit; font-size: 14px;" @onclick="() => _errorMessage = null">✕</button>
+        </div>
+    }
+
     @if (!string.IsNullOrWhiteSpace(_paymentMessage))
     {
         <div style="padding: 12px 18px; border-radius: 12px; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; background: @(_paymentSuccess ? "var(--accent-light, #e6eee9)" : "#fff5f5"); border: 1px solid @(_paymentSuccess ? "#c8dacd" : "#fed7d7"); color: @(_paymentSuccess ? "var(--accent-dark, #3e6253)" : "#9b2c2c");">
@@ -399,6 +410,7 @@
     private string _searchQuery = string.Empty;
     private string _orgName = "Daycare Organization";
 
+    private string? _errorMessage;
     private DotNetObjectReference<OrganizationBilling>? _dotNetRef;
     private bool _isProcessingPayment = false;
     private string? _paymentMessage;
@@ -433,11 +445,17 @@
     private async Task LoadInvoicesAsync()
     {
         _isLoading = true;
+        _errorMessage = null;
         try
         {
             var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
             _invoices = await BillingService.GetInvoicesForOrganizationAsync(orgId);
             _billingSettings = await BillingService.GetBillingSettingsAsync(orgId);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load invoices: {ex.Message}";
+            _invoices = new();
         }
         finally
         {

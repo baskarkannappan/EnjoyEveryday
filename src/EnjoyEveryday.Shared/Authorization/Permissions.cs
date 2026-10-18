@@ -63,9 +63,13 @@ public static class Permissions
     public const string AttendanceRecord = "attendance.record";
     public const string AttendanceCorrect = "attendance.correct";
     public const string AttendanceApprove = "attendance.approve";
+    public const string AttendancePickupVerify = "attendance.pickup.verify";
     public const string CareRecord = "care.record";
     public const string CareView = "care.view";
     public const string CarePlanManage = "care.plan.manage";
+    public const string CareHandover = "care.handover";
+    public const string StaffRosterView = "staff.roster.view";
+    public const string StaffLeaveManage = "staff.leave.manage";
     /// <summary>Medication / incident records. Never granted by a default template (explicit grant only).</summary>
     public const string CareSensitiveManage = "care.sensitive.manage";
 

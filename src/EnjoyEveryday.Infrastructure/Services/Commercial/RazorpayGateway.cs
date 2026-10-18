@@ -63,6 +63,12 @@ public class RazorpayGateway : IRazorpayGateway
             };
         }
 
+        if (string.IsNullOrWhiteSpace(_settings.KeyId) || string.IsNullOrWhiteSpace(_settings.KeySecret))
+        {
+            _logger.LogError("Razorpay live order creation requested but KeyId or KeySecret is missing or empty.");
+            throw new InvalidOperationException("Razorpay payment gateway is not properly configured. Missing required payment credentials.");
+        }
+
         var authHeaderValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.KeyId}:{_settings.KeySecret}"));
         using var request = new HttpRequestMessage(HttpMethod.Post, "orders");
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authHeaderValue);
@@ -117,6 +123,12 @@ public class RazorpayGateway : IRazorpayGateway
                 return true;
             }
 
+            if (string.IsNullOrWhiteSpace(_settings.KeySecret))
+            {
+                _logger.LogWarning("Razorpay payment signature verification requested but KeySecret is missing.");
+                return false;
+            }
+
             var secretBytes = Encoding.UTF8.GetBytes(_settings.KeySecret);
             var payloadBytes = Encoding.UTF8.GetBytes($"{orderId.Trim()}|{paymentId.Trim()}");
 
@@ -151,6 +163,12 @@ public class RazorpayGateway : IRazorpayGateway
             }
 
             var secret = !string.IsNullOrWhiteSpace(_settings.WebhookSecret) ? _settings.WebhookSecret : _settings.KeySecret;
+            if (string.IsNullOrWhiteSpace(secret))
+            {
+                _logger.LogWarning("Razorpay webhook signature verification requested but WebhookSecret and KeySecret are missing.");
+                return false;
+            }
+
             var secretBytes = Encoding.UTF8.GetBytes(secret);
             var bodyBytes = Encoding.UTF8.GetBytes(rawRequestBody);
 

@@ -248,13 +248,6 @@ public class ResourceAuthorizer : IResourceAuthorizer
             return new Decision(false);
         }
 
-        // Full application permissions within the active organization for admin@littlestars.com or OrganizationOwner
-        if (_user.Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase) ||
-            _user.UserId == Guid.Parse("50000000-0000-0000-0000-000000000002") ||
-            _user.Roles.Contains(RoleTemplates.OrganizationOwner, StringComparer.OrdinalIgnoreCase))
-        {
-            return new Decision(true);
-        }
         var membershipActive = activeOrg.HasValue
             && await _scopes.HasActiveMembershipAsync(_tenant.TenantId, activeOrg.Value, _user.UserId, ct);
 

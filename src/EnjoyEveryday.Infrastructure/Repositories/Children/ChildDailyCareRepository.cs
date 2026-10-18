@@ -424,4 +424,106 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         await conn.ExecuteAsync(sql, supply);
         return supply.Id;
     }
+
+    public async Task<Guid> CreateHandoverAsync(TeacherHandover handover, CancellationToken cancellationToken = default)
+    {
+        if (handover.Id == Guid.Empty)
+            handover.Id = Guid.NewGuid();
+
+        handover.CreatedAt = DateTime.UtcNow;
+        handover.UpdatedAt = DateTime.UtcNow;
+
+        const string sql = @"
+            INSERT INTO teacher_handovers (
+                id, tenant_id, organization_id, branch_id, classroom_id, handover_date,
+                shift_type, outgoing_teacher_user_id, outgoing_teacher_name,
+                incoming_teacher_user_id, incoming_teacher_name, summary_notes,
+                child_specific_notes, outstanding_care_tasks, pending_followups,
+                status, is_critical, created_at, updated_at
+            ) VALUES (
+                @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId, @HandoverDate,
+                @ShiftType, @OutgoingTeacherUserId, @OutgoingTeacherName,
+                @IncomingTeacherUserId, @IncomingTeacherName, @SummaryNotes,
+                @ChildSpecificNotes, @OutstandingCareTasks, @PendingFollowups,
+                @Status, @IsCritical, @CreatedAt, @UpdatedAt
+            );";
+
+        using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await conn.ExecuteAsync(sql, handover);
+        return handover.Id;
+    }
+
+    public async Task AcknowledgeHandoverAsync(Guid tenantId, Guid handoverId, Guid acknowledgedByUserId, string acknowledgedByName, string? notes, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            UPDATE teacher_handovers
+            SET status = 'Acknowledged',
+                acknowledged_at = NOW(),
+                acknowledged_by_user_id = @UserId,
+                acknowledged_by_name = @UserName,
+                acknowledgement_notes = @Notes,
+                updated_at = NOW()
+            WHERE id = @HandoverId AND tenant_id = @TenantId;";
+
+        using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await conn.ExecuteAsync(sql, new
+        {
+            TenantId = tenantId,
+            HandoverId = handoverId,
+            UserId = acknowledgedByUserId,
+            UserName = acknowledgedByName,
+            Notes = notes
+        });
+    }
+
+    public async Task<TeacherHandover?> GetHandoverByIdAsync(Guid tenantId, Guid handoverId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT th.*,
+                   cl.name AS ClassroomName,
+                   b.name AS BranchName
+            FROM teacher_handovers th
+            JOIN classrooms cl ON th.classroom_id = cl.id
+            JOIN branches b ON th.branch_id = b.id
+            WHERE th.id = @HandoverId AND th.tenant_id = @TenantId;";
+
+        using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await conn.QueryFirstOrDefaultAsync<TeacherHandover>(sql, new { TenantId = tenantId, HandoverId = handoverId });
+    }
+
+    public async Task<IEnumerable<TeacherHandover>> GetHandoversByClassroomAndDateAsync(Guid tenantId, Guid classroomId, DateOnly date, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT th.*,
+                   cl.name AS ClassroomName,
+                   b.name AS BranchName
+            FROM teacher_handovers th
+            JOIN classrooms cl ON th.classroom_id = cl.id
+            JOIN branches b ON th.branch_id = b.id
+            WHERE th.tenant_id = @TenantId 
+              AND th.classroom_id = @ClassroomId 
+              AND th.handover_date = @Date
+            ORDER BY th.created_at DESC;";
+
+        using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await conn.QueryAsync<TeacherHandover>(sql, new { TenantId = tenantId, ClassroomId = classroomId, Date = date });
+    }
+
+    public async Task<IEnumerable<TeacherHandover>> GetPendingHandoversByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT th.*,
+                   cl.name AS ClassroomName,
+                   b.name AS BranchName
+            FROM teacher_handovers th
+            JOIN classrooms cl ON th.classroom_id = cl.id
+            JOIN branches b ON th.branch_id = b.id
+            WHERE th.tenant_id = @TenantId 
+              AND th.branch_id = @BranchId 
+              AND th.status = 'PendingAcknowledgement'
+            ORDER BY th.is_critical DESC, th.created_at DESC;";
+
+        using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await conn.QueryAsync<TeacherHandover>(sql, new { TenantId = tenantId, BranchId = branchId });
+    }
 }

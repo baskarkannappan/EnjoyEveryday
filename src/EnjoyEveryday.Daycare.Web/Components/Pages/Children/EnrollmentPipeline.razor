@@ -1,0 +1,1276 @@
+@page "/enrollment"
+@page "/management/enrollment"
+@rendermode InteractiveServer
+
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IEnrollmentPipelineService PipelineService
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Admissions &amp; Family Accounts — EnjoyEveryday</PageTitle>
+
+<div class="content enrollment-pipeline-page">
+    <PageHero Eyebrow="ADMISSIONS &amp; ENROLLMENT"
+              Title="Admissions Pipeline &amp; Family Accounts"
+              Subtitle="Track inbound family inquiries, schedule tours, review applications, and convert accepted offers into active tuition contracts.">
+        <RightContent>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <a href="/management/billing" class="btn secondary" style="text-decoration: none; display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border); font-weight: 700; color: var(--text); background: white;">
+                    Daycare Ledger &amp; Invoices
+                </a>
+                <button class="primary" @onclick="OpenNewInquiryModal">
+                    + New Family Inquiry
+                </button>
+            </div>
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div style="padding: 12px 18px; border-radius: 12px; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: @(_isError ? "#fff5f5" : "var(--accent-light, #e6eee9)"); border: 1px solid @(_isError ? "#fed7d7" : "#c8dacd"); color: @(_isError ? "#9b2c2c" : "var(--accent-dark, #3e6253)");">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 16px;">@(_isError ? "⚠️" : "✓")</span>
+                <span>@_statusMessage</span>
+            </div>
+            <button style="background: none; border: none; cursor: pointer; color: inherit; font-size: 14px;" @onclick="() => _statusMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- METRICS STRIP -->
+    <div class="pipeline-metrics-grid">
+        <div class="metric-card">
+            <span class="metric-label">Active Inquiries &amp; Leads</span>
+            <span class="metric-value">@(_overview?.EnquiriesCount ?? 0)</span>
+            <span class="metric-sub">Prospective families in early review</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Scheduled Visits &amp; Tours</span>
+            <span class="metric-value" style="color: var(--accent, #557c6c);">@(_overview?.ToursScheduledCount ?? 0)</span>
+            <span class="metric-sub">Upcoming parent classroom walkthroughs</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Under Admissions Review</span>
+            <span class="metric-value" style="color: #c28b26;">@(_overview?.ApplicationsReviewCount ?? 0)</span>
+            <span class="metric-sub">Classroom fit &amp; ratio verification</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Projected Monthly Tuition</span>
+            <span class="metric-value" style="color: var(--accent-dark, #3e6253);">@((_overview?.TotalPipelineProjectedValue ?? 0).ToString("C0"))</span>
+            <span class="metric-sub">Combined value across admissions pipeline</span>
+        </div>
+    </div>
+
+    <!-- CLASSROOM VACANCY & CAPACITY PULSE -->
+    <div class="vacancy-section-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+                <h3 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0;">Classroom Vacancy &amp; Opening Forecaster</h3>
+                <p style="font-size: 13px; color: var(--muted); margin: 3px 0 0 0;">Check available spots by age group before extending an enrollment offer.</p>
+            </div>
+            <span style="font-size: 12px; font-weight: 700; color: var(--accent-dark); background: var(--accent-light); padding: 4px 10px; border-radius: 6px;">
+                @(_overview?.ClassroomVacancies.Sum(v => v.AvailableSpots) ?? 0) Total Open Spots
+            </span>
+        </div>
+
+        <div class="vacancy-grid">
+            @if (_overview?.ClassroomVacancies != null)
+            {
+                @foreach (var room in _overview.ClassroomVacancies)
+                {
+                    <div class="vacancy-card">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div>
+                                <span class="room-title">@room.ClassroomName</span>
+                                <span class="room-tag">@room.AgeGroup</span>
+                            </div>
+                            <span class="badge-status @room.StatusBadge.ToLowerInvariant()">
+                                @room.StatusBadge (@room.AvailableSpots spots)
+                            </span>
+                        </div>
+                        <div class="capacity-meter-bar">
+                            <div class="capacity-meter-fill" style="width: @(room.Capacity > 0 ? Math.Min(100, (double)room.CurrentEnrolled / room.Capacity * 100) : 0)%;"></div>
+                        </div>
+                        <div class="vacancy-footer">
+                            <span>Enrolled: <strong>@room.CurrentEnrolled / @room.Capacity</strong></span>
+                            @if (room.PendingOffers > 0)
+                            {
+                                <span style="color: #c28b26;">(@room.PendingOffers pending offers)</span>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- MAIN PIPELINE TABS & SEARCH -->
+    <div class="pipeline-controls-bar">
+        <div class="search-wrap">
+            <input class="search-input" @bind="_searchQuery" @bind:event="oninput" @bind:after="ApplyFilters" placeholder="Search child, parent, email, phone..." />
+        </div>
+        <div class="view-switch-tabs">
+            <button class="view-tab @(_activeView == "Pipeline" ? "active" : "")" @onclick='() => SetView("Pipeline")'>
+                Admissions Pipeline
+            </button>
+            <button class="view-tab @(_activeView == "Contracts" ? "active" : "")" @onclick='() => SetView("Contracts")'>
+                Family Tuition Contracts (@_familyContracts.Count)
+            </button>
+        </div>
+    </div>
+
+    @if (_activeView == "Pipeline")
+    {
+        <!-- STAGE PILL TABS -->
+        <div class="stage-tabs-row">
+            <button class="stage-tab @(_selectedStage == null ? "active" : "")" @onclick="() => FilterByStage(null)">
+                All Leads (@(_overview?.TotalInPipeline ?? 0))
+            </button>
+            @if (_overview?.Stages != null)
+            {
+                @foreach (var s in _overview.Stages)
+                {
+                    <button class="stage-tab @(_selectedStage == s.Stage ? "active" : "")" @onclick="() => FilterByStage(s.Stage)">
+                        @s.DisplayName (@s.Count)
+                    </button>
+                }
+            }
+        </div>
+
+        @if (_isLoading)
+        {
+            <LoadingState Message="Loading admissions pipeline..." />
+        }
+        else if (!_filteredApplications.Any())
+        {
+            <EmptyState Icon="🌱"
+                        Title="No applications found"
+                        Description="No family inquiries match this stage or filter. Click 'New Family Inquiry' to log a prospective lead."
+                        ActionText="+ New Family Inquiry"
+                        OnAction="OpenNewInquiryModal" />
+        }
+        else
+        {
+            <div class="applications-grid">
+                @foreach (var app in _filteredApplications)
+                {
+                    <div class="app-card">
+                        <div class="app-card-header">
+                            <div class="avatar-box">
+                                @(string.IsNullOrWhiteSpace(app.ChildFirstName) ? "C" : app.ChildFirstName[0].ToString().ToUpper())
+                            </div>
+                            <div style="flex-grow: 1; min-width: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                    <h4 class="child-name">@app.ChildFullName</h4>
+                                    <span class="stage-pill @app.PipelineStage.ToLowerInvariant()">@GetStageDisplayName(app.PipelineStage)</span>
+                                </div>
+                                <div class="child-meta">
+                                    <span>Age: <strong>@app.AgeInMonths mos</strong></span>
+                                    <span>•</span>
+                                    <span>DOB: @app.DateOfBirth.ToString("MMM dd, yyyy")</span>
+                                    @if (!string.IsNullOrWhiteSpace(app.Gender))
+                                    {
+                                        <span>•</span>
+                                        <span>@app.Gender</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="app-body">
+                            <div class="info-row">
+                                <span class="info-label">Parent / Guardian:</span>
+                                <span class="info-val"><strong>@app.ParentGuardianName</strong></span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Contact:</span>
+                                <span class="info-val">@app.ParentEmail | @app.ParentPhone</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Room &amp; Schedule:</span>
+                                <span class="info-val">
+                                    @(app.TargetClassroomName ?? "Unassigned")
+                                    <span class="schedule-badge">@FormatSchedule(app.ScheduleType)</span>
+                                </span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Tuition Plan:</span>
+                                <span class="info-val" style="color: var(--accent-dark); font-weight: 750;">
+                                    @app.EffectiveMonthlyRate.ToString("C0")/mo
+                                    @if (app.SiblingDiscountPercent > 0)
+                                    {
+                                        <span class="discount-badge">-@app.SiblingDiscountPercent% Sibling</span>
+                                    }
+                                </span>
+                            </div>
+                            @if (app.TourDate.HasValue)
+                            {
+                                <div class="info-row tour-highlight">
+                                    <span class="info-label">Tour Scheduled:</span>
+                                    <span class="info-val">📅 @app.TourDate.Value.ToString("ddd, MMM dd @ h:mm tt")</span>
+                                </div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(app.InternalNotes))
+                            {
+                                <div class="notes-box">
+                                    <span style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: var(--muted);">Admissions Notes</span>
+                                    <p style="margin: 3px 0 0 0; font-size: 12px; color: var(--text);">@app.InternalNotes</p>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="app-card-footer">
+                            @if (app.PipelineStage == "Enquiry")
+                            {
+                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick="() => OpenTourModal(app)">
+                                    📅 Schedule Tour
+                                </button>
+                                <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick='() => AdvanceStage(app.Id, "ApplicationSubmitted")'>
+                                    Submit Application →
+                                </button>
+                            }
+                            else if (app.PipelineStage == "TourScheduled")
+                            {
+                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick="() => OpenTourModal(app)">
+                                    Reschedule Tour
+                                </button>
+                                <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick='() => AdvanceStage(app.Id, "UnderReview")'>
+                                    Tour Complete &amp; Review →
+                                </button>
+                            }
+                            else if (app.PipelineStage == "ApplicationSubmitted" || app.PipelineStage == "UnderReview")
+                            {
+                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick='() => AdvanceStage(app.Id, "Waitlisted")'>
+                                    Waitlist
+                                </button>
+                                <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick='() => AdvanceStage(app.Id, "OfferSent")'>
+                                    Extend Offer ✉️
+                                </button>
+                            }
+                            else if (app.PipelineStage == "OfferSent")
+                            {
+                                <button class="primary" style="font-size: 12px; padding: 8px 16px; width: 100%;" @onclick="() => OpenEnrollmentModal(app)">
+                                    ✓ Accept Offer &amp; Finalize Tuition Contract
+                                </button>
+                            }
+                            else if (app.PipelineStage == "Enrolled")
+                            {
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-dark);">✓ Actively Enrolled Child</span>
+                                    <a href="/children" class="btn secondary" style="font-size: 12px; padding: 5px 10px; text-decoration: none;">
+                                        View in Child Directory
+                                    </a>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick='() => AdvanceStage(app.Id, "UnderReview")'>
+                                    Re-open Application
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <!-- FAMILY CONTRACTS VIEW -->
+        <div class="contracts-container-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div>
+                    <h3 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0;">Active Family Tuition Contracts</h3>
+                    <p style="font-size: 13px; color: var(--muted); margin: 3px 0 0 0;">Signed tuition schedules linked directly into your organization billing ledger.</p>
+                </div>
+            </div>
+
+            @if (!_familyContracts.Any())
+            {
+                <div style="padding: 40px; text-align: center; color: var(--muted);">
+                    <span style="font-size: 32px;">📑</span>
+                    <p style="margin-top: 8px;">No active family contracts found yet. Finalize an enrollment in the pipeline above to establish a tuition plan.</p>
+                </div>
+            }
+            else
+            {
+                <div class="contracts-table-wrapper">
+                    <table class="contracts-table">
+                        <thead>
+                            <tr>
+                                <th>Parent &amp; Child</th>
+                                <th>Schedule</th>
+                                <th>Billing Cycle</th>
+                                <th>Base Rate</th>
+                                <th>Discount</th>
+                                <th>Effective Rate</th>
+                                <th>Deposit Held</th>
+                                <th>Contract Status</th>
+                                <th>Start Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _familyContracts)
+                            {
+                                <tr>
+                                    <td>
+                                        <div style="font-weight: 700; color: var(--text);">@c.ParentName</div>
+                                        <div style="font-size: 12px; color: var(--muted);">@c.ParentEmail</div>
+                                    </td>
+                                    <td>
+                                        <span class="schedule-badge">@FormatSchedule(c.ScheduleType)</span>
+                                    </td>
+                                    <td>@c.BillingCycle</td>
+                                    <td>@c.BaseRate.ToString("C2")</td>
+                                    <td>@(c.DiscountPercent > 0 ? $"-{c.DiscountPercent}%" : "None")</td>
+                                    <td>
+                                        <strong style="color: var(--accent-dark);">@c.EffectiveRate.ToString("C2")</strong>
+                                    </td>
+                                    <td>@c.DepositHeld.ToString("C2")</td>
+                                    <td>
+                                        <span style="background: var(--accent-light); color: var(--accent-dark); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                                            @c.Status
+                                        </span>
+                                    </td>
+                                    <td>@c.StartDate.ToString("MMM dd, yyyy")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- MODAL: NEW INQUIRY -->
+@if (_isNewInquiryModalOpen)
+{
+    <div class="modal-backdrop-pipeline" @onclick="() => _isNewInquiryModalOpen = false">
+        <div class="modal-card-pipeline" @onclick:stopPropagation="true">
+            <div class="modal-header-pipeline">
+                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Log Inbound Family Inquiry</h3>
+                <button class="close-x" @onclick="() => _isNewInquiryModalOpen = false">✕</button>
+            </div>
+            <div class="modal-body-pipeline">
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Child First Name *</label>
+                        <input class="input-field" @bind="_newInquiry.ChildFirstName" placeholder="e.g. Leo" />
+                    </div>
+                    <div class="form-group">
+                        <label>Child Last Name *</label>
+                        <input class="input-field" @bind="_newInquiry.ChildLastName" placeholder="e.g. Sterling" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Date of Birth *</label>
+                        <input type="date" class="input-field" @bind="_newInquiry.DateOfBirth" />
+                    </div>
+                    <div class="form-group">
+                        <label>Gender</label>
+                        <select class="input-field" @bind="_newInquiry.Gender">
+                            <option value="Unspecified">Select / Unspecified</option>
+                            <option value="Female">Female</option>
+                            <option value="Male">Male</option>
+                            <option value="Non-Binary">Non-Binary</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Parent / Guardian Name *</label>
+                        <input class="input-field" @bind="_newInquiry.ParentGuardianName" placeholder="e.g. Claire Sterling" />
+                    </div>
+                    <div class="form-group">
+                        <label>Parent Email *</label>
+                        <input type="email" class="input-field" @bind="_newInquiry.ParentEmail" placeholder="claire@example.com" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Parent Phone *</label>
+                        <input class="input-field" @bind="_newInquiry.ParentPhone" placeholder="+1 (555) 019-2831" />
+                    </div>
+                    <div class="form-group">
+                        <label>Desired Start Date</label>
+                        <input type="date" class="input-field" @bind="_newInquiry.DesiredStartDate" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Requested Schedule</label>
+                        <select class="input-field" @bind="_newInquiry.ScheduleType">
+                            <option value="FullTime">Full-Time (Monday - Friday)</option>
+                            <option value="PartTime_MWF">Part-Time (3 Days: Mon/Wed/Fri)</option>
+                            <option value="PartTime_TTh">Part-Time (2 Days: Tue/Thu)</option>
+                            <option value="HalfDay_Morning">Half-Day Morning</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Classroom</label>
+                        <select class="input-field" @bind="_newInquiry.TargetClassroomId">
+                            <option value="">-- Auto-assess based on age --</option>
+                            @foreach (var c in _classrooms)
+                            {
+                                <option value="@c.Id">@c.Name (@c.AgeGroup)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Monthly Tuition Rate ($)</label>
+                        <input type="number" step="10" class="input-field" @bind="_newInquiry.TuitionMonthlyRate" />
+                    </div>
+                    <div class="form-group">
+                        <label>Sibling Discount (%)</label>
+                        <input type="number" step="1" class="input-field" @bind="_newInquiry.SiblingDiscountPercent" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Admissions Notes / Special Requirements</label>
+                    <textarea class="input-field" style="height: 70px;" @bind="_newInquiry.InternalNotes" placeholder="e.g. Inquired about dairy allergies, referred by current preschool family."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer-pipeline">
+                <button class="btn secondary" @onclick="() => _isNewInquiryModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="SubmitNewInquiry">Save Inquiry</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL: SCHEDULE TOUR -->
+@if (_isTourModalOpen && _selectedApp != null)
+{
+    <div class="modal-backdrop-pipeline" @onclick="() => _isTourModalOpen = false">
+        <div class="modal-card-pipeline" @onclick:stopPropagation="true" style="max-width: 480px;">
+            <div class="modal-header-pipeline">
+                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Schedule Campus Tour</h3>
+                <button class="close-x" @onclick="() => _isTourModalOpen = false">✕</button>
+            </div>
+            <div class="modal-body-pipeline">
+                <p style="font-size: 13px; color: var(--muted); margin-top: 0;">
+                    Booking visit for <strong>@_selectedApp.ChildFullName</strong> with guardian <strong>@_selectedApp.ParentGuardianName</strong>.
+                </p>
+                <div class="form-group">
+                    <label>Tour Date &amp; Time *</label>
+                    <input type="datetime-local" class="input-field" @bind="_tourDateTime" />
+                </div>
+                <div class="form-group">
+                    <label>Tour Preparation Notes</label>
+                    <textarea class="input-field" style="height: 70px;" @bind="_tourNotes" placeholder="e.g. Introduce to lead infant teacher, tour outdoor play yard."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer-pipeline">
+                <button class="btn secondary" @onclick="() => _isTourModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="SaveTour">Confirm Tour</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL: FINALIZE ENROLLMENT & TUITION CONTRACT -->
+@if (_isEnrollModalOpen && _selectedApp != null)
+{
+    <div class="modal-backdrop-pipeline" @onclick="() => _isEnrollModalOpen = false">
+        <div class="modal-card-pipeline" @onclick:stopPropagation="true">
+            <div class="modal-header-pipeline">
+                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">
+                    Finalize Enrollment &amp; Setup Family Tuition
+                </h3>
+                <button class="close-x" @onclick="() => _isEnrollModalOpen = false">✕</button>
+            </div>
+            <div class="modal-body-pipeline">
+                <div style="background: var(--surface-soft); padding: 14px; border-radius: 12px; margin-bottom: 16px; border: 1px solid var(--border);">
+                    <div style="font-weight: 750; font-size: 15px; color: var(--text);">@_selectedApp.ChildFullName</div>
+                    <div style="font-size: 13px; color: var(--muted); margin-top: 2px;">
+                        Guardian: @_selectedApp.ParentGuardianName (@_selectedApp.ParentEmail)
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Assigned Classroom *</label>
+                        <select class="input-field" @bind="_enrollContract.ClassroomId">
+                            @foreach (var c in _classrooms)
+                            {
+                                <option value="@c.Id">@c.Name (@c.AgeGroup)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Official Start Date *</label>
+                        <input type="date" class="input-field" @bind="_enrollContract.StartDate" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Schedule Contract</label>
+                        <select class="input-field" @bind="_enrollContract.ScheduleType">
+                            <option value="FullTime">Full-Time (Monday - Friday)</option>
+                            <option value="PartTime_MWF">Part-Time (3 Days: Mon/Wed/Fri)</option>
+                            <option value="PartTime_TTh">Part-Time (2 Days: Tue/Thu)</option>
+                            <option value="HalfDay_Morning">Half-Day Morning</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Billing Frequency</label>
+                        <select class="input-field" @bind="_enrollContract.BillingCycle">
+                            <option value="Monthly">Monthly</option>
+                            <option value="BiWeekly">Bi-Weekly</option>
+                            <option value="Weekly">Weekly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Base Monthly Tuition Rate ($)</label>
+                        <input type="number" step="10" class="input-field" @bind="_enrollContract.BaseMonthlyRate" />
+                    </div>
+                    <div class="form-group">
+                        <label>Sibling Discount (%)</label>
+                        <input type="number" step="1" class="input-field" @bind="_enrollContract.SiblingDiscountPercent" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Deposit Held ($)</label>
+                        <input type="number" step="10" class="input-field" @bind="_enrollContract.DepositHeld" />
+                    </div>
+                    <div class="form-group" style="display: flex; flex-direction: column; justify-content: center;">
+                        <span style="font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Effective Monthly Cost</span>
+                        <div style="font-size: 18px; font-weight: 800; color: var(--accent-dark); margin-top: 4px;">
+                            @((_enrollContract.BaseMonthlyRate * (1 - (_enrollContract.SiblingDiscountPercent / 100m))).ToString("C2")) / mo
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 10px; padding: 12px; border-radius: 10px; background: #fdfaf3; border: 1px solid #ebdcc5;">
+                    <label style="display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 13px; color: var(--text);">
+                        <input type="checkbox" style="margin-top: 2px;" @bind="_enrollContract.CreateInitialTuitionInvoice" />
+                        <div>
+                            <strong>Create initial registration fee + deposit invoice in Account Book</strong>
+                            <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--muted);">
+                                Automatically generates an invoice for the held deposit and registration fee, linked to the family ledger.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer-pipeline">
+                <button class="btn secondary" @onclick="() => _isEnrollModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="ConfirmEnrollment">
+                    Confirm Enrollment &amp; Bind Tuition Plan
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .enrollment-pipeline-page {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding-bottom: 60px;
+    }
+
+    .pipeline-metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .metric-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 20px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        display: flex;
+        flex-direction: column;
+    }
+
+    .metric-label {
+        font-size: 12px;
+        font-weight: 750;
+        color: var(--muted, #6c7870);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .metric-value {
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 8px 0 4px 0;
+    }
+
+    .metric-sub {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+    }
+
+    .vacancy-section-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 20px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        margin-bottom: 24px;
+    }
+
+    .vacancy-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+    }
+
+    .vacancy-card {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 14px;
+    }
+
+    .room-title {
+        font-size: 14px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        display: block;
+    }
+
+    .room-tag {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        text-transform: uppercase;
+    }
+
+    .badge-status {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 6px;
+    }
+
+    .badge-status.open {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .badge-status.limited {
+        background: #fff8e6;
+        color: #b45309;
+    }
+
+    .badge-status.full {
+        background: #fff5f5;
+        color: #9b2c2c;
+    }
+
+    .capacity-meter-bar {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--border, #e4e7df);
+        margin: 10px 0 6px 0;
+        overflow: hidden;
+    }
+
+    .capacity-meter-fill {
+        height: 100%;
+        background: var(--accent, #557c6c);
+        border-radius: 3px;
+    }
+
+    .vacancy-footer {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .pipeline-controls-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+
+    .search-wrap {
+        flex: 1;
+        min-width: 260px;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 10px 16px;
+        border-radius: 11px;
+        border: 1px solid var(--border, #e4e7df);
+        background: white;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        outline: none;
+    }
+
+    .view-switch-tabs {
+        display: flex;
+        gap: 6px;
+        background: var(--surface-soft, #f8f9f5);
+        padding: 4px;
+        border-radius: 12px;
+        border: 1px solid var(--border, #e4e7df);
+    }
+
+    .view-tab {
+        background: none;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 9px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+    }
+
+    .view-tab.active {
+        background: white;
+        color: var(--text, #26332d);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+
+    .stage-tabs-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .stage-tab {
+        background: white;
+        border: 1px solid var(--border, #e4e7df);
+        padding: 7px 14px;
+        border-radius: 10px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .stage-tab.active {
+        background: var(--accent, #557c6c);
+        color: white;
+        border-color: var(--accent, #557c6c);
+    }
+
+    .applications-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 18px;
+    }
+
+    .app-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .app-card-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .avatar-box {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        font-weight: 800;
+        flex-shrink: 0;
+    }
+
+    .child-name {
+        font-size: 15px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        margin: 0;
+    }
+
+    .child-meta {
+        display: flex;
+        gap: 6px;
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+        margin-top: 2px;
+    }
+
+    .stage-pill {
+        font-size: 10.5px;
+        font-weight: 750;
+        padding: 3px 8px;
+        border-radius: 6px;
+        text-transform: uppercase;
+    }
+
+    .stage-pill.enquiry { background: #f4eee1; color: #8c6a2b; }
+    .stage-pill.tourscheduled { background: #e0f2fe; color: #0369a1; }
+    .stage-pill.applicationsubmitted { background: #fef3c7; color: #92400e; }
+    .stage-pill.underreview { background: #fef3c7; color: #92400e; }
+    .stage-pill.offersent { background: #ede9fe; color: #6d28d9; }
+    .stage-pill.enrolled { background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); }
+    .stage-pill.waitlisted { background: #f3f4f6; color: #4b5563; }
+
+    .app-body {
+        padding: 16px;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12.5px;
+    }
+
+    .info-label {
+        color: var(--muted, #6c7870);
+    }
+
+    .info-val {
+        color: var(--text, #26332d);
+        text-align: right;
+    }
+
+    .schedule-badge {
+        font-size: 10.5px;
+        font-weight: 700;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-left: 4px;
+    }
+
+    .discount-badge {
+        font-size: 10px;
+        font-weight: 700;
+        background: #fdf2f8;
+        color: #be185d;
+        padding: 2px 5px;
+        border-radius: 4px;
+        margin-left: 4px;
+    }
+
+    .tour-highlight {
+        background: #f0fdf4;
+        border: 1px dashed #bbf7d0;
+        padding: 6px 10px;
+        border-radius: 8px;
+        color: #15803d;
+        font-weight: 600;
+    }
+
+    .notes-box {
+        margin-top: 6px;
+        background: var(--surface-soft, #f8f9f5);
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--border, #e4e7df);
+    }
+
+    .app-card-footer {
+        padding: 12px 16px;
+        background: var(--surface-soft, #f8f9f5);
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+
+    .contracts-container-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 24px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .contracts-table-wrapper {
+        overflow-x: auto;
+    }
+
+    .contracts-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .contracts-table th {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 2px solid var(--border, #e4e7df);
+        color: var(--muted, #6c7870);
+        font-size: 11.5px;
+        font-weight: 750;
+        text-transform: uppercase;
+    }
+
+    .contracts-table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+    }
+
+    .modal-backdrop-pipeline {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+        backdrop-filter: blur(2px);
+    }
+
+    .modal-card-pipeline {
+        background: var(--surface, #ffffff);
+        border-radius: var(--radius, 18px);
+        width: 100%;
+        max-width: 600px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+        display: flex;
+        flex-direction: column;
+        max-height: 90vh;
+        overflow: hidden;
+    }
+
+    .modal-header-pipeline {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-body-pipeline {
+        padding: 20px 22px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .modal-footer-pipeline {
+        padding: 16px 22px;
+        background: var(--surface-soft, #f8f9f5);
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .form-row-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+    }
+
+    .input-field {
+        padding: 8px 12px;
+        border-radius: 9px;
+        border: 1px solid var(--border, #e4e7df);
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        background: white;
+        outline: none;
+    }
+
+    .close-x {
+        background: none;
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        color: var(--muted, #6c7870);
+    }
+</style>
+
+@code {
+    private PipelineOverviewDto? _overview;
+    private List<EnrollmentPipelineApplicationDto> _filteredApplications = new();
+    private List<FamilyBillingContract> _familyContracts = new();
+    private List<Classroom> _classrooms = new();
+
+    private string _activeView = "Pipeline";
+    private string? _selectedStage = null;
+    private string _searchQuery = string.Empty;
+    private bool _isLoading = true;
+    private string? _statusMessage;
+    private bool _isError;
+
+    // Modal state
+    private bool _isNewInquiryModalOpen;
+    private CreateApplicationRequest _newInquiry = new();
+
+    private bool _isTourModalOpen;
+    private EnrollmentPipelineApplicationDto? _selectedApp;
+    private DateTime _tourDateTime = DateTime.UtcNow.AddDays(2).Date.AddHours(10);
+    private string _tourNotes = string.Empty;
+
+    private bool _isEnrollModalOpen;
+    private FinalizeEnrollmentContractRequest _enrollContract = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _overview = await PipelineService.GetPipelineOverviewAsync();
+            _familyContracts = await PipelineService.GetActiveFamilyContractsAsync();
+            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            _isError = true;
+            _statusMessage = $"Error loading admissions pipeline: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        if (_overview?.Applications == null)
+        {
+            _filteredApplications = new();
+            return;
+        }
+
+        var list = _overview.Applications.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_selectedStage))
+        {
+            list = list.Where(a => a.PipelineStage == _selectedStage);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim().ToLowerInvariant();
+            list = list.Where(a =>
+                a.ChildFullName.ToLowerInvariant().Contains(q) ||
+                a.ParentGuardianName.ToLowerInvariant().Contains(q) ||
+                a.ParentEmail.ToLowerInvariant().Contains(q) ||
+                (a.TargetClassroomName != null && a.TargetClassroomName.ToLowerInvariant().Contains(q))
+            );
+        }
+
+        _filteredApplications = list.ToList();
+    }
+
+    private void SetView(string view)
+    {
+        _activeView = view;
+    }
+
+    private void FilterByStage(string? stage)
+    {
+        _selectedStage = stage;
+        ApplyFilters();
+    }
+
+    private void OpenNewInquiryModal()
+    {
+        _newInquiry = new CreateApplicationRequest
+        {
+            DateOfBirth = DateTime.UtcNow.Date.AddYears(-2),
+            TuitionMonthlyRate = 850m,
+            DepositAmount = 200m,
+            RegistrationFee = 50m,
+            PipelineStage = "Enquiry",
+            DesiredStartDate = DateTime.UtcNow.Date.AddDays(14)
+        };
+        _isNewInquiryModalOpen = true;
+    }
+
+    private async Task SubmitNewInquiry()
+    {
+        if (string.IsNullOrWhiteSpace(_newInquiry.ChildFirstName) || string.IsNullOrWhiteSpace(_newInquiry.ChildLastName))
+        {
+            _isError = true;
+            _statusMessage = "Child first and last name are required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_newInquiry.ParentGuardianName) || string.IsNullOrWhiteSpace(_newInquiry.ParentEmail))
+        {
+            _isError = true;
+            _statusMessage = "Parent guardian name and email are required.";
+            return;
+        }
+
+        try
+        {
+            await PipelineService.CreateApplicationAsync(_newInquiry);
+            _isNewInquiryModalOpen = false;
+            _isError = false;
+            _statusMessage = $"Admissions inquiry registered for {_newInquiry.ChildFirstName} {_newInquiry.ChildLastName}.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _isError = true;
+            _statusMessage = $"Failed to create inquiry: {ex.Message}";
+        }
+    }
+
+    private async Task AdvanceStage(Guid appId, string nextStage)
+    {
+        try
+        {
+            await PipelineService.UpdateStageAsync(appId, nextStage);
+            _isError = false;
+            _statusMessage = $"Application moved to {GetStageDisplayName(nextStage)}.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _isError = true;
+            _statusMessage = $"Failed to update stage: {ex.Message}";
+        }
+    }
+
+    private void OpenTourModal(EnrollmentPipelineApplicationDto app)
+    {
+        _selectedApp = app;
+        _tourDateTime = app.TourDate ?? DateTime.UtcNow.Date.AddDays(2).AddHours(10);
+        _tourNotes = app.InternalNotes ?? string.Empty;
+        _isTourModalOpen = true;
+    }
+
+    private async Task SaveTour()
+    {
+        if (_selectedApp == null) return;
+        try
+        {
+            await PipelineService.UpdateStageAsync(_selectedApp.Id, "TourScheduled", _tourNotes, _tourDateTime);
+            _isTourModalOpen = false;
+            _isError = false;
+            _statusMessage = $"Campus tour scheduled for {_selectedApp.ChildFullName} on {_tourDateTime:MMM dd @ h:mm tt}.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _isError = true;
+            _statusMessage = $"Failed to schedule tour: {ex.Message}";
+        }
+    }
+
+    private void OpenEnrollmentModal(EnrollmentPipelineApplicationDto app)
+    {
+        _selectedApp = app;
+        _enrollContract = new FinalizeEnrollmentContractRequest
+        {
+            ApplicationId = app.Id,
+            ClassroomId = app.TargetClassroomId ?? (_classrooms.FirstOrDefault()?.Id ?? Guid.Empty),
+            ScheduleType = app.ScheduleType,
+            BillingCycle = "Monthly",
+            BaseMonthlyRate = app.TuitionMonthlyRate,
+            SiblingDiscountPercent = app.SiblingDiscountPercent,
+            DepositHeld = app.DepositAmount,
+            StartDate = app.DesiredStartDate ?? DateTime.UtcNow.Date,
+            CreateInitialTuitionInvoice = true
+        };
+        _isEnrollModalOpen = true;
+    }
+
+    private async Task ConfirmEnrollment()
+    {
+        if (_selectedApp == null) return;
+        try
+        {
+            await PipelineService.FinalizeEnrollmentAndBillingAsync(_enrollContract);
+            _isEnrollModalOpen = false;
+            _isError = false;
+            _statusMessage = $"Congratulations! {_selectedApp.ChildFullName} is officially enrolled and family tuition contract has been recorded.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _isError = true;
+            _statusMessage = $"Failed to finalize enrollment: {ex.Message}";
+        }
+    }
+
+    private string GetStageDisplayName(string stage) => stage switch
+    {
+        "Enquiry" => "Inquiry / Lead",
+        "TourScheduled" => "Tour Scheduled",
+        "ApplicationSubmitted" => "Application In",
+        "UnderReview" => "Under Review",
+        "OfferSent" => "Offer Extended",
+        "Enrolled" => "Enrolled",
+        "Waitlisted" => "Waitlisted",
+        "Withdrawn" => "Withdrawn",
+        _ => stage
+    };
+
+    private string FormatSchedule(string schedule) => schedule switch
+    {
+        "FullTime" => "Full-Time (M-F)",
+        "PartTime_MWF" => "Part-Time (MWF)",
+        "PartTime_TTh" => "Part-Time (T/Th)",
+        "HalfDay_Morning" => "Half-Day Morning",
+        _ => schedule
+    };
+}

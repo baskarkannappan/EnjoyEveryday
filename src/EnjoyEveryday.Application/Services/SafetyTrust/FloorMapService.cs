@@ -117,8 +117,7 @@ public class FloorMapService : IFloorMapService
     {
         var effectiveOrgId = _userContext.OrganizationId ?? organizationId;
         if (effectiveOrgId == null) throw new UnauthorizedAccessException("Access denied.");
-        if (organizationId.HasValue && organizationId != effectiveOrgId &&
-            !_userContext.Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase))
+        if (organizationId.HasValue && organizationId != effectiveOrgId)
             throw new UnauthorizedAccessException("Access denied.");
         var maps = await _repository.GetMapsAsync(_tenantContext.TenantId, effectiveOrgId, branchId, status, ct);
         var visible = new List<BranchFloorMap>();

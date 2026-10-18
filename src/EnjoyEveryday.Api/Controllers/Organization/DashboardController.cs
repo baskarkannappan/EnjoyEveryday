@@ -1,4 +1,5 @@
 using EnjoyEveryday.Application.Services;
+using EnjoyEveryday.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 

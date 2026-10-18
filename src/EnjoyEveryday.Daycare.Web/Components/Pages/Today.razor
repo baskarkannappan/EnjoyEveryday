@@ -2,1148 +2,564 @@
 @page "/today"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
-@inject PlannerService PlannerService
+@using EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
+@inject IDaycareOperationsBoardService OperationsBoardService
 @inject ClassroomService ClassroomService
-@inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ExecutionService ExecutionService
-@inject ExperienceService ExperienceService
 @inject EventService EventService
-@inject ClassroomContextService ContextService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
-@inject UserService UserService
+@inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
 @rendermode InteractiveServer
 
- 
-<div class="content today-page">
+<PageTitle>Live Daycare Operations Board — EnjoyEveryday</PageTitle>
 
-        <!-- HOME -->
-        <section id="home" style="display: block;">
-
-            <div class="welcome">
-
-                <div>
-                    @{
-                        var hour = DateTime.Now.Hour;
-                        var greeting = hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening");
-                    }
-                    <h1>@greeting, @_userFirstName ✦</h1>
-                    <p>Here is what is happening at Little Stars today.</p>
+<div class="content operations-board-page">
+    @if (_loading)
+    {
+        <LoadingState Text="Loading live daycare operations board..." />
+    }
+    else
+    {
+        <!-- PAGE HERO -->
+        <PageHero Eyebrow="LIVE OPERATIONS BOARD"
+                  Title="@($"Daycare Operations — {_board.OrganizationName}")"
+                  Subtitle="@($"Real-time operational cockpit for {_board.EffectiveRole}: attendance, staffing coverage, live experiences, and actionable care alerts.")">
+            <RightContent>
+                <!-- Role / Persona Filter (Allows authorized testing of all 4 perspectives) -->
+                <div class="role-switcher">
+                    <span class="role-lbl">Viewing as:</span>
+                    <select class="role-select" value="@_selectedRoleOverride" @onchange="OnRoleChanged">
+                        <option value="@RoleTemplates.OrganizationAdmin">Org Admin</option>
+                        <option value="@RoleTemplates.BranchAdmin">Branch Manager</option>
+                        <option value="@RoleTemplates.ClassroomTeacher">Teacher</option>
+                        <option value="@RoleTemplates.PlatformAdmin">Platform Admin</option>
+                    </select>
                 </div>
 
-                <div class="date-pill">
-                    @DateTime.Today.ToString("dddd, MMMM d, yyyy")
-                </div>
+                @if (_board.EffectiveRole != RoleTemplates.PlatformAdmin)
+                {
+                    <select class="scope-select" value="@_selectedBranchId" @onchange="OnBranchChanged">
+                        <option value="">All Branches</option>
+                        @foreach (var br in _branches)
+                        {
+                            <option value="@br.Id">@br.Name</option>
+                        }
+                    </select>
+                }
 
+                <a href="/attendance" class="btn secondary">Attendance Desk</a>
+                <a href="/daily-care" class="btn primary">+ Record Daily Care</a>
+            </RightContent>
+        </PageHero>
+
+        <!-- PULSE METRICS STRIP -->
+        <div class="pulse-metrics-container">
+            <div class="pulse-card main-summary">
+                <div class="pulse-tag">✦ LIVE DAYCARE STATUS</div>
+                <div class="pulse-headline">
+                    @(_board.CheckedInChildrenCount > 0 ? $"{_board.CheckedInChildrenCount} children on site" : "Ready for today's arrivals")
+                </div>
+                <div class="pulse-sub">
+                    <span><strong>@_board.ExpectedChildrenCount</strong> expected</span>
+                    <span class="dot">•</span>
+                    <span><strong>@_board.TotalClassroomsCount</strong> active classrooms</span>
+                    <span class="dot">•</span>
+                    <span><strong>@_board.PlannedExperiencesCount</strong> experiences today</span>
+                </div>
             </div>
 
-
-            <!-- DAYCARE PULSE -->
-
-            <div class="pulse">
-
-                <div class="pulse-card pulse-main">
-                    <div class="pulse-header-row">
-                        <span class="pulse-badge">✦ DAYCARE TODAY</span>
-                        <div class="pulse-star-deco">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="pulse-headline">A day full of possibility.</div>
-                    <div class="pulse-metrics-strip">
-                        <span class="pulse-metric-pill">
-                            <strong>@_expectedChildren</strong> children
-                        </span>
-                        <span class="pulse-metric-dot">•</span>
-                        <span class="pulse-metric-pill">
-                            <strong>@_totalClassrooms</strong> classrooms
-                        </span>
-                        <span class="pulse-metric-dot">•</span>
-                        <span class="pulse-metric-pill">
-                            <strong>@_totalExperiences</strong> experiences
-                        </span>
-                        <span class="pulse-metric-dot">•</span>
-                        <span class="pulse-metric-pill">
-                            <strong>@_todayEvents.Count</strong> celebrations scheduled
-                        </span>
-                    </div>
+            <div class="pulse-card">
+                <div class="stat-label">Children Here</div>
+                <div class="stat-number highlight-accent">@_board.CheckedInChildrenCount</div>
+                <div class="stat-note">
+                    @(_board.ExpectedNotArrivedCount > 0 ? $"{_board.ExpectedNotArrivedCount} not yet arrived" : "All expected checked in")
                 </div>
-
-                <div class="pulse-card">
-                    <div class="stat-label">Children here</div>
-                    <div class="stat-number">@_childrenHere</div>
-                    <div class="stat-note">of @_expectedChildren expected today</div>
-                </div>
-
-                <div class="pulse-card">
-                    <div class="stat-label">Experiences</div>
-                    <div class="stat-number">@_totalExperiences</div>
-                    <div class="stat-note">@_activeExperiences happening now</div>
-                </div>
-
-                <div class="pulse-card">
-                    <div class="stat-label">Teachers</div>
-                    <div class="stat-number">@_totalTeachers</div>
-                    <div class="stat-note">All classrooms covered</div>
-                </div>
-
             </div>
 
+            <div class="pulse-card">
+                <div class="stat-label">Staff On Site</div>
+                <div class="stat-number @(_board.UnderstaffedClassroomsCount > 0 ? "highlight-warning" : "")">
+                    @_board.PresentStaffCount
+                </div>
+                <div class="stat-note">
+                    @(_board.UnderstaffedClassroomsCount > 0 ? $"⚠️ {_board.UnderstaffedClassroomsCount} room coverage alert" : "All classrooms covered")
+                </div>
+            </div>
 
-            <div class="dashboard-grid">
+            <div class="pulse-card">
+                <div class="stat-label">Care Records</div>
+                <div class="stat-number @(_board.MissingCareRecordsCount > 0 ? "highlight-attention" : "")">
+                    @(_board.CheckedInChildrenCount - _board.MissingCareRecordsCount) / @_board.CheckedInChildrenCount
+                </div>
+                <div class="stat-note">
+                    @(_board.MissingCareRecordsCount > 0 ? $"{_board.MissingCareRecordsCount} children missing records" : "All records up to date")
+                </div>
+            </div>
 
-                <!-- LEFT -->
-
-                <div>
-
-                    <!-- CLASSROOMS -->
-
-                    <!-- CLASSROOMS & LIVE EVENTS -->
-
-                    <div class="section-card">
-
-                        <div class="section-header">
-                            <h2>What is happening right now</h2>
-                            <span>Live classroom view</span>
-                        </div>
-
-                        @* Active Org-wide or Branch-wide Event Banner *@
-                        @{
-                            var activeBroadEvents = _todayEvents.Where(e => (e.Scope == "Organization" || e.Scope == "Branch") && IsEventActiveNow(e)).ToList();
-                            foreach (var actEvt in activeBroadEvents)
-                            {
-                                var scopeText = actEvt.Scope == "Organization" ? "All branches & classrooms" : $"All classrooms in {GetBranchName(actEvt.BranchId)}";
-                                <div class="active-event-alert">
-                                    <div class="alert-info">
-                                        <span class="alert-icon">🎉</span>
-                                        <div>
-                                            <div class="alert-title">@actEvt.Title</div>
-                                            <div class="alert-meta">
-                                                <span class="scope-badge @(actEvt.Scope.ToLower())" style="margin-right: 6px;">@(actEvt.Scope == "Organization" ? "🌐 Org-Wide" : $"🏢 {GetBranchName(actEvt.BranchId)}")</span>
-                                                @(actEvt.StartTime?.ToString(@"hh\:mm") ?? "All Day")@((actEvt.EndTime != null) ? $" - {actEvt.EndTime?.ToString(@"hh\:mm")}" : "") • @scopeText
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <a href="/events/@actEvt.Id" class="view-btn" style="text-decoration: none; padding: 4px 10px; font-size: 11px;">
-                                        Celebration Details &rarr;
-                                    </a>
-                                </div>
-                            }
-                        }
-
-                        @{
-                            var activeClassroomsCount = 0;
-                            foreach(var cr in _classrooms)
-                            {
-                                var activeSched = _todaySchedules.FirstOrDefault(s => s.ClassroomId == cr.Id && (s.Status == "Started" || s.Status == "Active"));
-                                var activeEvtForCr = _todayEvents.FirstOrDefault(e => DoesEventApplyToClassroom(e, cr) && IsEventActiveNow(e));
-
-                                if (activeSched != null || activeEvtForCr != null)
-                                {
-                                    activeClassroomsCount++;
-                                    var expName = activeSched != null 
-                                        ? (_experiences.FirstOrDefault(e => e.Id == activeSched.ExperienceId)?.Title ?? "Unknown Experience") 
-                                        : null;
-                                    
-                                    <div class="classroom">
-                                        <div class="classroom-top">
-                                            <div class="classroom-name">
-                                                <div class="classroom-dot" style="background-color: @(activeSched != null ? "var(--green)" : "#f59e0b");"></div>
-                                                <div>
-                                                    <strong>@cr.Name</strong>
-                                                    <small>Capacity: @cr.Capacity • @GetBranchName(cr.BranchId)</small>
-                                                </div>
-                                            </div>
-                                            <div style="display: flex; gap: 6px; align-items: center;">
-                                                @if (activeSched != null)
-                                                {
-                                                    <span class="status active">
-                                                        Exploring
-                                                    </span>
-                                                }
-                                                @if (activeEvtForCr != null)
-                                                {
-                                                    <span class="scope-badge @activeEvtForCr.Scope.ToLower()">
-                                                        🎉 @(activeEvtForCr.Scope == "Organization" ? "Org Event" : activeEvtForCr.Scope == "Branch" ? "Branch Event" : "Class Event")
-                                                    </span>
-                                                }
-                                            </div>
-                                        </div>
-                                        <div class="classroom-bottom">
-                                            <div class="mini-info">
-                                                Children
-                                                <strong>@cr.CurrentEnrollment / @cr.Capacity</strong>
-                                            </div>
-                                            <div class="mini-info">
-                                                @(activeSched != null ? "Experience" : "Celebration")
-                                                <strong>@(expName ?? activeEvtForCr?.Title)</strong>
-                                            </div>
-                                            @if (activeSched != null && !string.IsNullOrWhiteSpace(activeSched.PreparationNotes))
-                                            {
-                                                <div class="mini-info" style="grid-column: 1 / -1; margin-top: 8px;">
-                                                    Preparation Notes
-                                                    <strong>@activeSched.PreparationNotes</strong>
-                                                </div>
-                                            }
-                                            else if (activeSched == null && activeEvtForCr != null && !string.IsNullOrWhiteSpace(activeEvtForCr.Description))
-                                            {
-                                                <div class="mini-info" style="grid-column: 1 / -1; margin-top: 8px;">
-                                                    Event Notes
-                                                    <strong>@activeEvtForCr.Description</strong>
-                                                </div>
-                                            }
-                                            <a class="view-btn" href="@(activeSched != null ? "/classrooms" : $"/events/{activeEvtForCr?.Id}")" style="text-decoration:none;">
-                                                Open &rarr;
-                                            </a>
-                                        </div>
-                                    </div>
-                                }
-                            }
-
-                            if (activeClassroomsCount == 0 && !activeBroadEvents.Any())
-                            {
-                                <div class="classroom" style="display:flex; flex-direction: column; align-items:center; justify-content:center; padding: 28px 16px; color: var(--neutral-foreground-hint); text-align: center; border: none; background: transparent; gap: 6px;">
-                                    <div>There are no structured experiences or special events actively running right now.</div>
-                                    @if (_todayEvents.Any(e => e.Status == "Planned" || e.Status == "Approved" || e.Status == "Published"))
-                                    {
-                                        <div style="font-size: 12px; color: #0284c7;">
-                                            Tip: Click <strong>"▶️ Start"</strong> on any celebration in Today's rhythm below to activate live coverage.
-                                        </div>
-                                    }
-                                    else if (_todayEvents.Any(e => e.Status == "Completed"))
-                                    {
-                                        <div style="font-size: 12px; color: #059669;">
-                                            All of today's celebrations are completed. You can view or add photos below!
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        }
-
+            @if (_board.HasFinanceAccess)
+            {
+                <div class="pulse-card">
+                    <div class="stat-label">Outstanding Dues</div>
+                    <div class="stat-number @(_board.OverdueInvoicesCount > 0 ? "highlight-danger" : "")">
+                        ₹@(_board.OutstandingReceivables.ToString("N0"))
                     </div>
+                    <div class="stat-note">
+                        @(_board.OverdueInvoicesCount > 0 ? $"{_board.OverdueInvoicesCount} overdue invoices" : "Billing healthy")
+                    </div>
+                </div>
+            }
+        </div>
 
-
-                    <!-- DAY FLOW / TODAY'S RHYTHM -->
-
-                    <div class="section-card">
-
-                        <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h2>Today's rhythm</h2>
-                                <span>Experiences & Celebrations across Little Stars</span>
+        <!-- ACTIONABLE OPERATIONAL ALERTS (Only shown when there are exceptions) -->
+        @if (_board.Alerts.Any())
+        {
+            <div class="alerts-section">
+                <div class="alerts-header">
+                    <h3>Operational Alerts Requiring Action</h3>
+                    <span class="alerts-badge">@_board.Alerts.Count Actionable</span>
+                </div>
+                <div class="alerts-grid">
+                    @foreach (var alert in _board.Alerts)
+                    {
+                        <div class="op-alert-card severity-@alert.Severity.ToLower()">
+                            <div class="alert-icon-box">
+                                @if (alert.AlertType == "Capacity") { <span>⚠️</span> }
+                                else if (alert.AlertType == "Staffing") { <span>👥</span> }
+                                else if (alert.AlertType == "CareRecord") { <span>📝</span> }
+                                else if (alert.AlertType == "Pickup") { <span>⏰</span> }
+                                else if (alert.AlertType == "Finance") { <span>💳</span> }
+                                else { <span>ℹ️</span> }
                             </div>
-                            <a href="/rhythm-history" style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #2d5a3f; background: #eaf3ed; border: 1px solid #c8e1d2; padding: 5px 12px; border-radius: 999px; text-decoration: none; transition: all 0.2s; white-space: nowrap;">
-                                📜 Past Rhythm &rarr;
+                            <div class="alert-body">
+                                <div class="alert-title-row">
+                                    <strong class="alert-title">@alert.Title</strong>
+                                    <span class="alert-time">@alert.SourceContext</span>
+                                </div>
+                                <p class="alert-desc">@alert.Description</p>
+                            </div>
+                            <a href="@alert.ActionUrl" class="btn secondary alert-action-btn">
+                                @alert.ActionText &rarr;
                             </a>
                         </div>
+                    }
+                </div>
+            </div>
+        }
 
-                        <div class="timeline">
+        <!-- MAIN TWO-COLUMN DASHBOARD GRID -->
+        <div class="board-grid">
+            <!-- LEFT COLUMN: CLASSROOM LIVE OCCUPANCY & RATIOS -->
+            <div class="grid-left">
+                <div class="board-section-card">
+                    <div class="section-title-row">
+                        <div>
+                            <h2>Classroom Live Occupancy &amp; Coverage</h2>
+                            <p class="section-sub">Real-time attendance vs. licensed capacity and active learning sessions</p>
+                        </div>
+                        <a href="/classrooms" class="section-link">All Classrooms &rarr;</a>
+                    </div>
 
-                            @foreach(var item in _rhythmTimeline)
-                            {
-                                <div class="timeline-item">
-                                    <div class="timeline-dot @(item.IsEvent ? "event-dot" : "")"></div>
-                                    <div class="timeline-time">
-                                        @item.TimeDisplay
-                                    </div>
-                                    <div class="timeline-title">
-                                        @if (item.IsEvent)
-                                        {
-                                            <span>🎉 @item.Title</span>
-                                            <span class="scope-badge @item.Scope.ToLower()" style="margin-left: 8px;">
-                                                @(item.Scope == "Organization" ? "🌐 Org-Wide" : item.Scope == "Branch" ? $"🏢 Branch: {item.ScopeDisplay}" : $"🚪 {item.ScopeDisplay}")
+                    <div class="classrooms-table-wrap">
+                        <table class="board-table">
+                            <thead>
+                                <tr>
+                                    <th>Classroom</th>
+                                    <th>Branch</th>
+                                    <th>Children Here</th>
+                                    <th>Occupancy</th>
+                                    <th>Staff Ratio</th>
+                                    <th>Current Activity</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var room in _board.Classrooms)
+                                {
+                                    <tr class="@(room.IsOverCapacity ? "row-danger" : (room.IsUnderstaffed ? "row-warning" : ""))">
+                                        <td>
+                                            <div class="room-name-cell">
+                                                <div class="status-indicator @(room.IsOverCapacity ? "dot-danger" : (room.IsUnderstaffed ? "dot-warning" : "dot-ok"))"></div>
+                                                <div>
+                                                    <strong>@room.ClassroomName</strong>
+                                                    <span class="sub-label">@room.AgeGroup</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>@room.BranchName</td>
+                                        <td>
+                                            <strong>@room.PresentChildren</strong> / @room.Capacity
+                                        </td>
+                                        <td>
+                                            <div class="occupancy-bar-container">
+                                                <div class="occupancy-bar" style="width: @Math.Min(100, room.OccupancyPercentage)%; background: @(room.IsOverCapacity ? "#c53030" : "var(--accent)");"></div>
+                                            </div>
+                                            <span class="occupancy-txt">@room.OccupancyPercentage%</span>
+                                        </td>
+                                        <td>
+                                            <span class="ratio-pill @(room.IsUnderstaffed ? "ratio-short" : "ratio-ok")">
+                                                @room.PresentStaff : @room.RequiredStaff req
                                             </span>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(room.ActiveExperienceTitle))
+                                            {
+                                                <span class="activity-pill">
+                                                    🎨 @room.ActiveExperienceTitle
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="activity-none">Free Play / Transition</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <a href="/attendance" class="view-link">Open &rarr;</a>
+                                        </td>
+                                    </tr>
+                                }
+                                @if (!_board.Classrooms.Any())
+                                {
+                                    <tr>
+                                        <td colspan="7" class="empty-cell">No classrooms match the active scope.</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TEACHER CARE TASK BOARD (When viewing as Teacher or Classroom scope) -->
+                @if (_board.EffectiveRole == RoleTemplates.ClassroomTeacher || _board.SelectedClassroomId.HasValue)
+                {
+                    <div class="board-section-card">
+                        <div class="section-title-row">
+                            <div>
+                                <h2>Classroom Care Tracker</h2>
+                                <p class="section-sub">Immediate care tasks for children currently in your room</p>
+                            </div>
+                            <a href="/daily-care" class="section-link">Daily Care Log &rarr;</a>
+                        </div>
+
+                        <div class="teacher-care-list">
+                            @foreach (var child in _board.TeacherChildrenCareStatus)
+                            {
+                                <div class="care-child-row @(child.NeedsAttention ? "care-needs-attention" : "")">
+                                    <div class="child-avatar">
+                                        @child.FullName.FirstOrDefault()
+                                    </div>
+                                    <div class="child-info">
+                                        <strong>@child.FullName</strong>
+                                        <span class="care-sub">
+                                            Arrival: @(child.ArrivalTime?.ToString(@"hh\:mm") ?? "Present") • 
+                                            Last: @child.LastRecordedCareType
+                                        </span>
+                                    </div>
+                                    <div class="care-status-pill">
+                                        @if (child.NeedsAttention)
+                                        {
+                                            <span class="pill-warning">⚠️ No Care Logged</span>
                                         }
                                         else
                                         {
-                                            <span>@item.Title</span>
-                                            <span style="font-size: 12px; font-weight: normal; color: var(--muted); margin-left: 6px;">
-                                                • @item.ScopeDisplay
-                                            </span>
+                                            <span class="pill-ok">✓ @child.CareEventsCount logged</span>
                                         }
                                     </div>
-                                    <div class="timeline-sub">
-                                        Status: @item.Status
-                                        @if (!item.IsEvent)
+                                    <a href="/daily-care" class="btn secondary care-action-btn">+ Log Event</a>
+                                </div>
+                            }
+                            @if (!_board.TeacherChildrenCareStatus.Any())
+                            {
+                                <div class="empty-hint">No children currently checked into this room.</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- RIGHT COLUMN: TODAY'S RHYTHM, READINESS & QUICK ACTIONS -->
+            <div class="grid-right">
+                <!-- READINESS & OPENING CHECKLIST -->
+                <div class="board-section-card">
+                    <div class="section-title-row">
+                        <div>
+                            <h2>Classroom Readiness</h2>
+                            <p class="section-sub">Standard opening and safety verifications</p>
+                        </div>
+                    </div>
+
+                    <div class="readiness-list">
+                        @foreach (var item in _board.ReadinessChecklist)
+                        {
+                            <div class="readiness-item @(item.IsCompleted ? "completed" : "pending")">
+                                <div class="check-box @(item.IsCompleted ? "checked" : "")">
+                                    @(item.IsCompleted ? "✓" : "○")
+                                </div>
+                                <div class="readiness-text">
+                                    <strong>@item.Label</strong>
+                                    <p>@item.Description</p>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- TODAY'S RHYTHM & EXPERIENCES -->
+                <div class="board-section-card">
+                    <div class="section-title-row">
+                        <div>
+                            <h2>Today's Rhythm</h2>
+                            <p class="section-sub">Scheduled experiences and celebrations</p>
+                        </div>
+                        <a href="/rhythm-history" class="section-link">History &rarr;</a>
+                    </div>
+
+                    <div class="rhythm-timeline">
+                        @foreach (var item in _board.TodayRhythm)
+                        {
+                            <div class="rhythm-item @(item.IsCelebration ? "is-celebration" : "")">
+                                <div class="rhythm-dot @(item.Status == "Completed" ? "dot-completed" : (item.Status == "InProgress" ? "dot-active" : ""))"></div>
+                                <div class="rhythm-body">
+                                    <div class="rhythm-time">@item.TimeDisplay</div>
+                                    <div class="rhythm-title">
+                                        @if (item.IsCelebration) { <span>🎉 </span> }
+                                        <strong>@item.Title</strong>
+                                        <span class="rhythm-scope">@item.ScopeDisplay</span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(item.PreparationNotes))
+                                    {
+                                        <div class="rhythm-notes">@item.PreparationNotes</div>
+                                    }
+                                    <div class="rhythm-actions">
+                                        <span class="status-pill status-@item.Status.ToLower()">@item.Status</span>
+                                        @if (!item.IsCelebration)
                                         {
-                                            @if(item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed")
+                                            @if (item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed")
                                             {
-                                                <button class="btn btn-sm btn-primary ml-3" @onclick="() => StartSession(item.ScheduleId!.Value)" style="margin-left: 10px; padding: 2px 8px; border-radius: 4px; background-color: #263d32; color: white; border: none; cursor: pointer;">Start</button>
+                                                <button class="btn primary btn-sm" @onclick="() => StartSession(item.Id)">Start</button>
                                             }
                                             else if (item.Status == "Started" || item.Status == "Active")
                                             {
-                                                <button class="btn btn-sm btn-outline-success ml-3" @onclick="() => OpenActiveSession(item.ScheduleId!.Value)" style="margin-left: 10px; padding: 2px 8px; border-radius: 4px; border: 1px solid #263d32; color: #263d32; background: transparent; cursor: pointer;">View Active Session</button>
+                                                <button class="btn secondary btn-sm" @onclick="() => OpenActiveSession(item.Id)">Active Session</button>
                                             }
                                         }
                                         else
                                         {
                                             @if (item.Status == "Planned" || item.Status == "Approved" || item.Status == "Published")
                                             {
-                                                <button class="btn btn-sm" @onclick="() => StartCelebration(item.EventId!.Value)" style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; background-color: #0284c7; color: white; border: none; font-size: 11px; font-weight: 600; cursor: pointer;">
-                                                    ▶️ Start
-                                                </button>
+                                                <button class="btn primary btn-sm" @onclick="() => StartCelebration(item.Id)">▶️ Start</button>
                                             }
                                             else if (item.Status == "InProgress")
                                             {
-                                                <button class="btn btn-sm" @onclick="() => FinishCelebration(item.EventId!.Value)" style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; background-color: #059669; color: white; border: none; font-size: 11px; font-weight: 600; cursor: pointer;">
-                                                    🏁 Finish
-                                                </button>
+                                                <button class="btn secondary btn-sm" @onclick="() => FinishCelebration(item.Id)">🏁 Finish</button>
                                             }
                                             else if (item.Status == "Completed")
                                             {
-                                                <button class="btn btn-sm" @onclick="() => OpenEventPhotoModal(item.EventId!.Value)" style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 11px; font-weight: 600; cursor: pointer;">
-                                                    📸 Photos (@(item.PhotoUrls?.Length ?? 0)/3)
-                                                </button>
+                                                <button class="btn secondary btn-sm" @onclick="() => OpenEventPhotoModal(item.Id)">📸 Photos</button>
                                             }
-                                            <a href="/events/@item.EventId" style="margin-left: 6px; padding: 2px 8px; border-radius: 4px; background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; text-decoration: none; font-size: 11px; font-weight: 700;">View &rarr;</a>
+                                            <a href="/events/@item.Id" class="view-link">View &rarr;</a>
                                         }
                                     </div>
-                                    @if (item.IsEvent && item.PhotoUrls != null && item.PhotoUrls.Length > 0)
+                                    @if (item.PhotoUrls != null && item.PhotoUrls.Length > 0)
                                     {
-                                        <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                                        <div class="photo-strip">
                                             @foreach (var photo in item.PhotoUrls)
                                             {
-                                                <img src="@photo" alt="Photo" style="width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid #e2e8f0; cursor: pointer;" @onclick="() => _previewPhoto = photo" />
+                                                <img src="@photo" alt="Photo" class="thumb-img" @onclick="() => _previewPhoto = photo" />
                                             }
                                         </div>
                                     }
                                 </div>
-                            }
-
-                            @if(!_rhythmTimeline.Any())
-                            {
-                                <div class="timeline-item">
-                                    <div class="timeline-dot"></div>
-                                    <div class="timeline-time">No plans</div>
-                                    <div class="timeline-title">Nothing scheduled for today.</div>
-                                </div>
-                            }
-
-                        </div>
-
+                            </div>
+                        }
+                        @if (!_board.TodayRhythm.Any())
+                        {
+                            <div class="empty-hint">No planned experiences or celebrations scheduled today.</div>
+                        }
                     </div>
-
                 </div>
 
-
-                <!-- RIGHT -->
-
-                <div>
-
-                    <!-- AI -->
-
-                    <div class="section-card ai-card">
-
-                        <div class="ai-header">
-
-                            <div class="ai-icon">✦</div>
-
+                <!-- QUICK DAYCARE ACTIONS -->
+                <div class="board-section-card">
+                    <div class="section-title-row">
+                        <h2>Quick Actions</h2>
+                    </div>
+                    <div class="quick-links-grid">
+                        <a href="/studio" class="quick-link-box">
+                            <span class="quick-icon">✦</span>
                             <div>
-                                <strong>EnjoyEveryday Intelligence</strong>
-                                <small>Watching the day with you</small>
+                                <strong>Experience Studio</strong>
+                                <small>Draft and plan learning</small>
                             </div>
-
-                        </div>
-
-                        <div class="ai-message">
-
-                            Three classrooms are especially interested in
-                            building and animals this week.
-
-                            <br><br>
-
-                            Bluebirds have repeatedly enjoyed bridges.
-                            I found an opportunity to connect that interest
-                            with today's animal experience.
-
-                        </div>
-
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <button type="button" class="ai-action" @onclick="() => _isRecommendationModalOpen = true" style="border: none; cursor: pointer; text-align: center; width: 100%; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                                ✦ Get Activity Suggestions
-                            </button>
-                            <a class="ai-action" href="/intelligence" style="text-decoration:none; color:inherit; text-align:center; display:block; opacity: 0.85; font-size: 13px;">
-                                Explore the insight
-                            </a>
-                        </div>
-                    </div>
-
-
-                        <div class="section-card">
-
-                            <div class="section-header">
-                                <h2>Little moments</h2>
-                                <span>Today</span>
-                            </div>
-
-                            @if (_recentMemories.Any())
-                            {
-                                foreach (var memory in _recentMemories)
-                                {
-                                    <div class="moment">
-                                        <div class="moment-name">
-                                            @memory.MomentName
-                                        </div>
-                                        <div class="moment-text">
-                                            “@memory.MomentText”
-                                        </div>
-                                    </div>
-                                }
-                            }
-                            else
-                            {
-                                <div class="moment">
-                                    <div class="moment-name">
-                                        BLUEBIRDS • Priya
-                                    </div>
-                                    <div class="moment-text">
-                                        “Aarav rebuilt the bridge after it fell
-                                        instead of asking for help.”
-                                    </div>
-                                </div>
-                                <div class="moment">
-                                    <div class="moment-name">
-                                        SUNFLOWERS • Meena
-                                    </div>
-                                    <div class="moment-text">
-                                        “Maya decided the garden needed a hospital
-                                        for injured butterflies.”
-                                    </div>
-                                </div>
-                                <div class="moment">
-                                    <div class="moment-name">
-                                        BUTTERFLIES • Anitha
-                                    </div>
-                                    <div class="moment-text">
-                                        “The children turned the whole room into
-                                        a jungle.”
-                                    </div>
-                                </div>
-                            }
-
-                        </div>
-
-
-                    <!-- ATTENTION -->
-
-                    <div class="section-card">
-
-                        <div class="section-header">
-                            <h2>Worth noticing</h2>
-                            <span>Gentle reminders</span>
-                        </div>
-
-
-                        <div class="attention">
-
-                            <div class="attention-icon">✦</div>
-
+                        </a>
+                        <a href="/planning" class="quick-link-box">
+                            <span class="quick-icon">📅</span>
                             <div>
-                                <strong>Bluebirds love building</strong>
-                                <p>
-                                    4 recent experiences included bridges,
-                                    blocks or construction.
-                                </p>
+                                <strong>Experience Calendar</strong>
+                                <small>View month rhythm</small>
                             </div>
-
-                        </div>
-
-                    </div>
-
-
-                    <!-- QUICK ACTIONS -->
-
-                    <div class="section-card">
-
-                        <div class="section-header">
-                            <h2>Quick actions</h2>
-                        </div>
-
-                        <div class="quick-actions">
-
-                            <a class="quick" href="/studio" style="text-decoration:none; color:inherit; text-align:left; display:block;">
-                                <div class="quick-icon">✦</div>
-                                <strong>Create experience</strong>
-                                <small>Make something new</small>
-                            </a>
-
-                            <a class="quick" href="/planning" style="text-decoration:none; color:inherit; text-align:left; display:block;">
-                                <div class="quick-icon">□</div>
-                                <strong>Plan the month</strong>
-                                <small>View experience calendar</small>
-                            </a>
-
-                            <a class="quick" href="/classrooms" style="text-decoration:none; color:inherit; text-align:left; display:block;">
-                                <div class="quick-icon">◫</div>
-                                <strong>View classrooms</strong>
-                                <small>See today's rhythm</small>
-                            </a>
-
-                            <a class="quick" href="/intelligence" style="text-decoration:none; color:inherit; text-align:left; display:block;">
-                                <div class="quick-icon">♡</div>
-                                <strong>Ask AI</strong>
-                                <small>Help me think</small>
-                            </a>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <!-- OTHER PAGES -->
-
-        <section id="classrooms" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Classrooms</h1>
-                    <p>See each classroom as a living environment.</p>
-                </div>
-            </div>
-
-            <div class="section-card">
-
-                <div class="section-header">
-                    <h2>Little Stars today</h2>
-                    <span>3 classrooms</span>
-                </div>
-
-                <div class="classroom">
-                    <div class="classroom-top">
-                        <div class="classroom-name">
-                            <div class="classroom-dot"></div>
+                        </a>
+                        <a href="/attendance" class="quick-link-box">
+                            <span class="quick-icon">📋</span>
                             <div>
-                                <strong>Bluebirds</strong>
-                                <small>Age 3–4 • 18 children • Priya</small>
+                                <strong>Attendance Desk</strong>
+                                <small>Check in / departure</small>
                             </div>
-                        </div>
-                        <span class="status active">Exploring</span>
-                    </div>
-                </div>
-
-                <div class="classroom">
-                    <div class="classroom-top">
-                        <div class="classroom-name">
-                            <div class="classroom-dot"></div>
+                        </a>
+                        <a href="/daily-care" class="quick-link-box">
+                            <span class="quick-icon">🍼</span>
                             <div>
-                                <strong>Sunflowers</strong>
-                                <small>Age 4–5 • 14 children • Meena</small>
+                                <strong>Daily Care Logs</strong>
+                                <small>Meals, naps &amp; wellbeing</small>
                             </div>
-                        </div>
-                        <span class="status">Creating</span>
+                        </a>
                     </div>
-                </div>
-
-                <div class="classroom">
-                    <div class="classroom-top">
-                        <div class="classroom-name">
-                            <div class="classroom-dot"></div>
-                            <div>
-                                <strong>Butterflies</strong>
-                                <small>Age 2–3 • 10 children • Anitha</small>
-                            </div>
-                        </div>
-                        <span class="status">Moving</span>
-                    </div>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="experiences" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Experiences</h1>
-                    <p>Everything Little Stars knows how to make happen.</p>
-                </div>
-
-                <button class="ai-action" onclick="showModal('Create Experience')">
-                    + Create Experience
-                </button>
-            </div>
-
-            <div class="section-card">
-
-                <div class="section-header">
-                    <h2>Experience Library</h2>
-                    <span>24 experiences</span>
-                </div>
-
-                <div class="classroom">
-                    <strong>Our Little City</strong>
-                    <small style="display:block;color:#8b958f;margin-top:5px">
-                        Building • Together • Age 3–4
-                    </small>
-                </div>
-
-                <div class="classroom">
-                    <strong>Bug Detectives</strong>
-                    <small style="display:block;color:#8b958f;margin-top:5px">
-                        Discovery • Nature • Age 3–5
-                    </small>
-                </div>
-
-                <div class="classroom">
-                    <strong>Animal Rescue Adventure</strong>
-                    <small style="display:block;color:#8b958f;margin-top:5px">
-                        Imagination • Movement • Age 3–4
-                    </small>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="calendar" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Experience Calendar</h1>
-                    <p>September 2026 • OUR WORLD</p>
                 </div>
             </div>
+        </div>
+    }
+</div>
 
-            <div class="section-card">
-
-                <div class="section-header">
-                    <h2>This month</h2>
-                    <span>Flexible rhythm</span>
-                </div>
-
-                <div class="classroom">
-                    <strong>Week 1 — Discover</strong>
-                    <small style="display:block;color:#8b958f;margin-top:5px">
-                        Bugs • Nature • Outdoor exploration
-                    </small>
-                </div>
-
-                <div class="classroom">
-                    <strong>Week 2 — Build</strong>
-                    <small style="display:block;color:#8b958f;margin-top:5px">
-                        Blocks • Bridges • Our Little City
-                    </small>
-                </div>
-
-                <div class="classroom">
-                    <strong>Week 3 — Imagine</strong>
-                    <small style="display:block;color:#8b958f;margin-top:5px">
-                        Stories • Animals • Pretend worlds
-                    </small>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="children" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Children</h1>
-                    <p>Understand the children, not just the numbers.</p>
-                </div>
-            </div>
-
-            <div class="section-card">
-
-                <div class="section-header">
-                    <h2>Little Stars</h2>
-                    <span>42 children</span>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">AARAV • BLUEBIRDS</div>
-                    <div class="moment-text">
-                        Building • Bugs • Helping friends
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">MAYA • BLUEBIRDS</div>
-                    <div class="moment-text">
-                        Drawing • Plants • Storytelling
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">LIAM • BLUEBIRDS</div>
-                    <div class="moment-text">
-                        Vehicles • Movement • Puzzles
-                    </div>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="memories" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Memories</h1>
-                    <p>The beautiful things worth keeping.</p>
-                </div>
-            </div>
-
-            <div class="section-card">
-
-                <div class="section-header">
-                    <h2>Recent memories</h2>
-                    <span>September</span>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">BLUEBIRDS</div>
-                    <div class="moment-text">
-                        The bridge that wouldn't stay up.
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">SUNFLOWERS</div>
-                    <div class="moment-text">
-                        Maya's butterfly hospital.
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">BUTTERFLIES</div>
-                    <div class="moment-text">
-                        The room became a jungle.
-                    </div>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="insights" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Insights</h1>
-                    <p>What is Little Stars learning about its children?</p>
-                </div>
-            </div>
-
-            <div class="section-card">
-
-                <div class="section-header">
-                    <h2>Experience insights</h2>
-                    <span>Last 30 days</span>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">DISCOVERY</div>
-                    <div class="moment-text">
-                        Children stayed longer when experiences began
-                        with something they could touch or investigate.
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">BUILDING</div>
-                    <div class="moment-text">
-                        Building experiences generated repeated
-                        experimentation and collaboration.
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">TOGETHER</div>
-                    <div class="moment-text">
-                        Children often extended experiences when another
-                        child joined their idea.
-                    </div>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="team" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Team</h1>
-                    <p>The people who make the day happen.</p>
-                </div>
-            </div>
-
-            <div class="section-card">
-
-                <div class="moment">
-                    <div class="moment-name">BLUEBIRDS</div>
-                    <div class="moment-text">
-                        Priya — Lead Teacher<br>
-                        Ravi — Assistant Teacher
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">SUNFLOWERS</div>
-                    <div class="moment-text">
-                        Meena — Lead Teacher<br>
-                        Kavya — Assistant Teacher
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">BUTTERFLIES</div>
-                    <div class="moment-text">
-                        Anitha — Lead Teacher<br>
-                        Dev — Assistant Teacher
-                    </div>
-                </div>
-
-            </div>
-
-        </section>
-
-
-        <section id="settings" style="display: none;">
-
-            <div class="welcome">
-                <div>
-                    <h1>Settings</h1>
-                    <p>Configure how Little Stars enjoys everyday.</p>
-                </div>
-            </div>
-
-            <div class="section-card">
-
-                <div class="moment">
-                    <div class="moment-name">DAYCARE</div>
-                    <div class="moment-text">
-                        Little Stars Daycare
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">EXPERIENCE STYLE</div>
-                    <div class="moment-text">
-                        Curiosity • Choice • Movement • Connection
-                    </div>
-                </div>
-
-                <div class="moment">
-                    <div class="moment-name">AI</div>
-                    <div class="moment-text">
-                        AI recommendations enabled • Human approval required
-                    </div>
-                </div>
-
-            </div>
-
-        </section>
-
+@* PHOTO LIGHTBOX PREVIEW *@
+@if (!string.IsNullOrEmpty(_previewPhoto))
+{
+    <div class="photo-lightbox" @onclick="() => _previewPhoto = null">
+        <div class="lightbox-content" @onclick:stopPropagation>
+            <button class="lightbox-close" @onclick="() => _previewPhoto = null">✕</button>
+            <img src="@_previewPhoto" alt="Preview" class="lightbox-img" />
+        </div>
     </div>
-    
-    <EnjoyEveryday.UI.Shared.Components.ActiveSessionModal.ActiveSessionModal 
-        IsOpen="@_isSessionModalOpen" 
-        ScheduleId="@_activeSessionScheduleId" 
-        TeacherId="@_teacherId" 
-        OnSessionEnded="OnSessionEnded" 
-        OnClose="() => _isSessionModalOpen = false" />
+}
 
-    <ActivityRecommendationModal 
-        @bind-IsOpen="_isRecommendationModalOpen" 
-        ClassroomId="@(_classrooms.FirstOrDefault()?.Id ?? Guid.Empty)" 
-        OnPlanCreated="ReloadEventsAsync" />
+@* ACTIVE SESSION MODAL *@
+@if (_isSessionModalOpen)
+{
+    <ActiveSessionModal ScheduleId="@_activeSessionScheduleId"
+                        OnSessionEnded="OnSessionEnded"
+                        OnClose="() => _isSessionModalOpen = false" />
+}
 
-@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
-@using Dapper
-@inject NavigationManager NavigationManager
+@* EVENT PHOTO MODAL *@
+@if (_isPhotoModalOpen)
+{
+    <div class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h3>📸 Celebration Photos</h3>
+                    <p>@_photoModalEventTitle</p>
+                </div>
+                <button type="button" class="close-btn" @onclick="() => _isPhotoModalOpen = false">✕</button>
+            </div>
+            <EventPhotoUploader Photos="@_photoModalEventPhotos"
+                                PhotosChanged="OnEventPhotosSaved"
+                                MaxPhotos="3"
+                                ReadOnly="false"
+                                IsCompleted="true" />
+            <div class="modal-footer">
+                <button type="button" class="btn primary" @onclick="() => _isPhotoModalOpen = false">Done</button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
-    private bool _isRecommendationModalOpen = false;
-    private List<ExperienceSchedule> _todaySchedules = new();
-    private List<Event> _todayEvents = new();
+    private bool _loading = true;
+    private OperationsBoardModel _board = new();
     private List<Branch> _branches = new();
-    private Dictionary<Guid, HashSet<Guid>> _eventClassroomsMap = new();
-    private List<RhythmTimelineItem> _rhythmTimeline = new();
-    private List<Experience> _experiences = new();
-    private Guid _teacherId = Guid.Parse("50000000-0000-0000-0000-000000000001"); // Mock teacher
+    private string _selectedRoleOverride = "";
+    private string _selectedBranchId = "";
+    private string? _previewPhoto;
 
-    private int _childrenHere = 0;
-    private int _expectedChildren = 0;
-    private int _totalClassrooms = 0;
-    private int _totalExperiences = 0;
-    private int _totalTeachers = 0;
-    private int _activeExperiences = 0;
-    private List<Classroom> _classrooms = new();
-    private string _userFirstName = "Baskar";
-
-    public class RhythmTimelineItem
-    {
-        public bool IsEvent { get; set; }
-        public TimeSpan? StartTime { get; set; }
-        public TimeSpan? EndTime { get; set; }
-        public string TimeDisplay { get; set; } = "";
-        public string Title { get; set; } = "";
-        public string Scope { get; set; } = "Classroom"; // Organization, Branch, Classroom
-        public string ScopeDisplay { get; set; } = "";
-        public string Status { get; set; } = "";
-        public Guid? ClassroomId { get; set; }
-        public Guid? EventId { get; set; }
-        public Guid? ScheduleId { get; set; }
-        public string[] PhotoUrls { get; set; } = Array.Empty<string>();
-        public string? Description { get; set; }
-    }
+    // Modals
+    private bool _isSessionModalOpen = false;
+    private Guid _activeSessionScheduleId;
+    private bool _isPhotoModalOpen = false;
+    private Guid _photoModalEventId;
+    private string _photoModalEventTitle = "";
+    private string[] _photoModalEventPhotos = Array.Empty<string>();
 
     protected override async Task OnInitializedAsync()
     {
-        if (UserContext.UserId != Guid.Empty)
-        {
-            _teacherId = UserContext.UserId;
-        }
+        await LoadBranchesAsync();
+        await RefreshBoardAsync();
+    }
 
-        var currentUser = await UserService.GetUserByIdAsync(UserContext.UserId);
-        if (currentUser != null && !string.IsNullOrWhiteSpace(currentUser.FirstName))
-        {
-            _userFirstName = currentUser.FirstName;
-        }
-
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        var activeOrgId = org?.Id ?? UserContext.OrganizationId;
-
-        if (org != null) {
-            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
-            try {
-                _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
-            } catch { }
-        }
-
-        _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-        using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = TimeProvider.GetLocalNow().Date;
-        var tenantId = TenantContext.TenantId;
-        var sql = @"
-            SELECT es.id, es.tenant_id as TenantId, es.experience_id as ExperienceId, 
-                   es.classroom_id as ClassroomId, es.scheduled_date as ScheduledDate, 
-                   es.time_of_day as TimeOfDay, es.status as Status, 
-                   es.primary_teacher_id as PrimaryTeacherId, es.planned_start_time as PlannedStartTime, 
-                   es.planned_end_time as PlannedEndTime, es.preparation_notes as PreparationNotes 
-            FROM experience_schedules es
-            JOIN classrooms cl ON es.classroom_id = cl.id
-            JOIN branches b ON cl.branch_id = b.id
-            WHERE es.scheduled_date = @Date AND es.tenant_id = @TenantId
-              AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)
-            ORDER BY es.time_of_day";
-        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId, OrganizationId = activeOrgId })).ToList();
-        
-        var statsSql = @"
-            SELECT 
-                (SELECT COUNT(1) FROM children c
-                 LEFT JOIN classrooms cl ON c.classroom_id = cl.id
-                 LEFT JOIN branches b ON cl.branch_id = b.id
-                 WHERE c.tenant_id = @TenantId AND c.is_active = true
-                   AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)) as ExpectedChildren,
-                (SELECT COUNT(1) FROM child_attendance ca
-                 JOIN classrooms cl ON ca.classroom_id = cl.id
-                 JOIN branches b ON cl.branch_id = b.id
-                 WHERE ca.tenant_id = @TenantId AND ca.attendance_date = @Date AND ca.status = 'Present'
-                   AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)) as ChildrenHere,
-                (SELECT COUNT(1) FROM classrooms cl
-                 JOIN branches b ON cl.branch_id = b.id
-                 WHERE cl.tenant_id = @TenantId AND cl.is_active = true
-                   AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)) as TotalClassrooms,
-                (SELECT COUNT(1) FROM teachers t
-                 WHERE t.tenant_id = @TenantId AND t.status != 'Inactive'
-                   AND (@OrganizationId IS NULL OR EXISTS (
-                       SELECT 1 FROM organization_memberships om
-                       WHERE om.user_id = t.user_id AND om.organization_id = @OrganizationId AND om.status = 'Active'
-                   ))) as TotalTeachers
-        ";
-        var stats = await connection.QuerySingleAsync<dynamic>(statsSql, new { Date = today, TenantId = tenantId, OrganizationId = activeOrgId });
-        _expectedChildren = (int)stats.expectedchildren;
-        _childrenHere = (int)stats.childrenhere;
-        _totalClassrooms = (int)stats.totalclassrooms;
-        _totalExperiences = _todaySchedules.Count;
-        _activeExperiences = _todaySchedules.Count(s => s.Status == "Started" || s.Status == "Active");
-        _totalTeachers = (int)stats.totalteachers;
-
+    private async Task LoadBranchesAsync()
+    {
         try
         {
-            var branchIdFilter = _branches.FirstOrDefault()?.Id;
-            _todayEvents = (await EventService.GetEventsForDateAsync(DateOnly.FromDateTime(today), branchIdFilter)).ToList();
-            _eventClassroomsMap.Clear();
-            foreach (var ev in _todayEvents.Where(e => e.Scope == "Classroom"))
+            var orgId = UserContext.OrganizationId ?? Guid.Empty;
+            if (orgId != Guid.Empty)
             {
-                var crIds = await EventService.GetEventClassroomsAsync(ev.Id);
-                _eventClassroomsMap[ev.Id] = crIds.ToHashSet();
+                _branches = (await BranchService.GetBranchesAsync(orgId)).ToList();
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading today events: {ex.Message}");
+            Console.WriteLine($"Error loading branches: {ex.Message}");
         }
-
-        BuildRhythmTimeline();
-        
-        var momentsSql = @"
-            SELECT 
-                UPPER(cl.name) || ' • ' || u.first_name as MomentName,
-                cs.content as MomentText
-            FROM child_stories cs
-            JOIN children c ON cs.child_id = c.id
-            JOIN classrooms cl ON c.classroom_id = cl.id
-            JOIN branches b ON cl.branch_id = b.id
-            JOIN users u ON cs.teacher_id = u.id
-            WHERE cs.tenant_id = @TenantId
-              AND (@OrganizationId IS NULL OR b.organization_id = @OrganizationId)
-            ORDER BY cs.created_at DESC
-            LIMIT 3
-        ";
-        try {
-            _recentMemories = (await connection.QueryAsync<dynamic>(momentsSql, new { TenantId = tenantId, OrganizationId = activeOrgId })).ToList();
-        } catch { }
     }
 
-    private void BuildRhythmTimeline()
+    private async Task RefreshBoardAsync()
     {
-        _rhythmTimeline.Clear();
-
-        foreach (var sched in _todaySchedules)
+        _loading = true;
+        try
         {
-            var expTitle = _experiences.FirstOrDefault(e => e.Id == sched.ExperienceId)?.Title ?? "Unknown Experience";
-            var cls = _classrooms.FirstOrDefault(c => c.Id == sched.ClassroomId);
-            var clsName = cls?.Name ?? "Classroom";
-
-            var timeDisp = sched.PlannedStartTime.HasValue 
-                ? DateTime.Today.Add(sched.PlannedStartTime.Value).ToString("t") 
-                : (!string.IsNullOrWhiteSpace(sched.TimeOfDay) ? sched.TimeOfDay : "Scheduled");
-
-            _rhythmTimeline.Add(new RhythmTimelineItem
+            Guid? branchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null;
+            var filter = new OperationsBoardFilter
             {
-                IsEvent = false,
-                StartTime = sched.PlannedStartTime,
-                TimeDisplay = timeDisp,
-                Title = expTitle,
-                ClassroomId = sched.ClassroomId,
-                Scope = "Classroom",
-                ScopeDisplay = clsName,
-                Status = sched.Status,
-                ScheduleId = sched.Id
-            });
-        }
+                OrganizationId = UserContext.OrganizationId,
+                BranchId = branchId,
+                RoleOverride = string.IsNullOrWhiteSpace(_selectedRoleOverride) ? null : _selectedRoleOverride,
+                Date = DateTime.Today
+            };
 
-        foreach (var ev in _todayEvents)
+            _board = await OperationsBoardService.GetOperationsBoardAsync(filter);
+            if (string.IsNullOrEmpty(_selectedRoleOverride))
+            {
+                _selectedRoleOverride = _board.EffectiveRole;
+            }
+        }
+        catch (Exception ex)
         {
-            var timeDisp = ev.StartTime.HasValue 
-                ? DateTime.Today.Add(ev.StartTime.Value).ToString("t") 
-                : "All Day";
-
-            string scopeDisplay;
-            if (ev.Scope == "Organization")
-            {
-                scopeDisplay = "All Branches & Classrooms";
-            }
-            else if (ev.Scope == "Branch")
-            {
-                var brName = GetBranchName(ev.BranchId);
-                scopeDisplay = $"{brName} (All Rooms)";
-            }
-            else
-            {
-                if (_eventClassroomsMap.TryGetValue(ev.Id, out var cIds) && cIds.Any())
-                {
-                    var names = _classrooms.Where(c => cIds.Contains(c.Id)).Select(c => c.Name).ToList();
-                    scopeDisplay = string.Join(", ", names);
-                }
-                else
-                {
-                    scopeDisplay = "Specific Classrooms";
-                }
-            }
-
-            _rhythmTimeline.Add(new RhythmTimelineItem
-            {
-                IsEvent = true,
-                StartTime = ev.StartTime,
-                EndTime = ev.EndTime,
-                TimeDisplay = timeDisp,
-                Title = ev.Title,
-                Scope = ev.Scope,
-                ScopeDisplay = scopeDisplay,
-                Status = ev.Status,
-                EventId = ev.Id,
-                PhotoUrls = ev.PhotoUrls ?? Array.Empty<string>(),
-                Description = ev.Description
-            });
+            Console.WriteLine($"Error loading operations board: {ex.Message}");
         }
-
-        _rhythmTimeline = _rhythmTimeline
-            .OrderBy(r => r.StartTime ?? TimeSpan.Zero)
-            .ToList();
+        finally
+        {
+            _loading = false;
+        }
     }
 
-    private string GetBranchName(Guid? branchId)
+    private async Task OnRoleChanged(ChangeEventArgs e)
     {
-        if (!branchId.HasValue) return "All Branches";
-        var b = _branches.FirstOrDefault(br => br.Id == branchId.Value);
-        return b != null ? b.Name : "Branch";
+        _selectedRoleOverride = e.Value?.ToString() ?? "";
+        await RefreshBoardAsync();
     }
 
-    private bool DoesEventApplyToClassroom(Event evt, Classroom cr)
+    private async Task OnBranchChanged(ChangeEventArgs e)
     {
-        if (evt.Scope == "Organization" || evt.IsOrganizationWide) return true;
-        if (evt.Scope == "Branch" && evt.BranchId == cr.BranchId) return true;
-        if (evt.Scope == "Classroom" && _eventClassroomsMap.TryGetValue(evt.Id, out var crIds) && crIds.Contains(cr.Id)) return true;
-        return false;
+        _selectedBranchId = e.Value?.ToString() ?? "";
+        await RefreshBoardAsync();
     }
-
-    private bool IsEventActiveNow(Event evt)
-    {
-        var nowTime = TimeProvider.GetLocalNow().TimeOfDay;
-        if (evt.Status == "InProgress") return true;
-        if (evt.Status != "Planned" && evt.Status != "Approved" && evt.Status != "Published") return false;
-        if (evt.StartTime == null) return true; // All-day event
-        if (nowTime >= evt.StartTime && (evt.EndTime == null || nowTime <= evt.EndTime)) return true;
-        return false;
-    }
-
-    private List<dynamic> _recentMemories = new();
-
-    private bool _isSessionModalOpen = false;
-    private Guid _activeSessionScheduleId;
 
     private async Task StartSession(Guid scheduleId)
     {
-        var effectiveTeacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : _teacherId;
-        var sessionId = await ExecutionService.StartExperienceAsync(scheduleId, effectiveTeacherId);
-        
-        // Refresh schedules
-        using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = TimeProvider.GetLocalNow().Date;
-        var tenantId = TenantContext.TenantId;
-        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date AND tenant_id = @TenantId ORDER BY time_of_day";
-        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today, TenantId = tenantId })).ToList();
-        
-        BuildRhythmTimeline();
-        StateHasChanged();
-        
-        OpenActiveSession(scheduleId);
+        try
+        {
+            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
+            await ExecutionService.StartExperienceAsync(scheduleId, teacherId);
+            await RefreshBoardAsync();
+            OpenActiveSession(scheduleId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error starting session: {ex.Message}");
+        }
     }
 
     private void OpenActiveSession(Guid scheduleId)
@@ -1151,29 +567,19 @@
         _activeSessionScheduleId = scheduleId;
         _isSessionModalOpen = true;
     }
-    
+
     private async Task OnSessionEnded()
     {
-        using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var today = TimeProvider.GetLocalNow().Date;
-        var sql = "SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime, planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes FROM experience_schedules WHERE scheduled_date = @Date ORDER BY time_of_day";
-        _todaySchedules = (await connection.QueryAsync<ExperienceSchedule>(sql, new { Date = today })).ToList();
-        BuildRhythmTimeline();
-        StateHasChanged();
+        _isSessionModalOpen = false;
+        await RefreshBoardAsync();
     }
-
-    private string? _previewPhoto;
-    private bool _isPhotoModalOpen = false;
-    private Guid _photoModalEventId;
-    private string _photoModalEventTitle = "";
-    private string[] _photoModalEventPhotos = Array.Empty<string>();
 
     private async Task StartCelebration(Guid eventId)
     {
         try
         {
             await EventService.UpdateStatusAsync(eventId, "InProgress");
-            await ReloadEventsAsync();
+            await RefreshBoardAsync();
         }
         catch (Exception ex)
         {
@@ -1186,7 +592,7 @@
         try
         {
             await EventService.UpdateStatusAsync(eventId, "Completed");
-            await ReloadEventsAsync();
+            await RefreshBoardAsync();
             await OpenEventPhotoModal(eventId);
         }
         catch (Exception ex)
@@ -1212,61 +618,6 @@
     {
         _photoModalEventPhotos = newPhotos;
         await EventService.UpdateEventPhotosAsync(_photoModalEventId, newPhotos);
-        await ReloadEventsAsync();
-        StateHasChanged();
+        await RefreshBoardAsync();
     }
-
-    private async Task ReloadEventsAsync()
-    {
-        var today = TimeProvider.GetLocalNow().Date;
-        _todayEvents = (await EventService.GetEventsForDateAsync(DateOnly.FromDateTime(today))).ToList();
-        _eventClassroomsMap.Clear();
-        foreach (var ev in _todayEvents.Where(e => e.Scope == "Classroom"))
-        {
-            var crIds = await EventService.GetEventClassroomsAsync(ev.Id);
-            _eventClassroomsMap[ev.Id] = crIds.ToHashSet();
-        }
-        BuildRhythmTimeline();
-        StateHasChanged();
-    }
-}
-
-@* EVENT PHOTO MODAL *@
-@if (_isPhotoModalOpen)
-{
-    <div style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1200; backdrop-filter: blur(4px);">
-        <div style="background: white; border-radius: 18px; padding: 24px; width: min(540px, 94%); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px;">
-                <div>
-                    <h3 style="margin: 0; font-size: 18px; font-weight: 750; color: #1e293b;">📸 Celebration Photos</h3>
-                    <div style="font-size: 13px; color: #64748b; font-weight: 500;">@_photoModalEventTitle</div>
-                </div>
-                <button type="button" @onclick="() => _isPhotoModalOpen = false" style="background: none; border: none; font-size: 20px; color: #94a3b8; cursor: pointer; padding: 4px;">✕</button>
-            </div>
-
-            <EventPhotoUploader Photos="@_photoModalEventPhotos"
-                                PhotosChanged="OnEventPhotosSaved"
-                                MaxPhotos="3"
-                                ReadOnly="false"
-                                IsCompleted="true" />
-
-            <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
-                <button type="button" @onclick="() => _isPhotoModalOpen = false" style="background: #263d32; color: white; border: none; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">
-                    Done
-                </button>
-            </div>
-        </div>
-    </div>
-}
-
-@* PHOTO LIGHTBOX PREVIEW *@
-@if (!string.IsNullOrEmpty(_previewPhoto))
-{
-    <div style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; backdrop-filter: blur(4px);" @onclick="() => _previewPhoto = null">
-        <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center;" @onclick:stopPropagation>
-            <button style="position: absolute; top: -38px; right: 0; background: rgba(255,255,255,0.2); border: none; color: white; font-size: 18px; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;" @onclick="() => _previewPhoto = null">✕</button>
-            <img src="@_previewPhoto" alt="Preview" style="max-width: 100%; max-height: 80vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); object-fit: contain;" />
-            <div style="margin-top: 10px; color: #e2e8f0; font-size: 13px;">Optimized AVIF Photo</div>
-        </div>
-    </div>
 }

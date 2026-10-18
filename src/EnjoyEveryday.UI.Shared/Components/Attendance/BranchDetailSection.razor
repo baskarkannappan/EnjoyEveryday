@@ -5,6 +5,7 @@
 @inject ClassroomService ClassroomService
 @inject ChildService ChildService
 @inject UserService UserService
+@inject ITeacherService TeacherService
 @inject AttendanceService AttendanceService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Nav
@@ -96,7 +97,33 @@
                                         </select>
                                     </td>
                                     <td>@p.In</td>
-                                    <td>@p.Out</td>
+                                    <td>
+                                        @if (p.Type == "children" && (p.Status == "Present" || p.Status == "Late"))
+                                        {
+                                            @if (p.Out != "—")
+                                            {
+                                                <div style="display: flex; align-items: center; gap: 6px;">
+                                                    <span style="font-weight: 700; color: #26332d;">@p.Out</span>
+                                                    @if (!string.IsNullOrEmpty(p.PickupPersonName))
+                                                    {
+                                                        <span class="pill green" style="font-size: 10px; padding: 2px 6px;" title="Collected by @p.PickupPersonName (@p.PickupPersonRelationship) · @p.PickupVerificationMethod">
+                                                            <i class="bi bi-shield-check"></i> @p.PickupPersonName
+                                                        </span>
+                                                    }
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => OpenSecurePickupModal(p)">
+                                                    <i class="bi bi-shield-check"></i> Check Out
+                                                </button>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            @p.Out
+                                        }
+                                    </td>
                                 </tr>
                             }
                             @if (!GetPeople().Any())
@@ -111,6 +138,17 @@
         }
     </div>
 </section>
+
+<SecurePickupModal 
+    IsOpen="_isPickupModalOpen"
+    ChildId="_activePickupChildId"
+    BranchId="_branchId"
+    ClassroomId="_activePickupClassroomId"
+    ChildName="_activePickupChildName"
+    ClassroomName="_activePickupClassroomName"
+    ArrivalTime="_activePickupArrivalTime"
+    OnDepartureConfirmed="HandleDepartureConfirmed"
+    OnClose="() => _isPickupModalOpen = false" />
 
 @if (showToast)
 {
@@ -135,6 +173,29 @@
 
     private int UnmarkedCount => _personRows.Count(p => p.Status == "Not marked");
     private int MissingCheckoutCount => _personRows.Count(p => p.Status == "Present" && (p.Out == "—" || string.IsNullOrEmpty(p.Out)));
+
+    private bool _isPickupModalOpen = false;
+    private Guid _activePickupChildId;
+    private Guid _activePickupClassroomId;
+    private string _activePickupChildName = "";
+    private string _activePickupClassroomName = "";
+    private string? _activePickupArrivalTime;
+
+    private void OpenSecurePickupModal(PersonRow person)
+    {
+        _activePickupChildId = person.Id;
+        _activePickupClassroomId = person.ClassroomId;
+        _activePickupChildName = person.Name;
+        _activePickupClassroomName = person.Room;
+        _activePickupArrivalTime = person.In;
+        _isPickupModalOpen = true;
+    }
+
+    private async Task HandleDepartureConfirmed(ChildAttendance att)
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+    }
 
     private void BackToOverview()
     {
@@ -188,7 +249,9 @@
 
         var classrooms = (await ClassroomService.GetClassroomsAsync(_branchId)).ToList();
         var allChildren = (await ChildService.GetChildrenAsync()).ToList(); 
-        var allTeachers = (await UserService.GetTeachersAsync()).ToList();
+        var allUsers = (await UserService.GetTeachersAsync()).ToList();
+        var teacherProfiles = (await TeacherService.GetAllTeachersAsync(org.TenantId)).ToList();
+        var teacherUserMap = teacherProfiles.Where(t => t.UserId.HasValue).ToDictionary(t => t.UserId!.Value, t => t.Id);
 
         var childAtt = (await AttendanceService.GetChildAttendanceAsync(_branchId, _filterDate)).ToList();
         var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(_branchId, _filterDate)).ToList();
@@ -239,16 +302,20 @@
                 Status = att?.Status ?? "Not marked",
                 In = att?.ArrivalTime?.ToString(@"hh\:mm") ?? "—",
                 Out = att?.DepartureTime?.ToString(@"hh\:mm") ?? "—",
+                PickupPersonName = att?.PickupPersonName,
+                PickupPersonRelationship = att?.PickupPersonRelationship,
+                PickupVerificationMethod = att?.PickupVerificationMethod,
                 Type = "children",
                 AttendanceId = att?.Id
             });
         }
         
-        foreach(var teacher in allTeachers)
+        foreach(var teacher in allUsers)
         {
-            var att = teacherAtt.FirstOrDefault(a => a.TeacherId == teacher.Id);
+            var teacherId = teacherUserMap.TryGetValue(teacher.Id, out var tId) ? tId : teacher.Id;
+            var att = teacherAtt.FirstOrDefault(a => a.TeacherId == teacherId || a.TeacherId == teacher.Id);
             _personRows.Add(new PersonRow {
-                Id = teacher.Id,
+                Id = teacherId,
                 Name = $"{teacher.FirstName} {teacher.LastName}",
                 Initials = $"{teacher.FirstName.FirstOrDefault()}{teacher.LastName.FirstOrDefault()}",
                 Room = "Teacher",
@@ -346,6 +413,9 @@
         } 
         public string In { get; set; } = ""; 
         public string Out { get; set; } = ""; 
+        public string? PickupPersonName { get; set; }
+        public string? PickupPersonRelationship { get; set; }
+        public string? PickupVerificationMethod { get; set; }
         public string Type { get; set; } = ""; 
         public bool IsDirty { get; set; }
         public bool IsSelected { get; set; }

@@ -63,6 +63,9 @@
         </div>
 
         <div class="header-actions">
+            <button class="btn @(_pendingHandovers.Any() ? "primary" : "secondary")" @onclick="() => _showHandoverModal = true">
+                🤝 Shift Handover @(_pendingHandovers.Any() ? $"({_pendingHandovers.Count} Pending)" : "")
+            </button>
             <button class="btn secondary" @onclick="() => _showCarePlanModal = true">
                 📋 View Care Plans
             </button>
@@ -71,6 +74,24 @@
             </button>
         </div>
     </div>
+
+    @if (_pendingHandovers.Any())
+    {
+        <div class="alert-banner warning handover-banner" style="background: #fffcf2; border: 1px solid #f6e05e; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: 12px;">
+            <div class="handover-banner-text">
+                <strong style="color: #744210; font-size: 14px;">🤝 Shift Handover Pending: @_pendingHandovers[0].ShiftType (@_pendingHandovers[0].ClassroomName)</strong>
+                <p style="margin: 4px 0 0; color: #975a16; font-size: 12.5px;">Outgoing Staff: @_pendingHandovers[0].OutgoingTeacherName • Tasks: @(_pendingHandovers[0].OutstandingCareTasks ?? _pendingHandovers[0].SummaryNotes ?? "Please review and acknowledge.")</p>
+            </div>
+            <div class="handover-banner-actions" style="display: flex; gap: 8px;">
+                <button class="btn primary sm" @onclick="() => AcknowledgeHandover(_pendingHandovers[0].Id)">
+                    ✓ Acknowledge Handover
+                </button>
+                <button class="btn secondary sm" @onclick="() => _showHandoverModal = true">
+                    Review Details
+                </button>
+            </div>
+        </div>
+    }
 
     @if (!string.IsNullOrEmpty(_statusMessage))
     {
@@ -579,6 +600,140 @@
     </div>
 }
 
+<!-- TEACHER HANDOVER MODAL -->
+@if (_showHandoverModal)
+{
+    <div class="modal-backdrop">
+        <div class="modal-window handover-modal-window" style="max-width: 680px;">
+            <div class="modal-header">
+                <div>
+                    <div class="eyebrow">Shift Handover &amp; Communication</div>
+                    <h2>Teacher Shift Handover — @(_classrooms.FirstOrDefault(c => c.Id == _selectedClassroomId)?.Name ?? "Classroom")</h2>
+                </div>
+                <button class="close-btn" @onclick="() => _showHandoverModal = false">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- TABS: Submit New Handover vs Today's Logged Handovers -->
+                <div class="handover-tabs" style="display: flex; gap: 8px; margin-bottom: 18px; border-bottom: 1px solid #e4e7df; padding-bottom: 12px;">
+                    <button type="button" class="btn sm @(_activeHandoverTab == "submit" ? "primary" : "secondary")" @onclick='() => _activeHandoverTab = "submit"'>
+                        + New Shift Handover
+                    </button>
+                    <button type="button" class="btn sm @(_activeHandoverTab == "history" ? "primary" : "secondary")" @onclick='() => _activeHandoverTab = "history"'>
+                        📜 Today's Classroom Handovers (@_classroomHandovers.Count)
+                    </button>
+                </div>
+
+                @if (_activeHandoverTab == "submit")
+                {
+                    <div class="handover-form" style="display: flex; flex-direction: column; gap: 14px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-field">
+                                <label style="font-size: 11.5px; font-weight: 750; color: #4a554f; text-transform: uppercase;">Shift Type</label>
+                                <select class="select-input" @bind="_newHandoverShiftType" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e4e7df;">
+                                    <option value="MorningToAfternoon">Morning → Afternoon Shift</option>
+                                    <option value="AfternoonToClosing">Afternoon → Closing Shift</option>
+                                    <option value="MiddayBreak">Midday Break Coverage</option>
+                                    <option value="Substitute">Substitute Staff Briefing</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label style="font-size: 11.5px; font-weight: 750; color: #4a554f; text-transform: uppercase;">Incoming Teacher</label>
+                                <input type="text" class="text-input" placeholder="e.g. Meena or teacher@daycare.com" @bind="_newHandoverIncomingTeacher" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e4e7df;" />
+                            </div>
+                        </div>
+
+                        <div class="form-field">
+                            <label style="font-size: 11.5px; font-weight: 750; color: #4a554f; text-transform: uppercase;">Classroom Summary &amp; Room Energy</label>
+                            <textarea class="textarea-input" rows="2" placeholder="e.g. Calm morning, all children settled well. Outdoor water activity completed." @bind="_newHandoverSummary" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e4e7df;"></textarea>
+                        </div>
+
+                        <div class="form-field">
+                            <label style="font-size: 11.5px; font-weight: 750; color: #4a554f; text-transform: uppercase;">Child-Specific Highlights (Meals, Rest, Comfort)</label>
+                            <textarea class="textarea-input" rows="2" placeholder="e.g. Aarav had small lunch, needs extra afternoon snack. Maya rested 45 mins." @bind="_newHandoverChildNotes" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e4e7df;"></textarea>
+                        </div>
+
+                        <div class="form-field">
+                            <label style="font-size: 11.5px; font-weight: 750; color: #4a554f; text-transform: uppercase;">Outstanding Care Tasks &amp; Timers</label>
+                            <textarea class="textarea-input" rows="2" placeholder="e.g. Check temperature at 15:00. Ensure Liam changes shoes before playground." @bind="_newHandoverCareTasks" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e4e7df;"></textarea>
+                        </div>
+
+                        <div class="form-field">
+                            <label style="font-size: 11.5px; font-weight: 750; color: #4a554f; text-transform: uppercase;">Pickup Instructions / Guardian Notes</label>
+                            <input type="text" class="text-input" placeholder="e.g. Grandmother authorized for pickup at 16:30." @bind="_newHandoverFollowups" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e4e7df;" />
+                        </div>
+
+                        <div class="form-field checkbox-field" style="display: flex; align-items: center; gap: 8px; padding: 10px; background: #fffcf5; border-radius: 8px; border: 1px solid #fbd38d;">
+                            <input type="checkbox" id="chkCritical" @bind="_newHandoverIsCritical" style="width: 18px; height: 18px;" />
+                            <label for="chkCritical" style="font-size: 12.5px; color: #744210; margin: 0; cursor: pointer;">
+                                <strong>Critical Handover Alert</strong> (Escalate to Operations Board if unacknowledged within 30 min)
+                            </label>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+                            <button type="button" class="btn secondary" @onclick="() => _showHandoverModal = false">Cancel</button>
+                            <button type="button" class="btn primary" disabled="@_isSubmittingHandover" @onclick="SubmitHandover">
+                                @(_isSubmittingHandover ? "Submitting..." : "Submit Shift Handover")
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="handovers-history-list" style="display: flex; flex-direction: column; gap: 12px;">
+                        @foreach (var ho in _classroomHandovers)
+                        {
+                            <div class="handover-history-card" style="padding: 14px; border-radius: 10px; border: 1px solid @(ho.Status == "PendingAcknowledgement" ? "#fbd38d" : "#e4e7df"); background: @(ho.Status == "PendingAcknowledgement" ? "#fffcf5" : "#ffffff");">
+                                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                                    <div>
+                                        <strong style="font-size: 14px; color: #26332d;">@ho.ShiftType</strong>
+                                        <span style="font-size: 11.5px; color: #6c7870; margin-left: 8px;">Outgoing: @ho.OutgoingTeacherName • @ho.CreatedAt.ToLocalTime().ToString("t")</span>
+                                    </div>
+                                    <span class="status-pill @(ho.Status == "Acknowledged" ? "good" : "warning")" style="padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;">
+                                        @ho.Status
+                                    </span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(ho.SummaryNotes))
+                                {
+                                    <p style="margin: 4px 0; font-size: 12.5px; color: #3e5045;"><strong>Summary:</strong> @ho.SummaryNotes</p>
+                                }
+                                @if (!string.IsNullOrEmpty(ho.ChildSpecificNotes))
+                                {
+                                    <p style="margin: 4px 0; font-size: 12.5px; color: #3e5045;"><strong>Child Highlights:</strong> @ho.ChildSpecificNotes</p>
+                                }
+                                @if (!string.IsNullOrEmpty(ho.OutstandingCareTasks))
+                                {
+                                    <p style="margin: 4px 0; font-size: 12.5px; color: #9b2c2c;"><strong>Tasks:</strong> @ho.OutstandingCareTasks</p>
+                                }
+                                @if (ho.Status == "PendingAcknowledgement")
+                                {
+                                    <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
+                                        <button class="btn primary sm" @onclick="() => AcknowledgeHandover(ho.Id)">
+                                            ✓ Acknowledge Handover as Incoming Teacher
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div style="margin-top: 8px; font-size: 11.5px; color: #22543d; font-weight: 650;">
+                                        ✓ Acknowledged by @ho.AcknowledgedByName at @(ho.AcknowledgedAt?.ToLocalTime().ToString("t") ?? "Today")
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (!_classroomHandovers.Any())
+                        {
+                            <p class="empty-hint" style="text-align: center; color: #6c7870; padding: 20px;">No shift handovers logged for this classroom today.</p>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="() => _showHandoverModal = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<Branch> _branches = new();
     private List<Classroom> _classrooms = new();
@@ -608,6 +763,20 @@
 
     private bool _showCarePlanModal = false;
     private bool _showSupplyModal = false;
+
+    // Handover state
+    private bool _showHandoverModal = false;
+    private string _activeHandoverTab = "submit";
+    private List<TeacherHandover> _pendingHandovers = new();
+    private List<TeacherHandover> _classroomHandovers = new();
+    private string _newHandoverShiftType = "MorningToAfternoon";
+    private string _newHandoverIncomingTeacher = "";
+    private string _newHandoverSummary = "";
+    private string _newHandoverChildNotes = "";
+    private string _newHandoverCareTasks = "";
+    private string _newHandoverFollowups = "";
+    private bool _newHandoverIsCritical = false;
+    private bool _isSubmittingHandover = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -657,6 +826,23 @@
 
         _lowSupplies = (await DailyCareService.GetLowSuppliesAsync(_selectedBranchId)).ToList();
         _totalRecordedEventsToday = _classroomOverview.Sum(c => c.TodayEventsCount);
+
+        try
+        {
+            _pendingHandovers = (await DailyCareService.GetPendingHandoversAsync(_selectedBranchId)).ToList();
+            if (_selectedClassroomId.HasValue)
+            {
+                _classroomHandovers = (await DailyCareService.GetClassroomHandoversAsync(_selectedClassroomId.Value, _selectedDate)).ToList();
+            }
+            else
+            {
+                _classroomHandovers = _pendingHandovers.ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading handovers: {ex.Message}");
+        }
 
         if (_selectedChildId == Guid.Empty && _classroomOverview.Count > 0)
         {
@@ -947,6 +1133,61 @@
         finally
         {
             _isSubmitting = false;
+        }
+    }
+
+    private async Task SubmitHandover()
+    {
+        if (!_selectedClassroomId.HasValue || _isSubmittingHandover) return;
+
+        _isSubmittingHandover = true;
+        try
+        {
+            var handover = new TeacherHandover
+            {
+                ClassroomId = _selectedClassroomId.Value,
+                HandoverDate = _selectedDate,
+                ShiftType = _newHandoverShiftType,
+                IncomingTeacherName = _newHandoverIncomingTeacher,
+                SummaryNotes = _newHandoverSummary,
+                ChildSpecificNotes = _newHandoverChildNotes,
+                OutstandingCareTasks = _newHandoverCareTasks,
+                PendingFollowups = _newHandoverFollowups,
+                IsCritical = _newHandoverIsCritical,
+                Status = "PendingAcknowledgement"
+            };
+
+            await DailyCareService.SubmitHandoverAsync(handover);
+            _statusMessage = $"Shift handover for {_newHandoverShiftType} recorded successfully.";
+            _newHandoverSummary = "";
+            _newHandoverChildNotes = "";
+            _newHandoverCareTasks = "";
+            _newHandoverFollowups = "";
+            _newHandoverIsCritical = false;
+            _activeHandoverTab = "history";
+            await RefreshClassroomData();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Error recording handover: {ex.Message}";
+        }
+        finally
+        {
+            _isSubmittingHandover = false;
+        }
+    }
+
+    private async Task AcknowledgeHandover(Guid handoverId)
+    {
+        try
+        {
+            await DailyCareService.AcknowledgeHandoverAsync(handoverId, "Shift handover acknowledged.");
+            _statusMessage = "Shift handover acknowledged successfully.";
+            await RefreshClassroomData();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Error acknowledging handover: {ex.Message}";
         }
     }
 }

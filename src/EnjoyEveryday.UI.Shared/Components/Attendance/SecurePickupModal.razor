@@ -1,0 +1,575 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+
+@if (IsOpen)
+{
+    <div class="pickup-modal-backdrop" @onclick="Close">
+        <div class="pickup-modal" @onclick:stopPropagation="true">
+            <!-- Modal Header -->
+            <div class="pickup-header">
+                <div class="pickup-title-group">
+                    <div class="child-pickup-avatar">
+                        @if (!string.IsNullOrEmpty(ChildPhotoUrl))
+                        {
+                            <img src="@ChildPhotoUrl" alt="@ChildName" />
+                        }
+                        else
+                        {
+                            <span>@(ChildName.FirstOrDefault().ToString())</span>
+                        }
+                    </div>
+                    <div>
+                        <div class="pickup-eyebrow">SECURE CHILD DEPARTURE &amp; HANDOVER</div>
+                        <h2 class="child-pickup-name">@ChildName</h2>
+                        <div class="pickup-meta">
+                            <span><strong>Room:</strong> @ClassroomName</span>
+                            <span class="dot">•</span>
+                            <span><strong>Arrival:</strong> @(ArrivalTime ?? "Earlier today")</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="modal-close-btn" @onclick="Close">✕</button>
+            </div>
+
+            <!-- Custody Alert Banner if applicable -->
+            @if (Profile?.HasCustodyRestrictions == true)
+            {
+                <div class="custody-alert-banner">
+                    <div class="alert-icon"><i class="bi bi-shield-fill-exclamation"></i></div>
+                    <div class="alert-content">
+                        <strong>LEGAL CUSTODY RESTRICTION ON FILE</strong>
+                        @foreach (var res in Profile.CustodyRestrictions)
+                        {
+                            <p>Do NOT release child to <u>@res.PersonName</u>. Restriction: @res.RestrictionType. @res.Notes</p>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_isLoading)
+            {
+                <div style="padding: 40px; text-align: center; color: #6c7870;">
+                    <i class="bi bi-arrow-repeat spin"></i> Loading authorized pickup registry...
+                </div>
+            }
+            else
+            {
+                <div class="pickup-body">
+                    <!-- Step 1: Who is picking up the child? -->
+                    <div class="form-section">
+                        <label class="section-label">
+                            <i class="bi bi-people"></i> Select Authorized Individual
+                        </label>
+
+                        <div class="pickups-grid">
+                            @if (Profile?.AuthorizedPickups != null && Profile.AuthorizedPickups.Any())
+                            {
+                                @foreach (var p in Profile.AuthorizedPickups)
+                                {
+                                    <div class="pickup-card @(_selectedPickupId == p.Id ? "selected" : "")" @onclick="() => SelectAuthorizedPickup(p)">
+                                        <div class="pickup-radio">
+                                            <input type="radio" checked="@(_selectedPickupId == p.Id)" name="pickupSelection" />
+                                        </div>
+                                        <div class="pickup-card-info">
+                                            <div class="pickup-name">@p.FullName</div>
+                                            <div class="pickup-rel-badge @(p.IsPrimaryGuardian ? "guardian" : "authorized")">
+                                                @p.Relationship
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(p.Phone))
+                                            {
+                                                <div class="pickup-phone"><i class="bi bi-telephone"></i> @p.Phone</div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            
+                            <!-- One-time custom authorization option -->
+                            <div class="pickup-card one-time-card @(_isOneTimeAuthorization ? "selected" : "")" @onclick="SelectOneTimeAuthorization">
+                                <div class="pickup-radio">
+                                    <input type="radio" checked="@_isOneTimeAuthorization" name="pickupSelection" />
+                                </div>
+                                <div class="pickup-card-info">
+                                    <div class="pickup-name">One-Time Emergency Release</div>
+                                    <small style="color: #7c877f;">Requires parent phone confirmation &amp; photo ID check</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (_isOneTimeAuthorization)
+                        {
+                            <div class="one-time-inputs">
+                                <div style="display: flex; gap: 10px;">
+                                    <div style="flex: 2;">
+                                        <label class="input-lbl">Collector's Full Legal Name</label>
+                                        <input class="text-input" @bind="_customPersonName" placeholder="e.g. Jane Doe" />
+                                    </div>
+                                    <div style="flex: 1.5;">
+                                        <label class="input-lbl">Relationship</label>
+                                        <input class="text-input" @bind="_customRelationship" placeholder="e.g. Aunt / Babysitter" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Step 2: Verification Method -->
+                    <div class="form-section">
+                        <label class="section-label">
+                            <i class="bi bi-shield-check"></i> Verification Method Conducted
+                        </label>
+                        <div class="verification-pills">
+                            <button type="button" class="verify-pill @(_verificationMethod == "PhotoIdVerified" ? "active" : "")" @onclick='() => _verificationMethod = "PhotoIdVerified"'>
+                                <i class="bi bi-person-badge"></i> Photo ID Checked
+                            </button>
+                            <button type="button" class="verify-pill @(_verificationMethod == "KnownGuardian" ? "active" : "")" @onclick='() => _verificationMethod = "KnownGuardian"'>
+                                <i class="bi bi-check-circle"></i> Known Parent / Visual
+                            </button>
+                            <button type="button" class="verify-pill @(_verificationMethod == "DigitalCodeVerified" ? "active" : "")" @onclick='() => _verificationMethod = "DigitalCodeVerified"'>
+                                <i class="bi bi-qr-code"></i> Security Code Confirmed
+                            </button>
+                            <button type="button" class="verify-pill @(_verificationMethod == "EmergencyAuthorized" ? "active" : "")" @onclick='() => _verificationMethod = "EmergencyAuthorized"'>
+                                <i class="bi bi-telephone-inbound"></i> Phone Authorized by Parent
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Departure Details & Notes -->
+                    <div class="form-section">
+                        <div style="display: flex; gap: 14px;">
+                            <div style="flex: 1;">
+                                <label class="input-lbl">Departure Time</label>
+                                <input type="time" class="text-input" @bind="_departureTime" />
+                            </div>
+                            <div style="flex: 2.5;">
+                                <label class="input-lbl">Handover Notes (Optional)</label>
+                                <input type="text" class="text-input" @bind="_staffNotes" placeholder="e.g. Sent with artwork &amp; medication return" />
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="error-banner">
+                            <i class="bi bi-exclamation-triangle-fill"></i> @_errorMessage
+                        </div>
+                    }
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="pickup-footer">
+                    <button class="btn secondary" @onclick="Close">Cancel</button>
+                    <button class="btn primary confirm-btn" @onclick="ConfirmDeparture" disabled="@(_isSubmitting || string.IsNullOrWhiteSpace(SelectedCollectorName))">
+                        @if (_isSubmitting)
+                        {
+                            <span>Verifying...</span>
+                        }
+                        else
+                        {
+                            <span><i class="bi bi-check2-circle"></i> Authorize &amp; Check Out Child</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+.pickup-modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(38, 51, 45, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 1300;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+.pickup-modal {
+    background: #ffffff;
+    border-radius: 18px;
+    max-width: 640px;
+    width: 100%;
+    box-shadow: 0 16px 40px rgba(40, 55, 47, 0.18);
+    border: 1px solid #e1e6e0;
+    overflow: hidden;
+    font-family: "Figtree", Inter, sans-serif;
+    color: #26332d;
+}
+.pickup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    background: #f7f8f5;
+    border-bottom: 1px solid #e1e6e0;
+}
+.pickup-title-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.child-pickup-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: #e6eee9;
+    color: #3e6253;
+    font-weight: 800;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.child-pickup-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.pickup-eyebrow {
+    font-size: 10px;
+    font-weight: 750;
+    color: #52745e;
+    letter-spacing: 0.6px;
+}
+.child-pickup-name {
+    margin: 2px 0 0 0;
+    font-size: 20px;
+    font-weight: 800;
+    color: #26332d;
+}
+.pickup-meta {
+    font-size: 12px;
+    color: #6c7870;
+    margin-top: 2px;
+}
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #6c7870;
+    cursor: pointer;
+}
+.custody-alert-banner {
+    background: #fdf2f2;
+    border-bottom: 1px solid #f8b4b4;
+    padding: 12px 20px;
+    display: flex;
+    gap: 12px;
+    color: #9b1c1c;
+    font-size: 12px;
+}
+.alert-icon {
+    font-size: 20px;
+}
+.custody-alert-banner p {
+    margin: 2px 0 0 0;
+}
+.pickup-body {
+    padding: 22px 24px;
+    max-height: 65vh;
+    overflow-y: auto;
+}
+.form-section {
+    margin-bottom: 20px;
+}
+.section-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 750;
+    color: #26332d;
+    margin-bottom: 10px;
+}
+.pickups-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.pickup-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #ffffff;
+    border: 1px solid #e1e6e0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.pickup-card:hover {
+    border-color: #52745e;
+    background: #fafbfa;
+}
+.pickup-card.selected {
+    border-color: #52745e;
+    background: #eef4f0;
+}
+.pickup-name {
+    font-size: 14px;
+    font-weight: 750;
+    color: #26332d;
+}
+.pickup-rel-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 3px;
+}
+.pickup-rel-badge.guardian {
+    background: #eaf2ec;
+    color: #365844;
+}
+.pickup-rel-badge.authorized {
+    background: #f4eee1;
+    color: #735a29;
+}
+.pickup-phone {
+    font-size: 11px;
+    color: #6c7870;
+    margin-top: 3px;
+}
+.one-time-inputs {
+    margin-top: 10px;
+    padding: 14px;
+    background: #f8f9f6;
+    border-radius: 10px;
+    border: 1px dashed #d5dbd3;
+}
+.input-lbl {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #5a665f;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+.text-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #e1e6e0;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #ffffff;
+    outline: none;
+    box-sizing: border-box;
+}
+.verification-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.verify-pill {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #e1e6e0;
+    background: #f7f8f5;
+    color: #4b5850;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.verify-pill:hover {
+    background: #eef4f0;
+    border-color: #52745e;
+}
+.verify-pill.active {
+    background: #52745e;
+    color: #ffffff;
+    border-color: #52745e;
+}
+.error-banner {
+    padding: 10px 14px;
+    background: #fdf2f2;
+    color: #9b1c1c;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 10px;
+}
+.pickup-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 24px;
+    background: #f7f8f5;
+    border-top: 1px solid #e1e6e0;
+}
+.confirm-btn {
+    background: #52745e;
+    color: #ffffff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+.confirm-btn:hover {
+    background: #3e6253;
+}
+.confirm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+</style>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid ChildId { get; set; }
+    [Parameter] public Guid BranchId { get; set; }
+    [Parameter] public Guid ClassroomId { get; set; }
+    [Parameter] public string ChildName { get; set; } = "";
+    [Parameter] public string ClassroomName { get; set; } = "";
+    [Parameter] public string? ChildPhotoUrl { get; set; }
+    [Parameter] public string? ArrivalTime { get; set; }
+    [Parameter] public EventCallback<ChildAttendance> OnDepartureConfirmed { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    [Inject] private ISecurePickupService PickupService { get; set; } = default!;
+
+    private ChildPickupSecurityProfile? Profile;
+    private bool _isLoading = false;
+    private bool _isSubmitting = false;
+    private string? _errorMessage;
+
+    private Guid? _selectedPickupId;
+    private bool _isOneTimeAuthorization = false;
+    private string _customPersonName = "";
+    private string _customRelationship = "";
+    private string _verificationMethod = "PhotoIdVerified";
+    private DateTime _departureTime = DateTime.Now;
+    private string _staffNotes = "";
+
+    private string SelectedCollectorName => _isOneTimeAuthorization 
+        ? _customPersonName 
+        : (Profile?.AuthorizedPickups.FirstOrDefault(p => p.Id == _selectedPickupId)?.FullName ?? "");
+
+    private string SelectedRelationship => _isOneTimeAuthorization
+        ? _customRelationship
+        : (Profile?.AuthorizedPickups.FirstOrDefault(p => p.Id == _selectedPickupId)?.Relationship ?? "");
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && ChildId != Guid.Empty)
+        {
+            await LoadProfileAsync();
+        }
+    }
+
+    private async Task LoadProfileAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        try
+        {
+            Profile = await PickupService.GetChildPickupSecurityProfileAsync(ChildId);
+            var firstGuardian = Profile?.AuthorizedPickups.FirstOrDefault(p => p.IsPrimaryGuardian) 
+                             ?? Profile?.AuthorizedPickups.FirstOrDefault();
+            if (firstGuardian != null)
+            {
+                _selectedPickupId = firstGuardian.Id;
+                _isOneTimeAuthorization = false;
+            }
+            _departureTime = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Failed to load pickup authorization profile: " + ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SelectAuthorizedPickup(AuthorizedPickupDto pickup)
+    {
+        _selectedPickupId = pickup.Id;
+        _isOneTimeAuthorization = false;
+    }
+
+    private void SelectOneTimeAuthorization()
+    {
+        _isOneTimeAuthorization = true;
+        _selectedPickupId = null;
+    }
+
+    private async Task ConfirmDeparture()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedCollectorName))
+        {
+            _errorMessage = "Please select or specify the individual collecting the child.";
+            return;
+        }
+
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            var req = new RecordChildDepartureRequest
+            {
+                ChildId = ChildId,
+                BranchId = BranchId,
+                ClassroomId = ClassroomId,
+                PickupPersonName = SelectedCollectorName.Trim(),
+                PickupPersonRelationship = SelectedRelationship.Trim(),
+                PickupVerificationMethod = _verificationMethod,
+                AuthorizedPickupId = _selectedPickupId,
+                DepartureTime = _departureTime.TimeOfDay,
+                StaffNotes = _staffNotes
+            };
+
+            var res = await PickupService.VerifyAndRecordChildDepartureAsync(req);
+            if (!res.Success)
+            {
+                _errorMessage = res.ErrorMessage;
+                return;
+            }
+
+            var updatedAttendance = new ChildAttendance
+            {
+                Id = res.AttendanceId ?? Guid.NewGuid(),
+                ChildId = ChildId,
+                BranchId = BranchId,
+                ClassroomId = ClassroomId,
+                AttendanceDate = DateTime.Today,
+                Status = "Present",
+                DepartureTime = _departureTime.TimeOfDay,
+                PickupPersonName = SelectedCollectorName.Trim(),
+                PickupPersonRelationship = SelectedRelationship.Trim(),
+                PickupVerificationMethod = _verificationMethod,
+                PickupNotes = _staffNotes
+            };
+
+            await OnDepartureConfirmed.InvokeAsync(updatedAttendance);
+            await Close();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Error recording departure: " + ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

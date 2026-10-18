@@ -6,7 +6,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using EnjoyEveryday.Application.Services;
-using EnjoyEveryday.Application.Services.Commercial;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
@@ -106,7 +105,7 @@ public class RazorpayAndCashPaymentLedgerTests
             Amount = 200.00m,
             ReceiptNumber = "RCPT-CASH-20261016-01",
             ReceiptDate = DateTimeOffset.UtcNow,
-            AuditNotes = "Cash handed over at center reception"
+            Notes = "Cash handed over at center reception"
         };
 
         var payment = await _billingService.RecordCashPaymentAsync(request);
@@ -371,27 +370,32 @@ public class RazorpayAndCashPaymentLedgerTests
 
     private class TestRazorpayGateway : IRazorpayGateway
     {
-        public string KeyId { get; }
+        public RazorpaySettings Settings { get; }
+        public string KeyId => Settings.KeyId;
         private readonly string _secret;
         private readonly string _webhookSecret;
 
         public TestRazorpayGateway(string keyId, string secret, string webhookSecret)
         {
-            KeyId = keyId;
             _secret = secret;
             _webhookSecret = webhookSecret;
+            Settings = new RazorpaySettings
+            {
+                KeyId = keyId,
+                KeySecret = secret,
+                WebhookSecret = webhookSecret
+            };
         }
 
-        public Task<RazorpayOrderResult> CreateOrderAsync(long amountPaise, string currency, string receipt, Dictionary<string, string>? notes = null, CancellationToken ct = default)
+        public Task<RazorpayGatewayOrderResult> CreateOrderAsync(long amountPaise, string currency, string receipt, Dictionary<string, string>? notes = null, CancellationToken ct = default)
         {
-            var result = new RazorpayOrderResult
+            var result = new RazorpayGatewayOrderResult
             {
                 OrderId = "order_" + Guid.NewGuid().ToString("N")[..14],
-                AmountPaise = amountPaise,
+                AmountInPaise = amountPaise,
                 Currency = currency,
                 Receipt = receipt,
-                Status = "created",
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                Status = "created"
             };
             return Task.FromResult(result);
         }

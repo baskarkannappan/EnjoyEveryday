@@ -1,0 +1,497 @@
+@namespace EnjoyEveryday.UI.Shared.Components.ChildJourney
+@using EnjoyEveryday.Application.Services
+@inject IJSRuntime JS
+
+@if (IsOpen && Portfolio != null)
+{
+    <div class="conference-modal-backdrop" @onclick="Close">
+        <div class="conference-modal" @onclick:stopPropagation="true">
+            <div class="modal-actions-bar no-print">
+                <span class="report-tag">
+                    <i class="bi bi-mortarboard"></i> Parent-Teacher Conference Portfolio
+                </span>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn secondary" @onclick="PrintReport" style="display: flex; align-items: center; gap: 6px; padding: 8px 16px; font-weight: 700;">
+                        <i class="bi bi-printer"></i> Print / Save as PDF
+                    </button>
+                    <button class="modal-close-btn" @onclick="Close">✕</button>
+                </div>
+            </div>
+
+            <!-- Printable Document Body -->
+            <div class="report-sheet">
+                <!-- Header -->
+                <div class="report-header">
+                    <div>
+                        <div class="brand-eyebrow">ENJOYEVERYDAY DAYCARE · DEVELOPMENTAL EVIDENCE PORTFOLIO</div>
+                        <h1 class="report-title">@Portfolio.FullName</h1>
+                        <div class="report-meta">
+                            <span><strong>Classroom:</strong> @Portfolio.ClassroomName</span>
+                            <span class="dot">•</span>
+                            <span><strong>Branch:</strong> @Portfolio.BranchName</span>
+                            <span class="dot">•</span>
+                            <span><strong>Age:</strong> @Portfolio.AgeString</span>
+                            <span class="dot">•</span>
+                            <span><strong>Date:</strong> @DateTime.Today.ToString("MMMM d, yyyy")</span>
+                        </div>
+                    </div>
+                    <div class="report-consent-badge @ConsentClass">
+                        <i class="bi @ConsentIcon"></i>
+                        <span>@Portfolio.Consent.StatusLabel</span>
+                    </div>
+                </div>
+
+                <!-- KPI Summary Strip -->
+                <div class="report-kpi-grid">
+                    <div class="report-kpi-card">
+                        <span class="kpi-val">@Portfolio.TotalMoments</span>
+                        <span class="kpi-lbl">Observations Logged</span>
+                    </div>
+                    <div class="report-kpi-card">
+                        <span class="kpi-val">@Portfolio.TotalMilestones</span>
+                        <span class="kpi-lbl">Milestones Achieved</span>
+                    </div>
+                    <div class="report-kpi-card">
+                        <span class="kpi-val">@Portfolio.TotalExperiences</span>
+                        <span class="kpi-lbl">Guided Experiences</span>
+                    </div>
+                    <div class="report-kpi-card">
+                        <span class="kpi-val highlight">@Portfolio.CurrentFocusDomain</span>
+                        <span class="kpi-lbl">Primary Focus Area</span>
+                    </div>
+                </div>
+
+                <!-- Section: Developmental Domains Progress -->
+                <div class="report-section">
+                    <h2 class="section-title">
+                        <i class="bi bi-diagram-3"></i> Developmental Domain Progress
+                    </h2>
+                    <div class="domains-table">
+                        <div class="domain-header-row">
+                            <span class="col-domain">Domain</span>
+                            <span class="col-count">Observations</span>
+                            <span class="col-count">Milestones</span>
+                            <span class="col-progress">Focus Share</span>
+                            <span class="col-status">Growth Stage</span>
+                        </div>
+                        @foreach (var d in Portfolio.Domains)
+                        {
+                            <div class="domain-data-row">
+                                <span class="col-domain">
+                                    <i class="bi @d.Icon domain-icon"></i>
+                                    <strong>@d.DomainName</strong>
+                                </span>
+                                <span class="col-count">@d.EvidenceCount</span>
+                                <span class="col-count">@d.MilestonesCount</span>
+                                <span class="col-progress">
+                                    <div class="progress-track">
+                                        <div class="progress-fill" style="width: @(Math.Max(d.Percentage, 5))%;"></div>
+                                    </div>
+                                    <small>@d.Percentage%</small>
+                                </span>
+                                <span class="col-status">
+                                    <span class="growth-pill">@d.StatusNote</span>
+                                </span>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Section: Key Milestones -->
+                <div class="report-section">
+                    <h2 class="section-title">
+                        <i class="bi bi-trophy"></i> Key Developmental Milestones Achieved
+                    </h2>
+                    @if (Portfolio.Items.Any(i => i.Category == "Milestone"))
+                    {
+                        <div class="milestones-grid">
+                            @foreach (var m in Portfolio.Items.Where(i => i.Category == "Milestone").Take(6))
+                            {
+                                <div class="milestone-card">
+                                    <div class="milestone-top">
+                                        <span class="milestone-name">@m.Title</span>
+                                        <span class="milestone-date">@m.DateString</span>
+                                    </div>
+                                    <p class="milestone-desc">@m.Description</p>
+                                    @if (m.Domains.Any())
+                                    {
+                                        <div class="domain-tag">@string.Join(", ", m.Domains)</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="empty-note">Child is actively working towards initial early-childhood developmental milestones.</p>
+                    }
+                </div>
+
+                <!-- Section: Teacher Reflection & Conference Notes -->
+                <div class="report-section">
+                    <h2 class="section-title">
+                        <i class="bi bi-card-text"></i> Educator Observations & Next Steps
+                    </h2>
+                    <div class="notes-grid">
+                        <div class="notes-col">
+                            <h3>Observed Strengths & Passions</h3>
+                            <ul>
+                                @foreach (var s in Portfolio.ConferenceStrengths)
+                                {
+                                    <li>@s</li>
+                                }
+                            </ul>
+                        </div>
+                        <div class="notes-col">
+                            <h3>Recommended Scaffolding & Explorations</h3>
+                            <ul>
+                                @foreach (var n in Portfolio.ConferenceNextSteps)
+                                {
+                                    <li>@n</li>
+                                }
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Signatures -->
+                <div class="report-signatures">
+                    <div class="sig-block">
+                        <div class="sig-line"></div>
+                        <div class="sig-caption">Lead Educator Signature & Date</div>
+                    </div>
+                    <div class="sig-block">
+                        <div class="sig-line"></div>
+                        <div class="sig-caption">Parent / Guardian Signature & Date</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+.conference-modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(38, 51, 45, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 1200;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-y: auto;
+    padding: 30px 16px;
+}
+.conference-modal {
+    background: #ffffff;
+    border-radius: 18px;
+    max-width: 900px;
+    width: 100%;
+    box-shadow: 0 16px 40px rgba(40, 55, 47, 0.16);
+    border: 1px solid #e1e6e0;
+    overflow: hidden;
+}
+.modal-actions-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    background: #f7f8f5;
+    border-bottom: 1px solid #e1e6e0;
+}
+.report-tag {
+    font-size: 13px;
+    font-weight: 750;
+    color: #3e6253;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #6c7870;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+.report-sheet {
+    padding: 36px 40px;
+    color: #26332d;
+    font-family: "Figtree", Inter, sans-serif;
+}
+.report-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #52745e;
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+}
+.brand-eyebrow {
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.8px;
+    color: #52745e;
+    margin-bottom: 4px;
+}
+.report-title {
+    font-size: 26px;
+    font-weight: 800;
+    color: #26332d;
+    margin: 0 0 6px 0;
+}
+.report-meta {
+    font-size: 13px;
+    color: #6c7870;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.report-meta .dot {
+    color: #c0c8c3;
+}
+.report-consent-badge {
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.report-consent-badge.granted {
+    background: #eaf2ec;
+    color: #365844;
+    border: 1px solid #c8dacd;
+}
+.report-consent-badge.restricted, .report-consent-badge.missing {
+    background: #fdf5ea;
+    color: #8c5717;
+    border: 1px solid #ebd3b0;
+}
+.report-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+}
+.report-kpi-card {
+    background: #f8f9f5;
+    border: 1px solid #e1e6e0;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+}
+.kpi-val {
+    display: block;
+    font-size: 20px;
+    font-weight: 800;
+    color: #26332d;
+}
+.kpi-val.highlight {
+    font-size: 14px;
+    color: #3e6253;
+}
+.kpi-lbl {
+    font-size: 11px;
+    font-weight: 650;
+    color: #6c7870;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.report-section {
+    margin-bottom: 26px;
+}
+.section-title {
+    font-size: 15px;
+    font-weight: 750;
+    color: #26332d;
+    margin: 0 0 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #e4e7df;
+    padding-bottom: 6px;
+}
+.domains-table {
+    border: 1px solid #e1e6e0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.domain-header-row {
+    display: flex;
+    background: #f7f8f5;
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 750;
+    color: #6c7870;
+    text-transform: uppercase;
+}
+.domain-data-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-top: 1px solid #f0f2ee;
+    font-size: 13px;
+}
+.col-domain { flex: 2; display: flex; align-items: center; gap: 8px; }
+.col-count { flex: 1; text-align: center; }
+.col-progress { flex: 2; display: flex; align-items: center; gap: 8px; }
+.col-status { flex: 1.5; text-align: right; }
+.domain-icon { color: #52745e; }
+.progress-track {
+    flex: 1;
+    height: 7px;
+    background: #e6eee9;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.progress-fill {
+    height: 100%;
+    background: #52745e;
+    border-radius: 4px;
+}
+.growth-pill {
+    background: #eef4f0;
+    color: #365844;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.milestones-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.milestone-card {
+    background: #fbfcfb;
+    border: 1px solid #e4e7df;
+    border-radius: 10px;
+    padding: 12px;
+}
+.milestone-top {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+.milestone-name {
+    font-weight: 750;
+    font-size: 13px;
+    color: #26332d;
+}
+.milestone-date {
+    font-size: 11px;
+    color: #7c877f;
+}
+.milestone-desc {
+    font-size: 12px;
+    color: #556259;
+    margin: 0 0 6px 0;
+}
+.domain-tag {
+    font-size: 10px;
+    font-weight: 700;
+    color: #52745e;
+}
+.notes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.notes-col {
+    background: #f9faf8;
+    border: 1px solid #e1e6e0;
+    border-radius: 10px;
+    padding: 14px;
+}
+.notes-col h3 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 750;
+    color: #3e6253;
+}
+.notes-col ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: #3d4a42;
+    line-height: 1.5;
+}
+.report-signatures {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 36px;
+    padding-top: 16px;
+}
+.sig-block {
+    width: 40%;
+}
+.sig-line {
+    border-bottom: 1px solid #8e9b92;
+    height: 36px;
+    margin-bottom: 6px;
+}
+.sig-caption {
+    font-size: 11px;
+    color: #6c7870;
+    text-transform: uppercase;
+    font-weight: 650;
+}
+.empty-note {
+    font-size: 12px;
+    color: #7c877f;
+    font-style: italic;
+}
+
+@@media print {
+    .no-print { display: none !important; }
+    .conference-modal-backdrop {
+        position: static;
+        background: none;
+        backdrop-filter: none;
+        padding: 0;
+    }
+    .conference-modal {
+        box-shadow: none;
+        border: none;
+        max-width: 100%;
+    }
+    .report-sheet {
+        padding: 0;
+    }
+}
+</style>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public ChildPortfolioSummary? Portfolio { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string ConsentClass => Portfolio?.Consent.Status switch
+    {
+        MediaConsentStatus.Granted => "granted",
+        MediaConsentStatus.Restricted => "restricted",
+        _ => "missing"
+    };
+
+    private string ConsentIcon => Portfolio?.Consent.Status switch
+    {
+        MediaConsentStatus.Granted => "bi-check-circle-fill",
+        MediaConsentStatus.Restricted => "bi-dash-circle-fill",
+        _ => "bi-exclamation-triangle-fill"
+    };
+
+    private async Task PrintReport()
+    {
+        await JS.InvokeVoidAsync("window.print");
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

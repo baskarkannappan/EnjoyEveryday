@@ -29,4 +29,11 @@ public interface IChildDailyCareRepository
     Task<IEnumerable<ChildCareSupply>> GetSuppliesByChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default);
     Task<IEnumerable<ChildCareSupply>> GetLowSuppliesByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default);
     Task<Guid> SaveSupplyStatusAsync(ChildCareSupply supply, CancellationToken cancellationToken = default);
+
+    // Teacher Handovers
+    Task<Guid> CreateHandoverAsync(TeacherHandover handover, CancellationToken cancellationToken = default);
+    Task AcknowledgeHandoverAsync(Guid tenantId, Guid handoverId, Guid acknowledgedByUserId, string acknowledgedByName, string? notes, CancellationToken cancellationToken = default);
+    Task<TeacherHandover?> GetHandoverByIdAsync(Guid tenantId, Guid handoverId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<TeacherHandover>> GetHandoversByClassroomAndDateAsync(Guid tenantId, Guid classroomId, DateOnly date, CancellationToken cancellationToken = default);
+    Task<IEnumerable<TeacherHandover>> GetPendingHandoversByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default);
 }

@@ -87,6 +87,10 @@ public interface IChildDailyCareService
     Task<IEnumerable<ChildCareSupply>> GetLowSuppliesAsync(Guid branchId, CancellationToken ct = default);
     Task<Guid> UpdateSupplyStatusAsync(ChildCareSupply supply, CancellationToken ct = default);
     Task<ParentDailyCareReport> GetParentDailyCareReportAsync(Guid childId, DateOnly date, CancellationToken ct = default);
+    Task<Guid> SubmitHandoverAsync(TeacherHandover handover, CancellationToken ct = default);
+    Task AcknowledgeHandoverAsync(Guid handoverId, string? notes, CancellationToken ct = default);
+    Task<IEnumerable<TeacherHandover>> GetClassroomHandoversAsync(Guid classroomId, DateOnly date, CancellationToken ct = default);
+    Task<IEnumerable<TeacherHandover>> GetPendingHandoversAsync(Guid branchId, CancellationToken ct = default);
 }
 
 public class ChildDailyCareService : IChildDailyCareService
@@ -712,5 +716,69 @@ public class ChildDailyCareService : IChildDailyCareService
             Timeline = timeline,
             LowSupplies = supplies
         };
+    }
+
+    public async Task<Guid> SubmitHandoverAsync(TeacherHandover handover, CancellationToken ct = default)
+    {
+        handover.TenantId = _tenantContext.TenantId;
+        handover.OutgoingTeacherUserId = _userContext.UserId != Guid.Empty ? _userContext.UserId : handover.OutgoingTeacherUserId;
+        handover.OutgoingTeacherName = !string.IsNullOrWhiteSpace(_userContext.Email) ? _userContext.Email : handover.OutgoingTeacherName;
+
+        if (handover.ClassroomId == Guid.Empty)
+            throw new ArgumentException("Classroom is required for a teacher handover.", nameof(handover.ClassroomId));
+
+        var cls = await _classroomRepository.GetByIdAsync(_tenantContext.TenantId, handover.ClassroomId, ct);
+        if (cls == null)
+            throw new ArgumentException("Classroom not found.");
+
+        handover.BranchId = cls.BranchId;
+        var branch = await _branchRepository.GetByIdAsync(_tenantContext.TenantId, cls.BranchId, ct);
+        if (branch != null)
+        {
+            handover.OrganizationId = branch.OrganizationId;
+        }
+
+        var id = await _repository.CreateHandoverAsync(handover, ct);
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = _tenantContext.TenantId,
+            UserId = handover.OutgoingTeacherUserId,
+            Action = "TeacherHandoverSubmitted",
+            EntityType = "TeacherHandover",
+            EntityId = id,
+            Details = new { handover.ClassroomId, handover.ShiftType, handover.IsCritical }
+        }, ct);
+
+        return id;
+    }
+
+    public async Task AcknowledgeHandoverAsync(Guid handoverId, string? notes, CancellationToken ct = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var userId = _userContext.UserId;
+        var userName = _userContext.Email ?? "Receiving Teacher";
+
+        await _repository.AcknowledgeHandoverAsync(tenantId, handoverId, userId, userName, notes, ct);
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = tenantId,
+            UserId = userId,
+            Action = "TeacherHandoverAcknowledged",
+            EntityType = "TeacherHandover",
+            EntityId = handoverId,
+            Details = new { AcknowledgedBy = userName }
+        }, ct);
+    }
+
+    public async Task<IEnumerable<TeacherHandover>> GetClassroomHandoversAsync(Guid classroomId, DateOnly date, CancellationToken ct = default)
+    {
+        return await _repository.GetHandoversByClassroomAndDateAsync(_tenantContext.TenantId, classroomId, date, ct);
+    }
+
+    public async Task<IEnumerable<TeacherHandover>> GetPendingHandoversAsync(Guid branchId, CancellationToken ct = default)
+    {
+        return await _repository.GetPendingHandoversByBranchAsync(_tenantContext.TenantId, branchId, ct);
     }
 }

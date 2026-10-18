@@ -11,9 +11,7 @@
 @inject EnjoyEveryday.Application.Services.AttendanceService AttendanceService
 @inject ClassroomService ClassroomService
 @inject BranchService BranchService
-@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory Db
 @inject TimeProvider TimeProvider
-@using Dapper
 @if (IsOpen)
 {
     <div class="modal-backdrop show" style="background-color: rgba(0,0,0,0.5); position: fixed; inset: 0; z-index: 1050; display: flex; align-items: center; justify-content: center;" @onclick="CloseDialog">
@@ -224,17 +222,6 @@
             }
             
             _children = (await ChildService.GetChildrenByClassroomAsync(_session.ClassroomId)).ToList();            
-            // Get branch ID to fetch attendance
-            // For now, we mock the branch ID if we can't easily retrieve it, or we use a more generalized fetch
-            // But realistically, we can just get it via a service. We will fetch all organization attendance and filter.
-            var allAttendance = await AttendanceService.GetChildAttendanceAsync(Guid.Empty, TimeProvider.GetLocalNow().Date); // The service tenant-filters anyway if we pass dummy branch or we need to update service.
-            // Wait, AttendanceService.GetChildAttendanceAsync requires a branchId. 
-            // We can add a method or just pass branchId. 
-            // Let's assume we can fetch attendance for the classroom.
-            // But wait, the service method is `GetChildAttendanceAsync(branchId, date)`.
-            // Let's just create a quick query or modify the service.
-            
-            // To be safe, we will just use the Db connection to get present children directly.
             _presentChildIds.Clear();
             _loggedChildIds.Clear();
             
@@ -246,16 +233,15 @@
                     Id = Guid.NewGuid(),
                     ExperienceSessionId = _session.Id,
                     ChildId = child.Id,
-                    ParticipationStatus = "Participated" // Default, will update below based on attendance
+                    ParticipationStatus = "Participated"
                 };
             }
             
-            using var conn = await Db.CreateConnectionAsync();
             var todayDate = TimeProvider.GetLocalNow().Date;
-            var presentIds = await conn.QueryAsync<Guid>("SELECT child_id FROM child_attendance WHERE classroom_id = @Id AND attendance_date = @Date AND status IN ('Present', 'Late')", new { Id = _session.ClassroomId, Date = todayDate });
+            var presentIds = await AttendanceService.GetPresentChildIdsForClassroomAsync(_session.ClassroomId, todayDate);
             foreach (var id in presentIds) { _presentChildIds.Add(id); }
 
-            var loggedIds = await conn.QueryAsync<Guid>("SELECT child_id FROM child_journey_entries WHERE experience_session_id = @Id", new { Id = _session.Id });
+            var loggedIds = await ExecutionService.GetLoggedChildIdsForSessionAsync(_session.Id);
             foreach (var id in loggedIds) { _loggedChildIds.Add(id); }
 
             foreach (var child in _children)

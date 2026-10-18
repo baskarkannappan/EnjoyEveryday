@@ -1,0 +1,804 @@
+@page "/management/roster"
+@rendermode InteractiveServer
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+
+@inject IStaffRosterService RosterService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Staff Roster &amp; Coverage — EnjoyEveryday</PageTitle>
+
+<div class="content" style="max-width: 1440px; margin: auto; padding: 32px 24px;">
+    
+    <PageHero Eyebrow="COMPLIANCE &amp; STAFFING"
+              Title="Staff Roster &amp; Coverage"
+              Subtitle="Statutory educator-to-child ratios, staggered shifts, and leave coverage in real time.">
+        <RightContent>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="date" class="roster-date-picker" @bind="_selectedDate" @bind:after="LoadRosterAsync" />
+                <button class="btn secondary" @onclick='() => NavigationManager.NavigateTo("/teachers")'>
+                    <i class="bi bi-people"></i> Teacher Directory
+                </button>
+                <button class="primary" @onclick="() => _isLeaveModalOpen = true">
+                    + Log Staff Leave
+                </button>
+            </div>
+        </RightContent>
+    </PageHero>
+
+    <!-- Branch Selector if multiple branches -->
+    @if (_branches != null && _branches.Count > 1)
+    {
+        <div class="branch-filter-bar">
+            <span class="filter-label">Branch:</span>
+            @foreach (var b in _branches)
+            {
+                <button class="branch-tab-btn @(_selectedBranchId == b.Id ? "active" : "")" @onclick="() => SelectBranch(b.Id)">
+                    @b.Name
+                </button>
+            }
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <LoadingState Message="Calculating real-time ratio compliance and shift rosters..." />
+    }
+    else if (_overview != null)
+    {
+        <!-- KPI Strip -->
+        <div class="roster-kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-num">@_overview.TotalTeachersScheduled</span>
+                <span class="kpi-lbl">Educators Scheduled</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-num highlight-green">@_overview.TotalTeachersClockedIn</span>
+                <span class="kpi-lbl">Clocked In Now</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-num @(_overview.UnderstaffedRoomsCount > 0 ? "highlight-red" : "")">
+                    @_overview.UnderstaffedRoomsCount
+                </span>
+                <span class="kpi-lbl">Understaffed Rooms</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-num">@_overview.TotalLeavesToday</span>
+                <span class="kpi-lbl">Staff On Leave Today</span>
+            </div>
+        </div>
+
+        <!-- Section 1: Statutory Educator-to-Child Ratio Compliance -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-shield-check"></i> Statutory Educator-to-Child Ratios
+                    </h2>
+                    <p class="section-subtitle">Real-time attendance ratio versus statutory early-childhood licensing thresholds.</p>
+                </div>
+            </div>
+
+            <div class="ratio-cards-grid">
+                @foreach (var r in _overview.Ratios)
+                {
+                    <div class="ratio-card @GetRatioClass(r.Status)">
+                        <div class="ratio-card-top">
+                            <div>
+                                <span class="room-title">@r.ClassroomName</span>
+                                <span class="rule-badge">@r.StatutoryRule</span>
+                            </div>
+                            <span class="status-badge @GetRatioClass(r.Status)">
+                                @if (r.Status == RatioComplianceStatus.Compliant)
+                                {
+                                    <i class="bi bi-check-circle-fill"></i> <text>Compliant</text>
+                                }
+                                else if (r.Status == RatioComplianceStatus.AtRisk)
+                                {
+                                    <i class="bi bi-exclamation-triangle-fill"></i> <text>At Capacity</text>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-exclamation-octagon-fill"></i> <text>Understaffed</text>
+                                }
+                            </span>
+                        </div>
+
+                        <div class="ratio-metric-row">
+                            <div class="metric-block">
+                                <span class="metric-value">@r.ChildrenPresent</span>
+                                <span class="metric-caption">Children Present</span>
+                            </div>
+                            <div class="metric-divider">:</div>
+                            <div class="metric-block">
+                                <span class="metric-value">@r.TeachersPresent</span>
+                                <span class="metric-caption">Educators Active</span>
+                            </div>
+                        </div>
+
+                        <div class="ratio-bar-container">
+                            <div class="ratio-bar-track">
+                                <div class="ratio-bar-fill @GetRatioClass(r.Status)" 
+                                     style="width: @(Math.Min(100, r.TeachersPresent > 0 ? (r.CurrentRatio / r.MaxAllowedRatio * 100) : (r.ChildrenPresent > 0 ? 100 : 0)))%;"></div>
+                            </div>
+                            <div class="ratio-bar-footer">
+                                <span>Ratio 1:@(r.CurrentRatio)</span>
+                                <span>Limit 1:@(r.MaxAllowedRatio)</span>
+                            </div>
+                        </div>
+
+                        @if (r.Status == RatioComplianceStatus.Breached)
+                        {
+                            <div class="ratio-alert-action">
+                                <span><strong>+@r.MissingTeachersCount</strong> educator needed for compliance</span>
+                                @if (_overview.AvailableFloatTeachers.Any())
+                                {
+                                    <button class="btn secondary dispatch-btn" @onclick="() => DispatchFloat(r.ClassroomId)">
+                                        Dispatch Float
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Section 2: Shift Roster Board & Float Support -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-clock-history"></i> Daily Shift Roster
+                    </h2>
+                    <p class="section-subtitle">Educator assignments across staggered morning, core, and closing shifts.</p>
+                </div>
+            </div>
+
+            <div class="shift-grid">
+                @foreach (var shift in _overview.Shifts)
+                {
+                    <div class="shift-card @(shift.IsOnLeave ? "on-leave" : "")">
+                        <div class="shift-card-header">
+                            <div class="shift-teacher-identity">
+                                <div class="teacher-avatar">
+                                    @(shift.TeacherName.FirstOrDefault().ToString())
+                                </div>
+                                <div>
+                                    <div class="teacher-name">@shift.TeacherName</div>
+                                    <div class="teacher-room">@shift.ClassroomName</div>
+                                </div>
+                            </div>
+                            @if (shift.IsOnLeave)
+                            {
+                                <span class="leave-tag"><i class="bi bi-calendar-x"></i> @shift.LeaveNote</span>
+                            }
+                            else if (shift.IsClockedIn)
+                            {
+                                <span class="clock-tag clocked-in"><i class="bi bi-circle-fill"></i> Active</span>
+                            }
+                            else
+                            {
+                                <span class="clock-tag scheduled">Scheduled</span>
+                            }
+                        </div>
+                        <div class="shift-timing">
+                            <i class="bi bi-sun"></i> @shift.ShiftType
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Section 3: Staff Leave & Absence Coverage -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-calendar2-week"></i> Leave &amp; Substitute Coverage
+                    </h2>
+                    <p class="section-subtitle">Active and scheduled staff absences with assigned replacement coverage.</p>
+                </div>
+            </div>
+
+            @if (_overview.Leaves.Any())
+            {
+                <div class="leaves-table-wrap">
+                    <table class="leaves-table">
+                        <thead>
+                            <tr>
+                                <th>Educator</th>
+                                <th>Leave Type</th>
+                                <th>Dates</th>
+                                <th>Reason</th>
+                                <th>Coverage Status</th>
+                                <th>Substitute Educator</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in _overview.Leaves)
+                            {
+                                <tr>
+                                    <td><strong>@l.TeacherName</strong></td>
+                                    <td><span class="leave-pill">@l.LeaveType</span></td>
+                                    <td>@l.StartDate.ToString("MMM d") – @l.EndDate.ToString("MMM d, yyyy")</td>
+                                    <td>@(l.Reason ?? "General scheduled absence")</td>
+                                    <td>
+                                        <span class="coverage-pill @(l.CoverageStatus == "Covered" ? "covered" : "uncovered")">
+                                            @l.CoverageStatus
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @(string.IsNullOrEmpty(l.SubstituteTeacherName) ? "None assigned" : l.SubstituteTeacherName)
+                                    </td>
+                                    <td>
+                                        @if (l.CoverageStatus != "Covered")
+                                        {
+                                            <button class="btn secondary sub-btn" @onclick="() => OpenSubModal(l)">
+                                                Assign Sub
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size: 11px; color: #52745e; font-weight: 700;"><i class="bi bi-check"></i> Covered</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty-leaves">
+                    <i class="bi bi-check-circle" style="font-size: 24px; color: #52745e;"></i>
+                    <p>No staff leaves recorded for this period. Full team availability.</p>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Modal: Log Staff Leave -->
+@if (_isLeaveModalOpen)
+{
+    <div class="modal-backdrop-roster" @onclick="() => _isLeaveModalOpen = false">
+        <div class="modal-card-roster" @onclick:stopPropagation="true">
+            <div class="modal-top">
+                <h3>Log Staff Leave</h3>
+                <button class="close-x" @onclick="() => _isLeaveModalOpen = false">✕</button>
+            </div>
+            <div class="modal-fields">
+                <label class="field-lbl">Educator</label>
+                <select class="field-input" @bind="_newLeaveTeacherId">
+                    <option value="@Guid.Empty">-- Select Educator --</option>
+                    @if (_overview?.Shifts != null)
+                    {
+                        @foreach (var s in _overview.Shifts)
+                        {
+                            <option value="@s.TeacherId">@s.TeacherName (@s.ClassroomName)</option>
+                        }
+                    }
+                </select>
+
+                <label class="field-lbl">Leave Type</label>
+                <select class="field-input" @bind="_newLeaveType">
+                    <option value="Vacation">Vacation</option>
+                    <option value="Sick">Sick / Health</option>
+                    <option value="Personal">Personal Leave</option>
+                    <option value="Training">Professional Training</option>
+                    <option value="MaternityPaternity">Parental Leave</option>
+                </select>
+
+                <div style="display: flex; gap: 12px;">
+                    <div style="flex: 1;">
+                        <label class="field-lbl">Start Date</label>
+                        <input type="date" class="field-input" @bind="_newLeaveStart" />
+                    </div>
+                    <div style="flex: 1;">
+                        <label class="field-lbl">End Date</label>
+                        <input type="date" class="field-input" @bind="_newLeaveEnd" />
+                    </div>
+                </div>
+
+                <label class="field-lbl">Reason / Handover Note</label>
+                <textarea class="field-input" rows="2" @bind="_newLeaveReason" placeholder="e.g. Annual leave, classroom lead handover confirmed"></textarea>
+            </div>
+            <div class="modal-bottom">
+                <button class="btn secondary" @onclick="() => _isLeaveModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="SubmitLeave" disabled="@(_newLeaveTeacherId == Guid.Empty)">
+                    Save Leave Record
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Assign Substitute -->
+@if (_isSubModalOpen && _selectedLeaveForSub != null)
+{
+    <div class="modal-backdrop-roster" @onclick="() => _isSubModalOpen = false">
+        <div class="modal-card-roster" @onclick:stopPropagation="true">
+            <div class="modal-top">
+                <h3>Assign Substitute for @_selectedLeaveForSub.TeacherName</h3>
+                <button class="close-x" @onclick="() => _isSubModalOpen = false">✕</button>
+            </div>
+            <div class="modal-fields">
+                <p style="font-size: 13px; color: #5a665f; margin-bottom: 12px;">
+                    Select an educator to provide classroom ratio coverage from @_selectedLeaveForSub.StartDate.ToString("MMM d") to @_selectedLeaveForSub.EndDate.ToString("MMM d").
+                </p>
+                <label class="field-lbl">Available Educator</label>
+                <select class="field-input" @bind="_selectedSubTeacherId">
+                    <option value="@Guid.Empty">-- Select Substitute --</option>
+                    @if (_overview?.Shifts != null)
+                    {
+                        @foreach (var s in _overview.Shifts.Where(sh => sh.TeacherId != _selectedLeaveForSub.TeacherId && !sh.IsOnLeave))
+                        {
+                            <option value="@s.TeacherId">@s.TeacherName (@s.ClassroomName)</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="modal-bottom">
+                <button class="btn secondary" @onclick="() => _isSubModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="ConfirmSubAssignment" disabled="@(_selectedSubTeacherId == Guid.Empty)">
+                    Confirm Coverage
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+.roster-date-picker {
+    padding: 9px 14px;
+    border-radius: 11px;
+    border: 1px solid var(--border, #e4e7df);
+    background: #ffffff;
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--text, #26332d);
+    outline: none;
+}
+.branch-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 10px 16px;
+    background: #ffffff;
+    border: 1px solid #e1e6e0;
+    border-radius: 12px;
+}
+.filter-label {
+    font-size: 12px;
+    font-weight: 750;
+    color: #6c7870;
+}
+.branch-tab-btn {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid #e1e6e0;
+    background: #f7f8f5;
+    font-size: 12px;
+    font-weight: 650;
+    color: #4b5850;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.branch-tab-btn.active {
+    background: #52745e;
+    color: #ffffff;
+    border-color: #52745e;
+}
+.roster-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+}
+.kpi-card {
+    background: #ffffff;
+    border: 1px solid #e1e6e0;
+    border-radius: 16px;
+    padding: 18px 20px;
+    box-shadow: 0 4px 16px rgba(40, 55, 47, 0.04);
+}
+.kpi-num {
+    display: block;
+    font-size: 26px;
+    font-weight: 800;
+    color: #26332d;
+}
+.kpi-num.highlight-green { color: #52745e; }
+.kpi-num.highlight-red { color: #c53030; }
+.kpi-lbl {
+    font-size: 12px;
+    font-weight: 650;
+    color: #6c7870;
+    text-transform: uppercase;
+}
+.section-container {
+    background: #ffffff;
+    border: 1px solid #e1e6e0;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 8px 30px rgba(40, 55, 47, 0.04);
+    margin-bottom: 28px;
+}
+.section-header {
+    margin-bottom: 20px;
+}
+.section-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    color: #26332d;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.section-subtitle {
+    margin: 4px 0 0 0;
+    font-size: 13px;
+    color: #6c7870;
+}
+.ratio-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+.ratio-card {
+    border-radius: 14px;
+    border: 1px solid #e1e6e0;
+    padding: 18px;
+    background: #fafbfa;
+}
+.ratio-card.compliant { border-color: #c8dacd; background: #fafcfa; }
+.ratio-card.atrisk { border-color: #ebd3b0; background: #fffcf8; }
+.ratio-card.breached { border-color: #fed7d7; background: #fff5f5; }
+.ratio-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+}
+.room-title {
+    display: block;
+    font-size: 15px;
+    font-weight: 800;
+    color: #26332d;
+}
+.rule-badge {
+    font-size: 11px;
+    color: #6c7870;
+    font-weight: 650;
+}
+.status-badge {
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 750;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.status-badge.compliant { background: #eaf2ec; color: #365844; }
+.status-badge.atrisk { background: #fdf5ea; color: #8c5717; }
+.status-badge.breached { background: #fee2e2; color: #991b1b; }
+.ratio-metric-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+.metric-block { text-align: center; }
+.metric-value { font-size: 22px; font-weight: 800; color: #26332d; display: block; }
+.metric-caption { font-size: 10px; font-weight: 650; color: #7c877f; text-transform: uppercase; }
+.metric-divider { font-size: 20px; font-weight: 800; color: #a4b0a8; }
+.ratio-bar-track {
+    height: 6px;
+    background: #e6eee9;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+.ratio-bar-fill { height: 100%; border-radius: 4px; }
+.ratio-bar-fill.compliant { background: #52745e; }
+.ratio-bar-fill.atrisk { background: #d98a2c; }
+.ratio-bar-fill.breached { background: #dc2626; }
+.ratio-bar-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #7c877f;
+    font-weight: 650;
+}
+.ratio-alert-action {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #fecaca;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: #991b1b;
+}
+.dispatch-btn {
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #ffffff;
+    border-color: #dc2626;
+    color: #dc2626;
+    border-radius: 6px;
+}
+.shift-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+}
+.shift-card {
+    border: 1px solid #e1e6e0;
+    border-radius: 12px;
+    padding: 14px;
+    background: #ffffff;
+}
+.shift-card.on-leave { opacity: 0.7; background: #f9f9f9; }
+.shift-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+.shift-teacher-identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.teacher-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: #e6eee9;
+    color: #3e6253;
+    font-weight: 750;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.teacher-name { font-size: 13px; font-weight: 750; color: #26332d; }
+.teacher-room { font-size: 11px; color: #6c7870; }
+.clock-tag {
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 750;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.clock-tag.clocked-in { background: #eaf2ec; color: #365844; }
+.clock-tag.scheduled { background: #f0f2ee; color: #6c7870; }
+.leave-tag {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 750;
+}
+.shift-timing {
+    font-size: 11px;
+    color: #52745e;
+    font-weight: 650;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.leaves-table-wrap {
+    overflow-x: auto;
+}
+.leaves-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.leaves-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f7f8f5;
+    font-size: 11px;
+    font-weight: 750;
+    color: #6c7870;
+    text-transform: uppercase;
+    border-bottom: 1px solid #e1e6e0;
+}
+.leaves-table td {
+    padding: 12px;
+    border-bottom: 1px solid #f0f2ee;
+    color: #26332d;
+}
+.leave-pill {
+    padding: 3px 8px;
+    background: #f4eee1;
+    color: #735a29;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.coverage-pill {
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.coverage-pill.covered { background: #eaf2ec; color: #365844; }
+.coverage-pill.uncovered { background: #fef3c7; color: #92400e; }
+.sub-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+}
+.empty-leaves {
+    text-align: center;
+    padding: 32px 16px;
+    color: #6c7870;
+    font-size: 13px;
+}
+.modal-backdrop-roster {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(38, 51, 45, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.modal-card-roster {
+    background: #ffffff;
+    border-radius: 16px;
+    max-width: 520px;
+    width: 100%;
+    border: 1px solid #e1e6e0;
+    box-shadow: 0 16px 40px rgba(40, 55, 47, 0.18);
+    overflow: hidden;
+}
+.modal-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: #f7f8f5;
+    border-bottom: 1px solid #e1e6e0;
+}
+.modal-top h3 { margin: 0; font-size: 16px; font-weight: 800; color: #26332d; }
+.close-x { background: none; border: none; font-size: 18px; cursor: pointer; color: #6c7870; }
+.modal-fields { padding: 20px; }
+.field-lbl { display: block; font-size: 11px; font-weight: 700; color: #5a665f; margin-bottom: 4px; text-transform: uppercase; }
+.field-input { width: 100%; padding: 8px 12px; border: 1px solid #e1e6e0; border-radius: 8px; font-size: 13px; background: #ffffff; margin-bottom: 14px; box-sizing: border-box; }
+.modal-bottom { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; background: #f7f8f5; border-top: 1px solid #e1e6e0; }
+</style>
+
+@code {
+    private DateTime _selectedDate = DateTime.Today;
+    private Guid _selectedBranchId = Guid.Empty;
+    private List<Branch>? _branches;
+    private StaffRosterOverview? _overview;
+    private bool _isLoading = true;
+
+    // Modals
+    private bool _isLeaveModalOpen = false;
+    private Guid _newLeaveTeacherId = Guid.Empty;
+    private string _newLeaveType = "Vacation";
+    private DateTime _newLeaveStart = DateTime.Today;
+    private DateTime _newLeaveEnd = DateTime.Today.AddDays(1);
+    private string _newLeaveReason = "";
+
+    private bool _isSubModalOpen = false;
+    private StaffLeaveItem? _selectedLeaveForSub;
+    private Guid _selectedSubTeacherId = Guid.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
+        {
+            var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
+            _branches = branchesList.ToList();
+            if (_branches.Any())
+            {
+                _selectedBranchId = _branches.First().Id;
+            }
+        }
+
+        await LoadRosterAsync();
+    }
+
+    private async Task SelectBranch(Guid branchId)
+    {
+        _selectedBranchId = branchId;
+        await LoadRosterAsync();
+    }
+
+    private async Task LoadRosterAsync()
+    {
+        if (_selectedBranchId == Guid.Empty) return;
+
+        _isLoading = true;
+        try
+        {
+            _overview = await RosterService.GetRosterOverviewAsync(_selectedBranchId, _selectedDate);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private string GetRatioClass(RatioComplianceStatus status) => status switch
+    {
+        RatioComplianceStatus.Compliant => "compliant",
+        RatioComplianceStatus.AtRisk => "atrisk",
+        _ => "breached"
+    };
+
+    private async Task DispatchFloat(Guid classroomId)
+    {
+        if (_overview?.AvailableFloatTeachers.Any() == true)
+        {
+            var floatTeacher = _overview.AvailableFloatTeachers.First();
+            await RosterService.DispatchFloatTeacherAsync(floatTeacher.TeacherId, classroomId);
+            await LoadRosterAsync();
+        }
+    }
+
+    private async Task SubmitLeave()
+    {
+        if (_newLeaveTeacherId == Guid.Empty) return;
+
+        var leave = new StaffLeave
+        {
+            TeacherId = _newLeaveTeacherId,
+            LeaveType = _newLeaveType,
+            StartDate = _newLeaveStart,
+            EndDate = _newLeaveEnd,
+            Reason = _newLeaveReason,
+            Status = "Approved",
+            CoverageStatus = "Uncovered"
+        };
+
+        await RosterService.SubmitStaffLeaveAsync(leave);
+        _isLeaveModalOpen = false;
+        _newLeaveTeacherId = Guid.Empty;
+        _newLeaveReason = "";
+        await LoadRosterAsync();
+    }
+
+    private void OpenSubModal(StaffLeaveItem leave)
+    {
+        _selectedLeaveForSub = leave;
+        _selectedSubTeacherId = Guid.Empty;
+        _isSubModalOpen = true;
+    }
+
+    private async Task ConfirmSubAssignment()
+    {
+        if (_selectedLeaveForSub == null || _selectedSubTeacherId == Guid.Empty) return;
+
+        await RosterService.AssignSubstituteCoverageAsync(_selectedLeaveForSub.Id, _selectedSubTeacherId);
+        _isSubModalOpen = false;
+        _selectedLeaveForSub = null;
+        await LoadRosterAsync();
+    }
+}

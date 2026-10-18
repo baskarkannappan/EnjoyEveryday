@@ -31,8 +31,7 @@ public class ExperienceCurationService
     }
 
     private bool IsPlatformAdmin() =>
-        _userContext.Roles.Contains(RoleTemplates.PlatformAdmin, StringComparer.OrdinalIgnoreCase) ||
-        _userContext.Email.Equals("admin@littlestars.com", StringComparison.OrdinalIgnoreCase);
+        _userContext.Roles.Contains(RoleTemplates.PlatformAdmin, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Organization submits an experience for curation and platform review.

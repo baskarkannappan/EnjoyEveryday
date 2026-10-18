@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
@@ -17,6 +18,7 @@ public class AccountBookService : IAccountBookService
     private readonly IMaterialMarketplaceRepository _materialRepo;
     private readonly IOrganizationRepository _orgRepo;
     private readonly IUserContext _userContext;
+    private readonly ITenantContext _tenantContext;
 
     // Concurrent store for investigation notes and manual resolution overrides
     private static readonly ConcurrentDictionary<string, List<string>> _investigationNotes = new();
@@ -27,14 +29,38 @@ public class AccountBookService : IAccountBookService
         IBillingRepository billingRepository,
         IMaterialMarketplaceRepository materialRepo,
         IOrganizationRepository orgRepo,
-        IUserContext userContext)
+        IUserContext userContext,
+        ITenantContext tenantContext)
     {
         _platformAdminService = platformAdminService;
         _billingRepository = billingRepository;
         _materialRepo = materialRepo;
         _orgRepo = orgRepo;
         _userContext = userContext;
+        _tenantContext = tenantContext;
     }
+
+    private void EnsureAuthorized()
+    {
+        if (!_userContext.IsAuthenticated || _userContext.UserId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Authentication is required to access the financial account book.");
+        }
+
+        var isPlatform = IsPlatformBillingUser();
+        var isOrg = _userContext.HasPermission(Permissions.OrganizationBillingView) ||
+                    _userContext.Roles.Contains(RoleTemplates.OrganizationOwner, StringComparer.OrdinalIgnoreCase) ||
+                    _userContext.Roles.Contains(RoleTemplates.OrganizationAdmin, StringComparer.OrdinalIgnoreCase);
+
+        if (!isPlatform && !isOrg)
+        {
+            throw new UnauthorizedAccessException("Access denied. Caller does not hold required billing permissions.");
+        }
+    }
+
+    private bool IsPlatformBillingUser() =>
+        _userContext.HasPermission(Permissions.PlatformBillingManage) ||
+        _userContext.Roles.Contains(RoleTemplates.PlatformAdmin, StringComparer.OrdinalIgnoreCase);
 
     public async Task<FinancialOverviewDto> GetFinancialOverviewAsync(CancellationToken cancellationToken = default)
     {
@@ -122,9 +148,15 @@ public class AccountBookService : IAccountBookService
 
     public async Task<TransactionInvestigationDto?> GetInvestigationDetailsAsync(string reference, CancellationToken cancellationToken = default)
     {
+        EnsureAuthorized();
         var all = await GetAllNormalizedTransactionsAsync(cancellationToken);
         var tx = all.FirstOrDefault(t => string.Equals(t.Reference, reference, StringComparison.OrdinalIgnoreCase));
         if (tx == null) return null;
+
+        if (!IsPlatformBillingUser() && tx.OrganizationId != _userContext.OrganizationId)
+        {
+            throw new UnauthorizedAccessException("Access denied. Transaction does not belong to caller's organization.");
+        }
 
         var dto = new TransactionInvestigationDto
         {
@@ -250,163 +282,231 @@ public class AccountBookService : IAccountBookService
         return dto;
     }
 
-    public Task<bool> AddInvestigationNoteAsync(string reference, string note, CancellationToken cancellationToken = default)
+    public async Task<bool> AddInvestigationNoteAsync(string reference, string note, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(reference) || string.IsNullOrWhiteSpace(note)) return Task.FromResult(false);
+        EnsureAuthorized();
+        if (string.IsNullOrWhiteSpace(reference) || string.IsNullOrWhiteSpace(note)) return false;
+
+        var all = await GetAllNormalizedTransactionsAsync(cancellationToken);
+        var tx = all.FirstOrDefault(t => string.Equals(t.Reference, reference, StringComparison.OrdinalIgnoreCase));
+        if (tx == null)
+            throw new UnauthorizedAccessException("Transaction not found or access denied.");
+
+        if (!IsPlatformBillingUser() && tx.OrganizationId != _userContext.OrganizationId)
+        {
+            throw new UnauthorizedAccessException("Access denied. Cannot annotate transactions belonging to another organization.");
+        }
 
         var list = _investigationNotes.GetOrAdd(reference, _ => new List<string>());
         var timestamp = DateTimeOffset.UtcNow.ToString("MMM dd, yyyy HH:mm");
-        var user = _userContext.UserId != Guid.Empty ? "Platform Admin" : "Auditor";
+        var user = IsPlatformBillingUser() ? "Platform Admin" : (!string.IsNullOrEmpty(_userContext.Email) ? _userContext.Email : "Daycare Admin");
         list.Add($"[{timestamp}] {user}: {note.Trim()}");
 
-        return Task.FromResult(true);
+        return true;
     }
 
-    public Task<bool> VerifyAndReconcileTransactionAsync(string reference, string notes, CancellationToken cancellationToken = default)
+    public async Task<bool> VerifyAndReconcileTransactionAsync(string reference, string notes, CancellationToken cancellationToken = default)
     {
+        EnsureAuthorized();
+        if (!IsPlatformBillingUser())
+        {
+            throw new UnauthorizedAccessException("Access denied. Platform billing management permission is required to reconcile transactions.");
+        }
+
         _statusOverrides[reference] = "Paid";
-        AddInvestigationNoteAsync(reference, $"Payment verified and reconciled by Platform Admin. Notes: {notes}", cancellationToken);
-        return Task.FromResult(true);
+        await AddInvestigationNoteAsync(reference, $"Payment verified and reconciled by Platform Admin. Notes: {notes}", cancellationToken);
+        return true;
     }
 
-    public Task<bool> ReleaseDepositAsync(string reference, decimal releaseAmount, string reason, CancellationToken cancellationToken = default)
+    public async Task<bool> ReleaseDepositAsync(string reference, decimal releaseAmount, string reason, CancellationToken cancellationToken = default)
     {
+        EnsureAuthorized();
+        if (!IsPlatformBillingUser())
+        {
+            throw new UnauthorizedAccessException("Access denied. Platform billing management permission is required to release deposits.");
+        }
+
         _statusOverrides[reference] = "Refunded";
-        AddInvestigationNoteAsync(reference, $"Refundable deposit released: ₹{releaseAmount:N0}. Reason: {reason}", cancellationToken);
-        return Task.FromResult(true);
+        await AddInvestigationNoteAsync(reference, $"Refundable deposit released: ₹{releaseAmount:N0}. Reason: {reason}", cancellationToken);
+        return true;
     }
 
-    public Task<bool> ProcessRefundAsync(string reference, decimal refundAmount, string reason, CancellationToken cancellationToken = default)
+    public async Task<bool> ProcessRefundAsync(string reference, decimal refundAmount, string reason, CancellationToken cancellationToken = default)
     {
+        EnsureAuthorized();
+        if (!IsPlatformBillingUser())
+        {
+            throw new UnauthorizedAccessException("Access denied. Platform billing management permission is required to process refunds.");
+        }
+
         _statusOverrides[reference] = "Refunded";
-        AddInvestigationNoteAsync(reference, $"Refund reprocessed successfully: ₹{refundAmount:N0}. Reason: {reason}", cancellationToken);
-        return Task.FromResult(true);
+        await AddInvestigationNoteAsync(reference, $"Refund reprocessed successfully: ₹{refundAmount:N0}. Reason: {reason}", cancellationToken);
+        return true;
     }
 
-    public Task<bool> RecordCashReceiptAsync(RecordManualCashReceiptCommand command, CancellationToken cancellationToken = default)
+    public async Task<bool> RecordCashReceiptAsync(RecordManualCashReceiptCommand command, CancellationToken cancellationToken = default)
     {
+        EnsureAuthorized();
+        var all = await GetAllNormalizedTransactionsAsync(cancellationToken);
+        var tx = all.FirstOrDefault(t => string.Equals(t.Reference, command.TransactionReference, StringComparison.OrdinalIgnoreCase));
+        if (tx == null)
+            throw new UnauthorizedAccessException("Transaction not found or access denied.");
+
+        if (!IsPlatformBillingUser() && !_userContext.HasPermission(Permissions.PlatformCashCollect) && tx.OrganizationId != _userContext.OrganizationId)
+        {
+            throw new UnauthorizedAccessException("Access denied. Cannot record cash receipt for another organization.");
+        }
+
         _statusOverrides[command.TransactionReference] = "Paid";
-        AddInvestigationNoteAsync(command.TransactionReference, $"Manual Cash Payment of ₹{command.Amount:N0} recorded under Receipt #{command.ReceiptNumber}. Notes: {command.Notes}", cancellationToken);
-        return Task.FromResult(true);
+        await AddInvestigationNoteAsync(command.TransactionReference, $"Manual Cash Payment of ₹{command.Amount:N0} recorded under Receipt #{command.ReceiptNumber}. Notes: {command.Notes}", cancellationToken);
+        return true;
     }
 
     private async Task<List<AccountBookTransactionDto>> GetAllNormalizedTransactionsAsync(CancellationToken ct)
     {
+        EnsureAuthorized();
+
+        var isPlatform = IsPlatformBillingUser();
+        var callerOrgId = _userContext.OrganizationId;
+        if (!isPlatform && (!callerOrgId.HasValue || callerOrgId.Value == Guid.Empty))
+        {
+            throw new UnauthorizedAccessException("Access denied. No active organization context found for caller.");
+        }
+
         var list = new List<AccountBookTransactionDto>();
 
-        // 1. Seed Core Reference Transactions matching the user's specification & screenshots
+        // 1. Core Reference / Seed Transactions - only include if platform or matching caller's organization
+        var org1Id = Guid.Parse("20000000-0000-0000-0000-000000000001");
+        var org2Id = Guid.Parse("20000000-0000-0000-0000-000000000002");
+        var org3Id = Guid.Parse("20000000-0000-0000-0000-000000000003");
+
         var ref1 = "PAY-10482";
-        list.Add(new AccountBookTransactionDto
+        if (isPlatform || callerOrgId == org1Id)
         {
-            Id = Guid.NewGuid().ToString(),
-            Reference = ref1,
-            Date = DateTimeOffset.UtcNow.AddHours(-3),
-            OrganizationName = "Bluebird Daycare",
-            OrganizationId = Guid.NewGuid(),
-            BranchName = "Main Branch",
-            Category = "PlatformFee",
-            CategoryLabel = "Platform fee",
-            Description = "Monthly Sprout Platform Subscription",
-            SourceReference = "INV-202610-10482",
-            GrossAmount = 12500m,
-            AmountReceived = 12500m,
-            OutstandingAmount = 0m,
-            Currency = "INR",
-            PaymentMethod = "Razorpay",
-            FinancialStatus = _statusOverrides.GetValueOrDefault(ref1, "Paid"),
-            FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref1, "Paid") == "Paid" ? "Paid" : _statusOverrides[ref1],
-            ReconciliationStatus = "Reconciled",
-            HasException = false,
-            ProviderReference = "pay_RZP88319041",
-            ResponsibleActor = "Platform Admin"
-        });
+            list.Add(new AccountBookTransactionDto
+            {
+                Id = Guid.NewGuid().ToString(),
+                Reference = ref1,
+                Date = DateTimeOffset.UtcNow.AddHours(-3),
+                OrganizationName = "Bluebird Daycare",
+                OrganizationId = org1Id,
+                BranchName = "Main Branch",
+                Category = "PlatformFee",
+                CategoryLabel = "Platform fee",
+                Description = "Monthly Sprout Platform Subscription",
+                SourceReference = "INV-202610-10482",
+                GrossAmount = 12500m,
+                AmountReceived = 12500m,
+                OutstandingAmount = 0m,
+                Currency = "INR",
+                PaymentMethod = "Razorpay",
+                FinancialStatus = _statusOverrides.GetValueOrDefault(ref1, "Paid"),
+                FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref1, "Paid") == "Paid" ? "Paid" : _statusOverrides[ref1],
+                ReconciliationStatus = "Reconciled",
+                HasException = false,
+                ProviderReference = "pay_RZP88319041",
+                ResponsibleActor = "Platform Admin"
+            });
+        }
 
         var ref2 = "MAT-00821";
-        list.Add(new AccountBookTransactionDto
+        if (isPlatform || callerOrgId == org2Id)
         {
-            Id = Guid.NewGuid().ToString(),
-            Reference = ref2,
-            Date = DateTimeOffset.UtcNow.AddHours(-5),
-            OrganizationName = "Little Steps Daycare",
-            OrganizationId = Guid.NewGuid(),
-            BranchName = "Central Branch",
-            Category = "Materials",
-            CategoryLabel = "Materials",
-            Description = "Recycled Craft Paper & Finger Paints Purchase",
-            SourceReference = "ORD-MAT-202610-00821",
-            GrossAmount = 8600m,
-            AmountReceived = 0m,
-            OutstandingAmount = 8600m,
-            Currency = "INR",
-            PaymentMethod = "Razorpay",
-            FinancialStatus = _statusOverrides.GetValueOrDefault(ref2, "PaymentPending"),
-            FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref2, "PaymentPending") == "PaymentPending" ? "Payment pending" : _statusOverrides[ref2],
-            ReconciliationStatus = "Unreconciled",
-            HasException = true,
-            ExceptionType = "UnconfirmedPayment",
-            ExceptionReason = "Order submitted by daycare but payment confirmation has not settled.",
-            ProviderReference = "order_RZP99420081",
-            ResponsibleActor = "priya@littlesteps.com"
-        });
+            list.Add(new AccountBookTransactionDto
+            {
+                Id = Guid.NewGuid().ToString(),
+                Reference = ref2,
+                Date = DateTimeOffset.UtcNow.AddHours(-5),
+                OrganizationName = "Little Steps Daycare",
+                OrganizationId = org2Id,
+                BranchName = "Central Branch",
+                Category = "Materials",
+                CategoryLabel = "Materials",
+                Description = "Recycled Craft Paper & Finger Paints Purchase",
+                SourceReference = "ORD-MAT-202610-00821",
+                GrossAmount = 8600m,
+                AmountReceived = 0m,
+                OutstandingAmount = 8600m,
+                Currency = "INR",
+                PaymentMethod = "Razorpay",
+                FinancialStatus = _statusOverrides.GetValueOrDefault(ref2, "PaymentPending"),
+                FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref2, "PaymentPending") == "PaymentPending" ? "Payment pending" : _statusOverrides[ref2],
+                ReconciliationStatus = "Unreconciled",
+                HasException = true,
+                ExceptionType = "UnconfirmedPayment",
+                ExceptionReason = "Order submitted by daycare but payment confirmation has not settled.",
+                ProviderReference = "order_RZP99420081",
+                ResponsibleActor = "priya@littlesteps.com"
+            });
+        }
 
         var ref3 = "DEP-00194";
-        list.Add(new AccountBookTransactionDto
+        if (isPlatform || callerOrgId == org1Id)
         {
-            Id = Guid.NewGuid().ToString(),
-            Reference = ref3,
-            Date = DateTimeOffset.UtcNow.AddDays(-1),
-            OrganizationName = "Bluebird Daycare",
-            OrganizationId = Guid.NewGuid(),
-            BranchName = "Main Branch",
-            Category = "RentalDeposit",
-            CategoryLabel = "Rental deposit",
-            Description = "Montessori Wooden Sorting Trays Security Deposit",
-            SourceReference = "LOAN-MAT-202610-00194",
-            GrossAmount = 3000m,
-            AmountReceived = 3000m,
-            OutstandingAmount = 0m,
-            Currency = "INR",
-            PaymentMethod = "BankTransfer",
-            FinancialStatus = _statusOverrides.GetValueOrDefault(ref3, "Held"),
-            FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref3, "Held") == "Held" ? "Held" : _statusOverrides[ref3],
-            ReconciliationStatus = "Reconciled",
-            HasException = false,
-            ProviderReference = "DEP-ESCROW-88410",
-            ResponsibleActor = "Central Warehouse Operator"
-        });
+            list.Add(new AccountBookTransactionDto
+            {
+                Id = Guid.NewGuid().ToString(),
+                Reference = ref3,
+                Date = DateTimeOffset.UtcNow.AddDays(-1),
+                OrganizationName = "Bluebird Daycare",
+                OrganizationId = org1Id,
+                BranchName = "Main Branch",
+                Category = "RentalDeposit",
+                CategoryLabel = "Rental deposit",
+                Description = "Montessori Wooden Sorting Trays Security Deposit",
+                SourceReference = "LOAN-MAT-202610-00194",
+                GrossAmount = 3000m,
+                AmountReceived = 3000m,
+                OutstandingAmount = 0m,
+                Currency = "INR",
+                PaymentMethod = "BankTransfer",
+                FinancialStatus = _statusOverrides.GetValueOrDefault(ref3, "Held"),
+                FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref3, "Held") == "Held" ? "Held" : _statusOverrides[ref3],
+                ReconciliationStatus = "Reconciled",
+                HasException = false,
+                ProviderReference = "DEP-ESCROW-88410",
+                ResponsibleActor = "Central Warehouse Operator"
+            });
+        }
 
         var ref4 = "REF-00217";
-        list.Add(new AccountBookTransactionDto
+        if (isPlatform || callerOrgId == org3Id)
         {
-            Id = Guid.NewGuid().ToString(),
-            Reference = ref4,
-            Date = DateTimeOffset.UtcNow.AddDays(-2),
-            OrganizationName = "Happy Nest Daycare",
-            OrganizationId = Guid.NewGuid(),
-            BranchName = "East Wing",
-            Category = "Refund",
-            CategoryLabel = "Refund",
-            Description = "Returned Sensory Light Pad Deposit Refund",
-            SourceReference = "RET-INSP-202610-00217",
-            GrossAmount = -2400m,
-            AmountReceived = 0m,
-            OutstandingAmount = 2400m,
-            Currency = "INR",
-            PaymentMethod = "Razorpay",
-            FinancialStatus = _statusOverrides.GetValueOrDefault(ref4, "Failed"),
-            FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref4, "Failed") == "Failed" ? "Failed" : _statusOverrides[ref4],
-            ReconciliationStatus = "Discrepancy",
-            HasException = true,
-            ExceptionType = "RefundGatewayRejection",
-            ExceptionReason = "Gateway reported destination bank account closed or routing error.",
-            ProviderReference = "rfnd_RZP1102934",
-            ResponsibleActor = "Finance Officer"
-        });
+            list.Add(new AccountBookTransactionDto
+            {
+                Id = Guid.NewGuid().ToString(),
+                Reference = ref4,
+                Date = DateTimeOffset.UtcNow.AddDays(-2),
+                OrganizationName = "Happy Nest Daycare",
+                OrganizationId = org3Id,
+                BranchName = "East Wing",
+                Category = "Refund",
+                CategoryLabel = "Refund",
+                Description = "Returned Sensory Light Pad Deposit Refund",
+                SourceReference = "RET-INSP-202610-00217",
+                GrossAmount = -2400m,
+                AmountReceived = 0m,
+                OutstandingAmount = 2400m,
+                Currency = "INR",
+                PaymentMethod = "Razorpay",
+                FinancialStatus = _statusOverrides.GetValueOrDefault(ref4, "Failed"),
+                FinancialStatusLabel = _statusOverrides.GetValueOrDefault(ref4, "Failed") == "Failed" ? "Failed" : _statusOverrides[ref4],
+                ReconciliationStatus = "Discrepancy",
+                HasException = true,
+                ExceptionType = "RefundGatewayRejection",
+                ExceptionReason = "Gateway reported destination bank account closed or routing error.",
+                ProviderReference = "rfnd_RZP1102934",
+                ResponsibleActor = "Finance Officer"
+            });
+        }
 
-        // 2. Query Material Orders from Marketplace
+        // 2. Query Material Orders from Marketplace (Scoped strictly by tenant & caller org for non-platform users)
         try
         {
-            var orders = await _materialRepo.GetPlatformOrderQueueAsync(null, ct);
+            var orders = isPlatform
+                ? await _materialRepo.GetPlatformOrderQueueAsync(null, ct)
+                : await _materialRepo.GetOrdersForOrganizationAsync(callerOrgId!.Value, null, ct);
+
             foreach (var order in orders)
             {
                 var refCode = string.IsNullOrWhiteSpace(order.OrderNumber) ? $"ORD-{order.Id.ToString()[..8].ToUpperInvariant()}" : order.OrderNumber;
@@ -480,10 +580,13 @@ public class AccountBookService : IAccountBookService
             Console.WriteLine($"Error fetching marketplace orders for Account Book: {ex.Message}");
         }
 
-        // 3. Query Invoices & Payments from Billing
+        // 3. Query Invoices & Payments from Billing (Scoped strictly by tenant & caller org for non-platform users)
         try
         {
-            var invoices = await _billingRepository.GetAllInvoicesAsync(null, null, null, ct);
+            var invoices = isPlatform
+                ? await _billingRepository.GetAllInvoicesAsync(null, null, null, ct)
+                : await _billingRepository.GetInvoicesForOrganizationAsync(_tenantContext.TenantId, callerOrgId!.Value, false, ct);
+
             foreach (var inv in invoices)
             {
                 var isPaid = inv.Status == InvoiceStatus.Paid;

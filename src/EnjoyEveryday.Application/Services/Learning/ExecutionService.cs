@@ -2,8 +2,6 @@ using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
 using EnjoyEveryday.Shared.Audit;
-using EnjoyEveryday.Shared.Data;
-using Dapper;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -12,26 +10,26 @@ public class ExecutionService
     private readonly IExperienceScheduleRepository _scheduleRepository;
     private readonly IExperienceFeedbackRepository _feedbackRepository;
     private readonly IExperienceSessionRepository _sessionRepository;
+    private readonly ITeacherRepository _teacherRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
-    private readonly IDbConnectionFactory _dbConnectionFactory;
     private readonly IUserContext _userContext;
 
     public ExecutionService(
         IExperienceScheduleRepository scheduleRepository,
         IExperienceFeedbackRepository feedbackRepository,
         IExperienceSessionRepository sessionRepository,
+        ITeacherRepository teacherRepository,
         ITenantContext tenantContext,
         IAuditService auditService,
-        IDbConnectionFactory dbConnectionFactory,
         IUserContext userContext)
     {
         _scheduleRepository = scheduleRepository;
         _feedbackRepository = feedbackRepository;
         _sessionRepository = sessionRepository;
+        _teacherRepository = teacherRepository;
         _tenantContext = tenantContext;
         _auditService = auditService;
-        _dbConnectionFactory = dbConnectionFactory;
         _userContext = userContext;
     }
 
@@ -67,11 +65,10 @@ public class ExecutionService
         }
         else
         {
-            using var conn = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-            var teacherCount = await conn.ExecuteScalarAsync<int>(
-                "SELECT COUNT(1) FROM classroom_teachers WHERE tenant_id = @TenantId AND classroom_id = @ClassroomId AND (user_id = @TeacherId OR user_id = @UserId)", 
-                new { TenantId = tenantId, ClassroomId = schedule.ClassroomId, TeacherId = teacherId, UserId = _userContext.UserId });
-            if (teacherCount > 0) isAuthorized = true;
+            if (await _teacherRepository.IsTeacherAssignedToClassroomAsync(tenantId, schedule.ClassroomId, teacherId, _userContext.UserId, cancellationToken))
+            {
+                isAuthorized = true;
+            }
         }
 
         if (!isAuthorized)
@@ -173,5 +170,11 @@ public class ExecutionService
     {
         var tenantId = _tenantContext.TenantId;
         return await _sessionRepository.GetSessionsForClassroomAsync(tenantId, classroomId, cancellationToken);
+    }
+
+    public async Task<IEnumerable<Guid>> GetLoggedChildIdsForSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _sessionRepository.GetLoggedChildIdsForSessionAsync(tenantId, sessionId, cancellationToken);
     }
 }

@@ -16,6 +16,7 @@
 @inject ChildService ChildService
 @inject OrganizationService OrgService
 @inject NavigationManager NavigationManager
+@inject IChildDevelopmentPortfolioService PortfolioService
 
 @* <PageTopbar Breadcrumb="EnjoyEveryday · Little Stars · Bluebirds" Title="Aarav's Journey">
     <RightContent>
@@ -70,7 +71,15 @@
             <div class="child-identity">
                 <div class="child-avatar">@(_selectedChild.FirstName?.FirstOrDefault().ToString() ?? "?")</div>
                 <div>
-                    <div class="child-name">@_selectedChild.FullName</div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span class="child-name">@_selectedChild.FullName</span>
+                        @if (_portfolio != null)
+                        {
+                            <span class="consent-pill @GetConsentClass(_portfolio.Consent.Status)" title="@_portfolio.Consent.Description">
+                                <i class="bi @GetConsentIcon(_portfolio.Consent.Status)"></i> @_portfolio.Consent.StatusLabel
+                            </span>
+                        }
+                    </div>
                     <div class="child-meta">
                         <span>@(GetAgeString(_selectedChild.DateOfBirth))</span>
                         <span>@(_classrooms.TryGetValue(_selectedClassroomId, out var cls) ? cls.Name : "Unassigned")</span>
@@ -81,7 +90,9 @@
                 <button class="secondary-btn" @onclick='() => _isCommAssistantOpen = true' style="display: flex; align-items: center; gap: 6px; border-color: #52745e; color: #31523c; font-weight: 650; background: #edf4ee;">
                     <span style="color: #d98a2c;">✦</span> AI Parent Communication
                 </button>
-                <button class="secondary-btn" @onclick='() => OpenModal("share")'>Download PDF</button>
+                <button class="secondary-btn" @onclick='() => _isConferenceModalOpen = true' style="display: flex; align-items: center; gap: 6px; font-weight: 650; color: #26332d;">
+                    <i class="bi bi-mortarboard" style="color: #52745e;"></i> Conference Portfolio
+                </button>
                 <button class="primary-btn" @onclick="OpenAddMomentDialog">Log Moment</button>
             </div>
         </div>
@@ -97,19 +108,42 @@
 
     <div class="main-grid">
         <div>
-            <div class="timeline-controls">
-                <button class="filter-btn @(_currentFilter == "all" ? "active" : "")" @onclick='() => SetFilter("all")'>All Activity</button>
-                <button class="filter-btn @(_currentFilter == "Discovery" ? "active" : "")" @onclick='() => SetFilter("Discovery")'>Discover</button>
-                <button class="filter-btn @(_currentFilter == "Create" ? "active" : "")" @onclick='() => SetFilter("Create")'>Create</button>
-                <button class="filter-btn @(_currentFilter == "Connection" ? "active" : "")" @onclick='() => SetFilter("Connection")'>Connect</button>
-                <button class="filter-btn @(_currentFilter == "DailyCare" ? "active" : "")" @onclick='() => SetFilter("DailyCare")'>Daily Care (@_careEvents.Count)</button>
-                
-                <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 14px; color: #666; font-weight: 500;">Date:</span>
-                    <input type="date" @bind="_selectedDate" @bind:after="ApplyFilter" style="padding: 6px 12px; border: 1px solid #e4e7df; border-radius: 6px; outline: none; font-family: inherit; color: #26332d;" />
+            <div class="portfolio-filters-row">
+                <div class="domain-tabs-group">
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "all" ? "active" : "")" @onclick='() => SetDomainFilter("all")'>
+                        <i class="bi bi-grid"></i> All Activity
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Language & Communication" ? "active" : "")" @onclick='() => SetDomainFilter("Language & Communication")'>
+                        <i class="bi bi-chat-quote"></i> Language
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Social & Emotional" ? "active" : "")" @onclick='() => SetDomainFilter("Social & Emotional")'>
+                        <i class="bi bi-people"></i> Social
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Physical & Motor" ? "active" : "")" @onclick='() => SetDomainFilter("Physical & Motor")'>
+                        <i class="bi bi-activity"></i> Motor
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Cognitive & Problem Solving" ? "active" : "")" @onclick='() => SetDomainFilter("Cognitive & Problem Solving")'>
+                        <i class="bi bi-lightbulb"></i> Cognitive
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "Creative Arts & Sensory" ? "active" : "")" @onclick='() => SetDomainFilter("Creative Arts & Sensory")'>
+                        <i class="bi bi-palette"></i> Arts
+                    </button>
+                    <button class="domain-tab-btn @(_selectedDomainFilter == "DailyCare" ? "active" : "")" @onclick='() => SetDomainFilter("DailyCare")'>
+                        <i class="bi bi-cup-hot"></i> Daily Care (@_careEvents.Count)
+                    </button>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <select class="visibility-filter-select" @bind="_selectedVisibilityFilter" @bind:after="ApplyFilter">
+                        <option value="all">All Visibility</option>
+                        <option value="parent">Parent Visible</option>
+                        <option value="internal">Internal Only</option>
+                    </select>
+
+                    <input type="date" @bind="_selectedDate" @bind:after="ApplyFilter" style="padding: 6px 10px; border: 1px solid #e4e7df; border-radius: 8px; outline: none; font-size: 12px; font-family: inherit; color: #26332d;" />
                     @if (_selectedDate.HasValue)
                     {
-                        <button style="background: none; border: none; cursor: pointer; color: #666; font-size: 14px;" @onclick="ClearDateFilter">✕</button>
+                        <button style="background: none; border: none; cursor: pointer; color: #666; font-size: 13px;" @onclick="ClearDateFilter">✕</button>
                     }
                 </div>
             </div>
@@ -126,6 +160,10 @@
                             Time="@item.TimeString"
                             Description="@item.Description"
                             Quote="@item.Quote" 
+                            TeacherReflection="@item.TeacherReflection"
+                            TeacherName="@item.TeacherName"
+                            IsParentVisible="@item.IsParentVisible"
+                            IsMediaBlockedByConsent="@item.IsMediaBlockedByConsent"
                             Tags="@item.Tags"
                             Photos="@item.Photos"
                             OnDelete="@(item.CanDelete ? EventCallback.Factory.Create(this, () => HandleDelete(item)) : EventCallback.Empty)" />
@@ -134,7 +172,7 @@
                 else
                 {
                     <div style="padding: 24px; text-align: center; color: #666; background: #f9faf9; border-radius: 8px;">
-                        No moments or daily care activities logged yet.
+                        No moments or daily care activities logged yet matching selected filter.
                     </div>
                 }
             </div>
@@ -219,13 +257,23 @@
     OnClose="@(() => _isCommAssistantOpen = false)"
     OnSent="@(() => _isCommAssistantOpen = false)" />
 
+<ConferencePortfolioModal 
+    IsOpen="_isConferenceModalOpen" 
+    Portfolio="_portfolio" 
+    OnClose="() => _isConferenceModalOpen = false" />
+
 @code {
     [Parameter]
     public Guid? ChildId { get; set; }
 
     private bool _isCommAssistantOpen = false;
+    private bool _isConferenceModalOpen = false;
     private AddJourneyMomentDialog _addMomentDialog = default!;
     
+    private ChildPortfolioSummary? _portfolio;
+    private string _selectedDomainFilter = "all";
+    private string _selectedVisibilityFilter = "all";
+
     private Guid _childId => _selectedChildId != Guid.Empty ? _selectedChildId : (ChildId ?? Guid.Empty);
     private Child? _selectedChild;
     private List<ChildJourneyEntry>? _allEntries;
@@ -324,6 +372,15 @@
     private async Task LoadJourneyDataAsync()
     {
         if (_childId == Guid.Empty) return;
+        try
+        {
+            _portfolio = await PortfolioService.GetChildPortfolioAsync(_childId);
+        }
+        catch
+        {
+            _portfolio = null;
+        }
+
         var entries = await JourneyService.GetChildJourneyAsync(_childId);
         _allEntries = entries.ToList();
 
@@ -474,6 +531,12 @@
         return new List<string>();
     }
 
+    private void SetDomainFilter(string domain)
+    {
+        _selectedDomainFilter = domain;
+        ApplyFilter();
+    }
+
     private void SetFilter(string filter)
     {
         _currentFilter = filter;
@@ -498,31 +561,38 @@
             filteredCare = filteredCare.Where(c => c.EventTime.ToLocalTime().Date == _selectedDate.Value.Date);
         }
 
-        if (_currentFilter == "all")
+        // Apply visibility filter
+        if (_selectedVisibilityFilter == "parent")
+        {
+            filteredEntries = filteredEntries.Where(e => e.IsParentVisible);
+        }
+        else if (_selectedVisibilityFilter == "internal")
+        {
+            filteredEntries = filteredEntries.Where(e => !e.IsParentVisible);
+            filteredCare = Enumerable.Empty<ChildCareEvent>();
+        }
+
+        // Apply domain filter
+        if (_selectedDomainFilter == "all")
         {
             items.AddRange(filteredEntries.Select(MapEntryToTimelineItem));
-            items.AddRange(filteredCare.Select(MapCareEventToTimelineItem));
+            if (_selectedVisibilityFilter != "internal")
+            {
+                items.AddRange(filteredCare.Select(MapCareEventToTimelineItem));
+            }
         }
-        else if (_currentFilter == "DailyCare")
+        else if (_selectedDomainFilter == "DailyCare")
         {
-            items.AddRange(filteredCare.Select(MapCareEventToTimelineItem));
+            if (_selectedVisibilityFilter != "internal")
+            {
+                items.AddRange(filteredCare.Select(MapCareEventToTimelineItem));
+            }
         }
-        else if (_currentFilter == "Discovery")
-        {
-            items.AddRange(filteredEntries
-                .Where(e => e.JourneyType == "Discovery" || (string.IsNullOrEmpty(e.JourneyType) == false && e.JourneyType.Contains("Discover")))
-                .Select(MapEntryToTimelineItem));
-        }
-        else if (_currentFilter == "Create")
-        {
-            items.AddRange(filteredEntries
-                .Where(e => e.JourneyType == "Create" || GetTagsForEntry(e.Id).Any(t => t.Contains("Creat")))
-                .Select(MapEntryToTimelineItem));
-        }
-        else if (_currentFilter == "Connection")
+        else
         {
             items.AddRange(filteredEntries
-                .Where(e => e.JourneyType == "Connection" || GetTagsForEntry(e.Id).Any(t => t.Contains("Social") || t.Contains("Emot")))
+                .Where(e => GetTagsForEntry(e.Id).Any(t => t.Contains(_selectedDomainFilter, StringComparison.OrdinalIgnoreCase)
+                                                       || _selectedDomainFilter.Contains(t, StringComparison.OrdinalIgnoreCase)))
                 .Select(MapEntryToTimelineItem));
         }
 
@@ -614,6 +684,9 @@
             Title = title,
             Description = desc,
             Quote = "",
+            IsParentVisible = true,
+            IsMediaBlockedByConsent = false,
+            TeacherName = ev.RecordedByName,
             Tags = tags,
             Photos = new List<string>(),
             CanDelete = false
@@ -626,6 +699,9 @@
             ? ("Experience: " + (!string.IsNullOrEmpty(entry.Title) ? entry.Title : (_experienceTitles.ContainsKey(entry.ExperienceId.Value) ? _experienceTitles[entry.ExperienceId.Value] : "Teacher Observation")))
             : (string.IsNullOrEmpty(entry.Title) ? "Teacher Observation" : entry.Title);
 
+        var photos = GetPhotosForEntry(entry.Id);
+        bool isBlocked = photos.Count > 0 && (_portfolio != null && !_portfolio.Consent.CanSharePhotosWithParents);
+
         return new JourneyItemViewModel
         {
             Id = entry.Id,
@@ -635,11 +711,28 @@
             Title = title,
             Description = entry.Observation ?? "",
             Quote = entry.ChildVoice ?? "",
+            TeacherReflection = entry.TeacherReflection,
+            IsParentVisible = entry.IsParentVisible,
+            IsMediaBlockedByConsent = isBlocked,
             Tags = GetTagsForEntry(entry.Id),
-            Photos = GetPhotosForEntry(entry.Id),
+            Photos = photos,
             CanDelete = true
         };
     }
+
+    private string GetConsentClass(MediaConsentStatus status) => status switch
+    {
+        MediaConsentStatus.Granted => "granted",
+        MediaConsentStatus.Restricted => "restricted",
+        _ => "pending"
+    };
+
+    private string GetConsentIcon(MediaConsentStatus status) => status switch
+    {
+        MediaConsentStatus.Granted => "bi-shield-check",
+        MediaConsentStatus.Restricted => "bi-shield-slash",
+        _ => "bi-shield-exclamation"
+    };
 
     public class JourneyItemViewModel
     {
@@ -652,6 +745,10 @@
         public string Title { get; set; } = "";
         public string Description { get; set; } = "";
         public string Quote { get; set; } = "";
+        public string? TeacherReflection { get; set; }
+        public string? TeacherName { get; set; }
+        public bool? IsParentVisible { get; set; }
+        public bool IsMediaBlockedByConsent { get; set; }
         public List<string> Tags { get; set; } = new();
         public List<string> Photos { get; set; } = new();
         public bool CanDelete { get; set; }

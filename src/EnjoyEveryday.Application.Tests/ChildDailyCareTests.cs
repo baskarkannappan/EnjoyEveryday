@@ -478,6 +478,44 @@ public class MockChildDailyCareRepository : IChildDailyCareRepository
         else Supplies.Add(supply);
         return Task.FromResult(supply.Id);
     }
+
+    public List<TeacherHandover> Handovers = new();
+
+    public Task<Guid> CreateHandoverAsync(TeacherHandover handover, CancellationToken cancellationToken = default)
+    {
+        if (handover.Id == Guid.Empty) handover.Id = Guid.NewGuid();
+        Handovers.Add(handover);
+        return Task.FromResult(handover.Id);
+    }
+
+    public Task AcknowledgeHandoverAsync(Guid tenantId, Guid handoverId, Guid acknowledgedByUserId, string acknowledgedByName, string? notes, CancellationToken cancellationToken = default)
+    {
+        var h = Handovers.FirstOrDefault(x => x.Id == handoverId);
+        if (h != null)
+        {
+            h.Status = "Acknowledged";
+            h.AcknowledgedByUserId = acknowledgedByUserId;
+            h.AcknowledgedByName = acknowledgedByName;
+            h.AcknowledgedAt = DateTime.UtcNow;
+            h.AcknowledgementNotes = notes;
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<TeacherHandover?> GetHandoverByIdAsync(Guid tenantId, Guid handoverId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Handovers.FirstOrDefault(x => x.Id == handoverId));
+    }
+
+    public Task<IEnumerable<TeacherHandover>> GetHandoversByClassroomAndDateAsync(Guid tenantId, Guid classroomId, DateOnly date, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<TeacherHandover>>(Handovers.Where(x => x.ClassroomId == classroomId && x.HandoverDate == date));
+    }
+
+    public Task<IEnumerable<TeacherHandover>> GetPendingHandoversByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<TeacherHandover>>(Handovers.Where(x => x.BranchId == branchId && x.Status == "Pending"));
+    }
 }
 
 public class MockChildRepository : IChildRepository
@@ -596,5 +634,10 @@ public class MockAttendanceRepository : IAttendanceRepository
             ExpectedChildren = ChildAttendances.Count,
             PresentChildren = ChildAttendances.Count(a => a.Status == "Present")
         });
+    }
+
+    public Task<IEnumerable<Guid>> GetPresentChildIdsByClassroomAsync(Guid tenantId, Guid classroomId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<Guid>>(ChildAttendances.Where(a => a.ClassroomId == classroomId && a.AttendanceDate == date.Date && (a.Status == "Present" || a.Status == "Late")).Select(a => a.ChildId));
     }
 }

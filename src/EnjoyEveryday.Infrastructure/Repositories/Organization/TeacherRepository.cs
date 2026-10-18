@@ -169,4 +169,23 @@ public class TeacherRepository : ITeacherRepository
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
     }
+
+    public async Task<bool> IsTeacherAssignedToClassroomAsync(
+        Guid tenantId,
+        Guid classroomId,
+        Guid teacherId,
+        Guid? userId = null,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT COUNT(1) 
+            FROM classroom_teachers 
+            WHERE tenant_id = @TenantId 
+              AND classroom_id = @ClassroomId 
+              AND (user_id = @TeacherId OR (@UserId IS NOT NULL AND user_id = @UserId))";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        var count = await connection.ExecuteScalarAsync<int>(sql, new { TenantId = tenantId, ClassroomId = classroomId, TeacherId = teacherId, UserId = userId });
+        return count > 0;
+    }
 }

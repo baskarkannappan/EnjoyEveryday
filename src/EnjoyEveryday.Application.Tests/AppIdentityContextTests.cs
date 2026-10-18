@@ -12,13 +12,13 @@ namespace EnjoyEveryday.Application.Tests
     public class AppIdentityContextTests
     {
         private IConfiguration _config;
-        private string _originalEnv;
+        private string? _originalEnv;
 
         [SetUp]
         public void Setup()
         {
             _originalEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var inMemorySettings = new Dictionary<string, string> {
+            var inMemorySettings = new Dictionary<string, string?> {
                 {"DevTenantId", "10000000-0000-0000-0000-000000000001"},
                 {"DevUserId", "50000000-0000-0000-0000-000000000001"}
             };

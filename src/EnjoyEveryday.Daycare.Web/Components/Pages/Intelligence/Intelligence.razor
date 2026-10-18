@@ -1,8 +1,10 @@
 @page "/intelligence"
 @rendermode InteractiveServer
+
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject IOrganizationIntelligenceService IntelService
+@inject IBranchBenchmarkingService BenchmarkingService
 @inject OrganizationService OrgService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
@@ -12,81 +14,48 @@
     <!-- Header -->
     <div class="intel-header">
         <div class="header-content">
-            <div class="eyebrow">EXECUTIVE INTELLIGENCE</div>
-            <h1 class="page-title">Organization Intelligence</h1>
+            <div class="eyebrow">EXECUTIVE INTELLIGENCE &amp; BENCHMARKING</div>
+            <h1 class="page-title">Organization Intelligence &amp; Multi-Branch Health</h1>
             <p class="page-subtitle">
-                Operational patterns, curriculum balance, advance planning readiness, and record health across your daycare organization.
+                Cross-branch operational benchmarking, classroom capacity utilization, educator statutory ratios, and evidence-grounded management intelligence.
             </p>
         </div>
 
         <div class="header-actions">
-            <button type="button" class="btn-refresh" @onclick="GenerateFreshInsightsAsync" disabled="@_isLoading">
-                @if (_isLoading)
-                {
-                    <span class="spinner-small"></span>
-                    <span>Analyzing Operations...</span>
-                }
-                else
-                {
-                    <span>↻ Refresh AI Insights</span>
-                }
-            </button>
+            @if (_activeTab == "Intelligence")
+            {
+                <button type="button" class="btn-refresh" @onclick="GenerateFreshInsightsAsync" disabled="@_isLoading">
+                    @if (_isLoading)
+                    {
+                        <span class="spinner-small"></span>
+                        <span>Analyzing Operations...</span>
+                    }
+                    else
+                    {
+                        <span>↻ Refresh AI Insights</span>
+                    }
+                </button>
+            }
+            else if (_activeTab == "Goals")
+            {
+                <button type="button" class="btn-refresh" @onclick="() => _isAddGoalModalOpen = true">
+                    + Add Improvement Goal
+                </button>
+            }
         </div>
     </div>
 
-    <!-- Filter Bar -->
-    <div class="intel-filter-bar">
-        <div class="filter-group">
-            <label>Organization</label>
-            <select class="filter-select" @bind="_selectedOrgId" @bind:after="OnOrgChangedAsync">
-                @foreach (var org in _organizations)
-                {
-                    <option value="@org.Id">@org.Name</option>
-                }
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Branch</label>
-            <select class="filter-select" @bind="_selectedBranchId" @bind:after="OnBranchChangedAsync">
-                <option value="">All Branches</option>
-                @foreach (var branch in _branches)
-                {
-                    <option value="@branch.Id">@branch.Name</option>
-                }
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Classroom</label>
-            <select class="filter-select" @bind="_selectedClassroomId" @bind:after="LoadReportAsync">
-                <option value="">All Classrooms</option>
-                @foreach (var cls in _filteredClassrooms)
-                {
-                    <option value="@cls.Id">@cls.Name</option>
-                }
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Reporting Period</label>
-            <select class="filter-select" @bind="_reportingPeriod" @bind:after="LoadReportAsync">
-                <option value="@IntelligenceReportingPeriod.Last7Days">Last 7 Days</option>
-                <option value="@IntelligenceReportingPeriod.Last30Days">Last 30 Days</option>
-                <option value="@IntelligenceReportingPeriod.ThisMonth">This Month</option>
-            </select>
-        </div>
-
-        <div class="filter-group">
-            <label>Category Filter</label>
-            <select class="filter-select" @bind="_selectedCategory" @bind:after="LoadReportAsync">
-                <option value="">All Categories</option>
-                <option value="@OrganizationIntelligenceCategory.OperationalOverview">Operational Overview</option>
-                <option value="@OrganizationIntelligenceCategory.CurriculumVariety">Curriculum Variety</option>
-                <option value="@OrganizationIntelligenceCategory.PlanningGaps">Planning Gaps</option>
-                <option value="@OrganizationIntelligenceCategory.DataQuality">Data Quality</option>
-            </select>
-        </div>
+    <!-- VIEW SWITCH TABS -->
+    <div class="view-switch-tabs">
+        <button class="view-tab @(_activeTab == "Benchmarking" ? "active" : "")" @onclick='() => SetTab("Benchmarking")'>
+            🏢 Multi-Branch Benchmarking (@_scorecards.Count)
+        </button>
+        <button class="view-tab @(_activeTab == "Intelligence" ? "active" : "")" @onclick='() => SetTab("Intelligence")'>
+            ✦ Executive Insights &amp; Rhythm
+        </button>
+        <button class="view-tab @(_activeTab == "Goals" ? "active" : "")" @onclick='() => SetTab("Goals")'>
+            🎯 Operational Goals &amp; Actions (@_operationalGoals.Count)
+        </button>
     </div>
 
     @if (!string.IsNullOrEmpty(_errorMessage))
@@ -96,236 +65,656 @@
         </div>
     }
 
-    @if (_isLoading)
+    <!-- TAB 1: MULTI-BRANCH BENCHMARKING -->
+    @if (_activeTab == "Benchmarking")
     {
-        <LoadingState Message="Analyzing daycare operations & generating executive insights..." />
+        @if (_isLoadingBenchmarking)
+        {
+            <LoadingState Message="Calculating multi-branch benchmarking scores..." />
+        }
+        else if (!_scorecards.Any())
+        {
+            <EmptyState Icon="🏢"
+                        Title="No branch data available"
+                        Description="No branches registered under this organization to benchmark."
+                        ActionText="Go to Settings"
+                        OnAction='() => NavigationManager.NavigateTo("/settings")' />
+        }
+        else
+        {
+            <!-- NETWORK PULSE -->
+            <div class="benchmarking-pulse-strip">
+                <div class="pulse-card">
+                    <span class="pulse-card-label">Network Capacity</span>
+                    <div class="pulse-card-value">@_scorecards.Sum(s => s.EnrolledChildren) / @_scorecards.Sum(s => s.TotalCapacity)</div>
+                    <span style="font-size: 12px; color: var(--muted);">
+                        @Math.Round((double)_scorecards.Sum(s => s.EnrolledChildren) / Math.Max(1, _scorecards.Sum(s => s.TotalCapacity)) * 100, 1)% Total Occupancy
+                    </span>
+                </div>
+                <div class="pulse-card">
+                    <span class="pulse-card-label">Network Attendance</span>
+                    <div class="pulse-card-value" style="color: var(--accent, #557c6c);">
+                        @(Math.Round(_scorecards.Average(s => s.AttendanceRatePercentage), 1))%
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">30-day average attendance health</span>
+                </div>
+                <div class="pulse-card">
+                    <span class="pulse-card-label">Ratio Compliance Rate</span>
+                    <div class="pulse-card-value" style="color: var(--accent-dark, #3e6253);">
+                        @(Math.Round(_scorecards.Average(s => s.RatioCompliancePercentage), 1))%
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">Statutory educator-to-child ratios</span>
+                </div>
+                <div class="pulse-card">
+                    <span class="pulse-card-label">Tuition Collection Health</span>
+                    <div class="pulse-card-value" style="color: #2563eb;">
+                        @(Math.Round(_scorecards.Average(s => s.TuitionCollectionRatePercentage), 1))%
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">Invoiced tuition collected to date</span>
+                </div>
+            </div>
+
+            <!-- BRANCH SCORECARDS GRID -->
+            <div class="scorecards-grid">
+                @foreach (var sc in _scorecards)
+                {
+                    <div class="branch-score-card">
+                        <div class="scorecard-header">
+                            <div>
+                                <h3 class="scorecard-title">@sc.BranchName</h3>
+                                <span class="scorecard-loc">📍 @sc.Location • @sc.TotalClassrooms Classrooms</span>
+                            </div>
+                            <span class="health-pill @sc.RatingCssClass">
+                                @sc.CompositeHealthScore pts • @sc.HealthRating
+                            </span>
+                        </div>
+
+                        <!-- Occupancy Bar -->
+                        <div class="metric-bar-item">
+                            <div class="metric-bar-header">
+                                <span>Occupancy Rate (@sc.EnrolledChildren / @sc.TotalCapacity children)</span>
+                                <strong>@sc.OccupancyPercentage%</strong>
+                            </div>
+                            <div class="bar-bg">
+                                <div class="bar-fill" style="width: @Math.Min(100, sc.OccupancyPercentage)%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Attendance Bar -->
+                        <div class="metric-bar-item">
+                            <div class="metric-bar-header">
+                                <span>Attendance Health (30-day)</span>
+                                <strong>@sc.AttendanceRatePercentage%</strong>
+                            </div>
+                            <div class="bar-bg">
+                                <div class="bar-fill" style="width: @Math.Min(100, sc.AttendanceRatePercentage)%; background: #0284c7;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Ratio Compliance Bar -->
+                        <div class="metric-bar-item">
+                            <div class="metric-bar-header">
+                                <span>Statutory Ratio Compliance</span>
+                                <strong>@sc.RatioCompliancePercentage%</strong>
+                            </div>
+                            <div class="bar-bg">
+                                <div class="bar-fill" style="width: @Math.Min(100, sc.RatioCompliancePercentage)%; background: #059669;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Planning Coverage Bar -->
+                        <div class="metric-bar-item">
+                            <div class="metric-bar-header">
+                                <span>Weekly Experience Planning Coverage</span>
+                                <strong>@sc.PlanningCoveragePercentage%</strong>
+                            </div>
+                            <div class="bar-bg">
+                                <div class="bar-fill" style="width: @Math.Min(100, sc.PlanningCoveragePercentage)%; background: #c28b26;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Tuition Collection Bar -->
+                        <div class="metric-bar-item">
+                            <div class="metric-bar-header">
+                                <span>Tuition Collection Health</span>
+                                <strong>@sc.TuitionCollectionRatePercentage%</strong>
+                            </div>
+                            <div class="bar-bg">
+                                <div class="bar-fill" style="width: @Math.Min(100, sc.TuitionCollectionRatePercentage)%; background: #7c3aed;"></div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border);">
+                            <a href="/management/roster" class="btn secondary" style="font-size: 11.5px; text-decoration: none; padding: 5px 10px;">
+                                View Staff Roster
+                            </a>
+                            <a href="/enrollment" class="btn secondary" style="font-size: 11.5px; text-decoration: none; padding: 5px 10px;">
+                                Admissions Pipeline
+                            </a>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- SIDE-BY-SIDE BENCHMARKING TABLE -->
+            <div class="benchmark-table-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 750; color: var(--text);">Cross-Branch Benchmarking Matrix</h3>
+                        <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--muted);">Direct comparative performance against organizational operational standards.</p>
+                    </div>
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table class="bench-table">
+                        <thead>
+                            <tr>
+                                <th>Branch Campus</th>
+                                <th>Classrooms</th>
+                                <th>Capacity / Enrolled</th>
+                                <th>Occupancy</th>
+                                <th>Attendance</th>
+                                <th>Ratio Compliance</th>
+                                <th>Planning</th>
+                                <th>Collection Rate</th>
+                                <th>Health Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var sc in _scorecards)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@sc.BranchName</strong>
+                                        <div style="font-size: 11px; color: var(--muted);">@sc.Location</div>
+                                    </td>
+                                    <td>@sc.TotalClassrooms</td>
+                                    <td>@sc.EnrolledChildren / @sc.TotalCapacity</td>
+                                    <td>
+                                        <strong>@sc.OccupancyPercentage%</strong>
+                                    </td>
+                                    <td>@sc.AttendanceRatePercentage%</td>
+                                    <td>@sc.RatioCompliancePercentage%</td>
+                                    <td>@sc.PlanningCoveragePercentage%</td>
+                                    <td>@sc.TuitionCollectionRatePercentage%</td>
+                                    <td>
+                                        <span class="health-pill @sc.RatingCssClass">
+                                            @sc.CompositeHealthScore • @sc.HealthRating
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
     }
-    else if (_report == null)
+
+    @* TAB 2: EXECUTIVE AI INTELLIGENCE & OPERATIONS *@
+    @if (_activeTab == "Intelligence")
     {
-        <EmptyState Icon="✦"
-                    Title="No intelligence data available"
-                    Description="Select an organization and branch above to generate executive operational insights."
-                    ActionText="↻ Generate Insights"
-                    OnAction="GenerateFreshInsightsAsync" />
-    }
-    else
-    {
-        <!-- Section A: Operational Overview Metrics Grid -->
-        <div class="metrics-grid">
-            <div class="metric-card">
-                <div class="metric-label">Attendance Health</div>
-                <div class="metric-value">@_report.OperationalOverview.AttendanceRatePercentage%</div>
-                <div class="metric-sub">
-                    @_report.OperationalOverview.ActualPresentCount present · @_report.OperationalOverview.AbsentCount absent
-                </div>
-                <div class="metric-indicator positive">✓ Stable Daily Rhythm</div>
+        <!-- Filter Bar -->
+        <div class="intel-filter-bar">
+            <div class="filter-group">
+                <label>Organization</label>
+                <select class="filter-select" @bind="_selectedOrgId" @bind:after="OnOrgChangedAsync">
+                    @foreach (var org in _organizations)
+                    {
+                        <option value="@org.Id">@org.Name</option>
+                    }
+                </select>
             </div>
 
-            <div class="metric-card">
-                <div class="metric-label">Classroom Planning Coverage</div>
-                <div class="metric-value">@_report.OperationalOverview.PlanningCoveragePercentage%</div>
-                <div class="metric-sub">
-                    @_report.OperationalOverview.PlannedClassroomsCount of @_report.OperationalOverview.TotalClassrooms classrooms with active plans
-                </div>
-                <div class="metric-indicator @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "positive" : "warning")">
-                    @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "✓ Good Coverage" : "Needs Attention")
-                </div>
+            <div class="filter-group">
+                <label>Branch</label>
+                <select class="filter-select" @bind="_selectedBranchId" @bind:after="OnBranchChangedAsync">
+                    <option value="">All Branches</option>
+                    @foreach (var branch in _branches)
+                    {
+                        <option value="@branch.Id">@branch.Name</option>
+                    }
+                </select>
             </div>
 
-            <div class="metric-card">
-                <div class="metric-label">Experience Rhythm</div>
-                <div class="metric-value">@_report.OperationalOverview.CompletedExperiencesCount</div>
-                <div class="metric-sub">
-                    Completed experiences · @_report.OperationalOverview.UpcomingExperiencesCount upcoming
-                </div>
-                <div class="metric-indicator neutral">🗓️ Active Calendar</div>
+            <div class="filter-group">
+                <label>Classroom</label>
+                <select class="filter-select" @bind="_selectedClassroomId" @bind:after="LoadReportAsync">
+                    <option value="">All Classrooms</option>
+                    @foreach (var cls in _filteredClassrooms)
+                    {
+                        <option value="@cls.Id">@cls.Name</option>
+                    }
+                </select>
             </div>
 
-            <div class="metric-card">
-                <div class="metric-label">Operational Record Completeness</div>
-                <div class="metric-value">@_report.OperationalOverview.DataCompletenessScorePercentage%</div>
-                <div class="metric-sub">
-                    @_report.OperationalOverview.LoggedMomentsCount moments &amp; @_report.OperationalOverview.LoggedCareEventsCount care logs
-                </div>
-                <div class="metric-indicator @(_report.OperationalOverview.DataCompletenessScorePercentage >= 70 ? "positive" : "neutral")">
-                    Completeness Index
-                </div>
+            <div class="filter-group">
+                <label>Reporting Period</label>
+                <select class="filter-select" @bind="_reportingPeriod" @bind:after="LoadReportAsync">
+                    <option value="@IntelligenceReportingPeriod.Last7Days">Last 7 Days</option>
+                    <option value="@IntelligenceReportingPeriod.Last30Days">Last 30 Days</option>
+                    <option value="@IntelligenceReportingPeriod.ThisMonth">This Month</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Category Filter</label>
+                <select class="filter-select" @bind="_selectedCategory" @bind:after="LoadReportAsync">
+                    <option value="">All Categories</option>
+                    <option value="@OrganizationIntelligenceCategory.OperationalOverview">Operational Overview</option>
+                    <option value="@OrganizationIntelligenceCategory.CurriculumVariety">Curriculum Variety</option>
+                    <option value="@OrganizationIntelligenceCategory.PlanningGaps">Planning Gaps</option>
+                    <option value="@OrganizationIntelligenceCategory.DataQuality">Data Quality</option>
+                </select>
             </div>
         </div>
 
-        <!-- Section B: Organization-Level AI Insights -->
-        <div class="section-container">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">✦ Executive AI Insights</h2>
-                    <p class="section-desc">Evidence-grounded observations and suggested management actions based strictly on recorded daycare operations.</p>
+        @if (_isLoading)
+        {
+            <LoadingState Message="Analyzing daycare operations & generating executive insights..." />
+        }
+        else if (_report == null)
+        {
+            <EmptyState Icon="✦"
+                        Title="No intelligence data available"
+                        Description="Select an organization and branch above to generate executive operational insights."
+                        ActionText="↻ Generate Insights"
+                        OnAction="GenerateFreshInsightsAsync" />
+        }
+        else
+        {
+            <!-- Section A: Operational Overview Metrics Grid -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Attendance Health</div>
+                    <div class="metric-value">@_report.OperationalOverview.AttendanceRatePercentage%</div>
+                    <div class="metric-sub">
+                        @_report.OperationalOverview.ActualPresentCount present · @_report.OperationalOverview.AbsentCount absent
+                    </div>
+                    <div class="metric-indicator positive">✓ Stable Daily Rhythm</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Classroom Planning Coverage</div>
+                    <div class="metric-value">@_report.OperationalOverview.PlanningCoveragePercentage%</div>
+                    <div class="metric-sub">
+                        @_report.OperationalOverview.PlannedClassroomsCount of @_report.OperationalOverview.TotalClassrooms classrooms with active plans
+                    </div>
+                    <div class="metric-indicator @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "positive" : "warning")">
+                        @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "✓ Good Coverage" : "Needs Attention")
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Experience Rhythm</div>
+                    <div class="metric-value">@_report.OperationalOverview.CompletedExperiencesCount</div>
+                    <div class="metric-sub">
+                        Completed experiences · @_report.OperationalOverview.UpcomingExperiencesCount upcoming
+                    </div>
+                    <div class="metric-indicator neutral">🗓️ Active Calendar</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Operational Record Completeness</div>
+                    <div class="metric-value">@_report.OperationalOverview.DataCompletenessScorePercentage%</div>
+                    <div class="metric-sub">
+                        @_report.OperationalOverview.LoggedMomentsCount moments &amp; @_report.OperationalOverview.LoggedCareEventsCount care logs
+                    </div>
+                    <div class="metric-indicator @(_report.OperationalOverview.DataCompletenessScorePercentage >= 70 ? "positive" : "neutral")">
+                        Completeness Index
+                    </div>
                 </div>
             </div>
 
-            <div class="insights-grid">
-                @if (_report.Insights.Any())
-                {
-                    @foreach (var insight in _report.Insights)
+            <!-- Section B: Organization-Level AI Insights -->
+            <div class="section-container">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">✦ Executive AI Insights</h2>
+                        <p class="section-desc">Evidence-grounded observations and suggested management actions based strictly on recorded daycare operations.</p>
+                    </div>
+                </div>
+
+                <div class="insights-grid">
+                    @if (_report.Insights.Any())
                     {
-                        <div class="insight-card">
-                            <div class="insight-top">
-                                <span class="category-pill">@insight.Category</span>
-                                <span class="strength-pill strength-@insight.EvidenceStrength.ToLower()">
-                                    ● Evidence: @insight.EvidenceStrength
-                                </span>
-                            </div>
-
-                            <h3 class="insight-title">@insight.Title</h3>
-
-                            <div class="insight-observation">
-                                <span class="obs-icon">🔍</span>
-                                <p>@insight.Observation</p>
-                            </div>
-
-                            @if (!string.IsNullOrEmpty(insight.PossibleExplanation))
-                            {
-                                <div class="insight-explanation">
-                                    <strong>Interpretation:</strong> @insight.PossibleExplanation
+                        @foreach (var insight in _report.Insights)
+                        {
+                            <div class="insight-card">
+                                <div class="insight-top">
+                                    <span class="category-pill">@insight.Category</span>
+                                    <span class="strength-pill strength-@insight.EvidenceStrength.ToLower()">
+                                        ● Evidence: @insight.EvidenceStrength
+                                    </span>
                                 </div>
-                            }
 
-                            @if (!string.IsNullOrEmpty(insight.SuggestedNextStep))
-                            {
-                                <div class="insight-action">
-                                    <strong>Suggested Next Step:</strong> @insight.SuggestedNextStep
+                                <h3 class="insight-title">@insight.Title</h3>
+
+                                <div class="insight-observation">
+                                    <span class="obs-icon">🔍</span>
+                                    <p>@insight.Observation</p>
                                 </div>
-                            }
 
-                            <div class="insight-limitations">
-                                <em>Data limitations:</em> @insight.DataLimitations
+                                @if (!string.IsNullOrEmpty(insight.PossibleExplanation))
+                                {
+                                    <div class="insight-explanation">
+                                        <strong>Interpretation:</strong> @insight.PossibleExplanation
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrEmpty(insight.SuggestedNextStep))
+                                {
+                                    <div class="insight-action">
+                                        <strong>Suggested Next Step:</strong> @insight.SuggestedNextStep
+                                    </div>
+                                }
+
+                                <div class="insight-limitations">
+                                    <em>Data limitations:</em> @insight.DataLimitations
+                                </div>
                             </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="empty-insights">
+                            <p>No insights generated for this filter. Click <strong>↻ Refresh AI Insights</strong> above to analyze the selected period.</p>
                         </div>
                     }
+                </div>
+            </div>
+
+            <!-- Section C: Curriculum & Learning Areas Variety -->
+            <div class="section-container">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Curriculum Variety &amp; Domain Coverage</h2>
+                        <p class="section-desc">Distribution of learning domains across conducted experiences.</p>
+                    </div>
+                    <div class="section-actions">
+                        <a href="/studio" class="drill-link">Explore Experience Studio →</a>
+                        <a href="/experiences" class="drill-link" style="margin-left: 8px;">Experience Library →</a>
+                    </div>
+                </div>
+
+                <div class="curriculum-grid">
+                    <div class="diversity-card">
+                        <div class="diversity-rate">@_report.CurriculumVariety.VarietyDiversityPercentage%</div>
+                        <div class="diversity-label">Curriculum Diversity Score</div>
+                        <p class="diversity-desc">Reflects how evenly activities are distributed across developmental domains.</p>
+                    </div>
+
+                    <div class="domains-card">
+                        <div class="domains-title">Activity Frequency by Domain</div>
+                        <div class="domains-list">
+                            @if (_report.CurriculumVariety.DomainDistribution.Any())
+                            {
+                                @foreach (var kvp in _report.CurriculumVariety.DomainDistribution)
+                                {
+                                    <div class="domain-row">
+                                        <span class="domain-name">@kvp.Key</span>
+                                        <div class="domain-bar-wrap">
+                                            <div class="domain-bar" style="width: @(GetDomainBarWidth(kvp.Value))%;"></div>
+                                        </div>
+                                        <span class="domain-count">@kvp.Value</span>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-muted">No domain data logged for this period.</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section D: Advance Planning Gaps -->
+            <div class="section-container">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Advance Planning Coverage</h2>
+                        <p class="section-desc">Classrooms with few or no upcoming experiences scheduled.</p>
+                    </div>
+                    <div class="section-actions">
+                        <a href="/planning" class="drill-link">Open Experience Calendar →</a>
+                    </div>
+                </div>
+
+                @if (_report.PlanningGaps.ClassroomsWithFewOrNoPlans.Any())
+                {
+                    <div class="gaps-table-wrap">
+                        <table class="gaps-table">
+                            <thead>
+                                <tr>
+                                    <th>Classroom</th>
+                                    <th>Branch</th>
+                                    <th>Upcoming Plans (Next 7 Days)</th>
+                                    <th>Readiness Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var gap in _report.PlanningGaps.ClassroomsWithFewOrNoPlans)
+                                {
+                                    <tr>
+                                        <td class="classroom-col">@gap.ClassroomName</td>
+                                        <td>@gap.BranchName</td>
+                                        <td>
+                                            <span class="plans-count @(gap.UpcomingPlansCount == 0 ? "zero" : "low")">
+                                                @gap.UpcomingPlansCount plans
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="gap-status-badge @(gap.UpcomingPlansCount == 0 ? "critical" : "warning")">
+                                                @(gap.UpcomingPlansCount == 0 ? "No Plans" : "Low Coverage")
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <a href="/planning" class="plan-now-link">Plan Experiences →</a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
                 else
                 {
-                    <div class="empty-insights">
-                        <p>No insights generated for this filter. Click <strong>↻ Refresh AI Insights</strong> above to analyze the selected period.</p>
+                    <div class="planning-healthy-banner">
+                        ✓ All classrooms have active upcoming experience schedules for next week.
                     </div>
                 }
             </div>
-        </div>
 
-        <!-- Section C: Curriculum & Learning Areas Variety -->
-        <div class="section-container">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">Curriculum Variety &amp; Domain Coverage</h2>
-                    <p class="section-desc">Distribution of learning domains across conducted experiences.</p>
-                </div>
-                <div class="section-actions">
-                    <a href="/studio" class="drill-link">Explore Experience Studio →</a>
-                    <a href="/experiences" class="drill-link" style="margin-left: 8px;">Experience Library →</a>
-                </div>
-            </div>
-
-            <div class="curriculum-grid">
-                <div class="diversity-card">
-                    <div class="diversity-rate">@_report.CurriculumVariety.VarietyDiversityPercentage%</div>
-                    <div class="diversity-label">Curriculum Diversity Score</div>
-                    <div class="diversity-meta">
-                        @_report.CurriculumVariety.UniqueExperienceTitlesCount unique activities across @_report.CurriculumVariety.TotalExperiencesConducted total sessions.
+            <!-- Section E: Operational Data Quality & Action Items -->
+            <div class="section-container">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Operational Data Quality &amp; Action Items</h2>
+                        <p class="section-desc">Records awaiting teacher sign-off or departure checkouts.</p>
                     </div>
                 </div>
 
-                <div class="domains-card">
-                    <h4 class="domains-title">Learning Domains Breakdown</h4>
-                    @foreach (var kvp in _report.CurriculumVariety.DomainDistribution)
-                    {
-                        <div class="domain-row">
-                            <div class="domain-name">@kvp.Key</div>
-                            <div class="domain-bar-wrapper">
-                                <div class="domain-bar" style="width: @Math.Min(100, kvp.Value * 15)%"></div>
-                            </div>
-                            <div class="domain-count">@kvp.Value</div>
-                        </div>
-                    }
+                <div class="action-items-grid">
+                    <div class="action-card">
+                        <div class="action-count">@_report.DataQuality.MissingDepartureTimesCount</div>
+                        <div class="action-label">Unrecorded Departure Checks</div>
+                        <p class="action-desc">Children marked Present without checkout time before today.</p>
+                        <a href="/management/attendance" class="action-link">Review Attendance →</a>
+                    </div>
+
+                    <div class="action-card">
+                        <div class="action-count">@_report.DataQuality.DraftsAwaitingReviewCount</div>
+                        <div class="action-label">Parent Communication Drafts Awaiting Review</div>
+                        <p class="action-desc">Teacher drafts awaiting approval before sending to parents.</p>
+                        <a href="/stories" class="action-link">Review Parent Stories &amp; Updates →</a>
+                    </div>
                 </div>
             </div>
+        }
+    }
+
+    @* TAB 3: OPERATIONAL GOALS & ACTION TRACKER *@
+    @if (_activeTab == "Goals")
+    {
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div>
+                <h3 style="margin: 0; font-size: 18px; font-weight: 750; color: var(--text);">Operational Improvement Action Tracker</h3>
+                <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--muted);">
+                    Track targets for capacity, educator ratio compliance, attendance, and curriculum execution.
+                </p>
+            </div>
+            <button class="primary" @onclick="() => _isAddGoalModalOpen = true">
+                + Add Goal
+            </button>
         </div>
 
-        <!-- Section D: Advance Planning Readiness & Gaps -->
-        <div class="section-container">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">Advance Planning Readiness</h2>
-                    <p class="section-desc">Classrooms requiring upcoming activity schedules for next week.</p>
-                </div>
-                <div class="section-actions">
-                    <a href="/planning" class="drill-link">Open Experience Planning →</a>
-                </div>
-            </div>
-
-            @if (_report.PlanningGaps.ClassroomsWithFewOrNoPlans.Any())
-            {
-                <div class="gaps-list">
-                    @foreach (var gap in _report.PlanningGaps.ClassroomsWithFewOrNoPlans)
-                    {
-                        <div class="gap-card">
-                            <div class="gap-info">
-                                <div class="gap-classroom">@gap.ClassroomName</div>
-                                <div class="gap-branch">@gap.BranchName</div>
-                            </div>
-
-                            <div class="gap-status">
-                                <span class="gap-badge @(gap.UpcomingPlansCount == 0 ? "badge-danger" : "badge-warning")">
-                                    @gap.UpcomingPlansCount plans scheduled
+        @if (!_operationalGoals.Any())
+        {
+            <EmptyState Icon="🎯"
+                        Title="No active goals logged"
+                        Description="Set an operational milestone for your branch to continuously improve quality and compliance."
+                        ActionText="+ Add First Goal"
+                        OnAction="() => _isAddGoalModalOpen = true" />
+        }
+        else
+        {
+            <div class="goals-grid">
+                @foreach (var g in _operationalGoals)
+                {
+                    <div class="goal-card">
+                        <div>
+                            <div class="goal-header">
+                                <span class="goal-cat-badge">@g.Category</span>
+                                <span style="font-size: 11px; font-weight: 750; padding: 3px 8px; border-radius: 6px; background: @(g.Status == "Completed" ? "#e6eee9" : g.Status == "AtRisk" ? "#fff5f5" : "#e0f2fe"); color: @(g.Status == "Completed" ? "#3e6253" : g.Status == "AtRisk" ? "#9b2c2c" : "#0369a1");">
+                                    @g.Status
                                 </span>
                             </div>
+                            <h4 class="goal-title">@g.Title</h4>
+                            <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+                                Assigned Branch: <strong>@(g.BranchName ?? "Organization-Wide")</strong>
+                            </div>
 
-                            <div class="gap-action">
-                                <a href="/planning" class="btn-plan-drill">Plan Week ✦</a>
+                            @if (!string.IsNullOrWhiteSpace(g.TargetMetric))
+                            {
+                                <div class="goal-metric-row">
+                                    <span style="color: var(--muted);">@g.TargetMetric:</span>
+                                    <span>
+                                        Current: <strong>@g.CurrentValue</strong> → Target: <strong style="color: var(--accent-dark);">@g.TargetValue</strong>
+                                    </span>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="goal-footer">
+                            <div>
+                                👤 <strong>@(g.OwnerName ?? "Director")</strong>
+                                @if (g.TargetDate.HasValue)
+                                {
+                                    <span style="margin-left: 6px;">• Due @g.TargetDate.Value.ToString("MMM dd")</span>
+                                }
+                            </div>
+                            <div>
+                                @if (g.Status != "Completed")
+                                {
+                                    <button class="btn secondary" style="font-size: 11.5px; padding: 4px 8px;" @onclick='() => UpdateGoalStatus(g.Id, "Completed")'>
+                                        ✓ Complete
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn secondary" style="font-size: 11.5px; padding: 4px 8px;" @onclick='() => UpdateGoalStatus(g.Id, "InProgress")'>
+                                        Reopen
+                                    </button>
+                                }
                             </div>
                         </div>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="planning-healthy-banner">
-                    ✓ All classrooms have active upcoming experience schedules for next week.
-                </div>
-            }
-        </div>
-
-        <!-- Section E: Operational Data Quality & Action Items -->
-        <div class="section-container">
-            <div class="section-header">
-                <div>
-                    <h2 class="section-title">Operational Data Quality &amp; Action Items</h2>
-                    <p class="section-desc">Records awaiting teacher sign-off or departure checkouts.</p>
-                </div>
+                    </div>
+                }
             </div>
-
-            <div class="action-items-grid">
-                <div class="action-card">
-                    <div class="action-count">@_report.DataQuality.MissingDepartureTimesCount</div>
-                    <div class="action-label">Unrecorded Departure Checks</div>
-                    <p class="action-desc">Children marked Present without checkout time before today.</p>
-                    <a href="/management/attendance" class="action-link">Review Attendance →</a>
-                </div>
-
-                <div class="action-card">
-                    <div class="action-count">@_report.DataQuality.DraftsAwaitingReviewCount</div>
-                    <div class="action-label">Parent Communication Drafts Awaiting Review</div>
-                    <p class="action-desc">Teacher drafts awaiting approval before sending to parents.</p>
-                    <a href="/stories" class="action-link">Review Parent Stories &amp; Updates →</a>
-                </div>
-            </div>
-        </div>
+        }
     }
 </div>
+
+<!-- MODAL: ADD OPERATIONAL GOAL -->
+@if (_isAddGoalModalOpen)
+{
+    <div class="modal-backdrop-pipeline" @onclick="() => _isAddGoalModalOpen = false">
+        <div class="modal-card-pipeline" @onclick:stopPropagation="true" style="max-width: 520px;">
+            <div class="modal-header-pipeline">
+                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Add Branch Operational Goal</h3>
+                <button class="close-x" @onclick="() => _isAddGoalModalOpen = false">✕</button>
+            </div>
+            <div class="modal-body-pipeline">
+                <div class="form-group">
+                    <label>Goal Title *</label>
+                    <input class="input-field" @bind="_newGoal.Title" placeholder="e.g. Achieve 95% ratio compliance during afternoon peak" />
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select class="input-field" @bind="_newGoal.Category">
+                            <option value="Enrollment">Enrollment &amp; Occupancy</option>
+                            <option value="StaffingRatios">Staffing &amp; Statutory Ratios</option>
+                            <option value="Attendance">Attendance Health</option>
+                            <option value="Financial">Billing &amp; Collection</option>
+                            <option value="QualityCurriculum">Curriculum &amp; Quality</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Branch</label>
+                        <select class="input-field" @bind="_newGoal.BranchId">
+                            <option value="">All Branches</option>
+                            @foreach (var b in _branches)
+                            {
+                                <option value="@b.Id">@b.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Target Metric</label>
+                        <input class="input-field" @bind="_newGoal.TargetMetric" placeholder="e.g. Ratio Compliance" />
+                    </div>
+                    <div class="form-group">
+                        <label>Current Value → Target Value</label>
+                        <div style="display: flex; gap: 6px;">
+                            <input class="input-field" style="width: 50%;" @bind="_newGoal.CurrentValue" placeholder="e.g. 91%" />
+                            <input class="input-field" style="width: 50%;" @bind="_newGoal.TargetValue" placeholder="e.g. 100%" />
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Owner / Lead Person</label>
+                        <input class="input-field" @bind="_newGoal.OwnerName" placeholder="e.g. Director Sarah" />
+                    </div>
+                    <div class="form-group">
+                        <label>Target Completion Date</label>
+                        <input type="date" class="input-field" @bind="_newGoal.TargetDate" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer-pipeline">
+                <button class="btn secondary" @onclick="() => _isAddGoalModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="SaveGoal">Save Goal</button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private List<Organization> _organizations = new();
     private List<Branch> _branches = new();
     private List<Classroom> _allClassrooms = new();
     private List<Classroom> _filteredClassrooms = new();
+
+    private string _activeTab = "Benchmarking";
+    private List<BranchHealthScorecard> _scorecards = new();
+    private List<BranchOperationalGoal> _operationalGoals = new();
+    private bool _isLoadingBenchmarking;
 
     private Guid _selectedOrgId;
     private string? _selectedBranchId;
@@ -336,6 +725,10 @@
     private OrganizationIntelligenceReport? _report;
     private bool _isLoading;
     private string? _errorMessage;
+
+    // Add Goal Modal State
+    private bool _isAddGoalModalOpen;
+    private BranchOperationalGoal _newGoal = new() { TargetDate = DateTime.UtcNow.Date.AddDays(30) };
 
     protected override async Task OnInitializedAsync()
     {
@@ -348,6 +741,7 @@
             {
                 _selectedOrgId = defaultOrg.Id;
                 await LoadBranchesAndClassroomsAsync();
+                await LoadBenchmarkingAsync();
                 await LoadReportAsync();
             }
         }
@@ -357,11 +751,36 @@
         }
     }
 
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private async Task LoadBenchmarkingAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+        _isLoadingBenchmarking = true;
+        try
+        {
+            _scorecards = await BenchmarkingService.GetBranchScorecardsAsync(_selectedOrgId);
+            _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to benchmark branches: {ex.Message}";
+        }
+        finally
+        {
+            _isLoadingBenchmarking = false;
+        }
+    }
+
     private async Task OnOrgChangedAsync()
     {
         _selectedBranchId = null;
         _selectedClassroomId = null;
         await LoadBranchesAndClassroomsAsync();
+        await LoadBenchmarkingAsync();
         await LoadReportAsync();
     }
 
@@ -455,5 +874,44 @@
         {
             _isLoading = false;
         }
+    }
+
+    private async Task SaveGoal()
+    {
+        if (string.IsNullOrWhiteSpace(_newGoal.Title)) return;
+        try
+        {
+            _newGoal.OrganizationId = _selectedOrgId;
+            await BenchmarkingService.CreateOperationalGoalAsync(_newGoal);
+            _isAddGoalModalOpen = false;
+            _newGoal = new() { TargetDate = DateTime.UtcNow.Date.AddDays(30) };
+            _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save goal: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateGoalStatus(Guid goalId, string status)
+    {
+        try
+        {
+            await BenchmarkingService.UpdateGoalStatusAsync(goalId, status);
+            _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to update goal: {ex.Message}";
+        }
+    }
+
+    private double GetDomainBarWidth(int value)
+    {
+        if (_report?.CurriculumVariety.DomainDistribution == null || !_report.CurriculumVariety.DomainDistribution.Any())
+            return 0;
+
+        var max = _report.CurriculumVariety.DomainDistribution.Values.Max();
+        return max > 0 ? Math.Round((double)value / max * 100, 1) : 0;
     }
 }

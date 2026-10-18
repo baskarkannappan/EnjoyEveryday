@@ -4,11 +4,11 @@ public class RazorpaySettings
 {
     public const string SectionName = "Razorpay";
 
-    public string KeyId { get; set; } = "rzp_test_enjoyeveryday";
-    public string KeySecret { get; set; } = "secret_enjoyeveryday_key";
-    public string WebhookSecret { get; set; } = "whsec_enjoyeveryday_webhook";
+    public string KeyId { get; set; } = string.Empty;
+    public string KeySecret { get; set; } = string.Empty;
+    public string WebhookSecret { get; set; } = string.Empty;
     public string DefaultCurrency { get; set; } = "INR";
-    public bool MockMode { get; set; } = false;
+    public bool MockMode { get; set; } = true;
 }
 
 public class RazorpayGatewayOrderResult

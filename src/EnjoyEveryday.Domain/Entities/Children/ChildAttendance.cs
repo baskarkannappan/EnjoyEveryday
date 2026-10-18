@@ -1,4 +1,7 @@
+using System;
+
 namespace EnjoyEveryday.Domain.Entities;
+
 public class ChildAttendance
 {
     public Guid Id { get; set; }
@@ -12,6 +15,15 @@ public class ChildAttendance
     public TimeSpan? DepartureTime { get; set; }
     public string? Notes { get; set; }
     public Guid? RecordedByUserId { get; set; }
+    
+    // Secure pickup and departure verification
+    public string? PickupPersonName { get; set; }
+    public string? PickupPersonRelationship { get; set; }
+    public string? PickupVerificationMethod { get; set; }
+    public string? PickupNotes { get; set; }
+    public Guid? AuthorizedPickupId { get; set; }
+    public Guid? DepartureVerifiedByUserId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

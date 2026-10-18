@@ -129,4 +129,11 @@ public class ExperienceSessionRepository : IExperienceSessionRepository
             await connection.ExecuteAsync(sql, participations);
         }
     }
+
+    public async Task<IEnumerable<Guid>> GetLoggedChildIdsForSessionAsync(Guid tenantId, Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
+        const string sql = "SELECT child_id FROM child_journey_entries WHERE tenant_id = @TenantId AND experience_session_id = @SessionId";
+        return await connection.QueryAsync<Guid>(sql, new { TenantId = tenantId, SessionId = sessionId });
+    }
 }

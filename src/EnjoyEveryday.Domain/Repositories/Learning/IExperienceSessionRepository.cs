@@ -12,4 +12,5 @@ public interface IExperienceSessionRepository
     
     Task<IEnumerable<ExperienceParticipation>> GetParticipationsForSessionAsync(Guid sessionId, CancellationToken cancellationToken = default);
     Task SaveParticipationsAsync(Guid sessionId, IEnumerable<ExperienceParticipation> participations, CancellationToken cancellationToken = default);
+    Task<IEnumerable<Guid>> GetLoggedChildIdsForSessionAsync(Guid tenantId, Guid sessionId, CancellationToken cancellationToken = default);
 }

@@ -45,4 +45,9 @@ public class AttendanceService
     {
         return await _attendanceRepository.GetOrganizationSummaryAsync(_tenantContext.TenantId, date);
     }
+
+    public async Task<IEnumerable<Guid>> GetPresentChildIdsForClassroomAsync(Guid classroomId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        return await _attendanceRepository.GetPresentChildIdsByClassroomAsync(_tenantContext.TenantId, classroomId, date, cancellationToken);
+    }
 }

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EnjoyEveryday.Application.Services;
+using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Shared.Tenancy;
 using NUnit.Framework;
 

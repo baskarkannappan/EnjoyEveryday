@@ -10,4 +10,5 @@ public interface ITeacherRepository
     Task<Teacher> AddAsync(Teacher teacher, CancellationToken cancellationToken = default);
     Task UpdateAsync(Teacher teacher, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
+    Task<bool> IsTeacherAssignedToClassroomAsync(Guid tenantId, Guid classroomId, Guid teacherId, Guid? userId = null, CancellationToken cancellationToken = default);
 }
