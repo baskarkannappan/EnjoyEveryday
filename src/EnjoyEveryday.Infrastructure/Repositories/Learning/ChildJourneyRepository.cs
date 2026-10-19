@@ -183,4 +183,69 @@ public class ChildJourneyRepository : IChildJourneyRepository
             
         return await connection.QueryAsync<ChildMilestone>(sql, new { TenantId = tenantId, ChildId = childId });
     }
+
+    public async Task<Guid> ResolveTeacherIdAsync(Guid tenantId, Guid teacherOrUserId, Guid? classroomId = null, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
+        // 1. If teacherOrUserId is already a valid teacher ID in the teachers table
+        const string checkDirectSql = @"SELECT id FROM teachers WHERE id = @Id AND tenant_id = @TenantId LIMIT 1";
+        var directId = await connection.QuerySingleOrDefaultAsync<Guid?>(checkDirectSql, new { Id = teacherOrUserId, TenantId = tenantId });
+        if (directId.HasValue && directId.Value != Guid.Empty)
+        {
+            return directId.Value;
+        }
+
+        // 2. If it's a user_id linked to a teacher in this tenant
+        const string checkUserSql = @"SELECT id FROM teachers WHERE user_id = @UserId AND tenant_id = @TenantId LIMIT 1";
+        var fromUserId = await connection.QuerySingleOrDefaultAsync<Guid?>(checkUserSql, new { UserId = teacherOrUserId, TenantId = tenantId });
+        if (fromUserId.HasValue && fromUserId.Value != Guid.Empty)
+        {
+            return fromUserId.Value;
+        }
+
+        // 3. If classroom has a teacher assigned
+        if (classroomId.HasValue && classroomId.Value != Guid.Empty)
+        {
+            const string checkClassroomSql = @"
+                SELECT t.id 
+                FROM classroom_teachers ct
+                JOIN teachers t ON ct.user_id = t.user_id AND ct.tenant_id = t.tenant_id
+                WHERE ct.classroom_id = @ClassroomId AND ct.tenant_id = @TenantId
+                ORDER BY ct.is_primary DESC
+                LIMIT 1";
+            var fromClassroom = await connection.QuerySingleOrDefaultAsync<Guid?>(checkClassroomSql, new { ClassroomId = classroomId.Value, TenantId = tenantId });
+            if (fromClassroom.HasValue && fromClassroom.Value != Guid.Empty)
+            {
+                return fromClassroom.Value;
+            }
+        }
+
+        // 4. Fall back to any active teacher in this tenant
+        const string anyTeacherSql = @"SELECT id FROM teachers WHERE tenant_id = @TenantId AND status != 'Inactive' LIMIT 1";
+        var anyTeacher = await connection.QuerySingleOrDefaultAsync<Guid?>(anyTeacherSql, new { TenantId = tenantId });
+        if (anyTeacher.HasValue && anyTeacher.Value != Guid.Empty)
+        {
+            return anyTeacher.Value;
+        }
+
+        // 5. If no teacher exists at all, auto-create a teacher profile for this user/admin so foreign keys never fail
+        var newTeacherId = Guid.NewGuid();
+        const string createTeacherSql = @"
+            INSERT INTO teachers (
+                id, tenant_id, user_id, first_name, last_name, display_name, status, created_at, updated_at
+            )
+            SELECT @newTeacherId, @tenantId, u.id, COALESCE(u.first_name, 'Teacher'), COALESCE(u.last_name, 'Staff'), COALESCE(u.display_name, 'Lead Educator'), 'Active', NOW(), NOW()
+            FROM users u
+            WHERE u.id = @teacherOrUserId AND u.tenant_id = @tenantId
+            ON CONFLICT (id) DO NOTHING";
+
+        var inserted = await connection.ExecuteAsync(createTeacherSql, new { newTeacherId, tenantId, teacherOrUserId });
+        if (inserted > 0)
+        {
+            return newTeacherId;
+        }
+
+        return teacherOrUserId;
+    }
 }

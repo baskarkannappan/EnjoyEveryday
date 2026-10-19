@@ -279,7 +279,12 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         // 1. Create or ensure child record in children table
         await _repository.EnsureChildEnrolledAsync(childId, tenantId, request.ClassroomId, app.ChildFirstName, app.ChildLastName, app.DateOfBirth, ct);
 
-        // 2. Create family billing contract
+        // 2. Resolve branch and organization scope from the selected classroom
+        var scope = await _repository.GetClassroomScopeAsync(tenantId, request.ClassroomId, ct);
+        var branchId = scope.BranchId ?? app.BranchId;
+        var organizationId = scope.OrganizationId ?? tenantId;
+
+        // 3. Create family billing contract
         var contractId = Guid.NewGuid();
         var effectiveRate = Math.Round(request.BaseMonthlyRate * (1 - (request.SiblingDiscountPercent / 100m)), 2);
 
@@ -287,7 +292,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         {
             Id = contractId,
             TenantId = tenantId,
-            BranchId = app.BranchId,
+            BranchId = branchId,
             ApplicationId = app.Id,
             ChildId = childId,
             ParentName = app.ParentGuardianName,
@@ -305,7 +310,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
         await _repository.CreateFamilyBillingContractAsync(contract, ct);
 
-        // 3. Optional: Create initial invoice in invoices table for registration + deposit
+        // 4. Optional: Create initial invoice in invoices table for registration + deposit
         if (request.CreateInitialTuitionInvoice)
         {
             var invoiceId = Guid.NewGuid();
@@ -315,6 +320,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             await _repository.CreateInitialTuitionInvoiceAsync(
                 invoiceId,
                 tenantId,
+                organizationId,
                 invoiceNum,
                 totalInvoiceAmount,
                 $"Admissions Enrollment Packet for {app.ChildFullName}",

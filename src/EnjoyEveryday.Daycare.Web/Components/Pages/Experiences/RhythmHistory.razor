@@ -322,12 +322,17 @@
             _organizations = (await OrganizationService.GetOrganizationsAsync()).ToList();
             if (_organizations.Any())
             {
-                _selectedOrgId = _organizations.First().Id;
+                var activeOrg = (UserContext.OrganizationId.HasValue 
+                    ? _organizations.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value) 
+                    : null) ?? _organizations.First();
+                _selectedOrgId = activeOrg.Id;
                 _allBranches = (await BranchService.GetBranchesAsync(_selectedOrgId.Value)).ToList();
                 _filteredBranches = _allBranches;
             }
 
-            _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            _allClassrooms = _selectedOrgId.HasValue 
+                ? (await ClassroomService.GetClassroomsByOrganizationAsync(_selectedOrgId.Value)).ToList()
+                : (await ClassroomService.GetAllClassroomsAsync()).ToList();
             _filteredClassrooms = _allClassrooms;
             _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
 
@@ -427,7 +432,9 @@
                        s.planned_end_time as PlannedEndTime, s.preparation_notes as PreparationNotes
                 FROM experience_schedules s
                 JOIN classrooms c ON s.classroom_id = c.id
+                JOIN branches b ON c.branch_id = b.id
                 WHERE s.tenant_id = @TenantId
+                  AND (@OrgId IS NULL OR b.organization_id = @OrgId)
                   AND s.scheduled_date = @Date
                   AND (@ClassroomId IS NULL OR s.classroom_id = @ClassroomId)
                   AND (@BranchId IS NULL OR c.branch_id = @BranchId)
@@ -436,6 +443,7 @@
             var schedules = (await connection.QueryAsync<ExperienceSchedule>(schedSql, new
             {
                 TenantId = tenantId,
+                OrgId = _selectedOrgId,
                 Date = _selectedDate.ToDateTime(TimeOnly.MinValue),
                 ClassroomId = _selectedClassroomId,
                 BranchId = _selectedBranchId

@@ -5,6 +5,7 @@
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 
 <PageTopbar Breadcrumb="Organization · Add Branch" Title="Add Branch">
     <RightContent>
@@ -122,7 +123,9 @@
         try
         {
             var orgs = await OrganizationService.GetOrganizationsAsync();
-            var org = orgs.FirstOrDefault();
+            var org = (UserContext.OrganizationId.HasValue 
+                ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value) 
+                : null) ?? orgs.FirstOrDefault();
             if (org != null)
             {
                 var branch = await BranchService.CreateBranchAsync(org.Id, BranchName, Location);

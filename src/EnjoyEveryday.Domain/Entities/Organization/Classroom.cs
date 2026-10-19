@@ -28,7 +28,7 @@ public class Classroom
     public string? DraftData { get; set; }
     public int ProfileCompletionPercentage { get; set; }
     
-    public bool IsActive { get; set; }
+    public bool IsActive { get; set; } = true;
     
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? CreatedBy { get; set; }

@@ -213,16 +213,16 @@ public class EnrollmentPipelineRepository : IEnrollmentPipelineRepository
         }, cancellationToken: ct));
     }
 
-    public async Task CreateInitialTuitionInvoiceAsync(Guid invoiceId, Guid tenantId, string invoiceNum, decimal totalAmount, string desc, string notes, CancellationToken ct = default)
+    public async Task CreateInitialTuitionInvoiceAsync(Guid invoiceId, Guid tenantId, Guid organizationId, string invoiceNum, decimal totalAmount, string desc, string notes, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
 
         const string sql = @"
             INSERT INTO invoices (
-                id, tenant_id, invoice_number, currency, issue_date, due_date, status,
+                id, tenant_id, organization_id, invoice_number, currency, issue_date, due_date, status,
                 subtotal, tax_amount, total_amount, amount_paid, description, notes, created_by, created_at, updated_at
             ) VALUES (
-                @invoiceId, @tenantId, @invoiceNum, 'INR', NOW(), NOW() + INTERVAL '7 days', 'Issued',
+                @invoiceId, @tenantId, @organizationId, @invoiceNum, 'INR', NOW(), NOW() + INTERVAL '7 days', 'Issued',
                 @totalAmount, 0, @totalAmount, 0,
                 @desc, @notes, 'Enrollment System', NOW(), NOW()
             )";
@@ -231,6 +231,7 @@ public class EnrollmentPipelineRepository : IEnrollmentPipelineRepository
         {
             invoiceId,
             tenantId,
+            organizationId,
             invoiceNum,
             totalAmount,
             desc,
@@ -307,5 +308,21 @@ public class EnrollmentPipelineRepository : IEnrollmentPipelineRepository
 
         var results = await conn.QueryAsync<FamilyBillingContract>(new CommandDefinition(sql, new { tenantId, branchId }, cancellationToken: ct));
         return results.ToList();
+    }
+
+    public async Task<(Guid? BranchId, Guid? OrganizationId)> GetClassroomScopeAsync(Guid tenantId, Guid classroomId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+
+        const string sql = @"
+            SELECT b.id AS BranchId, b.organization_id AS OrganizationId
+            FROM classrooms c
+            JOIN branches b ON c.branch_id = b.id
+            WHERE c.tenant_id = @tenantId AND c.id = @classroomId";
+
+        var res = await conn.QuerySingleOrDefaultAsync<(Guid? BranchId, Guid? OrganizationId)>(
+            new CommandDefinition(sql, new { tenantId, classroomId }, cancellationToken: ct));
+
+        return res;
     }
 }

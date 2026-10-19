@@ -24,6 +24,12 @@ public class ClassroomService : IClassroomService
         return await _classroomRepository.GetAllAsync(tenantId, orgId, cancellationToken);
     }
 
+    public async Task<IEnumerable<Classroom>> GetClassroomsByOrganizationAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _classroomRepository.GetAllAsync(tenantId, organizationId, cancellationToken);
+    }
+
     public async Task<IEnumerable<Classroom>> GetClassroomsAsync(Guid branchId, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
@@ -67,6 +73,7 @@ public class ClassroomService : IClassroomService
             classroom.Id = Guid.NewGuid();
         }
         
+        classroom.IsActive = true;
         classroom.CreatedAt = DateTimeOffset.UtcNow;
         classroom.UpdatedAt = DateTimeOffset.UtcNow;
 

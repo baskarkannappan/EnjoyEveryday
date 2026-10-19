@@ -52,6 +52,9 @@ public class ChildJourneyService : IChildJourneyService
         entry.TenantId = _tenantContext.TenantId;
         if (entry.Id == Guid.Empty) entry.Id = Guid.NewGuid();
         
+        // Resolve valid teacher ID to satisfy foreign key constraint on teachers table
+        entry.TeacherId = await _repository.ResolveTeacherIdAsync(entry.TenantId, entry.TeacherId, entry.ClassroomId, cancellationToken);
+
         await _repository.CreateJourneyEntryAsync(entry, cancellationToken);
         
         if (developmentAreaIds != null && developmentAreaIds.Any())
@@ -123,6 +126,8 @@ public class ChildJourneyService : IChildJourneyService
         milestone.TenantId = _tenantContext.TenantId;
         if (milestone.Id == Guid.Empty) milestone.Id = Guid.NewGuid();
         
+        milestone.TeacherId = await _repository.ResolveTeacherIdAsync(milestone.TenantId, milestone.TeacherId, milestone.ClassroomId, cancellationToken);
+
         await _repository.CreateMilestoneAsync(milestone, cancellationToken);
 
         await _auditService.LogAsync(new AuditEntry

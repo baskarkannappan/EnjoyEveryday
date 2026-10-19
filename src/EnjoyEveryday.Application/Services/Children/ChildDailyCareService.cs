@@ -450,9 +450,12 @@ public class ChildDailyCareService : IChildDailyCareService
         DateOnly date,
         CancellationToken ct = default)
     {
+        var branchClassrooms = (await _classroomRepository.GetByBranchIdAsync(_tenantContext.TenantId, branchId, ct)).ToList();
+        var branchClassroomIds = branchClassrooms.Select(c => c.Id).ToHashSet();
+
         var allChildren = await _childRepository.GetAllAsync(_tenantContext.TenantId, ct);
         var children = allChildren
-            .Where(c => !classroomId.HasValue || c.ClassroomId == classroomId.Value)
+            .Where(c => c.ClassroomId.HasValue && branchClassroomIds.Contains(c.ClassroomId.Value) && (!classroomId.HasValue || c.ClassroomId == classroomId.Value))
             .ToList();
 
         var attendancesList = await _attendanceRepository.GetChildAttendanceByDateAsync(

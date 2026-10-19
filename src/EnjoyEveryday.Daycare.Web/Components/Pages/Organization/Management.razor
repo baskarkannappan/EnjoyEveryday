@@ -6,6 +6,7 @@
 @inject DashboardService DashboardService
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 
 @* <PageTopbar Breadcrumb="@($"Organization · {(OrgMetrics?.TotalBranches ?? 0)} branches")" Title="@(OrgMetrics?.OrganizationName ?? "Loading...")">
     <RightContent>
@@ -145,7 +146,9 @@
     protected override async Task OnInitializedAsync()
     {
         var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
+        var org = (UserContext.OrganizationId.HasValue 
+            ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value) 
+            : null) ?? orgs.FirstOrDefault();
 
         if (org != null)
         {

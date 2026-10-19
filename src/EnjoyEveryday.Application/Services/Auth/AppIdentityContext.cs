@@ -117,9 +117,11 @@ public class AppIdentityContext : IUserContext, ITenantContext
                 var tenantClaim = User!.FindFirst("TenantId")?.Value;
                 if (Guid.TryParse(tenantClaim, out var tenantId))
                     return tenantId;
+
+                return Guid.Empty;
             }
             
-            // Fallback strictly in verified Development environment
+            // Fallback strictly in verified Development environment for unauthenticated sessions
             if (IsDevelopment())
             {
                 var devTenant = _configuration["DevTenantId"];
@@ -146,6 +148,8 @@ public class AppIdentityContext : IUserContext, ITenantContext
                 var nameIdentifier = User!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (Guid.TryParse(nameIdentifier, out var userId))
                     return userId;
+
+                return Guid.Empty;
             }
             
             // Fallback strictly in verified Development environment
@@ -170,6 +174,7 @@ public class AppIdentityContext : IUserContext, ITenantContext
             {
                 var email = User!.FindFirst(ClaimTypes.Email)?.Value;
                 if (!string.IsNullOrEmpty(email)) return email;
+                return string.Empty;
             }
             return IsDevelopment() ? (_configuration["DevUserEmail"] ?? string.Empty) : string.Empty;
         }
@@ -230,6 +235,8 @@ public class AppIdentityContext : IUserContext, ITenantContext
                 var orgClaim = User!.FindFirst("ActiveOrganizationId")?.Value ?? User!.FindFirst("OrganizationId")?.Value;
                 if (Guid.TryParse(orgClaim, out var orgId))
                     return orgId;
+
+                return null;
             }
             
             if (IsDevelopment())

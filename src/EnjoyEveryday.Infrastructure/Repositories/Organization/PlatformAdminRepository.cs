@@ -38,6 +38,26 @@ public class PlatformAdminRepository : IPlatformAdminRepository
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
 
+        // Every organization provisioned on the platform is an independent tenant
+        Guid orgTenantId = id;
+        var rawSlug = Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+        var slug = string.IsNullOrWhiteSpace(rawSlug) ? $"org-{id.ToString()[..8]}" : rawSlug;
+
+        var existingSlugCount = await conn.ExecuteScalarAsync<int>(
+            new CommandDefinition("SELECT COUNT(1) FROM tenants WHERE slug = @Slug", new { Slug = slug }, cancellationToken: ct));
+
+        if (existingSlugCount > 0)
+        {
+            slug = $"{slug}-{id.ToString()[..4]}";
+        }
+
+        await conn.ExecuteAsync(new CommandDefinition(@"
+            INSERT INTO tenants (id, name, slug) 
+            VALUES (@TenantId, @Name, @Slug) 
+            ON CONFLICT (id) DO NOTHING",
+            new { TenantId = orgTenantId, Name = name, Slug = slug },
+            cancellationToken: ct));
+
         // Check if admin email belongs to an existing user
         var existingUser = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TenantId)?>(
             new CommandDefinition(
@@ -45,42 +65,25 @@ public class PlatformAdminRepository : IPlatformAdminRepository
                 new { Email = adminEmail.Trim() },
                 cancellationToken: ct));
 
-        Guid orgTenantId;
-        Guid? adminUserId = null;
-
+        Guid adminUserId;
         if (existingUser.HasValue)
         {
-            orgTenantId = existingUser.Value.TenantId;
             adminUserId = existingUser.Value.Id;
+            // If the user was previously placed in the default seed tenant, update them to this tenant
+            await conn.ExecuteAsync(new CommandDefinition(
+                "UPDATE users SET tenant_id = @TenantId WHERE id = @UserId AND tenant_id = '10000000-0000-0000-0000-000000000001'",
+                new { TenantId = orgTenantId, UserId = adminUserId },
+                cancellationToken: ct));
         }
         else
         {
-            orgTenantId = id;
-            var rawSlug = Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
-            var slug = string.IsNullOrWhiteSpace(rawSlug) ? $"org-{id.ToString()[..8]}" : rawSlug;
-
-            var existingSlugCount = await conn.ExecuteScalarAsync<int>(
-                new CommandDefinition("SELECT COUNT(1) FROM tenants WHERE slug = @Slug", new { Slug = slug }, cancellationToken: ct));
-
-            if (existingSlugCount > 0)
-            {
-                slug = $"{slug}-{id.ToString()[..4]}";
-            }
-
-            await conn.ExecuteAsync(new CommandDefinition(@"
-                INSERT INTO tenants (id, name, slug) 
-                VALUES (@TenantId, @Name, @Slug) 
-                ON CONFLICT (id) DO NOTHING",
-                new { TenantId = orgTenantId, Name = name, Slug = slug },
-                cancellationToken: ct));
-
             // Create new admin user
             adminUserId = Guid.NewGuid();
             await conn.ExecuteAsync(new CommandDefinition(@"
                 INSERT INTO users (id, tenant_id, email, normalized_email, email_confirmed, first_name, last_name, display_name, is_active)
                 VALUES (@UserId, @TenantId, @Email, UPPER(@Email), TRUE, 'Admin', @OrgName, @OrgName, TRUE)
                 ON CONFLICT (normalized_email) DO NOTHING",
-                new { UserId = adminUserId.Value, TenantId = orgTenantId, Email = adminEmail.Trim(), OrgName = name },
+                new { UserId = adminUserId, TenantId = orgTenantId, Email = adminEmail.Trim(), OrgName = name },
                 cancellationToken: ct));
         }
 
@@ -102,13 +105,13 @@ public class PlatformAdminRepository : IPlatformAdminRepository
             cancellationToken: ct));
 
         // Link admin user membership to this organization
-        if (adminUserId.HasValue)
+        if (adminUserId != Guid.Empty)
         {
             await conn.ExecuteAsync(new CommandDefinition(@"
                 INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status)
                 VALUES (@UserId, @OrgId, @TenantId, 'Active')
                 ON CONFLICT (user_id, organization_id) DO NOTHING",
-                new { UserId = adminUserId.Value, OrgId = id, TenantId = orgTenantId },
+                new { UserId = adminUserId, OrgId = id, TenantId = orgTenantId },
                 cancellationToken: ct));
 
             // Assign OrganizationAdmin role
@@ -126,7 +129,7 @@ public class PlatformAdminRepository : IPlatformAdminRepository
                     INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
                     VALUES (@UserId, @RoleId, @OrgId, @TenantId)
                     ON CONFLICT (user_id, role_id, organization_id) DO NOTHING",
-                    new { UserId = adminUserId.Value, RoleId = roleId.Value, OrgId = id, TenantId = orgTenantId },
+                    new { UserId = adminUserId, RoleId = roleId.Value, OrgId = id, TenantId = orgTenantId },
                     cancellationToken: ct));
             }
         }

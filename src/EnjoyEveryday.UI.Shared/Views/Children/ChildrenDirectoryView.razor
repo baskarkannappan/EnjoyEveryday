@@ -7,6 +7,7 @@
 @inject ClassroomService ClassroomService
 @inject OrganizationService OrgService
 @inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 
 <div class="content">
     <PageHero Eyebrow="PEOPLE"
@@ -156,15 +157,22 @@
     protected override async Task OnInitializedAsync()
     {
         var orgs = await OrgService.GetOrganizationsAsync();
-        var defaultOrg = orgs.FirstOrDefault();
+        var defaultOrg = (UserContext.OrganizationId.HasValue
+            ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+            : null) ?? orgs.FirstOrDefault();
         if (defaultOrg != null)
         {
             var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
             _branches = branchesList.ToDictionary(b => b.Id);
-        }
 
-        var classList = await ClassroomService.GetAllClassroomsAsync();
-        _classrooms = classList.ToDictionary(c => c.Id);
+            var classList = await ClassroomService.GetClassroomsByOrganizationAsync(defaultOrg.Id);
+            _classrooms = classList.ToDictionary(c => c.Id);
+        }
+        else
+        {
+            var classList = await ClassroomService.GetAllClassroomsAsync();
+            _classrooms = classList.ToDictionary(c => c.Id);
+        }
 
         await LoadChildrenAsync();
     }

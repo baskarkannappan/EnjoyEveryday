@@ -48,7 +48,7 @@ public static class AuthEndpoints
             return Results.Challenge(properties, new[] { GoogleDefaults.AuthenticationScheme });
         });
 
-        group.MapGet("/dev-login", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
+        group.MapGet("/dev-login", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl, [FromQuery] string? email) =>
         {
             var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
             if (!env.IsDevelopment())
@@ -57,7 +57,15 @@ public static class AuthEndpoints
             }
 
             using var conn = await db.CreateConnectionAsync();
-            var user = await conn.QueryFirstOrDefaultAsync<dynamic>(
+            dynamic? user = null;
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                user = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT id, email, display_name, first_name, last_name, tenant_id FROM users WHERE LOWER(email) = LOWER(@Email) OR normalized_email = UPPER(@Email) LIMIT 1",
+                    new { Email = email.Trim() });
+            }
+
+            user ??= await conn.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT id, email, display_name, first_name, last_name, tenant_id FROM users WHERE normalized_email = 'PRIYA@LITTLESTARS.COM' LIMIT 1")
                 ?? await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users LIMIT 1");
             if (user != null)
@@ -68,19 +76,28 @@ public static class AuthEndpoints
                 if (string.IsNullOrWhiteSpace(displayName))
                     displayName = (string)user.email;
 
+                var memberships = (await conn.QueryAsync<Guid>(
+                    "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
+                    new { UserId = (Guid)user.id })).ToList();
+                Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault();
+
+                Guid effectiveTenantId = (Guid)user.tenant_id;
+                if (activeOrgId.HasValue)
+                {
+                    var orgTenant = await conn.ExecuteScalarAsync<Guid?>(
+                        "SELECT tenant_id FROM organizations WHERE id = @OrgId",
+                        new { OrgId = activeOrgId.Value });
+                    if (orgTenant.HasValue) effectiveTenantId = orgTenant.Value;
+                }
+
                 var claims = new List<Claim>
                 {
                     new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
                     new Claim(ClaimTypes.Name, displayName),
                     new Claim("DisplayName", displayName),
                     new Claim(ClaimTypes.Email, user.email),
-                    new Claim("TenantId", user.tenant_id.ToString())
+                    new Claim("TenantId", effectiveTenantId.ToString())
                 };
-
-                var memberships = (await conn.QueryAsync<Guid>(
-                    "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                    new { UserId = (Guid)user.id })).ToList();
-                Guid? activeOrgId = memberships.FirstOrDefault();
 
                 await BuildAuthClaimsAsync(conn, claims, (Guid)user.id, activeOrgId);
 
@@ -256,11 +273,16 @@ public static class AuthEndpoints
             
             if (organizationId.HasValue)
             {
-                var isActive = await conn.ExecuteScalarAsync<bool>(
-                    "SELECT true FROM organization_memberships WHERE user_id = @UserId AND organization_id = @OrgId AND status = 'Active'",
+                var orgInfo = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                    @"SELECT (om.status = 'Active') as is_active, o.tenant_id 
+                      FROM organization_memberships om 
+                      JOIN organizations o ON om.organization_id = o.id 
+                      WHERE om.user_id = @UserId AND om.organization_id = @OrgId",
                     new { UserId = userId, OrgId = organizationId.Value });
 
-                if (!isActive) return Results.Redirect("/auth/access-denied?reason=invalid_org");
+                if (orgInfo == null || (bool?)orgInfo.is_active != true) return Results.Redirect("/auth/access-denied?reason=invalid_org");
+                
+                tenantId = ((Guid)orgInfo.tenant_id).ToString();
             }
             else
             {
