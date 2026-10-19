@@ -301,12 +301,12 @@ public static class AuthEndpoints
         var roles = await conn.QueryAsync<string>(
             @"SELECT r.name 
               FROM user_roles ur JOIN roles r ON ur.role_id = r.id 
-              WHERE ur.user_id = @UserId AND r.scope_type = 'Platform' AND r.tenant_id IS NULL
+              WHERE ur.user_id = @UserId
               UNION
               SELECT r.name 
               FROM user_organization_roles uor JOIN roles r ON uor.role_id = r.id 
               JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-              WHERE uor.user_id = @UserId AND uor.organization_id = @ActiveOrgId",
+              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)",
             new { UserId = userId, ActiveOrgId = activeOrgId });
 
         foreach (var role in roles)
@@ -315,7 +315,7 @@ public static class AuthEndpoints
         var permissions = await conn.QueryAsync<string>(
             @"SELECT p.name 
               FROM user_roles ur 
-              JOIN roles gr ON gr.id = ur.role_id AND gr.scope_type = 'Platform' AND gr.tenant_id IS NULL
+
               JOIN role_permissions rp ON ur.role_id = rp.role_id 
               JOIN permissions p ON rp.permission_id = p.id 
               WHERE ur.user_id = @UserId
@@ -325,7 +325,7 @@ public static class AuthEndpoints
               JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
               JOIN role_permissions rp ON uor.role_id = rp.role_id 
               JOIN permissions p ON rp.permission_id = p.id 
-              WHERE uor.user_id = @UserId AND uor.organization_id = @ActiveOrgId",
+              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)",
             new { UserId = userId, ActiveOrgId = activeOrgId });
 
         foreach (var perm in permissions)

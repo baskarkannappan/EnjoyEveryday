@@ -41,27 +41,7 @@ public class PlannerService
         }
 
         // Conflict Validation
-        var existingSchedules = await _scheduleRepository.GetByDateAsync(scheduledDate);
-        foreach (var existing in existingSchedules)
-        {
-            if (existing.Status == "Cancelled") continue;
-
-            // Simple time overlap check if both have explicit times
-            bool timeOverlaps = false;
-            if (startTime.HasValue && endTime.HasValue && existing.PlannedStartTime.HasValue && existing.PlannedEndTime.HasValue)
-            {
-                timeOverlaps = startTime < existing.PlannedEndTime && endTime > existing.PlannedStartTime;
-            }
-
-            if (timeOverlaps)
-            {
-                if (existing.ClassroomId == classroomId)
-                    throw new InvalidOperationException($"Classroom already has an experience scheduled at this time.");
-
-                if (primaryTeacherId.HasValue && existing.PrimaryTeacherId == primaryTeacherId)
-                    throw new InvalidOperationException($"Teacher is already assigned to another experience at this time.");
-            }
-        }
+        await ValidateScheduleConflictsAsync(classroomId, scheduledDate, timeOfDay, primaryTeacherId, startTime, endTime, excludeScheduleId: null);
 
         var schedule = new ExperienceSchedule
         {
@@ -79,13 +59,23 @@ public class PlannerService
         return await _scheduleRepository.CreateAsync(schedule);
     }
 
-        public async Task UpdateScheduleAsync(ExperienceSchedule schedule)
+    public async Task UpdateScheduleAsync(ExperienceSchedule schedule)
     {
         if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");
         if (schedule.PlannedStartTime.HasValue && schedule.PlannedEndTime.HasValue && schedule.PlannedEndTime <= schedule.PlannedStartTime)
         {
             throw new ArgumentException("End time must be after start time.");
         }
+
+        await ValidateScheduleConflictsAsync(
+            schedule.ClassroomId, 
+            schedule.ScheduledDate, 
+            schedule.TimeOfDay, 
+            schedule.PrimaryTeacherId, 
+            schedule.PlannedStartTime, 
+            schedule.PlannedEndTime, 
+            excludeScheduleId: schedule.Id);
+
         await _scheduleRepository.UpdateAsync(schedule);
     }
 
@@ -95,6 +85,25 @@ public class PlannerService
         if (schedule != null && schedule.Status == "Planned")
         {
             schedule.Status = "Confirmed";
+            await _scheduleRepository.UpdateAsync(schedule);
+        }
+    }
+
+    public async Task CompleteScheduleAsync(Guid scheduleId, string? notes = null)
+    {
+        if (!_userContext.HasPermission("experience.schedule") && !_userContext.HasPermission("experience.execute")) 
+            throw new UnauthorizedAccessException("Requires experience.schedule or experience.execute permission.");
+
+        var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
+        if (schedule != null)
+        {
+            schedule.Status = "Completed";
+            if (!string.IsNullOrWhiteSpace(notes))
+            {
+                schedule.PreparationNotes = string.IsNullOrWhiteSpace(schedule.PreparationNotes)
+                    ? $"Completed: {notes}"
+                    : $"{schedule.PreparationNotes}\nCompleted: {notes}";
+            }
             await _scheduleRepository.UpdateAsync(schedule);
         }
     }
@@ -114,6 +123,49 @@ public class PlannerService
     {
         if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");
         await _scheduleRepository.DeleteAsync(id);
+    }
+
+    private async Task ValidateScheduleConflictsAsync(
+        Guid classroomId,
+        DateOnly scheduledDate,
+        string timeOfDay,
+        Guid? primaryTeacherId,
+        TimeSpan? startTime,
+        TimeSpan? endTime,
+        Guid? excludeScheduleId = null)
+    {
+        var existingSchedules = await _scheduleRepository.GetByDateAsync(scheduledDate);
+        foreach (var existing in existingSchedules)
+        {
+            if (excludeScheduleId.HasValue && existing.Id == excludeScheduleId.Value) continue;
+            if (string.Equals(existing.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)) continue;
+
+            bool timeOverlaps = false;
+            if (startTime.HasValue && endTime.HasValue && existing.PlannedStartTime.HasValue && existing.PlannedEndTime.HasValue)
+            {
+                timeOverlaps = startTime < existing.PlannedEndTime && endTime > existing.PlannedStartTime;
+            }
+            else
+            {
+                // If explicit time range is not specified on both, match by TimeOfDay ("Morning", "Mid-Day", "Afternoon", etc.)
+                timeOverlaps = string.IsNullOrWhiteSpace(timeOfDay) || 
+                               string.IsNullOrWhiteSpace(existing.TimeOfDay) || 
+                               string.Equals(timeOfDay.Trim(), existing.TimeOfDay.Trim(), StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (timeOverlaps)
+            {
+                if (existing.ClassroomId == classroomId)
+                {
+                    throw new InvalidOperationException($"Classroom and its students already have an experience scheduled for this time ({timeOfDay}). A classroom or student can be present in only one planned schedule event at a time.");
+                }
+
+                if (primaryTeacherId.HasValue && existing.PrimaryTeacherId.HasValue && existing.PrimaryTeacherId == primaryTeacherId)
+                {
+                    throw new InvalidOperationException($"Teacher is already assigned to another experience during this time ({timeOfDay}). A teacher can be present in only one planned schedule event at a time.");
+                }
+            }
+        }
     }
 }
 

@@ -112,15 +112,19 @@
 
             </div>
 
-            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e6e0;">
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e6e0; align-items: center; flex-wrap: wrap;">
                 @if (ScheduleId.HasValue && !_isReadOnly)
                 {
-                    <button class="secondary" @onclick="Delete" style="padding: 10px 20px; border: 1px solid #ffcdd2; background: #fff0f0; color: #d32f2f; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: auto;">Delete Plan</button>
+                    <div style="display: flex; gap: 8px; margin-right: auto; flex-wrap: wrap;">
+                        <button type="button" class="secondary" @onclick="CompletePlan" style="padding: 9px 15px; border: 1px solid #c8dacd; background: #eaf2ec; color: #3e6253; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 13px;">✓ Mark Completed</button>
+                        <button type="button" class="secondary" @onclick="CancelPlan" style="padding: 9px 13px; border: 1px solid #fed7d7; background: #fff5f5; color: #9b2c2c; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;">Cancel Plan</button>
+                        <button type="button" class="secondary" @onclick="Delete" style="padding: 9px 13px; border: 1px solid #e1e6e0; background: white; color: #7c877f; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;">Delete</button>
+                    </div>
                 }
-                <button class="secondary" @onclick="Close" style="padding: 10px 20px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Close</button>
+                <button type="button" class="secondary" @onclick="Close" style="padding: 9px 18px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Close</button>
                 @if (!_isReadOnly)
                 {
-                    <button class="primary" @onclick="Save" disabled="@_isSaving" style="padding: 10px 20px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    <button type="button" class="primary" @onclick="Save" disabled="@_isSaving" style="padding: 9px 18px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
                         @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
                     </button>
                 }
@@ -361,6 +365,32 @@
         finally
         {
             _isSaving = false;
+        }
+    }
+
+    private async Task CompletePlan()
+    {
+        if (ScheduleId.HasValue)
+        {
+            await PlannerService.CompleteScheduleAsync(ScheduleId.Value, _notes);
+            await Close();
+            if (OnPlanCreated.HasDelegate)
+            {
+                await OnPlanCreated.InvokeAsync(_classroomId ?? Guid.Empty);
+            }
+        }
+    }
+
+    private async Task CancelPlan()
+    {
+        if (ScheduleId.HasValue)
+        {
+            await PlannerService.CancelScheduleAsync(ScheduleId.Value);
+            await Close();
+            if (OnPlanCreated.HasDelegate)
+            {
+                await OnPlanCreated.InvokeAsync(_classroomId ?? Guid.Empty);
+            }
         }
     }
 

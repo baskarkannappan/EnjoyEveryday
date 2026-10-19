@@ -21,7 +21,9 @@ public class DapperAuditService : IAuditService
     {
         const string sql = """
             INSERT INTO audit_log (tenant_id, user_id, action, entity_type, entity_id, details, ip_address)
-            VALUES (@TenantId, @UserId, @Action, @EntityType, @EntityId, @Details::jsonb, @IpAddress)
+            VALUES (@TenantId, 
+                    CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = @UserId) THEN @UserId ELSE NULL END, 
+                    @Action, @EntityType, @EntityId, @Details::jsonb, @IpAddress)
             """;
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

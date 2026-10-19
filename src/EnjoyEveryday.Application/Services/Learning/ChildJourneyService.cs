@@ -29,12 +29,18 @@ public class ChildJourneyService : IChildJourneyService
     private readonly IChildJourneyRepository _repository;
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
+    private readonly IUserContext? _userContext;
 
-    public ChildJourneyService(IChildJourneyRepository repository, ITenantContext tenantContext, IAuditService auditService)
+    public ChildJourneyService(
+        IChildJourneyRepository repository, 
+        ITenantContext tenantContext, 
+        IAuditService auditService,
+        IUserContext? userContext = null)
     {
         _repository = repository;
         _tenantContext = tenantContext;
         _auditService = auditService;
+        _userContext = userContext;
     }
 
     public async Task<ChildJourneyEntry?> GetJourneyEntryAsync(Guid id, CancellationToken cancellationToken = default)
@@ -62,14 +68,18 @@ public class ChildJourneyService : IChildJourneyService
             await _repository.AddJourneyDevelopmentsAsync(entry.Id, developmentAreaIds, cancellationToken);
         }
 
+        var auditUserId = _userContext?.UserId != null && _userContext.UserId != Guid.Empty
+            ? _userContext.UserId
+            : (Guid?)null;
+
         await _auditService.LogAsync(new AuditEntry
         {
             TenantId = _tenantContext.TenantId,
-            UserId = entry.TeacherId,
+            UserId = auditUserId,
             Action = "JourneyCreated",
             EntityType = "ChildJourneyEntry",
             EntityId = entry.Id,
-            Details = new { entry.ChildId, entry.JourneyType }
+            Details = new { entry.ChildId, entry.JourneyType, TeacherId = entry.TeacherId }
         }, cancellationToken);
     }
 
@@ -84,14 +94,18 @@ public class ChildJourneyService : IChildJourneyService
             await _repository.AddJourneyDevelopmentsAsync(entry.Id, developmentAreaIds, cancellationToken);
         }
 
+        var auditUserId = _userContext?.UserId != null && _userContext.UserId != Guid.Empty
+            ? _userContext.UserId
+            : (Guid?)null;
+
         await _auditService.LogAsync(new AuditEntry
         {
             TenantId = _tenantContext.TenantId,
-            UserId = entry.TeacherId, // Might be null if updated by someone else, but okay for MVP
+            UserId = auditUserId,
             Action = "JourneyUpdated",
             EntityType = "ChildJourneyEntry",
             EntityId = entry.Id,
-            Details = new { entry.ChildId, entry.JourneyType }
+            Details = new { entry.ChildId, entry.JourneyType, TeacherId = entry.TeacherId }
         }, cancellationToken);
     }
 

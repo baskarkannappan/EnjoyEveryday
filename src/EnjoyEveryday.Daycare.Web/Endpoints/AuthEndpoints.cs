@@ -81,6 +81,13 @@ public static class AuthEndpoints
                     new { UserId = (Guid)user.id })).ToList();
                 Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault();
 
+                if (!activeOrgId.HasValue)
+                {
+                    activeOrgId = await conn.ExecuteScalarAsync<Guid?>(
+                        "SELECT id FROM organizations WHERE tenant_id = @TenantId LIMIT 1",
+                        new { TenantId = (Guid)user.tenant_id });
+                }
+
                 Guid effectiveTenantId = (Guid)user.tenant_id;
                 if (activeOrgId.HasValue)
                 {
@@ -229,11 +236,27 @@ public static class AuthEndpoints
 
             if (memberships.Count == 0)
             {
+                var defaultOrgId = await conn.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM organizations WHERE tenant_id = @TenantId LIMIT 1",
+                    new { TenantId = (Guid)user.tenant_id });
+                if (defaultOrgId.HasValue)
+                {
+                    await conn.ExecuteAsync(@"
+                        INSERT INTO organization_memberships (user_id, organization_id, status, created_at, updated_at)
+                        VALUES (@UserId, @OrgId, 'Active', NOW(), NOW())
+                        ON CONFLICT DO NOTHING",
+                        new { UserId = userId.Value, OrgId = defaultOrgId.Value });
+                    memberships.Add(defaultOrgId.Value);
+                }
+            }
+
+            if (memberships.Count == 0)
+            {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                 return Results.Redirect("/auth/access-denied?reason=no_organizations");
             }
 
-            Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : null;
+            Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault();
 
             await BuildAuthClaimsAsync(conn, claims, userId.Value, activeOrgId);
 
@@ -336,24 +359,27 @@ public static class AuthEndpoints
             claims.Add(new Claim("ActiveOrganizationId", activeOrgId.Value.ToString()));
         }
 
-        var roles = await conn.QueryAsync<string>(
+        var roles = (await conn.QueryAsync<string>(
             @"SELECT r.name 
               FROM user_roles ur JOIN roles r ON ur.role_id = r.id 
-              WHERE ur.user_id = @UserId AND r.scope_type = 'Platform' AND r.tenant_id IS NULL
+              WHERE ur.user_id = @UserId
               UNION
               SELECT r.name 
               FROM user_organization_roles uor JOIN roles r ON uor.role_id = r.id 
               JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-              WHERE uor.user_id = @UserId AND uor.organization_id = @ActiveOrgId",
-            new { UserId = userId, ActiveOrgId = activeOrgId });
+              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)
+              UNION
+              SELECT 'DaycareTeacher'
+              FROM teachers t
+              WHERE t.user_id = @UserId AND t.status != 'Inactive'",
+            new { UserId = userId, ActiveOrgId = activeOrgId })).Distinct().ToList();
 
         foreach (var role in roles)
             claims.Add(new Claim(ClaimTypes.Role, role));
 
-        var permissions = await conn.QueryAsync<string>(
+        var permissions = (await conn.QueryAsync<string>(
             @"SELECT p.name 
               FROM user_roles ur 
-              JOIN roles gr ON gr.id = ur.role_id AND gr.scope_type = 'Platform' AND gr.tenant_id IS NULL
               JOIN role_permissions rp ON ur.role_id = rp.role_id 
               JOIN permissions p ON rp.permission_id = p.id 
               WHERE ur.user_id = @UserId
@@ -363,8 +389,15 @@ public static class AuthEndpoints
               JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
               JOIN role_permissions rp ON uor.role_id = rp.role_id 
               JOIN permissions p ON rp.permission_id = p.id 
-              WHERE uor.user_id = @UserId AND uor.organization_id = @ActiveOrgId",
-            new { UserId = userId, ActiveOrgId = activeOrgId });
+              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)
+              UNION
+              SELECT p.name
+              FROM teachers t
+              JOIN roles r ON r.name IN ('DaycareTeacher', 'ClassroomTeacher', 'Teacher')
+              JOIN role_permissions rp ON r.id = rp.role_id
+              JOIN permissions p ON rp.permission_id = p.id
+              WHERE t.user_id = @UserId AND t.status != 'Inactive'",
+            new { UserId = userId, ActiveOrgId = activeOrgId })).Distinct().ToList();
 
         foreach (var perm in permissions)
             claims.Add(new Claim("Permission", perm));
