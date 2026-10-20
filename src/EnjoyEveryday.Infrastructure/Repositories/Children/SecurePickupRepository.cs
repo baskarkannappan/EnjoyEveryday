@@ -54,8 +54,8 @@ public class SecurePickupRepository : ISecurePickupRepository
         var pickupsSql = @"
             SELECT ap.id, ap.child_id AS ChildId, ap.person_id AS PersonId, ap.relationship, ap.pickup_code AS PickupCode,
                    ap.photo_url AS PhotoUrl, ap.is_active AS IsActive, ap.notes,
-                   COALESCE(p.first_name || ' ' || p.last_name, ap.relationship) AS FullName,
-                   p.phone AS Phone
+                   COALESCE(NULLIF(TRIM(p.first_name || ' ' || p.last_name), ''), ap.relationship, 'Authorized Pickup') AS FullName,
+                   COALESCE(p.mobile_phone, p.alternate_phone) AS Phone
             FROM authorized_pickups ap
             LEFT JOIN persons p ON ap.person_id = p.id
             WHERE ap.tenant_id = @TenantId AND ap.child_id = @ChildId AND ap.is_active = TRUE
@@ -69,13 +69,45 @@ public class SecurePickupRepository : ISecurePickupRepository
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         var familySql = @"
-            SELECT fr.id, fr.child_id AS ChildId, fr.person_id AS PersonId, fr.relationship_type AS Relationship,
-                   fr.is_primary_contact AS IsPrimary, fr.is_emergency_contact AS IsEmergency,
-                   p.first_name || ' ' || p.last_name AS FullName, p.phone AS Phone, p.photo_url AS PhotoUrl
-            FROM family_relationships fr
-            JOIN persons p ON fr.person_id = p.id
-            WHERE fr.tenant_id = @TenantId AND fr.child_id = @ChildId
-              AND (fr.is_authorized_pickup = TRUE OR fr.is_primary_contact = TRUE)";
+            WITH guardians AS (
+                SELECT 
+                    fr.id AS Id,
+                    fr.child_id AS ChildId,
+                    COALESCE(p.id, u.id) AS PersonId,
+                    COALESCE(fr.relationship, p.relationship, 'Legal Guardian') AS Relationship,
+                    fr.is_primary AS IsPrimary,
+                    FALSE AS IsEmergency,
+                    COALESCE(NULLIF(TRIM(p.first_name || ' ' || p.last_name), ''), NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.display_name, 'Parent / Guardian') AS FullName,
+                    COALESCE(p.mobile_phone, p.alternate_phone) AS Phone,
+                    NULL::text AS PhotoUrl
+                FROM family_relationships fr
+                JOIN users u ON fr.user_id = u.id
+                LEFT JOIN persons p ON p.user_id = u.id
+                WHERE fr.tenant_id = @TenantId AND fr.child_id = @ChildId
+                  AND (fr.status IS NULL OR fr.status = 'Verified')
+                  AND fr.revoked_at IS NULL
+
+                UNION ALL
+
+                SELECT 
+                    cg.id AS Id,
+                    cg.child_id AS ChildId,
+                    p.id AS PersonId,
+                    COALESCE(cg.relationship, p.relationship, 'Legal Guardian') AS Relationship,
+                    cg.is_primary AS IsPrimary,
+                    FALSE AS IsEmergency,
+                    COALESCE(NULLIF(TRIM(p.first_name || ' ' || p.last_name), ''), 'Parent / Guardian') AS FullName,
+                    COALESCE(p.mobile_phone, p.alternate_phone) AS Phone,
+                    NULL::text AS PhotoUrl
+                FROM child_guardians cg
+                JOIN persons p ON cg.person_id = p.id
+                WHERE cg.tenant_id = @TenantId AND cg.child_id = @ChildId
+                  AND (cg.can_pickup = TRUE OR cg.is_primary = TRUE)
+            )
+            SELECT DISTINCT ON (PersonId)
+                   Id, ChildId, PersonId, Relationship, IsPrimary, IsEmergency, FullName, Phone, PhotoUrl
+            FROM guardians
+            ORDER BY PersonId, IsPrimary DESC";
 
         var rows = await conn.QueryAsync<FamilyPickupRelationshipRecord>(familySql, new { TenantId = tenantId, ChildId = childId });
         return rows.ToList();
