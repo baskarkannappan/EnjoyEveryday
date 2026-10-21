@@ -10,6 +10,9 @@
 @inject BranchService BranchService
 @inject ExecutionService ExecutionService
 @inject EventService EventService
+@inject PlannerService PlannerService
+@inject EnjoyEveryday.Domain.Repositories.IExperienceSessionRepository SessionRepository
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
@@ -343,26 +346,37 @@
                                         {
                                             @if (item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed")
                                             {
-                                                <button class="btn primary btn-sm" @onclick="() => StartSession(item.Id)">Start</button>
+                                                <button class="btn primary btn-xs" @onclick="() => StartSession(item.Id)">▶ Start</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">👁️ View</button>
+                                                <button class="btn danger-outline btn-xs" @onclick="() => CancelSession(item.Id)">✕ Cancel</button>
                                             }
                                             else if (item.Status == "Started" || item.Status == "Active")
                                             {
-                                                <button class="btn secondary btn-sm" @onclick="() => OpenActiveSession(item.Id)">Active Session</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">Active Session</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)" title="View Session">👁️ View</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenSessionPhotoModal(item)" title="Session Photos">📸 Photos</button>
+                                                <button class="btn success-outline btn-xs" @onclick="() => CloseSession(item.Id)" title="Close Session">✓ Close</button>
+                                                <button class="btn danger-outline btn-xs" @onclick="() => CancelSession(item.Id)" title="Cancel Session">✕ Cancel</button>
+                                            }
+                                            else if (item.Status == "Completed" || item.Status == "Finished")
+                                            {
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">👁️ View</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenSessionPhotoModal(item)">📸 Photos</button>
                                             }
                                         }
                                         else
                                         {
                                             @if (item.Status == "Planned" || item.Status == "Approved" || item.Status == "Published")
                                             {
-                                                <button class="btn primary btn-sm" @onclick="() => StartCelebration(item.Id)">▶️ Start</button>
+                                                <button class="btn primary btn-xs" @onclick="() => StartCelebration(item.Id)">▶️ Start</button>
                                             }
                                             else if (item.Status == "InProgress")
                                             {
-                                                <button class="btn secondary btn-sm" @onclick="() => FinishCelebration(item.Id)">🏁 Finish</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => FinishCelebration(item.Id)">🏁 Finish</button>
                                             }
                                             else if (item.Status == "Completed")
                                             {
-                                                <button class="btn secondary btn-sm" @onclick="() => OpenEventPhotoModal(item.Id)">📸 Photos</button>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenEventPhotoModal(item.Id)">📸 Photos</button>
                                             }
                                             <a href="/events/@item.Id" class="view-link">View &rarr;</a>
                                         }
@@ -470,6 +484,33 @@
     </div>
 }
 
+@* SESSION PHOTO MODAL *@
+@if (_isSessionPhotoModalOpen)
+{
+    <div class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h3>📸 Experience Session Photos</h3>
+                    <p>@_sessionPhotoTitle</p>
+                </div>
+                <button type="button" class="close-btn" @onclick="() => _isSessionPhotoModalOpen = false">✕</button>
+            </div>
+            <EventPhotoUploader Photos="@_sessionPhotoUrls"
+                                PhotosChanged="OnSessionPhotosSaved"
+                                MaxPhotos="5"
+                                ReadOnly="false"
+                                IsCompleted="true" />
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn secondary btn-xs" @onclick="() => { _isSessionPhotoModalOpen = false; OpenActiveSession(_sessionPhotoScheduleId); }">
+                    Open Full Session &rarr;
+                </button>
+                <button type="button" class="btn primary btn-xs" @onclick="() => _isSessionPhotoModalOpen = false">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private bool _loading = true;
     private OperationsBoardModel _board = new();
@@ -489,6 +530,12 @@
     private Guid _photoModalEventId;
     private string _photoModalEventTitle = "";
     private string[] _photoModalEventPhotos = Array.Empty<string>();
+
+    private bool _isSessionPhotoModalOpen = false;
+    private Guid _sessionPhotoScheduleId;
+    private string _sessionPhotoTitle = "";
+    private string[] _sessionPhotoUrls = Array.Empty<string>();
+    private static readonly Dictionary<Guid, string[]> _sessionPhotoStore = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -596,6 +643,17 @@
             };
 
             _board = await OperationsBoardService.GetOperationsBoardAsync(filter);
+            if (_board.TodayRhythm != null)
+            {
+                foreach (var r in _board.TodayRhythm)
+                {
+                    if (_sessionPhotoStore.TryGetValue(r.Id, out var photos) && photos.Length > 0)
+                    {
+                        r.PhotoUrls = photos;
+                    }
+                }
+            }
+
             if (string.IsNullOrEmpty(_selectedRoleOverride))
             {
                 _selectedRoleOverride = _board.EffectiveRole;
@@ -634,8 +692,73 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error starting session: {ex.Message}");
+            await NotificationService.HandleExceptionAsync(ex);
         }
+    }
+
+    private async Task CloseSession(Guid scheduleId)
+    {
+        try
+        {
+            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
+            await ExecutionService.CompleteExperienceAsync(scheduleId, teacherId, 5, "Completed", "Closed from Operations Board");
+            await RefreshBoardAsync();
+            await NotificationService.ShowSuccessAsync("Experience session completed and closed.");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task CancelSession(Guid scheduleId)
+    {
+        try
+        {
+            await PlannerService.CancelScheduleAsync(scheduleId);
+
+            var session = await SessionRepository.GetSessionByScheduleIdAsync(scheduleId);
+            if (session != null)
+            {
+                session.Status = "Cancelled";
+                session.EndTime = DateTime.UtcNow.TimeOfDay;
+                await SessionRepository.UpdateSessionAsync(session);
+            }
+
+            await RefreshBoardAsync();
+            await NotificationService.ShowSuccessAsync("Experience session cancelled.");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private void OpenSessionPhotoModal(RhythmScheduleItem item)
+    {
+        _sessionPhotoScheduleId = item.Id;
+        _sessionPhotoTitle = item.Title;
+        if (!_sessionPhotoStore.TryGetValue(item.Id, out var photos))
+        {
+            photos = item.PhotoUrls ?? Array.Empty<string>();
+        }
+        _sessionPhotoUrls = photos;
+        _isSessionPhotoModalOpen = true;
+    }
+
+    private async Task OnSessionPhotosSaved(string[] newPhotos)
+    {
+        _sessionPhotoUrls = newPhotos;
+        _sessionPhotoStore[_sessionPhotoScheduleId] = newPhotos;
+
+        var target = _board.TodayRhythm.FirstOrDefault(r => r.Id == _sessionPhotoScheduleId);
+        if (target != null)
+        {
+            target.PhotoUrls = newPhotos;
+        }
+
+        await NotificationService.ShowSuccessAsync("Session photos saved.");
+        StateHasChanged();
     }
 
     private void OpenActiveSession(Guid scheduleId)

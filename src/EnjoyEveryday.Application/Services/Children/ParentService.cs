@@ -88,6 +88,7 @@ public class ParentService : IParentService
     private readonly ISecurePickupService? _pickupService;
     private readonly IBillingService? _billingService;
     private readonly IConsentService? _consentService;
+    private readonly IRealtimeNotificationService? _realtimeNotificationService;
 
     public ParentService(
         IParentRepository parentRepository,
@@ -101,7 +102,8 @@ public class ParentService : IParentService
         IParentCommunicationRepository? communicationRepository = null,
         ISecurePickupService? pickupService = null,
         IBillingService? billingService = null,
-        IConsentService? consentService = null)
+        IConsentService? consentService = null,
+        IRealtimeNotificationService? realtimeNotificationService = null)
     {
         _parentRepository = parentRepository;
         _scheduleRepository = scheduleRepository;
@@ -112,6 +114,7 @@ public class ParentService : IParentService
         _pickupService = pickupService;
         _billingService = billingService;
         _consentService = consentService;
+        _realtimeNotificationService = realtimeNotificationService;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
@@ -260,7 +263,8 @@ public class ParentService : IParentService
         {
             try
             {
-                var messages = await _communicationRepository.GetByChildIdAsync(_tenantContext.TenantId, childId, cancellationToken);
+                var effectiveTenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+                var messages = await _communicationRepository.GetByChildIdAsync(effectiveTenantId, childId, cancellationToken);
                 unreadMessages = messages.Count(m => m.Status != ParentCommunicationStatus.Approved && m.TeacherId != Guid.Empty && m.DeliveryStatus != "Read");
             }
             catch { }
@@ -467,12 +471,16 @@ public class ParentService : IParentService
 
         var messages = new List<ParentChatMessage>();
 
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId);
+        var effectiveTenantId = (child != null && child.TenantId != Guid.Empty) ? child.TenantId : _tenantContext.TenantId;
+
         if (_communicationRepository != null)
         {
-            var comms = await _communicationRepository.GetByChildIdAsync(_tenantContext.TenantId, childId, cancellationToken);
+            var comms = await _communicationRepository.GetByChildIdAsync(effectiveTenantId, childId, cancellationToken);
             foreach (var c in comms)
             {
-                var isFromParent = c.CommunicationType == "ParentMessage" || c.RecipientUserId == _userContext.UserId && c.TeacherId == Guid.Empty;
+                var isFromParent = (c.TeacherId == Guid.Empty);
                 var content = !string.IsNullOrWhiteSpace(c.ContentFinal) ? c.ContentFinal : c.ContentDraft;
 
                 if (!string.IsNullOrWhiteSpace(content))
@@ -481,7 +489,7 @@ public class ParentService : IParentService
                     {
                         Id = c.Id,
                         ChildId = c.ChildId,
-                        SenderName = isFromParent ? "You" : (c.TeacherName ?? "Classroom Educators"),
+                        SenderName = isFromParent ? "You" : (!string.IsNullOrWhiteSpace(c.TeacherName) ? c.TeacherName : $"{child?.ClassroomName ?? "Classroom"} Educators"),
                         Content = content,
                         Timestamp = c.SentAt ?? c.CreatedAt,
                         IsFromParent = isFromParent,
@@ -494,8 +502,6 @@ public class ParentService : IParentService
         // If no prior message history, seed an initial friendly educator check-in
         if (messages.Count == 0)
         {
-            var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
-            var child = children.FirstOrDefault(c => c.ChildId == childId);
             var childName = child?.FirstName ?? "Your child";
             var classroomName = child?.ClassroomName ?? "Classroom";
 
@@ -540,8 +546,8 @@ public class ParentService : IParentService
             var comm = new ParentCommunication
             {
                 Id = messageId,
-                TenantId = _tenantContext.TenantId,
-                OrganizationId = child.BranchId ?? Guid.Empty,
+                TenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId,
+                OrganizationId = child.OrganizationId ?? Guid.Empty,
                 ClassroomId = child.ClassroomId,
                 ChildId = childId,
                 RecipientUserId = _userContext.UserId,
@@ -569,13 +575,32 @@ public class ParentService : IParentService
 
         await _auditService.LogAsync(new AuditEntry
         {
-            TenantId = _tenantContext.TenantId,
+            TenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId,
             UserId = _userContext.UserId,
             Action = "ParentMessageSent",
             EntityType = "ParentCommunication",
             EntityId = messageId,
             Details = new { ChildId = childId, TextLength = sanitized.Length }
         }, cancellationToken);
+
+        if (_realtimeNotificationService != null)
+        {
+            _ = _realtimeNotificationService.NotifyParentMessageSentAsync(new ParentMessageNotification
+            {
+                MessageId = messageId,
+                TenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId,
+                OrganizationId = child.OrganizationId ?? Guid.Empty,
+                BranchId = child.BranchId,
+                ClassroomId = child.ClassroomId,
+                ChildId = childId,
+                ChildName = $"{child.FirstName} {child.LastName}".Trim(),
+                ClassroomName = child.ClassroomName ?? "Classroom",
+                SenderName = parentName,
+                Content = sanitized,
+                Timestamp = now,
+                IsFromParent = true
+            }, cancellationToken);
+        }
 
         return new ParentChatMessage
         {
@@ -609,8 +634,8 @@ public class ParentService : IParentService
             var comm = new ParentCommunication
             {
                 Id = messageId,
-                TenantId = _tenantContext.TenantId,
-                OrganizationId = child.BranchId ?? Guid.Empty,
+                TenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId,
+                OrganizationId = child.OrganizationId ?? Guid.Empty,
                 ClassroomId = child.ClassroomId,
                 ChildId = childId,
                 RecipientUserId = _userContext.UserId,

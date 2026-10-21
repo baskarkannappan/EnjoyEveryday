@@ -2,6 +2,10 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Daycare.Web.Services.DaycareRealtimeNotificationCenter NotificationCenter
+@inject EnjoyEveryday.Domain.Repositories.IParentCommunicationRepository CommunicationRepo
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@implements IDisposable
 
 <nav class="custom-nav" style="padding: 15px 12px; height: 100%; display: flex; flex-direction: column;">
     
@@ -42,6 +46,20 @@
             <NavLink class="nav-item" href="/rhythm-history">
                 <FluentIcon Value="@(new Icons.Regular.Size20.History())" Color="Color.Custom" CustomColor="#b45309" />
                 <span>Past Rhythm &amp; Logs</span>
+            </NavLink>
+            <NavLink class="nav-item nav-chat-item" href="/classroom-messages" Match="NavLinkMatch.Prefix">
+                <div style="position: relative; display: flex; align-items: center;">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Color="Color.Custom" CustomColor="#0d9488" />
+                    @if (_chatUnreadCount > 0)
+                    {
+                        <span class="nav-unread-dot"></span>
+                    }
+                </div>
+                <span>Parent Messages</span>
+                @if (_chatUnreadCount > 0)
+                {
+                    <span class="nav-unread-badge">@_chatUnreadCount</span>
+                }
             </NavLink>
         </div>
     }
@@ -297,6 +315,36 @@
         color: var(--accent-dark, #3e6253);
         font-weight: 750;
     }
+
+    .nav-unread-dot {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        width: 8px;
+        height: 8px;
+        background: #dc2626;
+        border-radius: 50%;
+        border: 2px solid #ffffff;
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+        animation: nav-badge-pulse 1.8s infinite;
+    }
+
+    .nav-unread-badge {
+        margin-left: auto;
+        background: #dc2626;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 800;
+        padding: 1px 7px;
+        border-radius: 999px;
+        box-shadow: 0 1px 4px rgba(220, 38, 38, 0.3);
+    }
+
+    @@keyframes nav-badge-pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+        70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+    }
 </style>
 
 @code {
@@ -307,10 +355,47 @@
     private bool _suppliesOpen = false;
     private bool _financeOpen = false;
     private bool _adminOpen = false;
+    private int _chatUnreadCount = 0;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         AutoExpandCurrentRoute();
+        NotificationCenter.OnParentMessageReceived += HandleIncomingMessage;
+        NotificationCenter.OnMessagesRead += HandleMessagesRead;
+
+        try
+        {
+            _chatUnreadCount = await CommunicationRepo.GetUnreadCountForEducatorAsync(TenantContext.TenantId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[NavMenu] Error loading unread count: {ex.Message}");
+        }
+    }
+
+    private async Task HandleIncomingMessage(EnjoyEveryday.Application.Services.ParentMessageNotification notification)
+    {
+        _chatUnreadCount++;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleMessagesRead(Guid childId)
+    {
+        try
+        {
+            _chatUnreadCount = await CommunicationRepo.GetUnreadCountForEducatorAsync(TenantContext.TenantId);
+        }
+        catch
+        {
+            _chatUnreadCount = Math.Max(0, _chatUnreadCount - 1);
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        NotificationCenter.OnParentMessageReceived -= HandleIncomingMessage;
+        NotificationCenter.OnMessagesRead -= HandleMessagesRead;
     }
 
     private void ToggleSection(string sectionName)

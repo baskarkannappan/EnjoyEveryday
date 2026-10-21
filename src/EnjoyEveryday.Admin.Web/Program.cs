@@ -5,6 +5,7 @@ using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Admin.Web.Components;
 using EnjoyEveryday.Admin.Web.Endpoints;
 using Microsoft.FluentUI.AspNetCore.Components;
+using EnjoyEveryday.UI.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -54,6 +55,7 @@ builder.Services.AddAuthorization();
 // Application and Infrastructure services
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddEnjoyEverydayUiShared();
 
 var app = builder.Build();
 

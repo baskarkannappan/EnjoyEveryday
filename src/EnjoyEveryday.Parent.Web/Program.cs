@@ -4,6 +4,7 @@ using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Parent.Web.Components;
 using Microsoft.FluentUI.AspNetCore.Components;
+using EnjoyEveryday.UI.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<EnjoyEveryday.Parent.Web.Services.ParentSessionState>();
 builder.Services.AddScoped<EnjoyEveryday.Parent.Web.Services.ParentLocalizationService>();
+builder.Services.AddSingleton<EnjoyEveryday.Parent.Web.Services.ParentRealtimeNotificationCenter>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
 {
@@ -63,6 +65,7 @@ builder.Services.AddAuthorization();
 // Application and Infrastructure services
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddEnjoyEverydayUiShared();
 
 var app = builder.Build();
 
@@ -110,6 +113,17 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapAppHealthChecks();
 EnjoyEveryday.Parent.Web.Endpoints.AuthEndpoints.MapAuthEndpoints(app);
+
+app.MapPost("/api/realtime/educator-message", async (
+    EnjoyEveryday.Application.Services.ParentMessageNotification notification,
+    EnjoyEveryday.Parent.Web.Services.ParentRealtimeNotificationCenter notificationCenter,
+    ILoggerFactory loggerFactory) =>
+{
+    var logger = loggerFactory.CreateLogger("ParentRealtimeEndpoint");
+    logger.LogInformation("Real-time educator message received for child {ChildId}", notification.ChildId);
+    await notificationCenter.BroadcastEducatorMessageAsync(notification);
+    return Results.Ok(new { success = true, timestamp = DateTimeOffset.UtcNow });
+}).DisableAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

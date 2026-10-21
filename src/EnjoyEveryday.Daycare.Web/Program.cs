@@ -5,6 +5,7 @@ using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Daycare.Web.Components;
 using Microsoft.FluentUI.AspNetCore.Components;
 using EnjoyEveryday.Daycare.Web.Endpoints;
+using EnjoyEveryday.UI.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,9 +52,25 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.C
 
 builder.Services.AddAuthorization();
 
+// Real-time SignalR and Notifications
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<EnjoyEveryday.Daycare.Web.Services.DaycareRealtimeNotificationCenter>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowParentPortal", policy =>
+    {
+        policy.WithOrigins("https://localhost:7005", "http://localhost:5076")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 // Application and Infrastructure services
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddEnjoyEverydayUiShared();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.StorybookStorageService>();
 
 var app = builder.Build();
@@ -85,6 +102,7 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
+app.UseCors("AllowParentPortal");
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -105,6 +123,8 @@ app.MapAuthEndpoints();
 app.MapFloorMapEndpoints();
 app.MapStorybookEndpoints();
 app.MapBillingEndpoints();
+app.MapHub<EnjoyEveryday.Daycare.Web.Hubs.ClassroomChatHub>("/hubs/classroom-chat").RequireCors("AllowParentPortal");
+app.MapRealtimeChatEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

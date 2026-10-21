@@ -1,0 +1,61 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@inherits ErrorBoundary
+@using EnjoyEveryday.UI.Shared.Services
+@inject IAppNotificationService NotificationService
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else if (ErrorContent is not null)
+{
+    @ErrorContent(CurrentException)
+}
+else
+{
+    <ErrorState Title="Something went wrong"
+                Message="@_errorMessage"
+                RetryText="Try Again"
+                OnRetry="RecoverFromError" />
+}
+
+@code {
+    private string _errorMessage = "We encountered an issue. Your records are safe.";
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnErrorAsync(Exception exception)
+    {
+        var actualEx = exception is AggregateException agg && agg.InnerExceptions.Count == 1
+            ? agg.InnerExceptions[0]
+            : exception;
+
+        var message = actualEx.InnerException?.Message ?? actualEx.Message;
+        _errorMessage = !string.IsNullOrWhiteSpace(message) ? message : "We encountered an issue. Your records are safe.";
+
+        await NotificationService.HandleExceptionAsync(exception);
+    }
+
+    private void RecoverFromError()
+    {
+        Recover();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (CurrentException is not null)
+        {
+            Recover();
+        }
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

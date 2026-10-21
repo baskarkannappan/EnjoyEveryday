@@ -27,6 +27,7 @@ public class ParentRepository : IParentRepository
                 cl.name AS ClassroomName,
                 cl.branch_id AS BranchId,
                 b.name AS BranchName,
+                COALESCE(b.organization_id, o.id, (SELECT o2.id FROM organizations o2 WHERE o2.tenant_id = c.tenant_id ORDER BY o2.created_at LIMIT 1)) AS OrganizationId,
                 o.name AS OrganizationName,
                 c.photo_url AS PhotoUrl,
                 fr.relationship AS Relationship,

@@ -1,0 +1,1277 @@
+@page "/classroom-messages"
+@page "/messages"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.Daycare.Web.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.SignalR
+@attribute [Authorize]
+@rendermode InteractiveServer
+@implements IDisposable
+
+@inject IParentCommunicationRepository CommunicationRepo
+@inject IChildRepository ChildRepo
+@inject IClassroomRepository ClassroomRepo
+@inject IBranchRepository BranchRepo
+@inject IOrganizationRepository OrgRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject DaycareRealtimeNotificationCenter NotificationCenter
+@inject IRealtimeNotificationService RealtimeNotificationService
+@inject Microsoft.AspNetCore.SignalR.IHubContext<EnjoyEveryday.Daycare.Web.Hubs.ClassroomChatHub> HubContext
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@(_totalUnread > 0 ? $"({_totalUnread}) 💬 Messages — EnjoyEveryday" : "Classroom Messages — EnjoyEveryday")</PageTitle>
+
+<div class="messages-container">
+    <!-- Top Hero Header -->
+    <div class="messages-hero">
+        <div class="hero-left">
+            <span class="eyebrow">COMMUNICATION · FAMILIES &amp; EDUCATORS</span>
+            <h1 class="hero-title">Parent &amp; Classroom Messages</h1>
+            <p class="hero-sub">Live real-time messaging between parents and daycare educators.</p>
+        </div>
+        <div class="hero-right">
+            <div class="live-status-pill">
+                <span class="live-dot-pulse"></span>
+                <span class="live-label">SignalR Active · Live Broadcast</span>
+            </div>
+            @if (_totalUnread > 0)
+            {
+                <div class="unread-hero-badge">
+                    <span>@_totalUnread New @(_totalUnread == 1 ? "Message" : "Messages")</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Chat Workspace -->
+    <div class="chat-workspace">
+        <!-- LEFT PANEL: Conversation Sidebar -->
+        <div class="chat-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title-row">
+                    <h3>Conversations</h3>
+                    <span class="convo-count">@_filteredConversations.Count</span>
+                </div>
+                <!-- Search & Filter Controls -->
+                <div class="search-box">
+                    <input type="text"
+                           class="search-input"
+                           placeholder="Search child or parent..."
+                           @bind="_searchQuery"
+                           @bind:event="oninput" />
+                </div>
+                @if (_classrooms.Count > 1)
+                {
+                    <select class="classroom-select" @bind="SelectedClassroomIdString">
+                        <option value="">All Classrooms</option>
+                        @foreach (var cl in _classrooms)
+                        {
+                            <option value="@cl.Id.ToString()">@cl.Name</option>
+                        }
+                    </select>
+                }
+            </div>
+
+            <!-- Conversations List -->
+            <div class="convo-list">
+                @if (_loading)
+                {
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <span>Loading conversations...</span>
+                    </div>
+                }
+                else if (!_filteredConversations.Any())
+                {
+                    <div class="empty-state">
+                        <div class="empty-icon">💬</div>
+                        <p>No active conversations found.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var convo in _filteredConversations)
+                    {
+                        var isSelected = convo.ChildId == _selectedChildId;
+                        <div class="convo-item @(isSelected ? "selected" : "") @(convo.UnreadCount > 0 ? "has-unread" : "")"
+                             @onclick="() => SelectConversationAsync(convo.ChildId)">
+                            <div class="convo-avatar" style="background: @GetAvatarColor(convo.ChildName);">
+                                @GetInitials(convo.ChildName)
+                                @if (convo.UnreadCount > 0)
+                                {
+                                    <span class="avatar-unread-dot"></span>
+                                }
+                            </div>
+                            <div class="convo-info">
+                                <div class="convo-name-row">
+                                    <span class="convo-name">@convo.ChildName</span>
+                                    <span class="convo-time">@FormatTime(convo.LastMessageTime)</span>
+                                </div>
+                                <div class="convo-meta-row">
+                                    <span class="convo-sub">@convo.ClassroomName · @convo.ParentName</span>
+                                    @if (convo.UnreadCount > 0)
+                                    {
+                                        <span class="convo-badge">@convo.UnreadCount</span>
+                                    }
+                                </div>
+                                <div class="convo-snippet">@convo.LastMessageSnippet</div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL: Active Chat Thread -->
+        <div class="chat-main">
+            @if (_selectedChildId == null || _activeChild == null)
+            {
+                <div class="no-selection-view">
+                    <div class="no-selection-card">
+                        <div class="no-selection-icon">💌</div>
+                        <h2>Select a Child Conversation</h2>
+                        <p>Choose a student on the left to review messages, live updates, and reply to families.</p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- Thread Header -->
+                <div class="thread-header">
+                    <div class="thread-avatar" style="background: @GetAvatarColor(_activeChild.FirstName);">
+                        @GetInitials($"{_activeChild.FirstName} {_activeChild.LastName}")
+                    </div>
+                    <div class="thread-details">
+                        <div class="thread-title">@_activeChild.FirstName @_activeChild.LastName</div>
+                        <div class="thread-sub">
+                            <span>@(_activeClassroom?.Name ?? "Classroom")</span>
+                            <span>•</span>
+                            <span>@(_activeBranch?.Name ?? "Branch")</span>
+                            <span>•</span>
+                            <span>Guardian: @(_activeParentName ?? "Parent")</span>
+                        </div>
+                    </div>
+                    <div class="thread-channel-badge">
+                        <span class="live-dot-pulse"></span>
+                        <span>Direct Channel</span>
+                    </div>
+                </div>
+
+                <!-- Live Message Stream -->
+                <div class="message-stream" id="messageStream">
+                    @if (!_messages.Any())
+                    {
+                        <div class="empty-thread">
+                            <p>No messages yet in this channel. Send the first check-in below!</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var msg in _messages)
+                        {
+                            <div class="message-row @(msg.IsFromParent ? "from-parent" : "from-educator")">
+                                <div class="message-bubble">
+                                    <div class="bubble-sender">
+                                        @(msg.IsFromParent ? msg.SenderName : $"{msg.SenderName} (Educator)")
+                                    </div>
+                                    <div class="bubble-content">@msg.Content</div>
+                                    <div class="bubble-footer">
+                                        <span class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("h:mm tt")</span>
+                                        @if (!msg.IsFromParent)
+                                        {
+                                            <span class="bubble-status">✓ @msg.DeliveryStatus</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- Quick Reply Suggestions -->
+                <div class="quick-replies-bar">
+                    <span class="quick-label">QUICK REPLY:</span>
+                    <button class="quick-btn" @onclick='() => SendQuickReply("Thank you! 😊")'>Thank you! 😊</button>
+                    <button class="quick-btn" @onclick='() => SendQuickReply("Doing great today! 🌟")'>Doing great today! 🌟</button>
+                    <button class="quick-btn" @onclick='() => SendQuickReply("Received the update, thanks! 👍")'>Received update 👍</button>
+                    <button class="quick-btn" @onclick='() => SendQuickReply("All packed and ready for pickup 🎒")'>Ready for pickup 🎒</button>
+                </div>
+
+                <!-- Input Composer -->
+                <div class="composer-box">
+                    <input class="composer-input"
+                           placeholder="Type a reply to @(_activeParentName ?? "Parent")..."
+                           @bind="_replyText"
+                           @bind:event="oninput"
+                           @onkeydown="HandleKeyDown"
+                           disabled="@_isSending" />
+                    <button class="send-btn" @onclick="SendReplyAsync" disabled="@(string.IsNullOrWhiteSpace(_replyText) || @_isSending)">
+                        @if (_isSending)
+                        {
+                            <span>Sending...</span>
+                        }
+                        else
+                        {
+                            <span>Send ➔</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .messages-container {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        height: calc(100vh - 120px);
+        min-height: 600px;
+        max-width: 1400px;
+        margin: 0 auto;
+        box-sizing: border-box;
+    }
+
+    .messages-hero {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .eyebrow {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        color: var(--accent, #557c6c);
+    }
+
+    .hero-title {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 2px 0;
+        letter-spacing: -0.4px;
+    }
+
+    .hero-sub {
+        font-size: 13px;
+        color: var(--muted, #6c7870);
+        margin: 0;
+    }
+
+    .hero-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .live-status-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        background: var(--accent-light, #e6eee9);
+        border: 1px solid #c8dacd;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .live-dot-pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #16a34a;
+        box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+        animation: pulse-dot 1.8s infinite;
+    }
+
+    @@keyframes pulse-dot {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(22, 163, 74, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
+
+    .unread-hero-badge {
+        background: #dc2626;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 800;
+        padding: 6px 12px;
+        border-radius: 999px;
+        box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    }
+
+    /* Workspace */
+    .chat-workspace {
+        flex: 1 1 0;
+        min-height: 0;
+        height: 100%;
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        overflow: hidden;
+    }
+
+    /* Sidebar */
+    .chat-sidebar {
+        border-right: 1px solid var(--border, #e4e7df);
+        display: flex;
+        flex-direction: column;
+        background: var(--surface-soft, #f8f9f5);
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .sidebar-title-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .sidebar-title-row h3 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+    }
+
+    .convo-count {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        font-size: 11px;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 999px;
+    }
+
+    .search-input, .classroom-select {
+        width: 100%;
+        padding: 8px 12px;
+        border-radius: 9px;
+        border: 1px solid var(--border, #e4e7df);
+        font-size: 12.5px;
+        font-family: inherit;
+        background: #ffffff;
+        box-sizing: border-box;
+        color: var(--text, #26332d);
+    }
+
+    .search-input:focus, .classroom-select:focus {
+        outline: none;
+        border-color: var(--accent, #557c6c);
+    }
+
+    .convo-list {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .convo-item {
+        display: flex;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(228, 231, 223, 0.6);
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .convo-item:hover {
+        background: #edf1ed;
+    }
+
+    .convo-item.selected {
+        background: var(--accent-light, #e6eee9);
+        border-left: 4px solid var(--accent, #557c6c);
+    }
+
+    .convo-item.has-unread {
+        background: #fdf6ec;
+    }
+
+    .convo-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        color: #ffffff;
+        font-weight: 800;
+        font-size: 14px;
+        flex-shrink: 0;
+        position: relative;
+    }
+
+    .avatar-unread-dot {
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        width: 12px;
+        height: 12px;
+        background: #dc2626;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+    }
+
+    .convo-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .convo-name-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+    }
+
+    .convo-name {
+        font-size: 13.5px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .convo-time {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .convo-meta-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 2px;
+    }
+
+    .convo-sub {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .convo-badge {
+        background: #dc2626;
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 800;
+        padding: 1px 6px;
+        border-radius: 999px;
+        flex-shrink: 0;
+    }
+
+    .convo-snippet {
+        font-size: 12px;
+        color: #4b554f;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 4px;
+    }
+
+    /* Main Chat */
+    .chat-main {
+        display: flex;
+        flex-direction: column;
+        background: #ffffff;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .thread-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--surface-soft, #f8f9f5);
+    }
+
+    .thread-avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        color: #ffffff;
+        font-weight: 800;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+
+    .thread-details {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .thread-title {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+    }
+
+    .thread-sub {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+        display: flex;
+        gap: 6px;
+        margin-top: 2px;
+    }
+
+    .thread-channel-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 700;
+    }
+
+    .message-stream {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: #fafbf9;
+    }
+
+    .message-row {
+        display: flex;
+        width: 100%;
+    }
+
+    .message-row.from-parent {
+        justify-content: flex-start;
+    }
+
+    .message-row.from-educator {
+        justify-content: flex-end;
+    }
+
+    .message-bubble {
+        max-width: 65%;
+        padding: 10px 14px;
+        border-radius: 14px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        box-sizing: border-box;
+    }
+
+    .from-parent .message-bubble {
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        border-bottom-left-radius: 4px;
+    }
+
+    .from-educator .message-bubble {
+        background: var(--accent, #557c6c);
+        color: #ffffff;
+        border-bottom-right-radius: 4px;
+    }
+
+    .bubble-sender {
+        font-size: 11px;
+        font-weight: 750;
+        margin-bottom: 3px;
+    }
+
+    .from-parent .bubble-sender {
+        color: var(--accent, #557c6c);
+    }
+
+    .from-educator .bubble-sender {
+        color: #d1fae5;
+    }
+
+    .bubble-content {
+        font-size: 13.5px;
+        line-height: 1.45;
+        word-break: break-word;
+    }
+
+    .bubble-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        margin-top: 4px;
+        font-size: 10.5px;
+    }
+
+    .from-parent .bubble-time {
+        color: var(--muted, #6c7870);
+    }
+
+    .from-educator .bubble-footer {
+        color: #d1fae5;
+    }
+
+    .quick-replies-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: #ffffff;
+        overflow-x: auto;
+    }
+
+    .quick-label {
+        font-size: 10.5px;
+        font-weight: 800;
+        color: var(--muted, #6c7870);
+        white-space: nowrap;
+    }
+
+    .quick-btn {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+    }
+
+    .quick-btn:hover {
+        background: var(--accent-light, #e6eee9);
+        border-color: var(--accent, #557c6c);
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .composer-box {
+        display: flex;
+        gap: 10px;
+        padding: 12px 16px;
+        background: #ffffff;
+        border-top: 1px solid var(--border, #e4e7df);
+    }
+
+    .composer-input {
+        flex: 1;
+        padding: 10px 14px;
+        border-radius: 11px;
+        border: 1px solid var(--border, #e4e7df);
+        font-size: 13.5px;
+        font-family: inherit;
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--text, #26332d);
+    }
+
+    .composer-input:focus {
+        outline: none;
+        border-color: var(--accent, #557c6c);
+        background: #ffffff;
+    }
+
+    .send-btn {
+        padding: 10px 20px;
+        border-radius: 11px;
+        background: var(--accent, #557c6c);
+        color: #ffffff;
+        font-size: 13.5px;
+        font-weight: 750;
+        border: none;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .send-btn:hover:not(:disabled) {
+        background: var(--accent-dark, #3e6253);
+    }
+
+    .send-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .no-selection-view {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        background: #fafbf9;
+        padding: 40px;
+    }
+
+    .no-selection-card {
+        text-align: center;
+        max-width: 400px;
+    }
+
+    .no-selection-icon {
+        font-size: 42px;
+        margin-bottom: 12px;
+    }
+
+    .no-selection-card h2 {
+        font-size: 18px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0 0 6px;
+    }
+
+    .no-selection-card p {
+        font-size: 13px;
+        color: var(--muted, #6c7870);
+        margin: 0;
+    }
+
+    .loading-state, .empty-state, .empty-thread {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 30px;
+        color: var(--muted, #6c7870);
+        font-size: 13px;
+    }
+
+    .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid rgba(85, 124, 108, 0.2);
+        border-top-color: var(--accent, #557c6c);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+@code {
+    private bool _loading = true;
+    private bool _isSending = false;
+    private string _searchQuery = "";
+    private string _replyText = "";
+    private Guid? _selectedClassroomId;
+    private Guid? _selectedChildId;
+
+    private Child? _activeChild;
+    private Classroom? _activeClassroom;
+    private Branch? _activeBranch;
+    private string? _activeParentName;
+    private Guid? _activeParentUserId;
+
+    private List<ConversationItem> _allConversations = new();
+    private List<ConversationItem> _filteredConversations = new();
+    private List<Classroom> _classrooms = new();
+    private List<ParentChatMessage> _messages = new();
+    private int _totalUnread = 0;
+    private readonly CancellationTokenSource _cts = new();
+
+    private string SelectedClassroomIdString
+    {
+        get => _selectedClassroomId?.ToString() ?? "";
+        set
+        {
+            _selectedClassroomId = Guid.TryParse(value, out var g) ? g : null;
+            FilterConversations();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        NotificationCenter.OnParentMessageReceived += HandleLiveIncomingMessage;
+        await LoadInitialDataAsync();
+        _ = StartBackgroundSyncAsync();
+    }
+
+    private async Task LoadInitialDataAsync()
+    {
+        try
+        {
+            _loading = true;
+            var tenantId = TenantContext.TenantId;
+
+            // Load Classrooms
+            var cls = await ClassroomRepo.GetAllAsync(tenantId);
+            _classrooms = cls.Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
+
+            // Load Recent Communications
+            var comms = await CommunicationRepo.GetRecentCommunicationsAsync(tenantId, limit: 100);
+            var commList = comms.ToList();
+
+            var childrenMap = new Dictionary<Guid, Child>();
+            try
+            {
+                var allChildren = await ChildRepo.GetAllAsync(tenantId);
+                foreach (var ch in allChildren)
+                {
+                    childrenMap[ch.Id] = ch;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ClassroomMessages] Note on loading children: {ex.Message}");
+            }
+
+            var convoList = new List<ConversationItem>();
+            var childIds = commList.Select(c => c.ChildId).Distinct().ToList();
+
+            foreach (var childId in childIds)
+            {
+                var childComms = commList.Where(c => c.ChildId == childId).OrderByDescending(c => c.CreatedAt).ToList();
+                var latest = childComms.FirstOrDefault();
+                if (latest == null) continue;
+
+                childrenMap.TryGetValue(childId, out var child);
+                var childName = child != null ? $"{child.FirstName} {child.LastName}".Trim() : (!string.IsNullOrWhiteSpace(latest.ChildName) ? latest.ChildName : "Student");
+                var classroomId = child?.ClassroomId ?? latest.ClassroomId;
+                var classroom = _classrooms.FirstOrDefault(cl => cl.Id == classroomId);
+                var classroomName = classroom?.Name ?? latest.ClassroomName ?? "Classroom";
+                var unreadCount = childComms.Count(c => c.TeacherId == Guid.Empty && c.DeliveryStatus != "Read");
+
+                convoList.Add(new ConversationItem
+                {
+                    ChildId = childId,
+                    ChildName = childName,
+                    ClassroomId = classroomId,
+                    ClassroomName = classroomName,
+                    ParentName = latest.RecipientName ?? "Parent",
+                    ParentUserId = latest.RecipientUserId,
+                    LastMessageSnippet = !string.IsNullOrWhiteSpace(latest.ContentFinal) ? latest.ContentFinal : latest.ContentDraft,
+                    LastMessageTime = latest.SentAt ?? latest.CreatedAt,
+                    UnreadCount = unreadCount
+                });
+            }
+
+            // Also add enrolled children who have no communications yet
+            foreach (var child in childrenMap.Values)
+            {
+                if (convoList.Any(c => c.ChildId == child.Id)) continue;
+                var classroom = _classrooms.FirstOrDefault(cl => cl.Id == child.ClassroomId);
+                convoList.Add(new ConversationItem
+                {
+                    ChildId = child.Id,
+                    ChildName = $"{child.FirstName} {child.LastName}".Trim(),
+                    ClassroomId = child.ClassroomId,
+                    ClassroomName = classroom?.Name ?? "Classroom",
+                    ParentName = "Family & Guardians",
+                    ParentUserId = null,
+                    LastMessageSnippet = "No messages yet · Click to start chat",
+                    LastMessageTime = child.CreatedAt,
+                    UnreadCount = 0
+                });
+            }
+
+            _allConversations = convoList.OrderByDescending(c => c.UnreadCount > 0).ThenByDescending(c => c.LastMessageTime).ToList();
+            _totalUnread = _allConversations.Sum(c => c.UnreadCount);
+
+            FilterConversations();
+
+            // Auto-select first conversation
+            if (_filteredConversations.Any() && _selectedChildId == null)
+            {
+                await SelectConversationAsync(_filteredConversations.First().ChildId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClassroomMessages] Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void FilterConversations()
+    {
+        var q = _searchQuery?.Trim().ToLowerInvariant() ?? "";
+        _filteredConversations = _allConversations.Where(c =>
+        {
+            if (_selectedClassroomId.HasValue && c.ClassroomId != _selectedClassroomId.Value)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var matchName = c.ChildName.ToLowerInvariant().Contains(q);
+                var matchParent = c.ParentName.ToLowerInvariant().Contains(q);
+                var matchClass = c.ClassroomName.ToLowerInvariant().Contains(q);
+                return matchName || matchParent || matchClass;
+            }
+
+            return true;
+        }).ToList();
+    }
+
+    private async Task SelectConversationAsync(Guid childId)
+    {
+        _selectedChildId = childId;
+        var convo = _allConversations.FirstOrDefault(c => c.ChildId == childId);
+        if (convo != null)
+        {
+            _totalUnread = Math.Max(0, _totalUnread - convo.UnreadCount);
+            convo.UnreadCount = 0;
+            _activeParentName = convo.ParentName;
+            _activeParentUserId = convo.ParentUserId;
+        }
+
+        var tenantId = TenantContext.TenantId;
+        _activeChild = await ChildRepo.GetByIdAsync(tenantId, childId);
+
+        _activeChild ??= new Child
+        {
+            Id = childId,
+            FirstName = convo?.ChildName ?? "Student",
+            LastName = "",
+            ClassroomId = convo?.ClassroomId
+        };
+
+        if (_activeChild.ClassroomId.HasValue)
+        {
+            _activeClassroom = await ClassroomRepo.GetByIdAsync(tenantId, _activeChild.ClassroomId.Value);
+            if (_activeClassroom != null)
+            {
+                _activeBranch = await BranchRepo.GetByIdAsync(tenantId, _activeClassroom.BranchId);
+            }
+        }
+
+        // Load messages for child
+        var rawComms = await CommunicationRepo.GetByChildIdAsync(tenantId, childId);
+        _messages = rawComms.OrderBy(c => c.CreatedAt).Select(c => new ParentChatMessage
+        {
+            Id = c.Id,
+            ChildId = c.ChildId,
+            SenderName = (c.TeacherId == Guid.Empty) ? (c.RecipientName ?? "Parent") : (c.TeacherName ?? "Educator"),
+            Content = !string.IsNullOrWhiteSpace(c.ContentFinal) ? c.ContentFinal : c.ContentDraft,
+            Timestamp = c.SentAt ?? c.CreatedAt,
+            IsFromParent = (c.TeacherId == Guid.Empty),
+            DeliveryStatus = c.DeliveryStatus ?? "Delivered"
+        }).ToList();
+
+        // Mark as Read in DB
+        await CommunicationRepo.MarkAsReadByEducatorAsync(tenantId, childId);
+        await NotificationCenter.NotifyMessagesReadAsync(childId);
+
+        StateHasChanged();
+        await ScrollToBottomAsync();
+    }
+
+    private async Task HandleLiveIncomingMessage(ParentMessageNotification notification)
+    {
+        await InvokeAsync(async () =>
+        {
+            // If the incoming message is for the currently viewed child:
+            if (_selectedChildId == notification.ChildId)
+            {
+                if (!_messages.Any(m => m.Id == notification.MessageId))
+                {
+                    _messages.Add(new ParentChatMessage
+                    {
+                        Id = notification.MessageId,
+                        ChildId = notification.ChildId,
+                        SenderName = notification.SenderName,
+                        Content = notification.Content,
+                        Timestamp = notification.Timestamp,
+                        IsFromParent = true,
+                        DeliveryStatus = "Delivered"
+                    });
+                }
+
+                var convo = _allConversations.FirstOrDefault(c => c.ChildId == notification.ChildId);
+                if (convo != null)
+                {
+                    convo.LastMessageSnippet = notification.Content;
+                    convo.LastMessageTime = notification.Timestamp;
+                }
+
+                // Mark read immediately
+                await CommunicationRepo.MarkAsReadByEducatorAsync(TenantContext.TenantId, notification.ChildId);
+                await NotificationCenter.NotifyMessagesReadAsync(notification.ChildId);
+            }
+            else
+            {
+                // Update or add to conversation list
+                var convo = _allConversations.FirstOrDefault(c => c.ChildId == notification.ChildId);
+                if (convo != null)
+                {
+                    convo.UnreadCount++;
+                    convo.LastMessageSnippet = notification.Content;
+                    convo.LastMessageTime = notification.Timestamp;
+                }
+                else
+                {
+                    _allConversations.Insert(0, new ConversationItem
+                    {
+                        ChildId = notification.ChildId,
+                        ChildName = notification.ChildName,
+                        ClassroomId = notification.ClassroomId,
+                        ClassroomName = notification.ClassroomName,
+                        ParentName = notification.SenderName,
+                        LastMessageSnippet = notification.Content,
+                        LastMessageTime = notification.Timestamp,
+                        UnreadCount = 1
+                    });
+                }
+                _totalUnread++;
+                FilterConversations();
+            }
+
+            StateHasChanged();
+            await ScrollToBottomAsync();
+        });
+    }
+
+    private async Task SendReplyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_replyText) || _selectedChildId == null || _activeChild == null)
+            return;
+
+        try
+        {
+            _isSending = true;
+            var text = _replyText.Trim();
+            _replyText = "";
+
+            var messageId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var educatorName = UserContext.Email?.Split('@')[0] ?? "Teacher";
+
+            var comm = new ParentCommunication
+            {
+                Id = messageId,
+                TenantId = TenantContext.TenantId,
+                OrganizationId = _activeBranch?.OrganizationId ?? TenantContext.TenantId,
+                ClassroomId = _activeChild.ClassroomId,
+                ChildId = _selectedChildId.Value,
+                RecipientUserId = _activeParentUserId,
+                RecipientName = _activeParentName ?? "Parent",
+                CommunicationType = "EducatorMessage",
+                ReportingDateStart = DateOnly.FromDateTime(DateTime.Today),
+                ReportingDateEnd = DateOnly.FromDateTime(DateTime.Today),
+                Title = $"Educator message from {educatorName}",
+                ContentDraft = text,
+                ContentFinal = text,
+                Status = ParentCommunicationStatus.Sent,
+                TeacherId = UserContext.UserId,
+                TeacherName = educatorName,
+                SentAt = now,
+                DeliveryChannel = "Portal",
+                DeliveryStatus = "Delivered",
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
+            await CommunicationRepo.CreateAsync(comm);
+
+            _messages.Add(new ParentChatMessage
+            {
+                Id = messageId,
+                ChildId = _selectedChildId.Value,
+                SenderName = educatorName,
+                Content = text,
+                Timestamp = now,
+                IsFromParent = false,
+                DeliveryStatus = "Delivered"
+            });
+
+            var convo = _allConversations.FirstOrDefault(c => c.ChildId == _selectedChildId.Value);
+            if (convo != null)
+            {
+                convo.LastMessageSnippet = text;
+                convo.LastMessageTime = now;
+            }
+
+            // Real-time dispatch to Parent Portal
+            var notification = new ParentMessageNotification
+            {
+                MessageId = messageId,
+                TenantId = TenantContext.TenantId,
+                OrganizationId = _activeBranch?.OrganizationId ?? TenantContext.TenantId,
+                BranchId = _activeClassroom?.BranchId,
+                ClassroomId = _activeChild.ClassroomId,
+                ChildId = _selectedChildId.Value,
+                ChildName = $"{_activeChild.FirstName} {_activeChild.LastName}".Trim(),
+                ClassroomName = _activeClassroom?.Name ?? "Classroom",
+                SenderName = educatorName,
+                Content = text,
+                Timestamp = now,
+                IsFromParent = false
+            };
+
+            _ = RealtimeNotificationService.NotifyEducatorMessageSentAsync(notification);
+            _ = HubContext.Clients.Group($"child_{_selectedChildId.Value}").SendAsync("ReceiveEducatorMessage", notification);
+            _ = HubContext.Clients.Group($"tenant_{TenantContext.TenantId}").SendAsync("ReceiveEducatorMessage", notification);
+            if (_activeChild.ClassroomId.HasValue)
+            {
+                _ = HubContext.Clients.Group($"classroom_{_activeChild.ClassroomId.Value}").SendAsync("ReceiveEducatorMessage", notification);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClassroomMessages] Error sending reply: {ex.Message}");
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
+
+    private async Task SendQuickReply(string text)
+    {
+        _replyText = text;
+        await SendReplyAsync();
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendReplyAsync();
+        }
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "C";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][0].ToString().ToUpper();
+        return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+    }
+
+    private string GetAvatarColor(string name)
+    {
+        var colors = new[] { "#557c6c", "#3e6253", "#0d9488", "#0284c7", "#4f46e5", "#b45309" };
+        var hash = Math.Abs(name?.GetHashCode() ?? 0);
+        return colors[hash % colors.Length];
+    }
+
+    private string FormatTime(DateTimeOffset time)
+    {
+        var local = time.ToLocalTime();
+        if (local.Date == DateTime.Today) return local.ToString("h:mm tt");
+        if (local.Date == DateTime.Today.AddDays(-1)) return "Yesterday";
+        return local.ToString("MMM d");
+    }
+
+    private async Task StartBackgroundSyncAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+            {
+                if (!_isSending && !_loading && _selectedChildId.HasValue)
+                {
+                    var tenantId = TenantContext.TenantId;
+                    var rawComms = (await CommunicationRepo.GetByChildIdAsync(tenantId, _selectedChildId.Value)).ToList();
+                    if (rawComms.Count != _messages.Count)
+                    {
+                        _messages = rawComms.OrderBy(c => c.CreatedAt).Select(c => new ParentChatMessage
+                        {
+                            Id = c.Id,
+                            ChildId = c.ChildId,
+                            SenderName = (c.TeacherId == Guid.Empty) ? (c.RecipientName ?? "Parent") : (c.TeacherName ?? "Educator"),
+                            Content = !string.IsNullOrWhiteSpace(c.ContentFinal) ? c.ContentFinal : c.ContentDraft,
+                            Timestamp = c.SentAt ?? c.CreatedAt,
+                            IsFromParent = (c.TeacherId == Guid.Empty),
+                            DeliveryStatus = c.DeliveryStatus ?? "Delivered"
+                        }).ToList();
+
+                        var latest = _messages.LastOrDefault();
+                        if (latest != null)
+                        {
+                            var convo = _allConversations.FirstOrDefault(c => c.ChildId == _selectedChildId.Value);
+                            if (convo != null)
+                            {
+                                convo.LastMessageSnippet = latest.Content;
+                                convo.LastMessageTime = latest.Timestamp;
+                            }
+                        }
+
+                        await InvokeAsync(StateHasChanged);
+                        await ScrollToBottomAsync();
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ClassroomMessages] Sync tick note: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ScrollToBottomAsync();
+        }
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                setTimeout(function() {
+                    var el = document.getElementById('messageStream');
+                    if (el) {
+                        el.scrollTop = el.scrollHeight;
+                    }
+                }, 60);
+            ");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        NotificationCenter.OnParentMessageReceived -= HandleLiveIncomingMessage;
+    }
+
+    private class ConversationItem
+    {
+        public Guid ChildId { get; set; }
+        public string ChildName { get; set; } = string.Empty;
+        public Guid? ClassroomId { get; set; }
+        public string ClassroomName { get; set; } = string.Empty;
+        public string ParentName { get; set; } = string.Empty;
+        public Guid? ParentUserId { get; set; }
+        public string LastMessageSnippet { get; set; } = string.Empty;
+        public DateTimeOffset LastMessageTime { get; set; }
+        public int UnreadCount { get; set; }
+    }
+}

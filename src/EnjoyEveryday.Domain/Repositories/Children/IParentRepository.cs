@@ -13,6 +13,7 @@ public class ParentAuthorizedChild
     public string? ClassroomName { get; set; }
     public Guid? BranchId { get; set; }
     public string? BranchName { get; set; }
+    public Guid? OrganizationId { get; set; }
     public string? OrganizationName { get; set; }
     public string? PhotoUrl { get; set; }
     public string Relationship { get; set; } = string.Empty;

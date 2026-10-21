@@ -5,6 +5,8 @@
 @inject ParentSessionState SessionState
 @inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
+@inject EnjoyEveryday.Parent.Web.Services.ParentRealtimeNotificationCenter RealtimeNotificationCenter
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -304,18 +306,51 @@ else
     private bool _loading = true;
     private bool _isSending = false;
     private string? _errorMessage;
+    private readonly CancellationTokenSource _cts = new();
 
     protected override async Task OnInitializedAsync()
     {
         SessionState.OnChildChanged += OnChildSelectionChanged;
         Localization.OnLanguageChanged += StateHasChanged;
+        RealtimeNotificationCenter.OnEducatorMessageReceived += HandleLiveIncomingEducatorMessage;
         await LoadMessagesAsync();
+        _ = StartPollingLoopAsync();
     }
 
     private async void OnChildSelectionChanged()
     {
         await LoadMessagesAsync();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartPollingLoopAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+            {
+                if (!_isSending && !_loading && SessionState.SelectedChild != null)
+                {
+                    var msgs = (await ParentService.GetChildMessagesAsync(SessionState.SelectedChild.ChildId, take: 50)).ToList();
+                    
+                    var hasChanges = msgs.Count != _messages.Count ||
+                        (msgs.Count > 0 && _messages.Count > 0 && msgs.Last().Id != _messages.Last().Id);
+
+                    if (hasChanges)
+                    {
+                        _messages = msgs;
+                        await InvokeAsync(StateHasChanged);
+                        _ = ScrollToBottomAsync();
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Parent Messages] Polling tick error: {ex.Message}");
+        }
     }
 
     private async Task LoadMessagesAsync()
@@ -331,6 +366,7 @@ else
             _loading = true;
             var msgs = await ParentService.GetChildMessagesAsync(SessionState.SelectedChild.ChildId, take: 50);
             _messages = msgs.ToList();
+            _ = ScrollToBottomAsync();
         }
         catch (Exception ex)
         {
@@ -364,11 +400,13 @@ else
                 DeliveryStatus = "Sending"
             };
             _messages.Add(optimistic);
+            _ = ScrollToBottomAsync();
 
             // Persist to database
             var sent = await ParentService.SendParentMessageAsync(SessionState.SelectedChild.ChildId, text);
             optimistic.DeliveryStatus = sent.DeliveryStatus;
             optimistic.Id = sent.Id;
+            _ = ScrollToBottomAsync();
         }
         catch (Exception ex)
         {
@@ -380,8 +418,58 @@ else
         }
     }
 
+    private async Task HandleLiveIncomingEducatorMessage(ParentMessageNotification notification)
+    {
+        await InvokeAsync(async () =>
+        {
+            if (SessionState.SelectedChild != null && SessionState.SelectedChild.ChildId == notification.ChildId)
+            {
+                if (!_messages.Any(m => m.Id == notification.MessageId))
+                {
+                    _messages.Add(new ParentChatMessage
+                    {
+                        Id = notification.MessageId,
+                        ChildId = notification.ChildId,
+                        SenderName = notification.SenderName,
+                        Content = notification.Content,
+                        Timestamp = notification.Timestamp,
+                        IsFromParent = false,
+                        DeliveryStatus = "Delivered"
+                    });
+                    StateHasChanged();
+                    await ScrollToBottomAsync();
+                }
+            }
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ScrollToBottomAsync();
+        }
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                setTimeout(function() {
+                    var el = document.getElementById('chatStream');
+                    if (el) { el.scrollTop = el.scrollHeight; }
+                }, 60);
+            ");
+        }
+        catch { }
+    }
+
     public void Dispose()
     {
+        _cts.Cancel();
+        _cts.Dispose();
+        RealtimeNotificationCenter.OnEducatorMessageReceived -= HandleLiveIncomingEducatorMessage;
         SessionState.OnChildChanged -= OnChildSelectionChanged;
         Localization.OnLanguageChanged -= StateHasChanged;
     }

@@ -3,6 +3,7 @@
 @inject ParentSessionState SessionState
 @inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
+@inject EnjoyEveryday.Parent.Web.Services.ParentRealtimeNotificationCenter RealtimeNotificationCenter
 @implements IDisposable
 
 <nav class="custom-nav" aria-label="Desktop Navigation">
@@ -50,6 +51,10 @@
         <NavLink class="nav-item" href="/messages">
             <FluentIcon Value="@(new Icons.Regular.Size20.ChatMultiple())" Color="Color.Custom" CustomColor="#0284c7" />
             <span>@Localization.T("Nav.Messages")</span>
+            @if (_unreadEducatorMessages > 0)
+            {
+                <span class="nav-msg-badge">@_unreadEducatorMessages</span>
+            }
         </NavLink>
 
         <NavLink class="nav-item" href="/family">
@@ -135,17 +140,49 @@
     .signout-btn:hover {
         background: #fef2f2 !important;
     }
+
+    .nav-msg-badge {
+        margin-left: auto;
+        background: #e11d48;
+        color: white;
+        font-size: 11px;
+        font-weight: 750;
+        padding: 1px 7px;
+        border-radius: 10px;
+        line-height: 1.4;
+    }
 </style>
 
 @code {
     private List<ParentAuthorizedChild> _children = new();
     private bool _loading = true;
+    private int _unreadEducatorMessages = 0;
 
     protected override async Task OnInitializedAsync()
     {
         SessionState.OnChildChanged += StateHasChanged;
         Localization.OnLanguageChanged += StateHasChanged;
+        RealtimeNotificationCenter.OnEducatorMessageReceived += HandleLiveEducatorMessage;
+        Navigation.LocationChanged += OnLocationChanged;
         await LoadChildrenAsync();
+    }
+
+    private async Task HandleLiveEducatorMessage(EnjoyEveryday.Application.Services.ParentMessageNotification notification)
+    {
+        if (!Navigation.Uri.Contains("/messages"))
+        {
+            _unreadEducatorMessages++;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (e.Location.Contains("/messages"))
+        {
+            _unreadEducatorMessages = 0;
+            StateHasChanged();
+        }
     }
 
     private async Task LoadChildrenAsync()
@@ -176,5 +213,7 @@
     {
         SessionState.OnChildChanged -= StateHasChanged;
         Localization.OnLanguageChanged -= StateHasChanged;
+        RealtimeNotificationCenter.OnEducatorMessageReceived -= HandleLiveEducatorMessage;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

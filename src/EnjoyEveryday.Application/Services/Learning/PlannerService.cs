@@ -30,6 +30,11 @@ public class PlannerService
         return await _scheduleRepository.GetByIdAsync(scheduleId);
     }
 
+    public async Task<IEnumerable<ExperienceSchedule>> GetSchedulesForDateAsync(DateOnly date)
+    {
+        return await _scheduleRepository.GetByDateAsync(date);
+    }
+
     public async Task<ExperienceSchedule> ScheduleExperienceAsync(Guid experienceId, Guid classroomId, DateOnly scheduledDate, string timeOfDay, Guid? primaryTeacherId = null, TimeSpan? startTime = null, TimeSpan? endTime = null, string? notes = null)
     {
         if (!_userContext.HasPermission("experience.schedule")) throw new UnauthorizedAccessException("Requires experience.schedule permission.");

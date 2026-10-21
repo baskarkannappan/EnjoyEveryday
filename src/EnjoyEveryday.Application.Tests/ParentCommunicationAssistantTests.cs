@@ -359,6 +359,27 @@ public class ParentCommunicationAssistantTests
             }
             return Task.CompletedTask;
         }
+
+        public Task<IEnumerable<ParentCommunication>> GetRecentCommunicationsAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null, int limit = 50, CancellationToken cancellationToken = default)
+        {
+            var list = Comms.Values.Where(c => c.TenantId == tenantId).Take(limit).ToList();
+            return Task.FromResult<IEnumerable<ParentCommunication>>(list);
+        }
+
+        public Task<int> GetUnreadCountForEducatorAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null, CancellationToken cancellationToken = default)
+        {
+            var count = Comms.Values.Count(c => c.TenantId == tenantId && c.DeliveryStatus != "Read");
+            return Task.FromResult(count);
+        }
+
+        public Task MarkAsReadByEducatorAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+        {
+            foreach (var comm in Comms.Values.Where(c => c.TenantId == tenantId && c.ChildId == childId))
+            {
+                comm.DeliveryStatus = "Read";
+            }
+            return Task.CompletedTask;
+        }
     }
 
     private class MockChildRepository : IChildRepository

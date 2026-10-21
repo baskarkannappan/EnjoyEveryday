@@ -204,4 +204,73 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
             SentAt = sentAt
         });
     }
+
+    public async Task<IEnumerable<ParentCommunication>> GetRecentCommunicationsAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT 
+                pc.*,
+                TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS ChildName,
+                cl.name AS ClassroomName,
+                b.name AS BranchName,
+                cl.branch_id AS BranchId
+            FROM parent_communications pc
+            JOIN children c ON pc.child_id = c.id
+            LEFT JOIN classrooms cl ON pc.classroom_id = cl.id
+            LEFT JOIN branches b ON cl.branch_id = b.id
+            WHERE pc.tenant_id = @TenantId
+              AND (@OrganizationId IS NULL OR pc.organization_id = @OrganizationId)
+              AND (@BranchId IS NULL OR cl.branch_id = @BranchId)
+              AND (@ClassroomId IS NULL OR pc.classroom_id = @ClassroomId)
+            ORDER BY pc.created_at DESC
+            LIMIT @Limit;";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryAsync<ParentCommunication>(sql, new
+        {
+            TenantId = tenantId,
+            OrganizationId = organizationId,
+            BranchId = branchId,
+            ClassroomId = classroomId,
+            Limit = limit
+        });
+    }
+
+    public async Task<int> GetUnreadCountForEducatorAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT COUNT(*)
+            FROM parent_communications pc
+            LEFT JOIN classrooms cl ON pc.classroom_id = cl.id
+            WHERE pc.tenant_id = @TenantId
+              AND pc.teacher_id = '00000000-0000-0000-0000-000000000000'
+              AND pc.delivery_status != 'Read'
+              AND (@OrganizationId IS NULL OR pc.organization_id = @OrganizationId)
+              AND (@BranchId IS NULL OR cl.branch_id = @BranchId)
+              AND (@ClassroomId IS NULL OR pc.classroom_id = @ClassroomId);";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.ExecuteScalarAsync<int>(sql, new
+        {
+            TenantId = tenantId,
+            OrganizationId = organizationId,
+            BranchId = branchId,
+            ClassroomId = classroomId
+        });
+    }
+
+    public async Task MarkAsReadByEducatorAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            UPDATE parent_communications
+            SET delivery_status = 'Read', updated_at = NOW()
+            WHERE tenant_id = @TenantId
+              AND child_id = @ChildId
+              AND teacher_id = '00000000-0000-0000-0000-000000000000'
+              AND delivery_status != 'Read';";
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteAsync(sql, new { TenantId = tenantId, ChildId = childId });
+    }
 }
+

@@ -14,6 +14,7 @@
 @inject UserService UserService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject HarvestService HarvestService
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 
 <div class="content">
     <PageHero Eyebrow="EXPERIENCE MEMORY"
@@ -178,9 +179,17 @@
     {
         if (_currentFeedbackId.HasValue)
         {
-            await FeedbackService.DeleteFeedbackAsync(_currentFeedbackId.Value);
-            await LoadFeedbacks();
-            CloseDialog();
+            try
+            {
+                await FeedbackService.DeleteFeedbackAsync(_currentFeedbackId.Value);
+                await NotificationService.ShowSuccessAsync("Feedback deleted.");
+                await LoadFeedbacks();
+                CloseDialog();
+            }
+            catch (Exception ex)
+            {
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
 
@@ -190,37 +199,84 @@
     {
         if (string.IsNullOrEmpty(_selectedExperienceId) || string.IsNullOrEmpty(_feedbackText)) return;
 
-        var teacherId = UserContext.UserId;
-        var expId = Guid.Parse(_selectedExperienceId);
-
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org == null) return;
-        var branch = (await BranchService.GetBranchesAsync(org.Id)).FirstOrDefault();
-        if (branch == null) return;
-        var classroom = (await ClassroomService.GetClassroomsAsync(branch.Id)).FirstOrDefault();
-        if (classroom == null) return;
-
-        var schedule = await PlannerService.ScheduleExperienceAsync(expId, classroom.Id, DateOnly.FromDateTime(DateTime.Today), "Morning");
-        var scheduleId = schedule.Id;
-
-        if (_currentFeedbackId.HasValue)
+        try
         {
-            var feedback = await FeedbackService.GetFeedbackByIdAsync(_currentFeedbackId.Value);
-            if (feedback != null)
+            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
+            var expId = Guid.Parse(_selectedExperienceId);
+
+            if (_currentFeedbackId.HasValue)
             {
-                feedback.Notes = _feedbackText;
-                feedback.Rating = _rating;
-                await FeedbackService.UpdateFeedbackAsync(feedback);
+                var feedback = await FeedbackService.GetFeedbackByIdAsync(_currentFeedbackId.Value);
+                if (feedback != null)
+                {
+                    feedback.Notes = _feedbackText;
+                    feedback.Rating = _rating;
+                    await FeedbackService.UpdateFeedbackAsync(feedback);
+                    await NotificationService.ShowSuccessAsync("Feedback updated successfully.");
+                }
             }
-        }
-        else
-        {
-            await FeedbackService.CreateFeedbackAsync(scheduleId, teacherId, _rating, _feedbackText);
-        }
+            else
+            {
+                var orgs = await OrganizationService.GetOrganizationsAsync();
+                var org = orgs.FirstOrDefault();
+                if (org == null)
+                {
+                    await NotificationService.ShowWarningAsync("No organization found to record feedback.");
+                    return;
+                }
+                var branch = (await BranchService.GetBranchesAsync(org.Id)).FirstOrDefault();
+                if (branch == null)
+                {
+                    await NotificationService.ShowWarningAsync("No branch found to record feedback.");
+                    return;
+                }
+                var classroom = (await ClassroomService.GetClassroomsAsync(branch.Id)).FirstOrDefault();
+                if (classroom == null)
+                {
+                    await NotificationService.ShowWarningAsync("No classroom found to record feedback.");
+                    return;
+                }
 
-        await LoadFeedbacks();
-        CloseDialog();
+                // Check for existing schedule for this experience and classroom today
+                var schedulesToday = (await PlannerService.GetSchedulesForDateAsync(DateOnly.FromDateTime(DateTime.Today))).ToList();
+                var existingSchedule = schedulesToday.FirstOrDefault(s => s.ExperienceId == expId && s.ClassroomId == classroom.Id);
+
+                Guid scheduleId;
+                if (existingSchedule != null)
+                {
+                    scheduleId = existingSchedule.Id;
+                }
+                else
+                {
+                    // Find an open time slot that doesn't conflict with existing classroom schedules
+                    var bookedSlots = schedulesToday
+                        .Where(s => s.ClassroomId == classroom.Id && !string.Equals(s.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                        .Select(s => s.TimeOfDay.Trim().ToLowerInvariant())
+                        .ToHashSet();
+
+                    string chosenSlot = "Morning";
+                    if (bookedSlots.Contains("morning"))
+                    {
+                        if (!bookedSlots.Contains("mid-day")) chosenSlot = "Mid-Day";
+                        else if (!bookedSlots.Contains("afternoon")) chosenSlot = "Afternoon";
+                        else chosenSlot = "Evening";
+                    }
+
+                    var schedule = await PlannerService.ScheduleExperienceAsync(expId, classroom.Id, DateOnly.FromDateTime(DateTime.Today), chosenSlot);
+                    scheduleId = schedule.Id;
+                }
+
+                await FeedbackService.CreateFeedbackAsync(scheduleId, teacherId, _rating, _feedbackText);
+                await NotificationService.ShowSuccessAsync("Feedback saved successfully.");
+            }
+
+            await LoadFeedbacks();
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task OnViewClick(ExperiencePerformanceItem item)
