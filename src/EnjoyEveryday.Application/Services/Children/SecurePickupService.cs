@@ -23,6 +23,7 @@ public class AuthorizedPickupDto
     public bool IsActive { get; set; } = true;
     public bool IsPrimaryGuardian { get; set; }
     public string? Notes { get; set; }
+    public bool IsRegisteredPickup { get; set; }
 }
 
 public class CustodyRestrictionDto
@@ -136,7 +137,8 @@ public class SecurePickupService : ISecurePickupService
             IsPrimaryGuardian = (p.Relationship ?? "").Contains("Parent", StringComparison.OrdinalIgnoreCase) 
                              || (p.Relationship ?? "").Contains("Mother", StringComparison.OrdinalIgnoreCase)
                              || (p.Relationship ?? "").Contains("Father", StringComparison.OrdinalIgnoreCase),
-            Notes = p.Notes
+            Notes = p.Notes,
+            IsRegisteredPickup = true
         }).ToList();
 
         // 4. Fetch family relationships (parents & legal guardians)
@@ -157,7 +159,8 @@ public class SecurePickupService : ISecurePickupService
                     PhotoUrl = f.PhotoUrl,
                     IsActive = true,
                     IsPrimaryGuardian = f.IsPrimary,
-                    Notes = "Verified legal guardian relationship."
+                    Notes = "Verified legal guardian relationship.",
+                    IsRegisteredPickup = false
                 });
             }
         }
@@ -173,7 +176,8 @@ public class SecurePickupService : ISecurePickupService
                 Relationship = "Legal Guardian",
                 IsActive = true,
                 IsPrimaryGuardian = true,
-                Notes = "Primary guardian visual verification required."
+                Notes = "Primary guardian visual verification required.",
+                IsRegisteredPickup = false
             });
         }
 
@@ -217,6 +221,17 @@ public class SecurePickupService : ISecurePickupService
         var departureTime = request.DepartureTime ?? DateTime.Now.TimeOfDay;
         Guid attId = existingAtt?.Id ?? request.AttendanceId ?? Guid.NewGuid();
 
+        // 3. Verify that AuthorizedPickupId exists in database before saving to prevent foreign key violation
+        Guid? validAuthorizedPickupId = null;
+        if (request.AuthorizedPickupId.HasValue && request.AuthorizedPickupId.Value != Guid.Empty)
+        {
+            var exists = await _pickupRepository.AuthorizedPickupExistsAsync(_tenantContext.TenantId, request.AuthorizedPickupId.Value, ct);
+            if (exists)
+            {
+                validAuthorizedPickupId = request.AuthorizedPickupId.Value;
+            }
+        }
+
         var attendanceRecord = existingAtt ?? new ChildAttendance
         {
             Id = attId,
@@ -235,7 +250,7 @@ public class SecurePickupService : ISecurePickupService
         attendanceRecord.PickupPersonRelationship = request.PickupPersonRelationship;
         attendanceRecord.PickupVerificationMethod = request.PickupVerificationMethod;
         attendanceRecord.PickupNotes = request.StaffNotes;
-        attendanceRecord.AuthorizedPickupId = request.AuthorizedPickupId;
+        attendanceRecord.AuthorizedPickupId = validAuthorizedPickupId;
         attendanceRecord.DepartureVerifiedByUserId = _userContext?.UserId;
         attendanceRecord.UpdatedAt = DateTimeOffset.UtcNow;
 

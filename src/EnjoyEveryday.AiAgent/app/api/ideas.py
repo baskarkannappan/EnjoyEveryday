@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 import json
 import logging
+import re
 from typing import List, Dict, Any
 from app.schemas.requests import IdeaRequest, ImproveRequest, MaterialsRequest
 from app.schemas.responses import IdeaResponse, ImproveResponse, MaterialsResponse
@@ -16,20 +17,45 @@ from app.validation.safety_validator import safety_validator
 logger = logging.getLogger("EnjoyEveryday.Api.Ideas")
 router = APIRouter(tags=["Experience Design"])
 
+def extract_clean_topic(raw_text: str) -> str:
+    if not raw_text or not raw_text.strip():
+        return "Creative Texture Studio"
+    
+    clean = raw_text.strip()
+    clean = re.sub(r'^(Exploring|The Playful World of|The Playful World Of|The Magic of)\s+', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r':\s*(Creative Tactile Studio|Child-Led Creative Studio|Sensory Touch & Texture Lab|Outdoor Nature Studio|Adventure Studio).*$', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\s*(Discovery Adventure)$', '', clean, flags=re.IGNORECASE)
+    
+    clean_lower = clean.lower()
+    if "animal" in clean_lower or "fish" in clean_lower:
+        if any(w in clean_lower for w in ["paper", "glue", "paste", "cut", "pattern"]):
+            return "Animal & Fish Paper Collage"
+        return "Wildlife & Animal Shapes"
+    if "water" in clean_lower:
+        return "Water Flow & Splash"
+    if "block" in clean_lower or "build" in clean_lower:
+        return "Block Architecture & Building"
+    if "clay" in clean_lower or "sand" in clean_lower or "dough" in clean_lower:
+        return "Tactile Clay Sculpting"
+    if "paint" in clean_lower or "color" in clean_lower:
+        return "Vibrant Color Studio"
+    if "leaf" in clean_lower or "nature" in clean_lower or "plant" in clean_lower:
+        return "Botanical Nature Treasures"
+        
+    words = clean.split()
+    if len(words) > 5:
+        stopwords = {"there", "are", "is", "a", "an", "the", "in", "on", "kids", "will", "predefined", "certain", "place", "places", "of", "and", "to", "for", "with", "they", "new", "experience"}
+        meaningful = [w.strip(".,;:?!") for w in words if w.lower().strip(".,;:?!") not in stopwords]
+        if meaningful:
+            return " ".join(meaningful[:3]).title()
+        return "Tactile Wonder Studio"
+        
+    return clean.title()
+
 def build_improved_fallback(existing_data: Dict[str, Any], request_context: str) -> Dict[str, Any]:
     base = experience_validator.sanitize_and_validate(existing_data)
-    title = base.get("Title") or "Creative Learning Studio"
-    
-    # Strip existing awkward artifacts if present
-    for artifact in ["(Focus:", "Focus:", "Adapted with emphasis on:"]:
-        if artifact.lower() in title.lower():
-            title = title.split("(")[0].strip()
-    if title.lower().startswith("exploring "):
-        core_topic = title[10:].strip()
-        if ":" in core_topic:
-            core_topic = core_topic.split(":")[0].strip()
-    else:
-        core_topic = title.split(":")[0].strip()
+    raw_title = base.get("Title") or "Creative Learning Studio"
+    core_topic = extract_clean_topic(raw_title)
 
     req_clean = request_context.strip()
     is_playful = "playful" in req_clean.lower()
@@ -38,28 +64,28 @@ def build_improved_fallback(existing_data: Dict[str, Any], request_context: str)
     is_outdoor = "outdoor" in req_clean.lower()
 
     if is_playful:
-        new_title = f"The Playful World of {core_topic.title()}"
-        new_desc = f"Children embark on a whimsical, playful adventure with {core_topic.lower()}, turning tactile curiosity into imaginative storytelling, roleplay, and joyful collaboration."
-        new_challenge = f"Can we build a miniature play village or friendly creature using our {core_topic.lower()}?"
+        new_title = f"The Playful World of {core_topic}"
+        new_desc = f"Children embark on an imaginative, playful quest centered on {core_topic.lower()}, turning tactile curiosity into creative storytelling, hands-on construction, and joyful teamwork."
+        new_challenge = f"Can we build a miniature play world or friendly creature using our {core_topic.lower()} materials?"
         new_choice = "Children invent their own characters, choose their favorite textures and shapes, and guide the story."
         new_together = "Children connect their individual creations together to form a lively shared fantasy world."
         new_magic = "The sheer delight when their creations interact and tell a story together."
     elif is_choice:
-        new_title = f"{core_topic.title()}: Child-Led Creative Studio"
+        new_title = f"{core_topic}: Child-Led Creative Studio"
         new_desc = f"An open-ended, child-guided exploration where little learners choose their tools, decide their own pace, and experiment freely with {core_topic.lower()}."
         new_challenge = f"What amazing discoveries can you make today? You decide what to create and how to test it!"
         new_choice = "Children freely select from various tools, molds, colors, and textures, deciding whether to work solo or with peers."
         new_together = "Children observe each other's ideas, trade tools, and offer helpful suggestions."
         new_magic = "A child's independent realization that they solved a challenge using their own unique method."
     elif is_sensory:
-        new_title = f"{core_topic.title()}: Sensory Touch & Texture Lab"
+        new_title = f"{core_topic}: Sensory Touch & Texture Lab"
         new_desc = f"A rich tactile adventure inviting children to squeeze, roll, imprint, and observe physical transformations through immersive sensory play."
         new_challenge = f"How many different patterns, textures, and sensations can we press into our materials?"
         new_choice = "Children choose between textured rollers, natural stamps, stamps, and sensory tools."
         new_together = "Children share textured impressions and compare how different surfaces feel."
         new_magic = "Discovering an intricate pattern revealed under the magnifying glass or light table."
     elif is_outdoor:
-        new_title = f"{core_topic.title()}: Outdoor Nature Studio"
+        new_title = f"{core_topic}: Outdoor Nature Studio"
         new_desc = f"Taking creative exploration into the fresh air, blending natural elements with {core_topic.lower()} in sunlight and open space."
         new_challenge = f"Can we combine outdoor treasures (leaves, stones, twigs) with our materials to build a nature garden?"
         new_choice = "Children explore the outdoor perimeter to collect their own organic crafting accents."
@@ -67,7 +93,7 @@ def build_improved_fallback(existing_data: Dict[str, Any], request_context: str)
         new_magic = "Seeing how natural sunlight and botanical textures transform their finished work."
         base["Environment"] = "Outdoor"
     else:
-        new_title = f"{core_topic.title()} Adventure Studio"
+        new_title = f"{core_topic} Discovery Adventure"
         new_desc = f"Children engage in dynamic, hands-on exploration centered on {core_topic.lower()}, tailored to foster {req_clean.lower()}."
         new_challenge = f"How can we explore {core_topic.lower()} in a brand new way today?"
         new_choice = f"Children choose how they incorporate {req_clean.lower()} into their creations."
@@ -123,25 +149,26 @@ async def generate_ideas(
         )
     except Exception as ex:
         logger.warning(f"AI generation failed for /api/ideas: {ex}. Building deterministic safe fallback.")
+        clean_topic = extract_clean_topic(req.idea)
         raw_suggestions = [
             {
-                "Title": f"Exploring {req.idea.title()}: Creative Tactile Studio",
-                "Description": f"Children engage in open-ended creative construction and tactile exploration centered on {req.idea}.",
-                "Challenge": f"Can we design and build a display inspired by {req.idea}?",
+                "Title": f"{clean_topic}: Creative Tactile Studio",
+                "Description": f"Children engage in open-ended creative construction and tactile exploration centered on {clean_topic.lower()}, combining colorful patterns, cutouts, and child-safe materials.",
+                "Challenge": f"Can we design and build a colorful tactile display inspired by {clean_topic.lower()}?",
                 "Together": "Children share building materials and describe what they are making to their peers.",
-                "Create": "A tangible collaborative model or collage.",
+                "Create": f"A tangible collaborative {clean_topic.lower()} model or collage.",
                 "ChildChoice": "Children choose which textures, shapes, and tools they wish to combine.",
                 "MagicMoment": "Noticing how different materials join together to form a new creation.",
                 "Accomplishment": "Presenting their completed project during reflection circle.",
-                "Reflection": f"What was your favorite texture or tool you used while exploring {req.idea}?",
+                "Reflection": f"What was your favorite texture or tool you used while exploring {clean_topic.lower()}?",
                 "TeacherGuidance": "Introduce materials at the low table. Encourage children to test how pieces fit together.",
-                "Materials": ["Cardstock", "Washable craft adhesive", "Wooden craft sticks", "Textured paper scraps"],
+                "Materials": ["Precut shapes & silhouettes", "Colored patterned paper", "Washable craft adhesive", "Wooden craft sticks", "Textured paper scraps"],
                 "ExecutionGuide": {
                     "Preparation": ["Cut paper into varied shapes", "Set out trays on low work tables"],
                     "EnvironmentSetup": ["Spacious floor or craft table with accessible trays"],
                     "MaterialSetup": ["Place trays evenly within reach of small groups"],
                     "SuggestedDurationMinutes": 25,
-                    "TeacherIntroduction": f"Today we are exploring {req.idea}! Look at all these interesting textures we can build with.",
+                    "TeacherIntroduction": f"Today we are exploring {clean_topic.lower()}! Look at all these interesting textures we can build with.",
                     "Phases": [
                         {"Name": "Welcome & Material Touch", "DurationMinutes": 5, "ChildrenDo": "Feel materials and select initial pieces", "TeacherDoes": "Demonstrates gentle handling and asks open questions"},
                         {"Name": "Hands-On Creation", "DurationMinutes": 15, "ChildrenDo": "Assemble and combine elements", "TeacherDoes": "Circulates, providing positive reinforcement"},

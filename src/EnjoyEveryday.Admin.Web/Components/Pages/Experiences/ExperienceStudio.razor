@@ -13,6 +13,7 @@
 @inject IAiIdeaService AiIdeaService
 @inject INotificationService ToastService
 @inject IJSRuntime JS
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 <div class="content">
     <PageHero Eyebrow="Little Stars"
               Title="Experience Studio"
@@ -633,8 +634,12 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var teachers = await UserService.GetTeachersAsync();
-        _currentUserId = teachers.FirstOrDefault()?.Id ?? Guid.Empty;
+        _currentUserId = UserContext.UserId;
+        if (_currentUserId == Guid.Empty)
+        {
+            var teachers = await UserService.GetTeachersAsync();
+            _currentUserId = teachers.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
 
         if (ExperienceId.HasValue)
         {
@@ -676,59 +681,92 @@
 
     private async Task SaveDraftAsync()
     {
-        var dnaJson = JsonSerializer.Serialize(_dna);
-
-        if (_experience.Id == Guid.Empty)
+        try
         {
-            _experience = await ExperienceService.CreateExperienceAsync(
-                _experience.Title,
-                _experience.Description,
-                dnaJson,
-                _currentUserId,
-                "Draft"
-            );
-            NavigationManager.NavigateTo($"/studio/{_experience.Id}", replace: true);
+            if (_currentUserId == Guid.Empty)
+            {
+                _currentUserId = UserContext.UserId;
+            }
+
+            var dnaJson = JsonSerializer.Serialize(_dna);
+
+            if (_experience.Id == Guid.Empty)
+            {
+                _experience = await ExperienceService.CreateExperienceAsync(
+                    _experience.Title,
+                    _experience.Description,
+                    dnaJson,
+                    _currentUserId,
+                    "Draft"
+                );
+                NavigationManager.NavigateTo($"/studio/{_experience.Id}", replace: true);
+            }
+            else
+            {
+                await ExperienceService.UpdateExperienceAsync(
+                    _experience.Id,
+                    _experience.Title,
+                    _experience.Description,
+                    dnaJson,
+                    _experience.Status,
+                    "Draft Saved",
+                    _currentUserId
+                );
+            }
+
+            _saveMessage = "Draft saved";
+            _validationMessage = null;
+            StateHasChanged();
+
+            await Task.Delay(3000);
+            _saveMessage = null;
+            StateHasChanged();
         }
-        else
+        catch (Exception ex)
         {
-            await ExperienceService.UpdateExperienceAsync(
-                _experience.Id,
-                _experience.Title,
-                _experience.Description,
-                dnaJson,
-                _experience.Status,
-                "Draft Saved",
-                _currentUserId
-            );
+            _validationMessage = $"Unable to save: {ex.Message}";
+            _saveMessage = null;
+            StateHasChanged();
         }
-
-        _saveMessage = "Draft saved";
-        _validationMessage = null;
-        StateHasChanged();
-
-        await Task.Delay(3000);
-        _saveMessage = null;
-        StateHasChanged();
     }
 
     private async Task PublishAsync()
     {
-        _validationMessage = null;
-        if (string.IsNullOrWhiteSpace(_experience.Title) || _experience.Title == "New Experience")
+        try
         {
-            _validationMessage = "Title is required to publish.";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_dna.Challenge))
-        {
-            _validationMessage = "Challenge is required to publish.";
-            return;
-        }
+            _validationMessage = null;
+            if (string.IsNullOrWhiteSpace(_experience.Title) || _experience.Title == "New Experience")
+            {
+                _validationMessage = "Title is required to publish.";
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(_dna.Challenge))
+            {
+                _validationMessage = "Challenge is required to publish.";
+                return;
+            }
 
-        _experience.Status = "Published";
-        var dnaJson = JsonSerializer.Serialize(_dna);
+            _experience.Status = "Published";
+            var dnaJson = JsonSerializer.Serialize(_dna);
 
-        await ExperienceService.UpdateExperienceAsync(
+            if (_currentUserId == Guid.Empty)
+            {
+                _currentUserId = UserContext.UserId;
+            }
+
+            if (_experience.Id == Guid.Empty)
+            {
+                _experience = await ExperienceService.CreateExperienceAsync(
+                    _experience.Title,
+                    _experience.Description,
+                    dnaJson,
+                    _currentUserId,
+                    "Published"
+                );
+            }
+            else
+            {
+                await ExperienceService.UpdateExperienceAsync(
                     _experience.Id,
                     _experience.Title,
                     _experience.Description,
@@ -737,16 +775,24 @@
                     "Published Version",
                     _currentUserId
                 );
+            }
 
-        var vlist = await ExperienceService.GetExperienceHistoryAsync(_experience.Id);
-        _versions = vlist.OrderByDescending(v => v.VersionNumber).ToList();
+            var vlist = await ExperienceService.GetExperienceHistoryAsync(_experience.Id);
+            _versions = vlist.OrderByDescending(v => v.VersionNumber).ToList();
 
-        _saveMessage = "Experience published!";
-        StateHasChanged();
+            _saveMessage = "Experience published!";
+            StateHasChanged();
 
-        await Task.Delay(3000);
-        _saveMessage = null;
-        StateHasChanged();
+            await Task.Delay(3000);
+            _saveMessage = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _validationMessage = $"Unable to publish: {ex.Message}";
+            _experience.Status = "Draft";
+            StateHasChanged();
+        }
     }
 
     private void PlanExperience()

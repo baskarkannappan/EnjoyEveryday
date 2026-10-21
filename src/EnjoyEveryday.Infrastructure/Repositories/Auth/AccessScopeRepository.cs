@@ -32,7 +32,7 @@ public class AccessScopeRepository : IAccessScopeRepository
         const string sql = @"
             SELECT EXISTS(
                 SELECT 1 FROM organization_memberships m
-                JOIN users u ON u.id = m.user_id AND u.tenant_id = m.tenant_id
+                JOIN users u ON u.id = m.user_id
                 WHERE m.tenant_id = @TenantId AND m.organization_id = @OrganizationId AND m.user_id = @UserId
                   AND m.status = 'Active' AND u.is_active = true)";
         using var c = await _connectionFactory.CreateConnectionAsync(ct);

@@ -109,10 +109,18 @@ public class PlatformAdminService : IPlatformAdminService
                                 PlanName = "Bloom (Growth)",
                                 MonthlyRate = 299.00m,
                                 NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
-                                AdminEmail = $"admin@{r.Name.ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
+                                AdminEmail = !string.IsNullOrWhiteSpace(r.AdminEmail) ? r.AdminEmail : $"admin@{r.Name.ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
                                 LifecycleStageKey = "Active",
                                 CreatedAt = r.CreatedAt != null ? (DateTimeOffset)r.CreatedAt.Value : DateTimeOffset.UtcNow.AddMonths(-1)
                             };
+                        }
+                        else
+                        {
+                            var existing = _organizations[orgId];
+                            existing.Name = r.Name;
+                            if (!string.IsNullOrWhiteSpace(r.Location)) existing.Location = r.Location;
+                            if (r.BranchCount > 0) existing.BranchCount = r.BranchCount;
+                            if (!string.IsNullOrWhiteSpace(r.AdminEmail)) existing.AdminEmail = r.AdminEmail;
                         }
                     }
 
@@ -210,6 +218,175 @@ public class PlatformAdminService : IPlatformAdminService
         }
     }
 
+    public async Task<List<PlatformBranchDto>> GetAllBranchesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                var dbBranches = await _platformAdminRepository.GetAllBranchesAsync(cancellationToken);
+                if (dbBranches.Any())
+                {
+                    return dbBranches.Select(b => new PlatformBranchDto
+                    {
+                        Id = b.Id,
+                        OrganizationId = b.OrganizationId,
+                        Name = b.Name,
+                        Location = b.Location,
+                        IsActive = b.IsActive,
+                        OrganizationName = b.OrganizationName,
+                        EffectiveLocation = b.EffectiveLocation,
+                        ClassroomsCount = b.ClassroomsCount,
+                        ChildrenCount = b.ChildrenCount
+                    }).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load branches from database; falling back to organization projection.");
+            }
+        }
+
+        // Fallback: project from existing organizations
+        var fallbackList = new List<PlatformBranchDto>();
+        foreach (var org in _organizations.Values)
+        {
+            int count = Math.Max(1, org.BranchCount);
+            for (int i = 1; i <= count; i++)
+            {
+                string bName = i == 1 ? "Main Campus" : (i == 2 ? "Annex Campus" : $"Campus {i}");
+                fallbackList.Add(new PlatformBranchDto
+                {
+                    Id = Guid.NewGuid(),
+                    OrganizationId = org.Id,
+                    Name = bName,
+                    Location = org.Location,
+                    IsActive = org.AccountStatus == AccountStatus.Active,
+                    OrganizationName = org.Name,
+                    EffectiveLocation = org.Location ?? "Location unspecified",
+                    ClassroomsCount = 3,
+                    ChildrenCount = 30
+                });
+            }
+        }
+        return fallbackList;
+    }
+
+    public async Task<PlatformBranchDto> CreateBranchAsync(Guid organizationId, string name, string? location, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                var added = await _platformAdminRepository.AddBranchAsync(organizationId, name, location, cancellationToken);
+                if (_organizations.TryGetValue(organizationId, out var org))
+                {
+                    org.BranchCount++;
+                }
+                return new PlatformBranchDto
+                {
+                    Id = added.Id,
+                    OrganizationId = added.OrganizationId,
+                    Name = added.Name,
+                    Location = added.Location,
+                    IsActive = added.IsActive,
+                    OrganizationName = added.OrganizationName,
+                    EffectiveLocation = added.EffectiveLocation,
+                    ClassroomsCount = added.ClassroomsCount,
+                    ChildrenCount = added.ChildrenCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to create branch in database; creating in-memory branch.");
+            }
+        }
+
+        var orgName = _organizations.TryGetValue(organizationId, out var o) ? o.Name : "Organization";
+        if (o != null) o.BranchCount++;
+
+        return new PlatformBranchDto
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            Name = name,
+            Location = location,
+            IsActive = true,
+            OrganizationName = orgName,
+            EffectiveLocation = location ?? "Location unspecified",
+            ClassroomsCount = 0,
+            ChildrenCount = 0
+        };
+    }
+
+    public async Task<List<PlatformAdminUserDto>> GetOrganizationAdminsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                var dbAdmins = await _platformAdminRepository.GetOrganizationAdminsAsync(cancellationToken);
+                if (dbAdmins.Any())
+                {
+                    return dbAdmins.Select(a =>
+                    {
+                        var email = a.AdminEmail;
+                        var name = a.AdminName;
+
+                        if (_organizations.TryGetValue(a.OrganizationId, out var org) && !string.IsNullOrWhiteSpace(org.AdminEmail))
+                        {
+                            email = org.AdminEmail;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(name) || name.Equals(a.OrganizationName, StringComparison.OrdinalIgnoreCase) || name == "Admin" || name == "Daycare Director")
+                        {
+                            name = DeriveDisplayNameFromEmail(email);
+                        }
+
+                        return new PlatformAdminUserDto
+                        {
+                            UserId = a.UserId,
+                            AdminName = name,
+                            AdminEmail = email,
+                            OrganizationId = a.OrganizationId,
+                            OrganizationName = a.OrganizationName,
+                            RoleName = a.RoleName,
+                            AccountStatus = a.AccountStatus
+                        };
+                    }).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load organization admins from database; falling back to in-memory projection.");
+            }
+        }
+
+        // Fallback: project from organizations
+        return _organizations.Values.Select(o => new PlatformAdminUserDto
+        {
+            UserId = Guid.NewGuid(),
+            AdminName = DeriveDisplayNameFromEmail(o.AdminEmail),
+            AdminEmail = o.AdminEmail,
+            OrganizationId = o.Id,
+            OrganizationName = o.Name,
+            RoleName = "Organization Owner",
+            AccountStatus = o.AccountStatus.ToString()
+        }).OrderBy(a => a.OrganizationName).ToList();
+    }
+
+    private static string DeriveDisplayNameFromEmail(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return "Daycare Director";
+        var localPart = email.Split('@')[0];
+        var parts = localPart.Split(new[] { '.', '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(p => !int.TryParse(p, out _))
+            .Select(p => char.ToUpperInvariant(p[0]) + (p.Length > 1 ? p[1..].ToLowerInvariant() : ""))
+            .ToList();
+
+        return parts.Count > 0 ? string.Join(" ", parts) : "Daycare Director";
+    }
+
     #endregion
 
     #region Organization CRUD
@@ -263,7 +440,7 @@ public class PlatformAdminService : IPlatformAdminService
         {
             try
             {
-                await _platformAdminRepository.ProvisionOrganizationAsync(id, name, location, adminEmail, cancellationToken);
+                await _platformAdminRepository.ProvisionOrganizationAsync(id, name, location, adminEmail, dto.BranchCount, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -277,7 +454,7 @@ public class PlatformAdminService : IPlatformAdminService
     }
 
 
-    public Task<bool> UpdateOrganizationAsync(
+    public async Task<bool> UpdateOrganizationAsync(
         Guid id,
         string name,
         string? location,
@@ -285,18 +462,50 @@ public class PlatformAdminService : IPlatformAdminService
         int branchCount,
         CancellationToken cancellationToken = default)
     {
+        var safeBranchCount = branchCount > 0 ? branchCount : 1;
+
         if (_organizations.TryGetValue(id, out var org))
         {
-            var oldName = org.Name;
             org.Name = name;
             org.Location = location;
             org.AdminEmail = adminEmail;
-            org.BranchCount = branchCount > 0 ? branchCount : 1;
-
-            AddAuditLog("Organization Updated", $"Organization '{oldName}' updated (Name: '{name}', Location: '{location}', Branches: {branchCount}).", "Info", id);
-            return Task.FromResult(true);
+            org.BranchCount = safeBranchCount;
         }
-        return Task.FromResult(false);
+        else
+        {
+            _organizations[id] = new PlatformOrganizationDto
+            {
+                Id = id,
+                TenantId = id,
+                Name = name,
+                Location = location ?? "Daycare Center",
+                BranchCount = safeBranchCount,
+                AdminEmail = adminEmail,
+                AccountStatus = AccountStatus.Active,
+                FinancialStatus = FinancialStatus.Reconciled,
+                PlanId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                PlanName = "Bloom (Growth)",
+                MonthlyRate = 299.00m,
+                NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
+                LifecycleStageKey = "Active",
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+        }
+
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                await _platformAdminRepository.UpdateOrganizationDetailsAsync(id, name, location, adminEmail, safeBranchCount, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not persist updated organization to database; updated in-memory store.");
+            }
+        }
+
+        AddAuditLog("Organization Updated", $"Organization '{name}' updated (Location: '{location}', Branches: {safeBranchCount}, Admin: '{adminEmail}').", "Info", id);
+        return true;
     }
 
     public Task<bool> UpdateAccountStatusAsync(Guid organizationId, AccountStatus newStatus, string reason, CancellationToken cancellationToken = default)

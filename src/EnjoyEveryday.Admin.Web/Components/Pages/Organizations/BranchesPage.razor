@@ -12,27 +12,186 @@
               Subtitle="Multi-branch configuration and physical campus directory across all daycare organizations.">
         <RightContent>
             <a href="/" class="btn secondary">← Back to Dashboard</a>
+            <button class="btn primary" @onclick="OpenCreateBranchModal">+ New Branch</button>
         </RightContent>
     </PageHero>
 
+    @if (!string.IsNullOrEmpty(_notificationMessage))
+    {
+        <div class="alert-banner" style="background: #e6eee9; border: 1px solid #c8dacd; color: #3e6253; padding: 12px 18px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 600;">
+            <span>✓ @_notificationMessage</span>
+            <button class="close-alert" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #3e6253;" @onclick="() => _notificationMessage = null">✕</button>
+        </div>
+    }
+
     <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
-        <p style="color: var(--muted); font-size: 14px;">Select an organization to manage classrooms, physical capacity, and localized staff assignments.</p>
-        <div style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
-            <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 14px; padding: 18px;">
-                <div style="font-weight: 750; font-size: 15px; color: var(--text);">Downtown Campus</div>
-                <div style="font-size: 12.5px; color: var(--muted); margin-top: 2px;">Little Stars Early Learning Center · Seattle, WA</div>
-                <div style="margin-top: 12px; font-size: 12px; font-weight: 650; color: var(--accent);">5 Classrooms · 64 Children</div>
+        <p style="color: var(--muted); font-size: 14px; margin-top: 0; margin-bottom: 16px;">
+            Select an organization or search branches to manage classrooms, physical capacity, and localized staff assignments.
+        </p>
+
+        <SearchFilterRow SearchPlaceholder="Search branches by name, location, or organization..." 
+                         SearchQuery="@_search" 
+                         SearchQueryChanged="OnSearch">
+            <Filters>
+                <select class="filter" @bind="_selectedOrgFilter">
+                    <option value="">All Daycare Organizations (@(_branches?.Count ?? 0) branches)</option>
+                    @foreach (var org in _organizations)
+                    {
+                        <option value="@org.Id">@org.Name</option>
+                    }
+                </select>
+            </Filters>
+        </SearchFilterRow>
+
+        @if (_isLoading)
+        {
+            <LoadingState Text="Loading branch network across all organizations..." />
+        }
+        else if (FilteredBranches.Count == 0)
+        {
+            <EmptyState Title="No branches found" Description="No daycare branches match the selected organization or search query." />
+        }
+        else
+        {
+            <div style="margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px;">
+                @foreach (var branch in FilteredBranches)
+                {
+                    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.2s ease;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                                <div style="font-weight: 750; font-size: 16px; color: var(--text);">@branch.Name</div>
+                                <span style="background: @(branch.IsActive ? "var(--accent-light, #e6eee9)" : "#fff5f5"); color: @(branch.IsActive ? "var(--accent-dark, #3e6253)" : "#9b2c2c"); border: 1px solid @(branch.IsActive ? "#c8dacd" : "#fed7d7"); border-radius: 6px; font-size: 11px; font-weight: 700; padding: 2px 7px;">
+                                    @(branch.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </div>
+                            <div style="font-size: 13px; color: var(--muted); margin-top: 4px; font-weight: 550;">
+                                @branch.OrganizationName
+                            </div>
+                            <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                                📍 @(string.IsNullOrWhiteSpace(branch.Location) ? branch.EffectiveLocation : branch.Location)
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-size: 12.5px; font-weight: 700; color: var(--accent);">
+                                @branch.ClassroomsCount Classrooms · @branch.ChildrenCount Children
+                            </div>
+                        </div>
+                    </div>
+                }
             </div>
-            <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 14px; padding: 18px;">
-                <div style="font-weight: 750; font-size: 15px; color: var(--text);">Westside Annex</div>
-                <div style="font-size: 12.5px; color: var(--muted); margin-top: 2px;">Little Stars Early Learning Center · Seattle, WA</div>
-                <div style="margin-top: 12px; font-size: 12px; font-weight: 650; color: var(--accent);">3 Classrooms · 38 Children</div>
+        }
+    </div>
+</div>
+
+<!-- CREATE BRANCH MODAL -->
+@if (_showCreateModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals" style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; backdrop-filter: blur(2px);">
+        <div class="modal-card" @onclick:stopPropagation="true" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 12px 36px rgba(0,0,0,0.2);">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--accent); letter-spacing: 0.8px;">BRANCH PROVISIONING</div>
+                    <h3 style="margin: 4px 0 0 0; font-size: 18px; font-weight: 750; color: var(--text);">Register New Branch</h3>
+                </div>
+                <button style="background: none; border: none; font-size: 18px; cursor: pointer; color: var(--muted);" @onclick="CloseModals">✕</button>
             </div>
-            <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 14px; padding: 18px;">
-                <div style="font-weight: 750; font-size: 15px; color: var(--text);">Forest Hill Main</div>
-                <div style="font-size: 12.5px; color: var(--muted); margin-top: 2px;">Nordic Pine Forest Preschool · Portland, OR</div>
-                <div style="margin-top: 12px; font-size: 12px; font-weight: 650; color: var(--accent);">4 Classrooms · 48 Children</div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="form-group">
+                    <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 6px;">Daycare Organization *</label>
+                    <select class="form-input" @bind="_newBranchOrgId" style="width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-soft); font-size: 13.5px; color: var(--text);">
+                        <option value="">-- Select Organization --</option>
+                        @foreach (var org in _organizations)
+                        {
+                            <option value="@org.Id">@org.Name (@(org.Location ?? "No location"))</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 6px;">Branch / Campus Name *</label>
+                    <input class="form-input" @bind="_newBranchName" placeholder="e.g. Adyar Campus, Downtown Center" style="width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-soft); font-size: 13.5px; color: var(--text);" />
+                </div>
+                <div class="form-group">
+                    <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text); margin-bottom: 6px;">Location / Address</label>
+                    <input class="form-input" @bind="_newBranchLocation" placeholder="e.g. Adyar, Chennai or Seattle, WA" style="width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-soft); font-size: 13.5px; color: var(--text);" />
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border);">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitCreateBranch" disabled="@(string.IsNullOrWhiteSpace(_newBranchName) || string.IsNullOrWhiteSpace(_newBranchOrgId))">
+                    Create Branch
+                </button>
             </div>
         </div>
     </div>
-</div>
+}
+
+@code {
+    private List<PlatformBranchDto>? _branches;
+    private List<PlatformOrganizationDto> _organizations = new();
+    private bool _isLoading = true;
+    private string _search = "";
+    private string _selectedOrgFilter = "";
+    private string? _notificationMessage = null;
+
+    // Modal state
+    private bool _showCreateModal = false;
+    private string _newBranchOrgId = "";
+    private string _newBranchName = "";
+    private string _newBranchLocation = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _organizations = await PlatformService.GetOrganizationsOverviewAsync();
+            _branches = await PlatformService.GetAllBranchesAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private List<PlatformBranchDto> FilteredBranches =>
+        (_branches ?? new List<PlatformBranchDto>())
+        .Where(b => (string.IsNullOrWhiteSpace(_selectedOrgFilter) || b.OrganizationId.ToString() == _selectedOrgFilter)
+                 && (string.IsNullOrWhiteSpace(_search) 
+                     || b.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                     || b.OrganizationName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                     || (b.Location != null && b.Location.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                     || (b.EffectiveLocation != null && b.EffectiveLocation.Contains(_search, StringComparison.OrdinalIgnoreCase))))
+        .OrderBy(b => b.OrganizationName)
+        .ThenBy(b => b.Name)
+        .ToList();
+
+    private void OnSearch(string val) => _search = val;
+
+    private void OpenCreateBranchModal()
+    {
+        _newBranchOrgId = !string.IsNullOrWhiteSpace(_selectedOrgFilter) ? _selectedOrgFilter : (_organizations.FirstOrDefault()?.Id.ToString() ?? "");
+        _newBranchName = "";
+        _newBranchLocation = "";
+        _showCreateModal = true;
+    }
+
+    private void CloseModals()
+    {
+        _showCreateModal = false;
+    }
+
+    private async Task SubmitCreateBranch()
+    {
+        if (string.IsNullOrWhiteSpace(_newBranchName) || !Guid.TryParse(_newBranchOrgId, out var orgId)) return;
+        var created = await PlatformService.CreateBranchAsync(orgId, _newBranchName, _newBranchLocation);
+        _notificationMessage = $"Branch '{created.Name}' registered under '{created.OrganizationName}' successfully.";
+        CloseModals();
+        await LoadDataAsync();
+    }
+}

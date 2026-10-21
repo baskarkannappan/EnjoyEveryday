@@ -137,4 +137,12 @@ public class SecurePickupRepository : ISecurePickupRepository
 
         await conn.ExecuteAsync(sql, pickup);
     }
+
+    public async Task<bool> AuthorizedPickupExistsAsync(Guid tenantId, Guid pickupId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = "SELECT 1 FROM authorized_pickups WHERE tenant_id = @TenantId AND id = @PickupId LIMIT 1";
+        var res = await conn.ExecuteScalarAsync<int?>(sql, new { TenantId = tenantId, PickupId = pickupId });
+        return res.HasValue && res.Value == 1;
+    }
 }

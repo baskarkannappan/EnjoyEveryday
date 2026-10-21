@@ -9,8 +9,8 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
     # Gemini AI configuration
-    DEFAULT_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-    DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+    DEFAULT_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+    DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "60"))
     MAX_RETRIES: int = int(os.getenv("GEMINI_MAX_RETRIES", "2"))
 
     # Server-to-server security

@@ -70,16 +70,25 @@ public static class AuthEndpoints
                 ?? await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users LIMIT 1");
             if (user != null)
             {
-                string displayName = (string?)user.display_name;
+                string displayName = (string?)user.display_name ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(displayName))
                     displayName = $"{user.first_name} {user.last_name}".Trim();
                 if (string.IsNullOrWhiteSpace(displayName))
-                    displayName = (string)user.email;
+                    displayName = (string?)user.email ?? "Teacher";
 
                 var memberships = (await conn.QueryAsync<Guid>(
                     "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
                     new { UserId = (Guid)user.id })).ToList();
-                Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault();
+                var staffOrgId = memberships.Count > 0 ? await conn.ExecuteScalarAsync<Guid?>(@"
+                    SELECT uor.organization_id 
+                    FROM user_organization_roles uor
+                    JOIN roles r ON uor.role_id = r.id
+                    WHERE uor.user_id = @UserId 
+                      AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
+                      AND uor.organization_id = ANY(@OrgIds)
+                    LIMIT 1", new { UserId = (Guid)user.id, OrgIds = memberships.ToArray() }) : null;
+
+                Guid? activeOrgId = staffOrgId ?? (memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault());
 
                 if (!activeOrgId.HasValue)
                 {
@@ -195,17 +204,17 @@ public static class AuthEndpoints
                 "SELECT id, tenant_id, is_active, display_name, first_name, last_name, email FROM users WHERE id = @UserId", 
                 new { UserId = userId.Value });
 
-            if (user == null || !user.is_active)
+            if (user == null || (bool?)user.is_active != true)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                 return Results.Redirect("/access-denied?reason=account_disabled");
             }
 
-            string displayName = (string?)user.display_name;
+            string displayName = (string?)user.display_name ?? string.Empty;
             if (string.IsNullOrWhiteSpace(displayName))
                 displayName = $"{user.first_name} {user.last_name}".Trim();
             if (string.IsNullOrWhiteSpace(displayName))
-                displayName = fullName ?? givenName ?? email ?? (string)user.email ?? "Teacher";
+                displayName = fullName ?? givenName ?? email ?? (string?)user.email ?? "Teacher";
 
             // Ensure teacher profile exists
             await conn.ExecuteAsync(@"
@@ -219,16 +228,6 @@ public static class AuthEndpoints
                 LastName = surname, 
                 DisplayName = displayName 
             });
-
-            // 6. Rebuild the claims explicitly from our trusted DB
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, ((Guid)user.id).ToString()),
-                new Claim(ClaimTypes.Name, displayName),
-                new Claim("DisplayName", displayName),
-                new Claim(ClaimTypes.Email, email ?? (string)user.email ?? string.Empty),
-                new Claim("TenantId", ((Guid)user.tenant_id).ToString())
-            };
 
             var memberships = (await conn.QueryAsync<Guid>(
                 "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
@@ -256,7 +255,35 @@ public static class AuthEndpoints
                 return Results.Redirect("/auth/access-denied?reason=no_organizations");
             }
 
-            Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault();
+            var staffOrgId = memberships.Count > 0 ? await conn.ExecuteScalarAsync<Guid?>(@"
+                SELECT uor.organization_id 
+                FROM user_organization_roles uor
+                JOIN roles r ON uor.role_id = r.id
+                WHERE uor.user_id = @UserId 
+                  AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
+                  AND uor.organization_id = ANY(@OrgIds)
+                LIMIT 1", new { UserId = userId.Value, OrgIds = memberships.ToArray() }) : null;
+
+            Guid? activeOrgId = staffOrgId ?? (memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault());
+
+            Guid effectiveTenantId = (Guid)user.tenant_id;
+            if (activeOrgId.HasValue)
+            {
+                var orgTenant = await conn.ExecuteScalarAsync<Guid?>(
+                    "SELECT tenant_id FROM organizations WHERE id = @OrgId",
+                    new { OrgId = activeOrgId.Value });
+                if (orgTenant.HasValue) effectiveTenantId = orgTenant.Value;
+            }
+
+            // 6. Rebuild the claims explicitly from our trusted DB
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, ((Guid)user.id).ToString()),
+                new Claim(ClaimTypes.Name, displayName),
+                new Claim("DisplayName", displayName),
+                new Claim(ClaimTypes.Email, email ?? (string)user.email ?? string.Empty),
+                new Claim("TenantId", effectiveTenantId.ToString())
+            };
 
             await BuildAuthClaimsAsync(conn, claims, userId.Value, activeOrgId);
 
@@ -305,7 +332,7 @@ public static class AuthEndpoints
 
                 if (orgInfo == null || (bool?)orgInfo.is_active != true) return Results.Redirect("/auth/access-denied?reason=invalid_org");
                 
-                tenantId = ((Guid)orgInfo.tenant_id).ToString();
+                tenantId = ((Guid?)orgInfo.tenant_id)?.ToString() ?? string.Empty;
             }
             else
             {

@@ -121,4 +121,10 @@ public class ChildService
         var tenantId = _tenantContext.TenantId;
         await _childRepository.DeleteAsync(tenantId, id, cancellationToken);
     }
+
+    public async Task SyncParentGuardianAsync(Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        await _childRepository.SyncParentGuardianAsync(tenantId, childId, parentEmail, parentName, relationship, phone, cancellationToken);
+    }
 }

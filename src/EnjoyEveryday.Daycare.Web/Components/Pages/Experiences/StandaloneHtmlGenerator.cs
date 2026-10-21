@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Web;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Daycare.Web.Components.Pages.Experiences;
@@ -9,12 +10,36 @@ namespace EnjoyEveryday.Daycare.Web.Components.Pages;
 
 public static class StandaloneHtmlGenerator
 {
+    public static string CleanTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "Wonder Experience";
+        var t = title.Trim();
+        // Remove repeated prefixes if compounded
+        while (t.StartsWith("The Playful World of The Playful World of", StringComparison.OrdinalIgnoreCase) ||
+               t.StartsWith("The Playful World of The Playful World Of", StringComparison.OrdinalIgnoreCase))
+        {
+            t = "The Playful World of " + t.Substring("The Playful World of The Playful World of".Length).Trim();
+        }
+        return t;
+    }
+
+    public static string CleanDescription(string? desc, string cleanTitle)
+    {
+        if (string.IsNullOrWhiteSpace(desc))
+            return "Children embark on an imaginative, playful quest turning tactile curiosity into creative storytelling, hands-on construction, and joyful collaboration.";
+        var d = desc.Trim();
+        d = Regex.Replace(d, @"the playful world of the playful world of", "the playful world of", RegexOptions.IgnoreCase);
+        return d;
+    }
+
     public static List<ExperienceStorybook.StoryChapter> BuildChapters(Experience? exp, ExperienceDna dna)
     {
         var chapters = new List<ExperienceStorybook.StoryChapter>();
-        var title = exp?.Title ?? "Wonder Experience";
-        var mission = !string.IsNullOrWhiteSpace(exp?.Description) ? exp.Description : "Discovering new wonders through playful hands and curious eyes.";
+        var cleanTitle = CleanTitle(exp?.Title);
+        var mission = !string.IsNullOrWhiteSpace(exp?.Description) ? CleanDescription(exp.Description, cleanTitle) : "Discovering new wonders through playful hands and curious eyes.";
         var challenge = !string.IsNullOrWhiteSpace(dna.Challenge) ? dna.Challenge : "Explore materials, test ideas, and discover something surprising together.";
+        // Clean double prefixes in challenge
+        challenge = Regex.Replace(challenge, @"our the playful world of", "our playful world of", RegexOptions.IgnoreCase);
         var create = !string.IsNullOrWhiteSpace(dna.Create) ? dna.Create : "Children engage hands-on with organic shapes, sensory textures, and spontaneous creation.";
         var magic = !string.IsNullOrWhiteSpace(dna.MagicMoment) ? dna.MagicMoment : "A sudden flash of excitement when materials combine in an unexpected, beautiful way.";
         var accomplishment = !string.IsNullOrWhiteSpace(dna.Accomplishment) ? dna.Accomplishment : "Children beam with pride as they showcase their creation to friends.";
@@ -23,27 +48,81 @@ public static class StandaloneHtmlGenerator
         if (dna.ExecutionGuide?.Phases != null && dna.ExecutionGuide.Phases.Count >= 3)
         {
             var phases = dna.ExecutionGuide.Phases;
-            string[] sceneKeys = { "gathering", "challenge", "explore", "magic", "reflection" };
+            int count = phases.Count;
 
-            for (int i = 0; i < phases.Count; i++)
+            for (int i = 0; i < count; i++)
             {
                 var p = phases[i];
-                var sceneKey = sceneKeys[Math.Min(i, sceneKeys.Length - 1)];
-                var prompt = i == 0 ? (dna.ExecutionGuide.Ask ?? "What curious things do you see here?") :
-                             i == 1 ? challenge :
-                             i == phases.Count - 1 ? reflection : magic;
+                string sceneKey;
+                string icon;
+                string narrative;
+                string teacherScript;
+                string wonderPrompt;
+
+                if (i == 0)
+                {
+                    sceneKey = "gathering";
+                    icon = "🌿";
+                    narrative = $"Welcome the children warmly onto the circle rug. Lay out tactile materials within easy reach. Invite curious little hands to explore textures and share observations before construction begins.";
+                    teacherScript = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.TeacherIntroduction)
+                        ? dna.ExecutionGuide.TeacherIntroduction
+                        : $"\"Welcome, explorers! Look at what's waiting in our basket today. What do your fingers notice when you touch these materials?\"";
+                    wonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does this feel like in your hands? Have you ever seen this before?";
+                }
+                else if (i == count - 1)
+                {
+                    sceneKey = "reflection";
+                    icon = "🌟";
+                    narrative = $"Gather back together into a cozy reflection circle. Celebrate each child's creativity and effort with warmth. {accomplishment}. The memories made today will stay warmly in our hearts.";
+                    teacherScript = $"\"Let's celebrate our wonderful creations! Who would like to show what surprised them most while building today?\"";
+                    wonderPrompt = !string.IsNullOrWhiteSpace(reflection) ? reflection : "What was your favorite part of today's adventure? Who would you like to share this story with?";
+                }
+                else if (count == 3) // middle phase for a 3-step experience
+                {
+                    sceneKey = "explore";
+                    icon = "🎨";
+                    narrative = $"The room fills with the happy hum of active creation. {create}. Little hands mold, balance, test, and arrange materials into brand new worlds.";
+                    teacherScript = $"\"Look what happens when these two materials meet! There are no wrong answers here—what would you like to invent next?\"";
+                    wonderPrompt = challenge;
+                }
+                else if (i == 1 && count >= 4)
+                {
+                    sceneKey = "challenge";
+                    icon = "🔍";
+                    narrative = $"Pose the gentle wonder challenge: {challenge}. There are no right or wrong answers—only open invitations to experiment, hypothesize, and create.";
+                    teacherScript = $"\"I wonder what secret worlds we can build if we work together? What happens if we try this?\"";
+                    wonderPrompt = challenge;
+                }
+                else if (i == 2 && count >= 4)
+                {
+                    sceneKey = "explore";
+                    icon = "🎨";
+                    narrative = $"Deep creative flow takes over. Children sort, build, balance, and problem-solve together with focused, joyful energy.";
+                    teacherScript = $"\"You found a whole new way to connect those pieces! Tell me about what's happening in your creation.\"";
+                    wonderPrompt = "Look what happens when these textures combine! What story is your creation telling?";
+                }
+                else
+                {
+                    sceneKey = "magic";
+                    icon = "✨";
+                    narrative = $"A breakthrough moment of discovery! {magic}. A shared ripple of delight touches every heart in the room.";
+                    teacherScript = $"\"You discovered that all on your own! How did that happen? Can we try it together?\"";
+                    wonderPrompt = "Did you see that? What made it happen? Can we do it again?";
+                }
 
                 chapters.Add(new ExperienceStorybook.StoryChapter
                 {
                     Number = i + 1,
                     Title = string.IsNullOrWhiteSpace(p.Name) ? $"Step {i + 1}" : p.Name,
-                    PhaseTag = i == 0 ? "Step 1: Setup & Invitation" : i == phases.Count - 1 ? $"Step {i + 1}: Reflection & Sharing" : $"Step {i + 1}: Hands-On Action",
+                    PhaseTag = i == 0 ? "Step 1: Setup & Invitation" : i == count - 1 ? $"Step {i + 1}: Reflection & Sharing" : $"Step {i + 1}: Hands-On Action",
                     Duration = p.DurationMinutes > 0 ? $"{p.DurationMinutes} min" : "5 min",
-                    Narrative = $"Welcome to our journey with {title}. {p.ChildrenDo}. Every little movement brings a new spark of joyful understanding.",
+                    Narrative = narrative,
                     ChildrenAction = string.IsNullOrWhiteSpace(p.ChildrenDo) ? "Children explore with open hands and focused curiosity." : p.ChildrenDo,
                     TeacherSpark = string.IsNullOrWhiteSpace(p.TeacherDoes) ? "Observe and offer open-ended support when invited." : p.TeacherDoes,
-                    WonderPrompt = prompt,
-                    SvgSceneKey = sceneKey
+                    WonderPrompt = wonderPrompt,
+                    SvgSceneKey = sceneKey,
+                    TeacherScript = teacherScript,
+                    StepIcon = icon
                 });
             }
         }
@@ -55,11 +134,13 @@ public static class StandaloneHtmlGenerator
                 Title = "The Gathering & Setup Invitation",
                 PhaseTag = "Step 1: Setup & Invitation",
                 Duration = "5 min",
-                Narrative = $"Prepare the low circle table or exploration rug. Place tactile elements within reach. Children gather closely to inspect the materials with open curiosity.",
+                Narrative = "Prepare the low circle table or exploration rug. Place tactile elements within reach. Children gather closely to inspect the materials with open curiosity.",
                 ChildrenAction = "Children gather around the sensory rug, feeling the smooth textures and whispering guesses about today's mystery.",
                 TeacherSpark = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.TeacherIntroduction) ? dna.ExecutionGuide.TeacherIntroduction : "Present the mystery basket with calm excitement. Ask: 'What curious secrets are hiding inside?'",
                 WonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does this feel like in your hands? Have you ever seen this before?",
-                SvgSceneKey = "gathering"
+                SvgSceneKey = "gathering",
+                TeacherScript = "\"Come gather close, little explorers! What do your fingers notice when you touch these materials?\"",
+                StepIcon = "🌿"
             });
 
             chapters.Add(new ExperienceStorybook.StoryChapter
@@ -72,7 +153,9 @@ public static class StandaloneHtmlGenerator
                 ChildrenAction = "Children examine their tools, turn them over in their fingers, and whisper ideas to their neighbor with joyful energy.",
                 TeacherSpark = "Frame the challenge as an adventure. Encourage each child that every idea is valuable and worth trying.",
                 WonderPrompt = "How do you think we can make this work? What if we try it together?",
-                SvgSceneKey = "challenge"
+                SvgSceneKey = "challenge",
+                TeacherScript = "\"I wonder what will happen if we test these ideas together? What does your curiosity tell you?\"",
+                StepIcon = "🔍"
             });
 
             chapters.Add(new ExperienceStorybook.StoryChapter
@@ -85,7 +168,9 @@ public static class StandaloneHtmlGenerator
                 ChildrenAction = "Deeply engaged in flow state: sorting colors, building structures, testing balance, and sharing supplies kindly.",
                 TeacherSpark = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Watch) ? dna.ExecutionGuide.Watch : "Observe problem-solving moments. Notice who collaborates and who finds a peaceful solo focus.",
                 WonderPrompt = "Look what happens when these two come together! What story is your creation telling?",
-                SvgSceneKey = "explore"
+                SvgSceneKey = "explore",
+                TeacherScript = "\"Look at that balance! Tell me what you're imagining as your hands build this.\"",
+                StepIcon = "🎨"
             });
 
             chapters.Add(new ExperienceStorybook.StoryChapter
@@ -98,7 +183,9 @@ public static class StandaloneHtmlGenerator
                 ChildrenAction = "Eyes widen with excitement, pointing out their breakthrough to friends with wide, luminous smiles.",
                 TeacherSpark = "Celebrate the discovery immediately! Say: 'You discovered that all on your own! How did that happen?'",
                 WonderPrompt = "Did you see that? What made it happen? Can we do it again?",
-                SvgSceneKey = "magic"
+                SvgSceneKey = "magic",
+                TeacherScript = "\"You discovered that all on your own! Look at that wonderful breakthrough!\"",
+                StepIcon = "✨"
             });
 
             chapters.Add(new ExperienceStorybook.StoryChapter
@@ -111,7 +198,9 @@ public static class StandaloneHtmlGenerator
                 ChildrenAction = "Children proudly present their work, explain their creative decisions, and help tidy up their sanctuary.",
                 TeacherSpark = "Capture the moment with a warm photo or learning note. Guide a closing gratitude breath for our journey together.",
                 WonderPrompt = "What was your favorite part of today's adventure? Who would you like to share this story with?",
-                SvgSceneKey = "reflection"
+                SvgSceneKey = "reflection",
+                TeacherScript = "\"Let's celebrate each of our creations. What was your favorite surprise today?\"",
+                StepIcon = "🌟"
             });
         }
 
@@ -120,6 +209,7 @@ public static class StandaloneHtmlGenerator
 
     public static string GenerateStorybookHtml(Experience exp, ExperienceDna dna)
     {
+        var cleanTitle = CleanTitle(exp.Title);
         var chapters = BuildChapters(exp, dna);
         var ageRange = dna.AgeMin > 0 && dna.AgeMax > 0 ? $"{dna.AgeMin}-{dna.AgeMax} yrs" : "3-5 yrs";
         var setting = !string.IsNullOrWhiteSpace(dna.Environment) ? dna.Environment : "Indoor / Outdoor";
@@ -138,8 +228,8 @@ public static class StandaloneHtmlGenerator
             : $"Created {exp.CreatedAt:MMM dd, yyyy}";
 
         return GenerateHtml(
-            exp.Title ?? "Wonder Experience",
-            exp.Description ?? "",
+            cleanTitle,
+            CleanDescription(exp.Description, cleanTitle),
             ageRange,
             setting,
             duration,
@@ -172,7 +262,7 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("<head>");
         sb.AppendLine("  <meta charset=\"UTF-8\">");
         sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"  <title>{HttpUtility.HtmlEncode(title)} — Activity Playbook DIY Manual</title>");
+        sb.AppendLine($"  <title>{HttpUtility.HtmlEncode(title)} — Activity Storyboard & Playbook</title>");
         sb.AppendLine("  <style>");
         sb.AppendLine(@"
     :root {
@@ -192,15 +282,16 @@ public static class StandaloneHtmlGenerator
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: ""Figtree"", -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif;
+      font-family: ""Figtree"", Inter, -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
-      padding: 30px 24px 60px;
+      padding: 24px 20px 60px;
+      -webkit-font-smoothing: antialiased;
     }
 
     .container {
-      max-width: 1440px;
+      max-width: 1400px;
       margin: 0 auto;
     }
 
@@ -209,8 +300,8 @@ public static class StandaloneHtmlGenerator
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 24px;
-      margin-bottom: 26px;
+      gap: 20px;
+      margin-bottom: 24px;
       flex-wrap: wrap;
     }
 
@@ -224,6 +315,7 @@ public static class StandaloneHtmlGenerator
       color: var(--accent-dark);
       text-transform: uppercase;
       margin-bottom: 8px;
+      flex-wrap: wrap;
     }
 
     .badge-pill {
@@ -248,11 +340,11 @@ public static class StandaloneHtmlGenerator
     }
 
     .hero-title {
-      font-size: 32px;
+      font-size: 30px;
       font-weight: 800;
       letter-spacing: -0.5px;
       color: var(--text);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .hero-desc {
@@ -301,11 +393,44 @@ public static class StandaloneHtmlGenerator
       background: var(--surface-soft);
     }
 
+    /* Mode Switcher Bar */
+    .view-toggle-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      padding: 6px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 22px;
+      width: fit-content;
+    }
+
+    .view-toggle-btn {
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .view-toggle-btn.active {
+      background: var(--accent-light);
+      color: var(--accent-dark);
+    }
+
     /* Split Layout */
     .split-layout {
       display: grid;
       grid-template-columns: 360px 1fr;
-      gap: 28px;
+      gap: 24px;
       align-items: flex-start;
     }
 
@@ -317,7 +442,7 @@ public static class StandaloneHtmlGenerator
     .sidebar {
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 18px;
     }
 
     .card {
@@ -325,18 +450,18 @@ public static class StandaloneHtmlGenerator
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 20px;
+      padding: 18px 20px;
     }
 
     .card-title-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .card-title {
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 750;
       color: var(--text);
       display: flex;
@@ -355,7 +480,7 @@ public static class StandaloneHtmlGenerator
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-radius: 12px;
       border: 1px solid transparent;
       background: var(--surface-soft);
@@ -375,25 +500,24 @@ public static class StandaloneHtmlGenerator
       border-color: var(--accent);
     }
 
-    .step-num {
-      width: 28px;
-      height: 28px;
+    .step-icon-badge {
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       background: white;
-      color: var(--accent-dark);
-      font-size: 13px;
-      font-weight: 800;
+      font-size: 15px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
       border: 1px solid var(--border);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
     }
 
-    .step-btn.active .step-num {
-      background: var(--accent);
-      color: white;
+    .step-btn.active .step-icon-badge {
       border-color: var(--accent);
+      background: #ffffff;
+      transform: scale(1.05);
     }
 
     .step-text h4 {
@@ -425,7 +549,7 @@ public static class StandaloneHtmlGenerator
 
     /* Teacher observation cues */
     .cue-item {
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .cue-item:last-child { margin-bottom: 0; }
@@ -445,33 +569,34 @@ public static class StandaloneHtmlGenerator
     .cue-try { background: #fbeee8; color: #8f402c; }
 
     .cue-item p {
-      font-size: 12.5px;
+      font-size: 12px;
       color: #435149;
       line-height: 1.45;
     }
 
-    /* DIY Manual Step Card */
+    /* Main Storyboard Stage */
     .stage {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 24px;
+      padding: 22px 24px;
+      transition: all 0.3s ease;
     }
 
     .stage-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
-      padding-bottom: 14px;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
       border-bottom: 1px solid var(--border);
     }
 
     .scene-meta-row {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     .scene-tag {
@@ -482,11 +607,13 @@ public static class StandaloneHtmlGenerator
       padding: 4px 12px;
       border-radius: 6px;
       text-transform: uppercase;
+      letter-spacing: 0.4px;
     }
 
     .dots-nav {
       display: flex;
       gap: 6px;
+      align-items: center;
     }
 
     .dot {
@@ -500,18 +627,19 @@ public static class StandaloneHtmlGenerator
 
     .dot.active {
       background: var(--accent);
-      transform: scale(1.3);
+      transform: scale(1.35);
     }
 
-    /* DIY Layout: Diagram on Left, Step Instructions on Right */
+    /* Storyboard Grid: Diagram + Story Instructions */
     .diy-step-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1.1fr 1fr;
       gap: 24px;
-      margin-bottom: 24px;
+      margin-bottom: 22px;
+      align-items: stretch;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 950px) {
       .diy-step-grid { grid-template-columns: 1fr; }
     }
 
@@ -522,6 +650,7 @@ public static class StandaloneHtmlGenerator
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
     }
 
     .diagram-header {
@@ -540,42 +669,47 @@ public static class StandaloneHtmlGenerator
 
     .diagram-canvas {
       width: 100%;
-      height: 280px;
+      height: 340px;
       display: flex;
       align-items: center;
       justify-content: center;
+      background: #fdfbf7;
+      position: relative;
     }
 
     .diagram-canvas svg {
       width: 100%;
       height: 100%;
-      object-fit: contain;
+      object-fit: cover;
+      display: block;
     }
 
     .diy-info-box {
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      gap: 14px;
     }
 
     .scene-heading {
-      font-size: 24px;
+      font-size: 23px;
       font-weight: 800;
       letter-spacing: -0.4px;
       color: var(--text);
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
+    /* Narrative Flow Callout */
     .instruction-callout {
       background: var(--surface-soft);
       border-left: 4px solid var(--accent);
-      padding: 14px 16px;
+      padding: 12px 16px;
       border-radius: 0 10px 10px 0;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .instruction-callout h5 {
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 800;
       text-transform: uppercase;
       color: var(--accent-dark);
@@ -584,8 +718,36 @@ public static class StandaloneHtmlGenerator
     }
 
     .instruction-callout p {
-      font-size: 13.5px;
+      font-size: 13px;
       color: #313f38;
+      line-height: 1.5;
+    }
+
+    /* Teacher Spoken Script Box (What to say aloud) */
+    .teacher-script-callout {
+      background: #fbf7ef;
+      border: 1px solid #ebdcc5;
+      padding: 12px 14px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+
+    .script-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #8c5a1e;
+      margin-bottom: 4px;
+    }
+
+    .script-text {
+      font-size: 13px;
+      font-style: italic;
+      color: #4f3b20;
       line-height: 1.5;
     }
 
@@ -594,7 +756,7 @@ public static class StandaloneHtmlGenerator
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .action-card {
@@ -609,7 +771,7 @@ public static class StandaloneHtmlGenerator
       align-items: center;
       gap: 6px;
       font-weight: 750;
-      font-size: 12px;
+      font-size: 11.5px;
       margin-bottom: 4px;
     }
 
@@ -617,7 +779,7 @@ public static class StandaloneHtmlGenerator
     .teacher-action .action-header { color: #855e39; }
 
     .action-card p {
-      font-size: 12.5px;
+      font-size: 12px;
       color: #4b5850;
       line-height: 1.45;
     }
@@ -625,7 +787,7 @@ public static class StandaloneHtmlGenerator
     .wonder-box {
       background: #fffbeb;
       border: 1px solid #fef3c7;
-      padding: 12px 16px;
+      padding: 11px 14px;
       border-radius: 10px;
       display: flex;
       align-items: center;
@@ -634,11 +796,11 @@ public static class StandaloneHtmlGenerator
 
     .wonder-box strong {
       color: #92400e;
-      font-size: 12.5px;
+      font-size: 12px;
     }
 
     .wonder-box span {
-      font-size: 12.5px;
+      font-size: 12px;
       color: #78350f;
     }
 
@@ -647,16 +809,26 @@ public static class StandaloneHtmlGenerator
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-top: 18px;
+      padding-top: 16px;
       border-top: 1px solid var(--border);
+    }
+
+    /* Storyboard Presentation Mode Styles */
+    .storyboard-mode .diy-step-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .storyboard-mode .diagram-canvas {
+      height: 440px;
     }
 
     /* Print View */
     @media print {
       body { background: white; padding: 0; }
-      .hero-actions, .stage-bottom, .dots-nav { display: none !important; }
+      .hero-actions, .stage-bottom, .dots-nav, .view-toggle-bar { display: none !important; }
       .split-layout { display: block; }
       .stage { page-break-after: always; box-shadow: none; border: 1px solid #ccc; margin-bottom: 30px; }
+      .diagram-canvas { height: 260px; }
     }
   </style>");
         sb.AppendLine("</head>");
@@ -669,7 +841,7 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("      <div>");
         sb.AppendLine("        <div class=\"hero-eyebrow\">");
         sb.AppendLine("          <span>📐</span>");
-        sb.AppendLine("          <span>ACTIVITY PLAYBOOK — DIY EDUCATOR MANUAL</span>");
+        sb.AppendLine("          <span>ACTIVITY STORYBOARD &amp; PLAYBOOK MANUAL</span>");
         sb.AppendLine($"          <span class=\"badge-pill\">Ages {HttpUtility.HtmlEncode(ageRange)}</span>");
         sb.AppendLine($"          <span class=\"badge-pill setting-pill\">{HttpUtility.HtmlEncode(setting)}</span>");
         if (!string.IsNullOrWhiteSpace(versionInfo))
@@ -681,12 +853,18 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine($"        <p class=\"hero-desc\">{HttpUtility.HtmlEncode(description)}</p>");
         sb.AppendLine("      </div>");
         sb.AppendLine("      <div class=\"hero-actions\">");
-        sb.AppendLine("        <button class=\"btn secondary\" onclick=\"window.print()\">🖨️ Print DIY Manual</button>");
+        sb.AppendLine("        <button class=\"btn secondary\" onclick=\"window.print()\">🖨️ Print Storyboard</button>");
         sb.AppendLine("      </div>");
         sb.AppendLine("    </header>");
 
+        // View Mode Switcher
+        sb.AppendLine("    <div class=\"view-toggle-bar\">");
+        sb.AppendLine("      <button class=\"view-toggle-btn active\" id=\"btnModeSplit\" onclick=\"setMode('split')\">📋 Activity Manual</button>");
+        sb.AppendLine("      <button class=\"view-toggle-btn\" id=\"btnModeSlide\" onclick=\"setMode('slide')\">🎨 Visual Storyboard</button>");
+        sb.AppendLine("    </div>");
+
         // Split Layout
-        sb.AppendLine("    <div class=\"split-layout\">");
+        sb.AppendLine("    <div class=\"split-layout\" id=\"layoutContainer\">");
 
         // Sidebar
         sb.AppendLine("      <aside class=\"sidebar\">");
@@ -694,7 +872,7 @@ public static class StandaloneHtmlGenerator
         // Step Navigation Stepper
         sb.AppendLine("        <div class=\"card\">");
         sb.AppendLine("          <div class=\"card-title-row\">");
-        sb.AppendLine("            <div class=\"card-title\"><span>📋</span> Manual Steps</div>");
+        sb.AppendLine("            <div class=\"card-title\"><span>📋</span> Storyboard Steps</div>");
         sb.AppendLine($"            <span style=\"font-size: 12px; font-weight: 700; color: var(--accent-dark);\">~{durationMinutes} min</span>");
         sb.AppendLine("          </div>");
         sb.AppendLine("          <div class=\"stepper\" id=\"stepperContainer\">");
@@ -703,8 +881,9 @@ public static class StandaloneHtmlGenerator
         {
             var ch = chapters[i];
             var activeClass = i == 0 ? " active" : "";
+            var icon = !string.IsNullOrWhiteSpace(ch.StepIcon) ? ch.StepIcon : "🌿";
             sb.AppendLine($"            <button class=\"step-btn{activeClass}\" onclick=\"goToChapter({i})\" id=\"step-{i}\">");
-            sb.AppendLine($"              <div class=\"step-num\">{i + 1}</div>");
+            sb.AppendLine($"              <div class=\"step-icon-badge\">{icon}</div>");
             sb.AppendLine("              <div class=\"step-text\">");
             sb.AppendLine($"                <h4>{HttpUtility.HtmlEncode(ch.Title)}</h4>");
             sb.AppendLine($"                <p>{HttpUtility.HtmlEncode(ch.PhaseTag)} • {HttpUtility.HtmlEncode(ch.Duration)}</p>");
@@ -762,7 +941,7 @@ public static class StandaloneHtmlGenerator
 
         sb.AppendLine("      </aside>");
 
-        // Stage Main (DIY User Manual Step with Diagram on Left, Step Instructions on Right)
+        // Stage Main (Visual Storyboard Step with Diagram + Pedagogy)
         sb.AppendLine("      <main>");
         sb.AppendLine("        <div class=\"stage\" id=\"stageElement\">");
         sb.AppendLine("          <div class=\"stage-top\">");
@@ -785,7 +964,7 @@ public static class StandaloneHtmlGenerator
         // Diagram on Left
         sb.AppendLine("            <div class=\"diy-diagram-box\">");
         sb.AppendLine("              <div class=\"diagram-header\">");
-        sb.AppendLine("                <span>🎨 Instructional Diagram</span>");
+        sb.AppendLine("                <span>🎨 Visual Blueprint Scene</span>");
         sb.AppendLine("                <span id=\"diagramStepNum\">STEP 1</span>");
         sb.AppendLine("              </div>");
         sb.AppendLine("              <div class=\"diagram-canvas\" id=\"svgBackdrop\">");
@@ -800,10 +979,23 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("            <div class=\"diy-info-box\">");
         sb.AppendLine("              <div>");
         sb.AppendLine("                <h2 class=\"scene-heading\" id=\"chapterTitle\">" + HttpUtility.HtmlEncode(chapters[0].Title) + "</h2>");
+        
+        // Narrative Callout
         sb.AppendLine("                <div class=\"instruction-callout\">");
-        sb.AppendLine("                  <h5>Educator Activity Guide</h5>");
+        sb.AppendLine("                  <h5>Pedagogical Story Flow</h5>");
         sb.AppendLine("                  <p id=\"chapterNarrative\">" + HttpUtility.HtmlEncode(chapters[0].Narrative) + "</p>");
         sb.AppendLine("                </div>");
+
+        // Teacher Script Callout
+        sb.AppendLine("                <div class=\"teacher-script-callout\">");
+        sb.AppendLine("                  <div class=\"script-header\">");
+        sb.AppendLine("                    <span>🗣️</span>");
+        sb.AppendLine("                    <strong>Teacher's Spoken Script (Say Aloud)</strong>");
+        sb.AppendLine("                  </div>");
+        sb.AppendLine("                  <p class=\"script-text\" id=\"teacherScript\">" + HttpUtility.HtmlEncode(chapters[0].TeacherScript) + "</p>");
+        sb.AppendLine("                </div>");
+
+        // Perspectives Grid
         sb.AppendLine("                <div class=\"actions-grid\">");
         sb.AppendLine("                  <div class=\"action-card child-action\">");
         sb.AppendLine("                    <div class=\"action-header\">👧👦 Children Action</div>");
@@ -839,7 +1031,7 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("    </div>"); // end split-layout
         sb.AppendLine("  </div>"); // end container
 
-        // Embed Chapters JSON & Interactive JS (without audio)
+        // Embed Chapters JSON & Interactive JS
         sb.AppendLine("  <script>");
         sb.AppendLine("    const chapters = [");
         for (int i = 0; i < chapters.Count; i++)
@@ -851,6 +1043,7 @@ public static class StandaloneHtmlGenerator
             sb.AppendLine($"        phaseTag: {System.Text.Json.JsonSerializer.Serialize(ch.PhaseTag)},");
             sb.AppendLine($"        duration: {System.Text.Json.JsonSerializer.Serialize(ch.Duration)},");
             sb.AppendLine($"        narrative: {System.Text.Json.JsonSerializer.Serialize(ch.Narrative)},");
+            sb.AppendLine($"        teacherScript: {System.Text.Json.JsonSerializer.Serialize(ch.TeacherScript)},");
             sb.AppendLine($"        childAction: {System.Text.Json.JsonSerializer.Serialize(ch.ChildrenAction)},");
             sb.AppendLine($"        teacherSpark: {System.Text.Json.JsonSerializer.Serialize(ch.TeacherSpark)},");
             sb.AppendLine($"        wonderPrompt: {System.Text.Json.JsonSerializer.Serialize(ch.WonderPrompt)},");
@@ -869,6 +1062,24 @@ public static class StandaloneHtmlGenerator
 
         sb.AppendLine(@"
     let currentIndex = 0;
+    let currentMode = 'split';
+
+    function setMode(mode) {
+      currentMode = mode;
+      const stage = document.getElementById('stageElement');
+      const btnSplit = document.getElementById('btnModeSplit');
+      const btnSlide = document.getElementById('btnModeSlide');
+
+      if (mode === 'slide') {
+        stage.classList.add('storyboard-mode');
+        btnSlide.classList.add('active');
+        btnSplit.classList.remove('active');
+      } else {
+        stage.classList.remove('storyboard-mode');
+        btnSplit.classList.add('active');
+        btnSlide.classList.remove('active');
+      }
+    }
 
     function goToChapter(index) {
       if (index < 0 || index >= chapters.length) return;
@@ -895,6 +1106,7 @@ public static class StandaloneHtmlGenerator
       document.getElementById('diagramStepNum').innerText = `STEP ${currentIndex + 1}`;
       document.getElementById('chapterTitle').innerText = ch.title;
       document.getElementById('chapterNarrative').innerText = ch.narrative;
+      document.getElementById('teacherScript').innerText = ch.teacherScript;
       document.getElementById('childAction').innerText = ch.childAction;
       document.getElementById('teacherSpark').innerText = ch.teacherSpark;
       document.getElementById('wonderPrompt').innerText = ch.wonderPrompt;
@@ -944,226 +1156,295 @@ public static class StandaloneHtmlGenerator
         return key switch
         {
             "gathering" => @"
-<svg viewBox=""0 0 800 320"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
+<svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
   <defs>
-    <linearGradient id=""skyWarm"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
-      <stop offset=""0%"" stop-color=""#fdf8f0""/>
-      <stop offset=""100%"" stop-color=""#eef5f1""/>
+    <linearGradient id=""gSky"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#fdfbf7""/>
+      <stop offset=""60%"" stop-color=""#f4efe5""/>
+      <stop offset=""100%"" stop-color=""#e9f0eb""/>
     </linearGradient>
-    <radialGradient id=""sunRays"" cx=""50%"" cy=""20%"" r=""60%"">
-      <stop offset=""0%"" stop-color=""rgba(244, 216, 154, 0.45)""/>
-      <stop offset=""100%"" stop-color=""rgba(244, 216, 154, 0)""/>
+    <radialGradient id=""gSun"" cx=""400"" cy=""90"" r=""220"" gradientUnits=""userSpaceOnUse"">
+      <stop offset=""0%"" stop-color=""#faeecf"" stop-opacity=""0.7""/>
+      <stop offset=""60%"" stop-color=""#faeecf"" stop-opacity=""0.2""/>
+      <stop offset=""100%"" stop-color=""#faeecf"" stop-opacity=""0""/>
     </radialGradient>
+    <linearGradient id=""gWood"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""0%"">
+      <stop offset=""0%"" stop-color=""#dcc9a8""/>
+      <stop offset=""50%"" stop-color=""#ebd8ba""/>
+      <stop offset=""100%"" stop-color=""#d5bf9b""/>
+    </linearGradient>
   </defs>
-  <rect width=""800"" height=""320"" fill=""url(#skyWarm)""/>
-  <circle cx=""400"" cy=""70"" r=""180"" fill=""url(#sunRays)""/>
-  
-  <!-- Arched Window -->
-  <path d=""M 320 220 L 320 110 C 320 65, 480 65, 480 110 L 480 220 Z"" fill=""#ffffff"" stroke=""#d9e2db"" stroke-width=""5""/>
-  <line x1=""400"" y1=""70"" x2=""400"" y2=""220"" stroke=""#d9e2db"" stroke-width=""3""/>
-  <line x1=""320"" y1=""140"" x2=""480"" y2=""140"" stroke=""#d9e2db"" stroke-width=""3""/>
-  
-  <!-- Gentle Sun beams -->
-  <polygon points=""330,220 250,300 550,300 470,220"" fill=""rgba(255,255,255,0.4)""/>
 
-  <!-- Floorboards -->
-  <line x1=""0"" y1=""240"" x2=""800"" y2=""240"" stroke=""#e0e6e1"" stroke-width=""2""/>
-  <line x1=""100"" y1=""240"" x2=""50"" y2=""320"" stroke=""#e8ede8"" stroke-width=""1.5""/>
-  <line x1=""260"" y1=""240"" x2=""220"" y2=""320"" stroke=""#e8ede8"" stroke-width=""1.5""/>
-  <line x1=""540"" y1=""240"" x2=""580"" y2=""320"" stroke=""#e8ede8"" stroke-width=""1.5""/>
-  <line x1=""700"" y1=""240"" x2=""750"" y2=""320"" stroke=""#e8ede8"" stroke-width=""1.5""/>
+  <!-- Background Wall -->
+  <rect width=""800"" height=""360"" fill=""url(#gSky)""/>
+  <circle cx=""400"" cy=""90"" r=""220"" fill=""url(#gSun)""/>
 
-  <!-- Cozy Round Rug -->
-  <ellipse cx=""400"" cy=""265"" rx=""240"" ry=""42"" fill=""#e6eee9"" stroke=""#557c6c"" stroke-width=""3"" stroke-dasharray=""6 4""/>
-  <ellipse cx=""400"" cy=""265"" rx=""190"" ry=""32"" fill=""#f5efe3""/>
+  <!-- Grand Arched Studio Window -->
+  <path d=""M 300 240 L 300 120 C 300 65, 500 65, 500 120 L 500 240 Z"" fill=""#ffffff"" stroke=""#d9e2db"" stroke-width=""6""/>
+  <line x1=""400"" y1=""72"" x2=""400"" y2=""240"" stroke=""#d9e2db"" stroke-width=""3""/>
+  <line x1=""300"" y1=""150"" x2=""500"" y2=""150"" stroke=""#d9e2db"" stroke-width=""3""/>
+  <polygon points=""310,240 220,330 580,330 490,240"" fill=""rgba(255,255,255,0.45)""/>
 
-  <!-- Hanging Potted Plant (Left) -->
-  <line x1=""200"" y1=""0"" x2=""200"" y2=""90"" stroke=""#7c877f"" stroke-width=""2""/>
-  <path d=""M 185 90 L 215 90 L 208 115 L 192 115 Z"" fill=""#d9826c""/>
-  <path d=""M 200 90 Q 170 120 180 140 Q 195 120 200 90"" fill=""#557c6c""/>
-  <path d=""M 200 90 Q 230 115 220 145 Q 205 125 200 90"" fill=""#3e6253""/>
-  <path d=""M 200 90 Q 200 135 205 155 Q 210 130 200 90"" fill=""#78998a""/>
+  <!-- Scandinavian Floor & Horizon -->
+  <line x1=""0"" y1=""255"" x2=""800"" y2=""255"" stroke=""#e0e6e1"" stroke-width=""2""/>
+  <line x1=""90"" y1=""255"" x2=""30"" y2=""360"" stroke=""#e8ede8"" stroke-width=""1.5""/>
+  <line x1=""240"" y1=""255"" x2=""190"" y2=""360"" stroke=""#e8ede8"" stroke-width=""1.5""/>
+  <line x1=""560"" y1=""255"" x2=""610"" y2=""360"" stroke=""#e8ede8"" stroke-width=""1.5""/>
+  <line x1=""710"" y1=""255"" x2=""770"" y2=""360"" stroke=""#e8ede8"" stroke-width=""1.5""/>
 
-  <!-- Potted Fiddle Leaf (Right) -->
-  <path d=""M 605 240 L 635 240 L 630 268 L 610 268 Z"" fill=""#df9b3a""/>
-  <path d=""M 620 240 Q 610 180 625 150"" stroke=""#3e6253"" stroke-width=""4"" fill=""none""/>
-  <ellipse cx=""615"" cy=""175"" rx=""18"" ry=""10"" fill=""#557c6c"" transform=""rotate(-25 615 175)""/>
-  <ellipse cx=""635"" cy=""155"" rx=""20"" ry=""12"" fill=""#3e6253"" transform=""rotate(20 635 155)""/>
-  <ellipse cx=""620"" cy=""140"" rx=""16"" ry=""10"" fill=""#78998a""/>
+  <!-- Large Braided Woven Circle Rug with Fringe -->
+  <ellipse cx=""400"" cy=""285"" rx=""270"" ry=""56"" fill=""#e6eee9"" stroke=""#557c6c"" stroke-width=""3.5"" stroke-dasharray=""7 5""/>
+  <ellipse cx=""400"" cy=""285"" rx=""220"" ry=""44"" fill=""#f5efe3"" stroke=""#d9caa8"" stroke-width=""2""/>
 
-  <!-- Explorer Cushions -->
-  <ellipse cx=""280"" cy=""268"" rx=""35"" ry=""16"" fill=""#f4d89a"" stroke=""#df9b3a"" stroke-width=""2""/>
-  <ellipse cx=""520"" cy=""268"" rx=""35"" ry=""16"" fill=""#f2cdc3"" stroke=""#d9826c"" stroke-width=""2""/>
-  <ellipse cx=""400"" cy=""282"" rx=""42"" ry=""18"" fill=""#d5e5db"" stroke=""#557c6c"" stroke-width=""2""/>
+  <!-- Low Montessori Circle Table -->
+  <ellipse cx=""400"" cy=""278"" rx=""100"" ry=""22"" fill=""url(#gWood)"" stroke=""#b89e72"" stroke-width=""2""/>
+  <ellipse cx=""400"" cy=""275"" rx=""90"" ry=""18"" fill=""#f7eee0""/>
 
-  <!-- Mystery Basket with Curiosity Items -->
-  <path d=""M 380 252 L 420 252 L 415 268 L 385 268 Z"" fill=""#a87d55""/>
-  <ellipse cx=""400"" cy=""252"" rx=""20"" ry=""5"" fill=""#c99c72""/>
-  <!-- Sparkles -->
-  <polygon points=""400,230 404,240 415,242 406,248 408,258 400,252 392,258 394,248 385,242 396,240"" fill=""#e9b65e""/>
-  <circle cx=""430"" cy=""235"" r=""3"" fill=""#e9b65e""/>
-  <circle cx=""370"" cy=""238"" r=""2.5"" fill=""#e9b65e""/>
+  <!-- Wicker Curiosity Basket overflowing with tactile items -->
+  <path d=""M 370 250 L 430 250 L 424 274 L 376 274 Z"" fill=""#a87d55"" stroke=""#8c603a"" stroke-width=""2""/>
+  <ellipse cx=""400"" cy=""250"" rx=""30"" ry=""7"" fill=""#c99c72""/>
+  <!-- Basket Items: Pinecones, river stones, magnifying glass -->
+  <ellipse cx=""390"" cy=""247"" rx=""9"" ry=""6"" fill=""#6b4928""/>
+  <ellipse cx=""410"" cy=""246"" rx=""8"" ry=""5"" fill=""#8c9e94""/>
+  <circle cx=""400"" cy=""243"" r=""11"" stroke=""#df9b3a"" stroke-width=""3"" fill=""rgba(240,248,244,0.7)""/>
+  <line x1=""407"" y1=""250"" x2=""422"" y2=""262"" stroke=""#8c603a"" stroke-width=""4"" stroke-linecap=""round""/>
+
+  <!-- Explorer Floor Cushions around table -->
+  <ellipse cx=""260"" cy=""288"" rx=""42"" ry=""18"" fill=""#f4d89a"" stroke=""#df9b3a"" stroke-width=""2.5""/>
+  <ellipse cx=""540"" cy=""288"" rx=""42"" ry=""18"" fill=""#f2cdc3"" stroke=""#d9826c"" stroke-width=""2.5""/>
+  <ellipse cx=""400"" cy=""312"" rx=""48"" ry=""20"" fill=""#d5e5db"" stroke=""#557c6c"" stroke-width=""2.5""/>
+
+  <!-- Potted Fiddle Leaf Tree (Right) -->
+  <path d=""M 650 250 L 685 250 L 680 286 L 655 286 Z"" fill=""#d9826c""/>
+  <path d=""M 667 250 Q 655 180 670 140"" stroke=""#3e6253"" stroke-width=""4.5"" fill=""none""/>
+  <ellipse cx=""662"" cy=""170"" rx=""24"" ry=""13"" fill=""#557c6c"" transform=""rotate(-25 662 170)""/>
+  <ellipse cx=""682"" cy=""145"" rx=""26"" ry=""15"" fill=""#3e6253"" transform=""rotate(20 682 145)""/>
+  <ellipse cx=""665"" cy=""125"" rx=""22"" ry=""12"" fill=""#78998a""/>
+
+  <!-- Hanging Potted Eucalyptus (Left) -->
+  <line x1=""140"" y1=""0"" x2=""140"" y2=""85"" stroke=""#7c877f"" stroke-width=""2""/>
+  <path d=""M 125 85 L 155 85 L 150 110 L 130 110 Z"" fill=""#ab9c76""/>
+  <path d=""M 140 85 Q 110 120 120 150 Q 135 125 140 85"" fill=""#557c6c""/>
+  <path d=""M 140 85 Q 170 115 160 155 Q 145 130 140 85"" fill=""#3e6253""/>
+  <path d=""M 140 85 Q 140 135 145 165 Q 150 135 140 85"" fill=""#78998a""/>
+
+  <!-- Stage Label Badge -->
+  <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 1 · SENSORY INVITATION SETUP</text>
+
+  <!-- Sparkles of curiosity -->
+  <polygon points=""400,210 404,220 415,222 406,228 408,238 400,232 392,238 394,228 385,222 396,220"" fill=""#e9b65e""/>
+  <circle cx=""438"" cy=""218"" r=""3.5"" fill=""#e9b65e""/>
+  <circle cx=""362"" cy=""222"" r=""3"" fill=""#e9b65e""/>
 </svg>",
 
             "challenge" => @"
-<svg viewBox=""0 0 800 320"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
-  <rect width=""800"" height=""320"" fill=""#f9f7f2""/>
-  
-  <!-- Soft Background circles -->
-  <circle cx=""400"" cy=""160"" r=""140"" fill=""#edf4f0""/>
-  <circle cx=""400"" cy=""160"" r=""90"" fill=""#fdfbf7""/>
+<svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
+  <defs>
+    <linearGradient id=""cSky"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#faf8f3""/>
+      <stop offset=""100%"" stop-color=""#eff5f1""/>
+    </linearGradient>
+  </defs>
 
-  <!-- Investigation Table -->
-  <rect x=""220"" y=""200"" width=""360"" height=""20"" rx=""6"" fill=""#d8caa8"" stroke=""#ab9c76"" stroke-width=""2""/>
-  <rect x=""250"" y=""220"" width=""18"" height=""75"" fill=""#ab9c76""/>
-  <rect x=""532"" y=""220"" width=""18"" height=""75"" fill=""#ab9c76""/>
-  <line x1=""220"" y1=""295"" x2=""580"" y2=""295"" stroke=""#e0e6e1"" stroke-width=""3""/>
+  <rect width=""800"" height=""360"" fill=""url(#cSky)""/>
+  <circle cx=""400"" cy=""180"" r=""160"" fill=""#edf4f0""/>
+  <circle cx=""400"" cy=""180"" r=""110"" fill=""#ffffff""/>
 
-  <!-- Mystery Box on Table -->
-  <rect x=""340"" y=""135"" width=""120"" height=""65"" rx=""8"" fill=""#557c6c""/>
-  <rect x=""335"" y=""130"" width=""130"" height=""15"" rx=""4"" fill=""#3e6253""/>
-  <!-- Amber Ribbon -->
-  <rect x=""393"" y=""130"" width=""14"" height=""70"" fill=""#e9b65e""/>
-  <!-- Bow -->
-  <ellipse cx=""390"" cy=""124"" rx=""10"" ry=""6"" fill=""#e9b65e"" transform=""rotate(-20 390 124)""/>
-  <ellipse cx=""410"" cy=""124"" rx=""10"" ry=""6"" fill=""#e9b65e"" transform=""rotate(20 410 124)""/>
-  <circle cx=""400"" cy=""125"" r=""4"" fill=""#df9b3a""/>
+  <!-- Large Montessori Inquiry Workbench -->
+  <rect x=""180"" y=""215"" width=""440"" height=""26"" rx=""8"" fill=""#ecd9ba"" stroke=""#ab9c76"" stroke-width=""2.5""/>
+  <rect x=""220"" y=""241"" width=""24"" height=""85"" rx=""4"" fill=""#ab9c76""/>
+  <rect x=""556"" y=""241"" width=""24"" height=""85"" rx=""4"" fill=""#ab9c76""/>
+  <line x1=""180"" y1=""326"" x2=""620"" y2=""326"" stroke=""#e0e6e1"" stroke-width=""3""/>
 
-  <!-- Magnifying Glass Leaning -->
-  <circle cx=""290"" cy=""165"" r=""28"" stroke=""#df9b3a"" stroke-width=""6"" fill=""rgba(230, 240, 235, 0.6)""/>
-  <line x1=""310"" y1=""185"" x2=""340"" y2=""210"" stroke=""#a87d55"" stroke-width=""8"" stroke-linecap=""round""/>
-  <!-- Glass Shine -->
-  <path d=""M 275 155 Q 290 145 305 155"" stroke=""white"" stroke-width=""3"" stroke-linecap=""round"" fill=""none""/>
+  <!-- Centerpiece: Mystery Inquiry Box Glowing with Amber Light -->
+  <rect x=""330"" y=""135"" width=""140"" height=""80"" rx=""10"" fill=""#557c6c""/>
+  <rect x=""322"" y=""128"" width=""156"" height=""18"" rx=""6"" fill=""#3e6253""/>
+  <!-- Golden Ribbon & Bow -->
+  <rect x=""392"" y=""128"" width=""16"" height=""87"" fill=""#e9b65e""/>
+  <ellipse cx=""388"" cy=""120"" rx=""12"" ry=""7"" fill=""#e9b65e"" transform=""rotate(-20 388 120)""/>
+  <ellipse cx=""412"" cy=""120"" rx=""12"" ry=""7"" fill=""#e9b65e"" transform=""rotate(20 412 120)""/>
+  <circle cx=""400"" cy=""122"" r=""5"" fill=""#df9b3a""/>
 
-  <!-- Nature Samples on Table -->
-  <path d=""M 495 185 C 485 175, 485 160, 495 150 C 505 160, 505 175, 495 185 Z"" fill=""#855e39""/>
-  <ellipse cx=""495"" cy=""160"" rx=""8"" ry=""4"" fill=""#6b4928""/>
-  <ellipse cx=""495"" cy=""170"" rx=""9"" ry=""4"" fill=""#6b4928""/>
-  <ellipse cx=""525"" cy=""192"" rx=""18"" ry=""9"" fill=""#9ba8a0""/>
+  <!-- Giant Detailed Magnifying Glass with Glass Shine -->
+  <circle cx=""260"" cy=""175"" r=""38"" stroke=""#df9b3a"" stroke-width=""8"" fill=""rgba(235, 246, 240, 0.75)""/>
+  <line x1=""288"" y1=""203"" x2=""325"" y2=""238"" stroke=""#a87d55"" stroke-width=""10"" stroke-linecap=""round""/>
+  <path d=""M 240 160 Q 260 148 280 160"" stroke=""white"" stroke-width=""4"" stroke-linecap=""round"" fill=""none""/>
 
-  <!-- Floating Question / Curiosity Sparkles -->
-  <text x=""255"" y=""120"" font-size=""32"" font-family=""sans-serif"" font-weight=""800"" fill=""#557c6c"">?</text>
-  <text x=""530"" y=""115"" font-size=""28"" font-family=""sans-serif"" font-weight=""800"" fill=""#df9b3a"">?</text>
-  <polygon points=""305,95 308,103 316,105 309,110 311,118 305,113 299,118 301,110 294,105 302,103"" fill=""#e9b65e""/>
-  <polygon points=""495,85 497,92 504,94 498,99 500,106 495,101 490,106 492,99 486,94 493,92"" fill=""#557c6c""/>
+  <!-- Nature specimen jars with leaves and acorns -->
+  <rect x=""495"" y=""165"" width=""36"" height=""50"" rx=""6"" fill=""rgba(240,248,244,0.85)"" stroke=""#78998a"" stroke-width=""2""/>
+  <rect x=""492"" y=""160"" width=""42"" height=""8"" rx=""3"" fill=""#8c603a""/>
+  <path d=""M 513 180 Q 520 195 513 205 Q 506 195 513 180 Z"" fill=""#557c6c""/>
+
+  <rect x=""545"" y=""175"" width=""32"" height=""40"" rx=""6"" fill=""rgba(240,248,244,0.85)"" stroke=""#78998a"" stroke-width=""2""/>
+  <rect x=""542"" y=""170"" width=""38"" height=""8"" rx=""3"" fill=""#8c603a""/>
+  <circle cx=""561"" cy=""195"" r=""9"" fill=""#df9b3a""/>
+
+  <!-- Wonder Question & Spark Constellations -->
+  <text x=""225"" y=""120"" font-size=""44"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#557c6c"">?</text>
+  <text x=""550"" y=""115"" font-size=""38"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#df9b3a"">?</text>
+  <polygon points=""300,90 304,98 312,100 305,106 307,114 300,109 293,114 295,106 288,100 296,98"" fill=""#e9b65e""/>
+  <polygon points=""510,80 513,87 520,89 514,94 516,101 510,96 504,101 506,94 500,89 507,87"" fill=""#557c6c""/>
+
+  <!-- Stage Label Badge -->
+  <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 2 · THE WONDER INQUIRY</text>
 </svg>",
 
             "explore" => @"
-<svg viewBox=""0 0 800 320"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
-  <rect width=""800"" height=""320"" fill=""#f5f8f6""/>
-  
-  <!-- Circular Creative Halo -->
-  <ellipse cx=""400"" cy=""170"" rx=""280"" ry=""110"" fill=""#ffffff"" stroke=""#e1e9e3"" stroke-width=""2""/>
+<svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
+  <defs>
+    <linearGradient id=""eSky"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#f6f8f5""/>
+      <stop offset=""100%"" stop-color=""#eef4ee""/>
+    </linearGradient>
+  </defs>
 
-  <!-- Hands-On Building Blocks Tower (Center Left) -->
-  <rect x=""310"" y=""190"" width=""55"" height=""28"" rx=""4"" fill=""#557c6c""/>
-  <rect x=""370"" y=""190"" width=""55"" height=""28"" rx=""4"" fill=""#e9b65e""/>
-  <rect x=""330"" y=""160"" width=""75"" height=""28"" rx=""4"" fill=""#d9826c""/>
-  <polygon points=""367,115 330,158 405,158"" fill=""#3e6253""/>
+  <rect width=""800"" height=""360"" fill=""url(#eSky)""/>
+  <ellipse cx=""400"" cy=""190"" rx=""320"" ry=""120"" fill=""#ffffff"" stroke=""#e1e9e3"" stroke-width=""2.5""/>
 
-  <!-- Sculpting Clay Pinch Pot (Center Right) -->
-  <ellipse cx=""470"" cy=""195"" rx=""32"" ry=""14"" fill=""#c9775f""/>
-  <path d=""M 438 195 Q 438 215 470 215 Q 502 215 502 195 Z"" fill=""#b3654f""/>
-  <!-- Twig planted inside clay -->
-  <line x1=""470"" y1=""195"" x2=""480"" y2=""145"" stroke=""#855e39"" stroke-width=""4"" stroke-linecap=""round""/>
-  <circle cx=""480"" cy=""142"" r=""6"" fill=""#557c6c""/>
-  <circle cx=""487"" cy=""152"" r=""5"" fill=""#78998a""/>
+  <!-- Studio Craft Table Surface -->
+  <rect x=""140"" y=""225"" width=""520"" height=""24"" rx=""8"" fill=""#eedfc4"" stroke=""#b89e72"" stroke-width=""2""/>
+  <rect x=""180"" y=""249"" width=""22"" height=""75"" fill=""#b89e72""/>
+  <rect x=""598"" y=""249"" width=""22"" height=""75"" fill=""#b89e72""/>
 
-  <!-- Children Handprints Motif -->
-  <path d=""M 230 160 C 225 150 220 152 222 165 C 220 148 212 150 216 168 C 210 152 202 156 208 172 C 205 162 195 166 202 180 C 208 192 228 195 235 185 Z"" fill=""#f4d89a"" opacity=""0.8""/>
-  <path d=""M 570 160 C 575 150 580 152 578 165 C 580 148 588 150 584 168 C 590 152 598 156 592 172 C 595 162 605 166 598 180 C 592 192 572 195 565 185 Z"" fill=""#e5eee8"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <!-- Multi-Colored Montessori Building Blocks & Arches (Center-Left) -->
+  <rect x=""260"" y=""195"" width=""65"" height=""30"" rx=""4"" fill=""#557c6c""/>
+  <rect x=""335"" y=""195"" width=""65"" height=""30"" rx=""4"" fill=""#e9b65e""/>
+  <rect x=""285"" y=""162"" width=""90"" height=""32"" rx=""4"" fill=""#d9826c""/>
+  <!-- Arch Block -->
+  <path d=""M 305 162 A 25 25 0 0 1 355 162 Z"" fill=""#ffffff""/>
+  <polygon points=""330,110 285,160 375,160"" fill=""#3e6253""/>
+  <circle cx=""330"" cy=""95"" r=""12"" fill=""#df9b3a""/>
 
-  <!-- Watercolor artist palette -->
-  <path d=""M 220 225 C 220 205 270 205 270 225 C 270 245 220 245 220 225 Z"" fill=""#faf5ec"" stroke=""#ab9c76"" stroke-width=""2""/>
-  <circle cx=""235"" cy=""220"" r=""5"" fill=""#557c6c""/>
-  <circle cx=""250"" cy=""218"" r=""5"" fill=""#df9b3a""/>
-  <circle cx=""242"" cy=""230"" r=""5"" fill=""#d9826c""/>
+  <!-- Sculpting Clay Pot with Sprout (Center-Right) -->
+  <ellipse cx=""475"" cy=""210"" rx=""36"" ry=""15"" fill=""#c9775f""/>
+  <path d=""M 439 210 Q 439 235 475 235 Q 511 235 511 210 Z"" fill=""#b3654f""/>
+  <line x1=""475"" y1=""210"" x2=""485"" y2=""145"" stroke=""#855e39"" stroke-width=""5"" stroke-linecap=""round""/>
+  <circle cx=""485"" cy=""140"" r=""8"" fill=""#557c6c""/>
+  <circle cx=""495"" cy=""152"" r=""7"" fill=""#78998a""/>
+  <circle cx=""470"" cy=""160"" r=""6"" fill=""#3e6253""/>
 
-  <!-- Floating inspiration particles -->
-  <circle cx=""290"" cy=""130"" r=""4"" fill=""#e9b65e""/>
-  <circle cx=""515"" cy=""125"" r=""5"" fill=""#557c6c""/>
-  <circle cx=""405"" cy=""95"" r=""3"" fill=""#d9826c""/>
+  <!-- Watercolor Artist Palette with Daubs (Far Left) -->
+  <path d=""M 175 210 C 175 185 235 185 235 210 C 235 235 175 235 175 210 Z"" fill=""#faf5ec"" stroke=""#ab9c76"" stroke-width=""2""/>
+  <circle cx=""195"" cy=""202"" r=""6"" fill=""#557c6c""/>
+  <circle cx=""215"" cy=""200"" r=""6"" fill=""#df9b3a""/>
+  <circle cx=""205"" cy=""216"" r=""6"" fill=""#d9826c""/>
+  <circle cx=""188"" cy=""216"" r=""5"" fill=""#3e6253""/>
+
+  <!-- Textured Craft Paper & Animal Silhouette (Far Right) -->
+  <rect x=""535"" y=""190"" width=""60"" height=""35"" rx=""4"" fill=""#f4d89a"" stroke=""#df9b3a"" stroke-width=""1.5""/>
+  <polygon points=""550,210 565,195 580,210"" fill=""#557c6c""/>
+  <!-- Craft sticks -->
+  <line x1=""530"" y1=""225"" x2=""560"" y2=""225"" stroke=""#ab9c76"" stroke-width=""4"" stroke-linecap=""round""/>
+  <line x1=""565"" y1=""225"" x2=""595"" y2=""225"" stroke=""#ab9c76"" stroke-width=""4"" stroke-linecap=""round""/>
+
+  <!-- Children Handprints Motif in background -->
+  <path d=""M 195 130 C 190 120 185 122 187 135 C 185 118 177 120 181 138 C 175 122 167 126 173 142 C 170 132 160 136 167 150 C 173 162 193 165 200 155 Z"" fill=""#f4d89a"" opacity=""0.7""/>
+  <path d=""M 610 130 C 615 120 620 122 618 135 C 620 118 628 120 624 138 C 630 122 638 126 632 142 C 635 132 645 136 638 150 C 632 162 612 165 605 155 Z"" fill=""#e5eee8"" stroke=""#557c6c"" stroke-width=""1.5""/>
+
+  <!-- Stage Label Badge -->
+  <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 3 · ACTIVE HANDS-ON FLOW</text>
 </svg>",
 
             "magic" => @"
-<svg viewBox=""0 0 800 320"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
+<svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
   <defs>
-    <radialGradient id=""glowLight"" cx=""50%"" cy=""50%"" r=""50%"">
+    <radialGradient id=""mGlow"" cx=""50%"" cy=""50%"" r=""50%"">
       <stop offset=""0%"" stop-color=""#fff9e6""/>
       <stop offset=""60%"" stop-color=""#eef7f2""/>
       <stop offset=""100%"" stop-color=""#f8faf8""/>
     </radialGradient>
-    <linearGradient id=""rainbowBeam"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
-      <stop offset=""0%"" stop-color=""rgba(217, 130, 108, 0.7)""/>
-      <stop offset=""35%"" stop-color=""rgba(233, 182, 94, 0.7)""/>
-      <stop offset=""70%"" stop-color=""rgba(85, 124, 108, 0.7)""/>
-      <stop offset=""100%"" stop-color=""rgba(62, 98, 83, 0.7)""/>
+    <linearGradient id=""mRainbow"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""rgba(217, 130, 108, 0.75)""/>
+      <stop offset=""35%"" stop-color=""rgba(233, 182, 94, 0.75)""/>
+      <stop offset=""70%"" stop-color=""rgba(85, 124, 108, 0.75)""/>
+      <stop offset=""100%"" stop-color=""rgba(62, 98, 83, 0.75)""/>
     </linearGradient>
   </defs>
-  <rect width=""800"" height=""320"" fill=""url(#glowLight)""/>
+
+  <rect width=""800"" height=""360"" fill=""url(#mGlow)""/>
 
   <!-- Luminous Starburst Rings -->
-  <circle cx=""400"" cy=""155"" r=""115"" stroke=""#e6eee9"" stroke-width=""3"" stroke-dasharray=""6 6""/>
-  <circle cx=""400"" cy=""155"" r=""80"" stroke=""#f4d89a"" stroke-width=""2"" stroke-dasharray=""4 4""/>
+  <circle cx=""400"" cy=""175"" r=""130"" stroke=""#e6eee9"" stroke-width=""3.5"" stroke-dasharray=""7 7""/>
+  <circle cx=""400"" cy=""175"" r=""90"" stroke=""#f4d89a"" stroke-width=""2.5"" stroke-dasharray=""5 5""/>
 
-  <!-- Refracting Crystal Prism -->
-  <polygon points=""400,90 350,185 450,185"" fill=""rgba(255,255,255,0.85)"" stroke=""#557c6c"" stroke-width=""4""/>
-  <polygon points=""400,90 400,185 450,185"" fill=""rgba(230,238,233,0.5)""/>
+  <!-- Optical Refracting Crystal Prism -->
+  <polygon points=""400,105 340,210 460,210"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""4.5""/>
+  <polygon points=""400,105 400,210 460,210"" fill=""rgba(230,238,233,0.55)""/>
 
-  <!-- Radiant Light Rays emanating -->
-  <polygon points=""400,140 580,80 620,110"" fill=""url(#rainbowBeam)""/>
+  <!-- Radiant Soft Rainbow Beam -->
+  <polygon points=""400,160 620,90 660,125"" fill=""url(#mRainbow)""/>
 
-  <!-- Giant Golden Star Sparkle -->
-  <polygon points=""400,60 408,78 428,82 413,95 417,115 400,105 383,115 387,95 372,82 392,78"" fill=""#e9b65e""/>
-  <circle cx=""400"" cy=""87"" r=""4"" fill=""white""/>
+  <!-- Giant Golden Wonder Sparkle -->
+  <polygon points=""400,70 410,92 432,96 415,112 420,134 400,122 380,134 385,112 368,96 390,92"" fill=""#e9b65e""/>
+  <circle cx=""400"" cy=""102"" r=""5"" fill=""white""/>
 
-  <!-- Joyful Dancing Sparkles around -->
-  <polygon points=""260,110 263,118 271,120 264,125 266,133 260,128 254,133 256,125 249,120 257,118"" fill=""#df9b3a""/>
-  <polygon points=""540,180 543,188 551,190 544,195 546,203 540,198 534,203 536,195 529,190 537,188"" fill=""#557c6c""/>
-  <polygon points=""310,210 312,216 318,217 313,221 315,227 310,223 305,227 307,221 302,217 308,216"" fill=""#d9826c""/>
-  <polygon points=""480,80 482,86 488,87 483,91 485,97 480,93 475,97 477,91 472,87 478,86"" fill=""#e9b65e""/>
+  <!-- Dancing Celebration Stars -->
+  <polygon points=""240,125 244,134 253,136 245,142 248,151 240,145 232,151 235,142 227,136 236,134"" fill=""#df9b3a""/>
+  <polygon points=""560,200 564,209 573,211 565,217 568,226 560,220 552,226 555,217 547,211 556,209"" fill=""#557c6c""/>
+  <polygon points=""290,230 293,237 300,238 294,243 296,250 290,245 284,250 286,243 280,238 287,237"" fill=""#d9826c""/>
 
-  <!-- Shared Eureka Pedestal -->
-  <ellipse cx=""400"" cy=""225"" rx=""90"" ry=""16"" fill=""#e2ebe4"" stroke=""#557c6c"" stroke-width=""2""/>
-  <text x=""400"" y=""270"" text-anchor=""middle"" font-size=""16"" font-family=""sans-serif"" font-weight=""800"" fill=""#3e6253"" letter-spacing=""2"">A MOMENT OF PURE DISCOVERY</text>
+  <!-- Pedestal of Discovery -->
+  <ellipse cx=""400"" cy=""250"" rx=""110"" ry=""18"" fill=""#e2ebe4"" stroke=""#557c6c"" stroke-width=""2.5""/>
+  <text x=""400"" y=""295"" text-anchor=""middle"" font-size=""16"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#3e6253"" letter-spacing=""2"">A MOMENT OF PURE DISCOVERY</text>
+
+  <!-- Stage Label Badge -->
+  <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 4 · THE DISCOVERY SPARK</text>
 </svg>",
 
             "reflection" or _ => @"
-<svg viewBox=""0 0 800 320"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
-  <rect width=""800"" height=""320"" fill=""#fbf9f4""/>
+<svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
+  <defs>
+    <linearGradient id=""rSky"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#fdfbf7""/>
+      <stop offset=""100%"" stop-color=""#f0f6f2""/>
+    </linearGradient>
+  </defs>
 
-  <!-- Celebration Festoon Garland Bunting -->
-  <path d=""M 150 40 Q 275 80 400 50 Q 525 80 650 40"" stroke=""#7c877f"" stroke-width=""2"" fill=""none""/>
+  <rect width=""800"" height=""360"" fill=""url(#rSky)""/>
+
+  <!-- Festive Natural Linen Bunting Garland Swagged across studio -->
+  <path d=""M 100 45 Q 250 90 400 55 Q 550 90 700 45"" stroke=""#7c877f"" stroke-width=""2.5"" fill=""none""/>
   <!-- Pennants -->
-  <polygon points=""200,53 220,57 210,85"" fill=""#557c6c""/>
-  <polygon points=""260,63 280,63 270,95"" fill=""#e9b65e""/>
-  <polygon points=""330,59 350,56 340,90"" fill=""#d9826c""/>
-  <polygon points=""440,56 460,59 450,90"" fill=""#3e6253""/>
-  <polygon points=""510,63 530,63 520,95"" fill=""#df9b3a""/>
-  <polygon points=""580,55 600,50 590,82"" fill=""#78998a""/>
+  <polygon points=""160,60 185,65 172,98"" fill=""#557c6c""/>
+  <polygon points=""235,72 260,72 248,108"" fill=""#e9b65e""/>
+  <polygon points=""315,68 340,64 328,102"" fill=""#d9826c""/>
+  <polygon points=""435,64 460,68 448,102"" fill=""#3e6253""/>
+  <polygon points=""515,72 540,72 528,108"" fill=""#df9b3a""/>
+  <polygon points=""595,62 620,56 608,94"" fill=""#78998a""/>
 
-  <!-- Proud Gallery Display Shelf -->
-  <rect x=""180"" y=""190"" width=""440"" height=""14"" rx=""4"" fill=""#ab9c76""/>
+  <!-- Proud Gallery Exhibition Display Shelf -->
+  <rect x=""140"" y=""205"" width=""520"" height=""18"" rx=""5"" fill=""#ab9c76"" stroke=""#8c603a"" stroke-width=""2""/>
   
-  <!-- Masterpiece Sculptures Displayed on Shelf -->
-  <rect x=""230"" y=""150"" width=""35"" height=""40"" rx=""6"" fill=""#557c6c""/>
-  <circle cx=""247"" cy=""140"" r=""12"" fill=""#e9b65e""/>
+  <!-- Masterpiece Sculptures Proudly Displayed on Shelf -->
+  <!-- 1. Wooden Arch Tower -->
+  <rect x=""200"" y=""155"" width=""42"" height=""50"" rx=""6"" fill=""#557c6c""/>
+  <circle cx=""221"" cy=""142"" r=""14"" fill=""#e9b65e""/>
   
-  <polygon points=""400,125 425,188 375,188"" fill=""#d9826c""/>
-  <circle cx=""400"" cy=""155"" r=""14"" fill=""#ffffff""/>
-  <path d=""M 395 153 C 395 149 400 148 400 152 C 400 148 405 149 405 153 C 405 158 400 161 400 161 C 400 161 395 158 395 153 Z"" fill=""#d9826c""/>
+  <!-- 2. Clay Pot & Leaf -->
+  <polygon points=""400"" y=""125"" points=""400,125 430,203 370,203"" fill=""#d9826c""/>
+  <circle cx=""400"" cy=""160"" r=""16"" fill=""#ffffff""/>
+  <path d=""M 394 157 C 394 152 400 151 400 155 C 400 151 406 152 406 157 C 406 163 400 166 400 166 C 400 166 394 163 394 157 Z"" fill=""#d9826c""/>
 
-  <rect x=""530"" y=""155"" width=""45"" height=""35"" rx=""6"" fill=""#3e6253""/>
-  <ellipse cx=""552"" cy=""145"" rx=""16"" ry=""8"" fill=""#f4d89a""/>
+  <!-- 3. Animal Collage & Sticks -->
+  <rect x=""560"" y=""162"" width=""52"" height=""43"" rx=""6"" fill=""#3e6253""/>
+  <ellipse cx=""586"" cy=""150"" rx=""18"" ry=""10"" fill=""#f4d89a""/>
 
   <!-- Little Stars of Accomplishment -->
-  <polygon points=""210,105 213,112 220,113 214,118 216,125 210,121 204,125 206,118 200,113 207,112"" fill=""#e9b65e""/>
-  <polygon points=""590,105 593,112 600,113 594,118 596,125 590,121 584,125 586,118 580,113 587,112"" fill=""#e9b65e""/>
-  <polygon points=""400,90 404,99 414,101 406,108 408,118 400,113 392,118 394,108 386,101 396,99"" fill=""#e9b65e""/>
+  <polygon points=""170,115 174,123 182,124 175,130 178,138 170,133 162,138 165,130 158,124 166,123"" fill=""#e9b65e""/>
+  <polygon points=""630,115 634,123 642,124 635,130 638,138 630,133 622,138 625,130 618,124 626,123"" fill=""#e9b65e""/>
+  <polygon points=""400,85 404,95 415,97 407,105 409,116 400,110 391,116 393,105 385,97 396,95"" fill=""#e9b65e""/>
 
   <!-- Closing Reflection Circle Rug -->
-  <ellipse cx=""400"" cy=""260"" rx=""260"" ry=""42"" fill=""#eef5f1"" stroke=""#557c6c"" stroke-width=""2""/>
-  <text x=""400"" y=""266"" text-anchor=""middle"" font-size=""15"" font-family=""sans-serif"" font-weight=""700"" fill=""#26332d"">Stories Shared · Hearts Full · Memories Made</text>
+  <ellipse cx=""400"" cy=""285"" rx=""290"" ry=""48"" fill=""#eef5f1"" stroke=""#557c6c"" stroke-width=""2.5""/>
+  <text x=""400"" y=""292"" text-anchor=""middle"" font-size=""16"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.5"">Stories Shared · Little Hands, Big Minds · Memories Made</text>
+
+  <!-- Stage Label Badge -->
+  <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">FINAL PHASE · CIRCLE SHARING &amp; REFLECTION</text>
 </svg>"
         };
     }

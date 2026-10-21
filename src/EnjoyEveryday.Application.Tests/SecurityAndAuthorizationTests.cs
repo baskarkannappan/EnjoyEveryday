@@ -43,6 +43,7 @@ namespace EnjoyEveryday.Application.Tests
             public Task<Child?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Child?>(new Child { Id = id, TenantId = tenantId });
             public Task<IEnumerable<Child>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default) => Task.FromResult<IEnumerable<Child>>(Array.Empty<Child>());
             public Task<IEnumerable<Child>> GetByClassroomIdAsync(Guid tenantId, Guid classroomId, CancellationToken cancellationToken = default) => Task.FromResult<IEnumerable<Child>>(Array.Empty<Child>());
+            public Task SyncParentGuardianAsync(Guid tenantId, Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken cancellationToken = default) => Task.CompletedTask;
         }
         
         private class MockUserRepository : IUserRepository

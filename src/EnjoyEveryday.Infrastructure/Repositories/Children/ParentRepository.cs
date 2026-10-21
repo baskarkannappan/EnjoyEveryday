@@ -37,13 +37,12 @@ public class ParentRepository : IParentRepository
             LEFT JOIN branches b ON cl.branch_id = b.id
             LEFT JOIN organizations o ON b.organization_id = o.id
             WHERE fr.user_id = @UserId 
-              AND fr.tenant_id = @TenantId
               AND fr.status = 'Verified' AND fr.revoked_at IS NULL
               AND c.is_active = true
             ORDER BY c.first_name, c.last_name";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ParentAuthorizedChild>(sql, new { TenantId = tenantId, UserId = userId });
+        return await connection.QueryAsync<ParentAuthorizedChild>(sql, new { UserId = userId });
     }
 
     public async Task<bool> HasChildAccessAsync(Guid tenantId, Guid userId, Guid childId, CancellationToken cancellationToken = default)
@@ -53,15 +52,14 @@ public class ParentRepository : IParentRepository
                 SELECT 1 
                 FROM family_relationships fr
                 JOIN children c ON fr.child_id = c.id
-                WHERE fr.tenant_id = @TenantId 
-                  AND fr.user_id = @UserId 
+                WHERE fr.user_id = @UserId 
                   AND fr.child_id = @ChildId
                   AND fr.status = 'Verified' AND fr.revoked_at IS NULL
                   AND c.is_active = true
             )";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.ExecuteScalarAsync<bool>(sql, new { TenantId = tenantId, UserId = userId, ChildId = childId });
+        return await connection.ExecuteScalarAsync<bool>(sql, new { UserId = userId, ChildId = childId });
     }
 
     public async Task<ChildAttendance?> GetChildAttendanceForDateAsync(Guid tenantId, Guid childId, DateTime date, CancellationToken cancellationToken = default)
@@ -69,11 +67,11 @@ public class ParentRepository : IParentRepository
         const string sql = @"
             SELECT id, tenant_id, branch_id, classroom_id, child_id, attendance_date, status, arrival_time, departure_time, notes, recorded_by_user_id, created_at, updated_at
             FROM child_attendance
-            WHERE tenant_id = @TenantId AND child_id = @ChildId AND attendance_date = @Date
+            WHERE child_id = @ChildId AND attendance_date = @Date
             LIMIT 1";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryFirstOrDefaultAsync<ChildAttendance>(sql, new { TenantId = tenantId, ChildId = childId, Date = date.Date });
+        return await connection.QueryFirstOrDefaultAsync<ChildAttendance>(sql, new { ChildId = childId, Date = date.Date });
     }
 
     public async Task<IEnumerable<ChildJourneyEntry>> GetApprovedJourneyEntriesAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
@@ -81,13 +79,12 @@ public class ParentRepository : IParentRepository
         const string sql = @"
             SELECT *
             FROM child_journey_entries
-            WHERE tenant_id = @TenantId 
-              AND child_id = @ChildId 
+            WHERE child_id = @ChildId 
               AND is_parent_visible = true
             ORDER BY observation_date DESC";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ChildJourneyEntry>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await connection.QueryAsync<ChildJourneyEntry>(sql, new { ChildId = childId });
     }
 
     public async Task<IEnumerable<ChildMilestone>> GetApprovedMilestonesAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
@@ -95,13 +92,12 @@ public class ParentRepository : IParentRepository
         const string sql = @"
             SELECT *
             FROM child_milestones
-            WHERE tenant_id = @TenantId 
-              AND child_id = @ChildId 
+            WHERE child_id = @ChildId 
               AND parent_visible = true
             ORDER BY milestone_date DESC";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ChildMilestone>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await connection.QueryAsync<ChildMilestone>(sql, new { ChildId = childId });
     }
 
     public async Task<IEnumerable<Event>> GetApprovedEventsForChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
@@ -111,7 +107,7 @@ public class ParentRepository : IParentRepository
             FROM events e
             JOIN children c ON c.id = @ChildId
             LEFT JOIN event_classrooms ec ON e.id = ec.event_id
-            WHERE e.tenant_id = @TenantId
+            WHERE (e.tenant_id = c.tenant_id OR e.tenant_id = @TenantId)
               AND e.status IN ('Published', 'InProgress', 'Completed')
               AND (
                   e.is_organization_wide = true
@@ -129,7 +125,8 @@ public class ParentRepository : IParentRepository
         const string sql = @"
             SELECT *
             FROM persons
-            WHERE tenant_id = @TenantId AND user_id = @UserId
+            WHERE user_id = @UserId
+            ORDER BY (tenant_id = @TenantId) DESC
             LIMIT 1";
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

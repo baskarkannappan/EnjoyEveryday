@@ -453,13 +453,17 @@
     private DateTime _departureTime = DateTime.Now;
     private string _staffNotes = "";
 
+    private AuthorizedPickupDto? SelectedPickup => _isOneTimeAuthorization 
+        ? null 
+        : Profile?.AuthorizedPickups.FirstOrDefault(p => p.Id == _selectedPickupId);
+
     private string SelectedCollectorName => _isOneTimeAuthorization 
         ? _customPersonName 
-        : (Profile?.AuthorizedPickups.FirstOrDefault(p => p.Id == _selectedPickupId)?.FullName ?? "");
+        : (SelectedPickup?.FullName ?? "");
 
     private string SelectedRelationship => _isOneTimeAuthorization
         ? _customRelationship
-        : (Profile?.AuthorizedPickups.FirstOrDefault(p => p.Id == _selectedPickupId)?.Relationship ?? "");
+        : (SelectedPickup?.Relationship ?? "");
 
     protected override async Task OnParametersSetAsync()
     {
@@ -528,7 +532,7 @@
                 PickupPersonName = SelectedCollectorName.Trim(),
                 PickupPersonRelationship = SelectedRelationship.Trim(),
                 PickupVerificationMethod = _verificationMethod,
-                AuthorizedPickupId = _selectedPickupId,
+                AuthorizedPickupId = (SelectedPickup?.IsRegisteredPickup == true) ? SelectedPickup.Id : null,
                 DepartureTime = _departureTime.TimeOfDay,
                 StaffNotes = _staffNotes
             };

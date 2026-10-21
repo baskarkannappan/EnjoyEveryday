@@ -38,16 +38,17 @@ public class ExperienceService
     public async Task<Experience> CreateExperienceAsync(string title, string description, string dnaPayload, Guid createdByUserId, string? status = null, CancellationToken cancellationToken = default)
     {
         // if (!_userContext.HasPermission("experience.create")) throw new UnauthorizedAccessException("Requires experience.create permission.");
+        var effectiveUserId = createdByUserId != Guid.Empty ? createdByUserId : _userContext.UserId;
         var experience = new Experience
         {
             Id = Guid.NewGuid(),
             TenantId = _tenantContext.TenantId,
             OrganizationId = _userContext.OrganizationId,
-            Title = title,
+            Title = string.IsNullOrWhiteSpace(title) ? "New Experience" : title,
             Description = description,
             Status = status ?? ExperienceStatus.Idea.ToString(),
             DnaPayload = dnaPayload,
-            CreatedByUserId = createdByUserId,
+            CreatedByUserId = effectiveUserId,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
@@ -65,13 +66,14 @@ public class ExperienceService
             throw new UnauthorizedAccessException("Cannot access or update experience belonging to another organization.");
         }
 
-        experience.Title = title;
+        experience.Title = string.IsNullOrWhiteSpace(title) ? experience.Title : title;
         experience.Description = description;
         experience.DnaPayload = dnaPayload;
         experience.Status = status;
         experience.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await _experienceRepository.UpdateAsync(experience, changeReason, modifiedByUserId, cancellationToken);
+        var effectiveUserId = modifiedByUserId != Guid.Empty ? modifiedByUserId : _userContext.UserId;
+        await _experienceRepository.UpdateAsync(experience, changeReason, effectiveUserId, cancellationToken);
     }
 
     public async Task DeleteExperienceAsync(Guid id, CancellationToken cancellationToken = default)

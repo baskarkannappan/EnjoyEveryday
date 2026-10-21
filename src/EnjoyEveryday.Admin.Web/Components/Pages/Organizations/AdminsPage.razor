@@ -16,29 +16,120 @@
     </PageHero>
 
     <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
-        <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
-            <thead>
-                <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
-                    <th style="padding: 12px 14px; text-align: left;">Administrator</th>
-                    <th style="padding: 12px 14px; text-align: left;">Daycare Organization</th>
-                    <th style="padding: 12px 14px; text-align: left;">Role</th>
-                    <th style="padding: 12px 14px; text-align: left;">Account Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
-                    <td style="padding: 14px;"><strong>Priya Sharma</strong><div style="font-size: 12px; color: var(--muted);">director@littlestars.org</div></td>
-                    <td style="padding: 14px;">Little Stars Early Learning Center</td>
-                    <td style="padding: 14px;"><span style="background: #edf1ec; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 650;">Tenant Admin</span></td>
-                    <td style="padding: 14px;"><StatusBadge Status="Active" /></td>
-                </tr>
-                <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
-                    <td style="padding: 14px;"><strong>Karin Lindqvist</strong><div style="font-size: 12px; color: var(--muted);">karin@nordicpine.edu</div></td>
-                    <td style="padding: 14px;">Nordic Pine Forest Preschool</td>
-                    <td style="padding: 14px;"><span style="background: #edf1ec; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 650;">Tenant Admin</span></td>
-                    <td style="padding: 14px;"><StatusBadge Status="Active" /></td>
-                </tr>
-            </tbody>
-        </table>
+        <p style="color: var(--muted); font-size: 14px; margin-top: 0; margin-bottom: 16px;">
+            Directory of all primary daycare directors, administrators, and organization owners across registered daycare tenants.
+        </p>
+
+        <SearchFilterRow SearchPlaceholder="Search administrators by name, email, or organization..." 
+                         SearchQuery="@_search" 
+                         SearchQueryChanged="OnSearch">
+            <Filters>
+                <select class="filter" @bind="_selectedOrgFilter">
+                    <option value="">All Daycare Organizations (@(_admins?.Count ?? 0) admins)</option>
+                    @foreach (var org in _organizations)
+                    {
+                        <option value="@org.Id">@org.Name</option>
+                    }
+                </select>
+            </Filters>
+        </SearchFilterRow>
+
+        @if (_isLoading)
+        {
+            <LoadingState Text="Loading organization administrators..." />
+        }
+        else if (FilteredAdmins.Count == 0)
+        {
+            <EmptyState Title="No administrators found" Description="No administrators match the search criteria or selected organization." />
+        }
+        else
+        {
+            <div style="overflow-x: auto; margin-top: 16px;">
+                <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                    <thead>
+                        <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
+                            <th style="padding: 12px 14px; text-align: left;">Administrator</th>
+                            <th style="padding: 12px 14px; text-align: left;">Daycare Organization</th>
+                            <th style="padding: 12px 14px; text-align: left;">Role</th>
+                            <th style="padding: 12px 14px; text-align: left;">Account Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var admin in FilteredAdmins)
+                        {
+                            <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
+                                <td style="padding: 14px;">
+                                    <strong>@admin.AdminName</strong>
+                                    <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">@admin.AdminEmail</div>
+                                </td>
+                                <td style="padding: 14px; font-weight: 650; color: var(--text);">
+                                    @admin.OrganizationName
+                                </td>
+                                <td style="padding: 14px;">
+                                    <span style="background: #edf1ec; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 650; color: #3e5044;">
+                                        @FormatRoleName(admin.RoleName)
+                                    </span>
+                                </td>
+                                <td style="padding: 14px;">
+                                    <StatusBadge Status="@admin.AccountStatus" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>
+
+@code {
+    private List<PlatformAdminUserDto>? _admins;
+    private List<PlatformOrganizationDto> _organizations = new();
+    private bool _isLoading = true;
+    private string _search = "";
+    private string _selectedOrgFilter = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _organizations = await PlatformService.GetOrganizationsOverviewAsync();
+            _admins = await PlatformService.GetOrganizationAdminsAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private List<PlatformAdminUserDto> FilteredAdmins =>
+        (_admins ?? new List<PlatformAdminUserDto>())
+        .Where(a => (string.IsNullOrWhiteSpace(_selectedOrgFilter) || a.OrganizationId.ToString() == _selectedOrgFilter)
+                 && (string.IsNullOrWhiteSpace(_search)
+                     || a.AdminName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                     || a.AdminEmail.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                     || a.OrganizationName.Contains(_search, StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(a => a.OrganizationName)
+        .ThenBy(a => a.AdminName)
+        .ToList();
+
+    private void OnSearch(string val) => _search = val;
+
+    private static string FormatRoleName(string? role)
+    {
+        return role switch
+        {
+            "OrganizationOwner" => "Organization Owner",
+            "OrganizationAdmin" => "Org Admin",
+            "Tenant Admin" => "Org Admin",
+            "BranchAdmin" => "Branch Manager",
+            _ => role ?? "Org Admin"
+        };
+    }
+}

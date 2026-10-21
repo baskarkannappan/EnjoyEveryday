@@ -48,6 +48,30 @@ public class PlatformHealthStatus
     public DateTimeOffset LastChecked { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public class PlatformBranchDto
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Location { get; set; }
+    public bool IsActive { get; set; }
+    public string OrganizationName { get; set; } = string.Empty;
+    public string EffectiveLocation { get; set; } = string.Empty;
+    public int ClassroomsCount { get; set; }
+    public int ChildrenCount { get; set; }
+}
+
+public class PlatformAdminUserDto
+{
+    public Guid UserId { get; set; }
+    public string AdminName { get; set; } = string.Empty;
+    public string AdminEmail { get; set; } = string.Empty;
+    public Guid OrganizationId { get; set; }
+    public string OrganizationName { get; set; } = string.Empty;
+    public string RoleName { get; set; } = "Tenant Admin";
+    public string AccountStatus { get; set; } = "Active";
+}
+
 public interface IPlatformAdminService
 {
     // Overview & Telemetry
@@ -61,6 +85,9 @@ public interface IPlatformAdminService
     Task<PlatformOrganizationDto?> GetOrganizationDetailsAsync(Guid organizationId, CancellationToken cancellationToken = default);
     Task<PlatformHealthStatus> GetHealthStatusAsync(CancellationToken cancellationToken = default);
     Task<List<PlatformAuditLog>> GetAuditLogsAsync(int limit = 20, CancellationToken cancellationToken = default);
+    Task<List<PlatformBranchDto>> GetAllBranchesAsync(CancellationToken cancellationToken = default);
+    Task<PlatformBranchDto> CreateBranchAsync(Guid organizationId, string name, string? location, CancellationToken cancellationToken = default);
+    Task<List<PlatformAdminUserDto>> GetOrganizationAdminsAsync(CancellationToken cancellationToken = default);
 
     // Organization CRUD
     Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(

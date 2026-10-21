@@ -14,11 +14,10 @@ logger = logging.getLogger("EnjoyEveryday.AIProvider")
 
 class GeminiProvider:
     FALLBACK_MODELS: List[str] = [
-        "gemini-2.0-flash",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro"
+        "gemini-flash-latest",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash"
     ]
 
     def __init__(self):
@@ -109,8 +108,9 @@ class GeminiProvider:
                         raise HTTPException(status_code=429, detail="AI Provider quota or rate limit exceeded.")
                     
                     last_error = model_err
-                    # If 404 NOT_FOUND, continue loop to try next model in fallback list
-                    if "404" in err_str or "NOT_FOUND" in err_str or "not found" in err_str.lower():
+                    # If 404 NOT_FOUND, 503 UNAVAILABLE, or temporary server error, continue loop to try next model in fallback list
+                    retry_conditions = ["404", "NOT_FOUND", "not found", "503", "UNAVAILABLE", "unavailable", "500", "overloaded", "demand"]
+                    if any(cond in err_str for cond in retry_conditions):
                         continue
                     else:
                         break

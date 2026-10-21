@@ -556,6 +556,8 @@ public class MockChildRepository : IChildRepository
     {
         return Task.FromResult<IEnumerable<Child>>(Children.Where(c => c.ClassroomId == classroomId));
     }
+
+    public Task SyncParentGuardianAsync(Guid tenantId, Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public class MockClassroomRepository : IClassroomRepository

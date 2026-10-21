@@ -152,6 +152,7 @@ public class ConsentWorkflowTests
         public Task<IEnumerable<Child>> GetByClassroomIdAsync(Guid tenantId, Guid classroomId, CancellationToken ct = default) => Task.FromResult<IEnumerable<Child>>(Children.Where(c => c.TenantId == tenantId && c.ClassroomId == classroomId).ToList());
         public Task UpdateAsync(Child child, CancellationToken ct = default) => Task.CompletedTask;
         public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default) => Task.CompletedTask;
+        public Task SyncParentGuardianAsync(Guid tenantId, Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private class MockParentRepo : IParentRepository

@@ -61,11 +61,11 @@ public static class AuthEndpoints
                 ?? await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users LIMIT 1");
             if (user != null)
             {
-                string displayName = (string?)user.display_name;
+                string displayName = (string?)user.display_name ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(displayName))
                     displayName = $"{user.first_name} {user.last_name}".Trim();
                 if (string.IsNullOrWhiteSpace(displayName))
-                    displayName = (string)user.email;
+                    displayName = (string?)user.email ?? "Admin";
 
                 var claims = new List<Claim>
                 {
@@ -168,17 +168,17 @@ public static class AuthEndpoints
                 "SELECT id, tenant_id, is_active, display_name, first_name, last_name, email FROM users WHERE id = @UserId", 
                 new { UserId = userId.Value });
 
-            if (user == null || !user.is_active)
+            if (user == null || (bool?)user.is_active != true)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                 return Results.Redirect("/access-denied?reason=account_disabled");
             }
 
-            string displayName = (string?)user.display_name;
+            string displayName = (string?)user.display_name ?? string.Empty;
             if (string.IsNullOrWhiteSpace(displayName))
                 displayName = $"{user.first_name} {user.last_name}".Trim();
             if (string.IsNullOrWhiteSpace(displayName))
-                displayName = fullName ?? givenName ?? email ?? (string)user.email ?? "Admin";
+                displayName = fullName ?? givenName ?? email ?? (string?)user.email ?? "Admin";
 
             // 6. Rebuild the claims explicitly from our trusted DB
             var claims = new List<Claim>

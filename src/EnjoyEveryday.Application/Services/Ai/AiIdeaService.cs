@@ -101,6 +101,24 @@ public class AiIdeaService : IAiIdeaService
             title = title.Substring(0, parenIdx).Trim();
         }
 
+        // Clean out any existing prefixes or suffixes to avoid compounding like "The Playful World of The Playful World of..."
+        var prefixesToStrip = new[] { "The Playful World of ", "The Playful World Of ", "The Magic of ", "Exploring " };
+        foreach (var pfx in prefixesToStrip)
+        {
+            if (title.StartsWith(pfx, StringComparison.OrdinalIgnoreCase))
+            {
+                title = title.Substring(pfx.Length).Trim();
+            }
+        }
+        var suffixesToStrip = new[] { " Discovery Adventure", ": Child-Led Creative Studio", ": Sensory Touch & Texture Lab", ": Outdoor Nature Expedition" };
+        foreach (var sfx in suffixesToStrip)
+        {
+            if (title.EndsWith(sfx, StringComparison.OrdinalIgnoreCase))
+            {
+                title = title.Substring(0, title.Length - sfx.Length).Trim();
+            }
+        }
+
         string improvedTitle;
         string improvedDesc;
         string reason;

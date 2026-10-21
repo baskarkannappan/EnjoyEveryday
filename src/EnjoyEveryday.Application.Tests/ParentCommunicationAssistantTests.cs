@@ -376,6 +376,7 @@ public class ParentCommunicationAssistantTests
         public Task<Child> AddAsync(Child child, CancellationToken cancellationToken = default) => Task.FromResult(child);
         public Task UpdateAsync(Child child, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SyncParentGuardianAsync(Guid tenantId, Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private class MockClassroomRepository : IClassroomRepository

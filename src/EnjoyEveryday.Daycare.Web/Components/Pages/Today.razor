@@ -30,16 +30,19 @@
                   Title="@($"Daycare Operations — {_board.OrganizationName}")"
                   Subtitle="@($"Real-time operational cockpit for {_board.EffectiveRole}: attendance, staffing coverage, live experiences, and actionable care alerts.")">
             <RightContent>
-                <!-- Role / Persona Filter (Allows authorized testing of all 4 perspectives) -->
-                <div class="role-switcher">
-                    <span class="role-lbl">Viewing as:</span>
-                    <select class="role-select" value="@_selectedRoleOverride" @onchange="OnRoleChanged">
-                        <option value="@RoleTemplates.OrganizationAdmin">Org Admin</option>
-                        <option value="@RoleTemplates.BranchAdmin">Branch Manager</option>
-                        <option value="@RoleTemplates.ClassroomTeacher">Teacher</option>
-                        <option value="@RoleTemplates.PlatformAdmin">Platform Admin</option>
-                    </select>
-                </div>
+                <!-- Role / Persona Filter (Preselected automatically to user's assigned higher role) -->
+                @if (_availableRoles.Count > 0)
+                {
+                    <div class="role-switcher">
+                        <span class="role-lbl">Viewing as:</span>
+                        <select class="role-select" value="@_selectedRoleOverride" @onchange="OnRoleChanged" disabled="@(_availableRoles.Count <= 1)">
+                            @foreach (var role in _availableRoles)
+                            {
+                                <option value="@role.RoleKey">@role.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                }
 
                 @if (_board.EffectiveRole != RoleTemplates.PlatformAdmin)
                 {
@@ -475,6 +478,10 @@
     private string _selectedBranchId = "";
     private string? _previewPhoto;
 
+    private List<RoleOption> _availableRoles = new();
+
+    public record RoleOption(string RoleKey, string DisplayName, int Rank);
+
     // Modals
     private bool _isSessionModalOpen = false;
     private Guid _activeSessionScheduleId;
@@ -485,8 +492,77 @@
 
     protected override async Task OnInitializedAsync()
     {
+        InitializeAvailableRoles();
         await LoadBranchesAsync();
         await RefreshBoardAsync();
+    }
+
+    private void InitializeAvailableRoles()
+    {
+        _availableRoles = ResolveAvailableRoles();
+        var highestRole = _availableRoles.FirstOrDefault()?.RoleKey;
+        if (!string.IsNullOrEmpty(highestRole) && string.IsNullOrEmpty(_selectedRoleOverride))
+        {
+            _selectedRoleOverride = highestRole;
+        }
+    }
+
+    private List<RoleOption> ResolveAvailableRoles()
+    {
+        var options = new List<RoleOption>();
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+
+        bool isPlatformAdmin = userRoles.Any(r => 
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) || 
+            r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+
+        bool isOrgAdmin = isPlatformAdmin || userRoles.Any(r => 
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
+
+        bool isBranchAdmin = isPlatformAdmin || userRoles.Any(r => 
+            r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        bool isTeacher = isPlatformAdmin || userRoles.Any(r => 
+            r.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
+
+        // 1. Platform Admin (Rank 1: only users holding PlatformAdmin role)
+        if (isPlatformAdmin)
+        {
+            options.Add(new RoleOption(RoleTemplates.PlatformAdmin, "Platform Admin", 1));
+        }
+
+        // 2. Org Admin (Rank 2: Organization Owner or Administrator)
+        if (isOrgAdmin)
+        {
+            options.Add(new RoleOption(RoleTemplates.OrganizationAdmin, "Org Admin", 2));
+        }
+
+        // 3. Branch Manager (Rank 3: Branch Director or higher administrative supervisor)
+        if (isBranchAdmin || isOrgAdmin)
+        {
+            options.Add(new RoleOption(RoleTemplates.BranchAdmin, "Branch Manager", 3));
+        }
+
+        // 4. Teacher (Rank 4: Classroom Educator or supervisory director)
+        if (isTeacher || isOrgAdmin || isBranchAdmin)
+        {
+            options.Add(new RoleOption(RoleTemplates.ClassroomTeacher, "Teacher", 4));
+        }
+
+        // Safe fallback if unassigned
+        if (!options.Any())
+        {
+            options.Add(new RoleOption(RoleTemplates.ClassroomTeacher, "Teacher", 4));
+        }
+
+        return options.OrderBy(o => o.Rank).ToList();
     }
 
     private async Task LoadBranchesAsync()

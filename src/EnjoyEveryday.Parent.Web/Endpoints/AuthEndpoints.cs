@@ -263,10 +263,32 @@ public static class AuthEndpoints
                 return Results.Redirect("/auth/access-denied?reason=account_disabled");
             }
 
-            // Verify they have a current, VERIFIED, non-revoked parent relationship in this tenant
+            // 1. Automatically link any active children whose enrollment draft_data matches this parent's email
+            await conn.ExecuteAsync(@"
+                INSERT INTO family_relationships (id, tenant_id, child_id, user_id, relationship, is_primary, created_at, status, verified_at)
+                SELECT gen_random_uuid(), c.tenant_id, c.id, @UserId, 
+                       COALESCE(NULLIF(TRIM((c.draft_data::jsonb)->>'parentRelationship'), ''), 'Parent'), 
+                       TRUE, NOW(), 'Verified', NOW()
+                FROM children c
+                WHERE c.is_active = TRUE
+                  AND (c.draft_data::jsonb)->>'parentEmail' ILIKE @Email
+                ON CONFLICT (child_id, user_id) DO UPDATE 
+                SET status = 'Verified', revoked_at = NULL, verified_at = NOW();
+            ", new { UserId = user.Value.Id, Email = email });
+
+            // 2. Also ensure person record exists for this parent
+            await conn.ExecuteAsync(@"
+                INSERT INTO persons (id, tenant_id, user_id, first_name, last_name, relationship, email, preferred_language, has_portal_access, receives_daily_updates, receives_photos)
+                SELECT gen_random_uuid(), c.tenant_id, @UserId, @FirstName, @LastName, 'Parent', @Email, 'English', TRUE, TRUE, TRUE
+                FROM children c
+                WHERE c.is_active = TRUE AND (c.draft_data::jsonb)->>'parentEmail' ILIKE @Email
+                  AND NOT EXISTS (SELECT 1 FROM persons WHERE tenant_id = c.tenant_id AND user_id = @UserId);
+            ", new { UserId = user.Value.Id, Email = email, FirstName = givenName, LastName = surname });
+
+            // 3. Verify they have a current, VERIFIED, non-revoked parent relationship
             var isParent = await conn.ExecuteScalarAsync<bool>(
-                "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId AND tenant_id = @TenantId AND status = 'Verified' AND revoked_at IS NULL)",
-                new { UserId = user.Value.Id, TenantId = user.Value.TenantId });
+                "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId AND status = 'Verified' AND revoked_at IS NULL)",
+                new { UserId = user.Value.Id });
 
             if (!isParent)
             {

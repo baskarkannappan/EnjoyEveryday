@@ -11,4 +11,5 @@ public interface IChildRepository
     Task<Child> AddAsync(Child child, CancellationToken cancellationToken = default);
     Task UpdateAsync(Child child, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
+    Task SyncParentGuardianAsync(Guid tenantId, Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

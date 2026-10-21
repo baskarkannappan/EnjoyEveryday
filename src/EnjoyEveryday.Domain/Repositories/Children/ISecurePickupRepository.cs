@@ -63,4 +63,5 @@ public interface ISecurePickupRepository
     Task<IReadOnlyList<FamilyPickupRelationshipRecord>> GetFamilyPickupRelationshipsAsync(Guid tenantId, Guid childId, CancellationToken ct = default);
     Task<ChildAttendance?> GetTodayAttendanceAsync(Guid tenantId, Guid childId, DateTime date, CancellationToken ct = default);
     Task AddAuthorizedPickupAsync(AuthorizedPickup pickup, CancellationToken ct = default);
+    Task<bool> AuthorizedPickupExistsAsync(Guid tenantId, Guid pickupId, CancellationToken ct = default);
 }

@@ -6,10 +6,10 @@ The user provides a JSON representation of an existing Experience design and a s
 Your job is to rewrite the Experience design in a single cohesive pass to incorporate the request while maintaining the core concept and Experience DNA structure.
 
 STRICT CONSTRAINTS:
-1. TITLE & DESCRIPTION: Generate an imaginative, natural, and joyful title and description that teachers and children love. NEVER include robotic suffixes or prefixes like "(Focus: ...)", "(Adapted for ...)", or "Adapted with emphasis on: ...".
+1. TITLE & DESCRIPTION: Generate an imaginative, natural, child-centered title and description that teachers and children love. NEVER include robotic prefixes or suffixes like "(Focus: ...)", "(Adapted for ...)", or duplicate prefixes like "The Playful World of The Playful World of". Keep titles concise, organic, and evocative (e.g. "The Playful Paper Safari", "Whimsical Underwater Mosaic").
 2. Update ALL related sections (Materials, Guidance, Phases, Safety, Choice, Age, GroupSize, Environment, DevelopmentalGoals) so the entire activity is coherent.
-3. Clearly explain in 'reason' what changed and why.
-4. Make teacher instructions simple and actionable.
+3. Clearly explain in 'reason' what changed and why in a single warm, informative sentence.
+4. Make teacher instructions simple, actionable, and warm.
 5. Do NOT use the words "wobbly", "wiggly", "wiggle", "shakey", or "shaky".
 6. ExecutionGuide: "Watch", "Ask", and "Try" MUST be single strings.
 7. Phase durations must be positive and match SuggestedDurationMinutes.
