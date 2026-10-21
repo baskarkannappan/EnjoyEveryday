@@ -446,7 +446,25 @@ public class ParentService : IParentService
         var journeyEntries = await _parentRepository.GetApprovedJourneyEntriesAsync(_tenantContext.TenantId, childId, cancellationToken);
         foreach (var entry in journeyEntries)
         {
-            if (!string.IsNullOrEmpty(entry.Observation))
+            if (entry.Photos != null && entry.Photos.Count > 0)
+            {
+                for (int i = 0; i < entry.Photos.Count; i++)
+                {
+                    var photoUrl = entry.Photos[i];
+                    mediaList.Add(new ParentMediaItem
+                    {
+                        Id = $"{entry.Id}_{i}",
+                        Url = photoUrl,
+                        ThumbnailUrl = photoUrl,
+                        Title = entry.Title ?? "Learning Observation",
+                        Caption = entry.Observation + (!string.IsNullOrEmpty(entry.ChildVoice) ? $" — \"{entry.ChildVoice}\"" : ""),
+                        Date = entry.ObservationDate,
+                        Category = "Journey",
+                        IsVideo = false
+                    });
+                }
+            }
+            else if (!string.IsNullOrEmpty(entry.Observation))
             {
                 mediaList.Add(new ParentMediaItem
                 {

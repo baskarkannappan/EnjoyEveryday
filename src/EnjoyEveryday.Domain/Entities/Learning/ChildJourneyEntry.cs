@@ -37,4 +37,6 @@ public class ChildJourneyEntry
     public Guid? UpdatedBy { get; set; }
     
     public int Version { get; set; } = 1;
+    
+    public List<string> Photos { get; set; } = new();
 }

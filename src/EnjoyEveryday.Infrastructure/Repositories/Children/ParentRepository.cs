@@ -77,6 +77,8 @@ public class ParentRepository : IParentRepository
 
     public async Task<IEnumerable<ChildJourneyEntry>> GetApprovedJourneyEntriesAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
         const string sql = @"
             SELECT *
             FROM child_journey_entries
@@ -84,8 +86,52 @@ public class ParentRepository : IParentRepository
               AND is_parent_visible = true
             ORDER BY observation_date DESC";
 
-        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ChildJourneyEntry>(sql, new { ChildId = childId });
+        var entries = (await connection.QueryAsync<ChildJourneyEntry>(sql, new { ChildId = childId })).ToList();
+
+        if (entries.Any())
+        {
+            // Verify if photo release consent is signed before releasing photos to parents
+            const string consentSql = @"
+                SELECT d.status
+                FROM child_consent_documents d
+                LEFT JOIN consent_templates t ON d.consent_template_id = t.id
+                WHERE d.child_id = @ChildId
+                  AND (t.document_type = 'PhotoVideoConsent' OR d.document_title ILIKE '%Photo%' OR d.document_title ILIKE '%Media%')
+                ORDER BY d.created_at DESC
+                LIMIT 1";
+
+            var consentStatus = await connection.QueryFirstOrDefaultAsync<string?>(consentSql, new { ChildId = childId });
+            bool hasPhotoConsent = string.Equals(consentStatus, "Signed", StringComparison.OrdinalIgnoreCase);
+
+            if (hasPhotoConsent)
+            {
+                var entryIds = entries.Select(e => e.Id).ToArray();
+                const string evidenceSql = @"
+                    SELECT journey_entry_id, text_content
+                    FROM child_journey_evidence
+                    WHERE journey_entry_id = ANY(@EntryIds)
+                      AND evidence_type = 'Photo'
+                      AND (visibility = 'Parent' OR visibility = 'Public')
+                      AND text_content IS NOT NULL AND text_content != ''
+                    ORDER BY created_at ASC";
+
+                var evidenceRecords = await connection.QueryAsync<(Guid JourneyEntryId, string TextContent)>(
+                    evidenceSql, new { EntryIds = entryIds });
+
+                var photoLookup = evidenceRecords.GroupBy(x => x.JourneyEntryId)
+                    .ToDictionary(g => g.Key, g => g.Select(x => x.TextContent).ToList());
+
+                foreach (var entry in entries)
+                {
+                    if (photoLookup.TryGetValue(entry.Id, out var photos))
+                    {
+                        entry.Photos = photos;
+                    }
+                }
+            }
+        }
+
+        return entries;
     }
 
     public async Task<IEnumerable<ChildMilestone>> GetApprovedMilestonesAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
