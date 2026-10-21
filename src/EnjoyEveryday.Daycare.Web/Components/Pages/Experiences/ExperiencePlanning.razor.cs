@@ -138,6 +138,7 @@ public partial class ExperiencePlanning : ComponentBase
     private Dictionary<Guid, Experience> _experiences = new();
     private List<Event> _events = new();
     private bool _isCalendarEventModalOpen = false;
+    private string? _calendarEventErrorMessage;
     private Event? _selectedCalendarEvent;
     private List<EventTask> _selectedCalendarEventTasks = new();
 
@@ -486,6 +487,7 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void CloseCalendarEventModal()
     {
+        _calendarEventErrorMessage = null;
         _isCalendarEventModalOpen = false;
         _selectedCalendarEvent = null;
         _selectedCalendarEventTasks.Clear();
@@ -502,9 +504,18 @@ public partial class ExperiencePlanning : ComponentBase
     private async Task SaveCalendarEvent()
     {
         if (!IsAdmin || _selectedCalendarEvent == null) return;
-        await EventService.UpdateEventAsync(_selectedCalendarEvent);
-        await LoadSchedules();
-        CloseCalendarEventModal();
+        _calendarEventErrorMessage = null;
+        try
+        {
+            await EventService.UpdateEventAsync(_selectedCalendarEvent);
+            await LoadSchedules();
+            CloseCalendarEventModal();
+        }
+        catch (Exception ex)
+        {
+            _calendarEventErrorMessage = ex.Message;
+            StateHasChanged();
+        }
     }
 
     private async Task DeleteCalendarEvent()

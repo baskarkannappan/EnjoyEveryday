@@ -48,10 +48,16 @@ public class EventService
         if (!_userContext.HasPermission("event.create")) 
             throw new UnauthorizedAccessException("Requires event.create permission.");
 
+        if (string.IsNullOrWhiteSpace(evt.Status))
+        {
+            evt.Status = "Draft";
+        }
+
         evt.TenantId = _tenantContext.TenantId;
-        evt.Status = "Draft";
         evt.CreatedAt = DateTimeOffset.UtcNow;
         evt.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await ValidateEventConflictsAsync(evt, excludeEventId: null);
 
         var id = await _eventRepository.CreateAsync(evt);
         await _auditService.LogAsync(new AuditEntry
@@ -73,6 +79,8 @@ public class EventService
             throw new UnauthorizedAccessException("Requires event.manage permission.");
 
         evt.TenantId = _tenantContext.TenantId;
+        await ValidateEventConflictsAsync(evt, excludeEventId: evt.Id);
+
         await _eventRepository.UpdateAsync(evt);
         await _auditService.LogAsync(new AuditEntry
         {
@@ -83,6 +91,61 @@ public class EventService
             EntityId = evt.Id,
             Details = $"Event '{evt.Title}' updated."
         });
+    }
+
+    public async Task ValidateEventConflictsAsync(Event evt, Guid? excludeEventId = null, CancellationToken cancellationToken = default)
+    {
+        if (evt.StartTime.HasValue && evt.EndTime.HasValue && evt.EndTime <= evt.StartTime)
+        {
+            throw new ArgumentException("End time must be after start time.");
+        }
+
+        var tenantId = _tenantContext.TenantId;
+        var existingEvents = (await _eventRepository.GetEventsForDateAsync(tenantId, evt.EventDate, null, null)).ToList();
+
+        foreach (var existing in existingEvents)
+        {
+            if (excludeEventId.HasValue && existing.Id == excludeEventId.Value) continue;
+            if (existing.Id == evt.Id) continue;
+            if (string.Equals(existing.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // Check time overlap
+            bool timeOverlaps = false;
+            if (evt.StartTime.HasValue && evt.EndTime.HasValue && existing.StartTime.HasValue && existing.EndTime.HasValue)
+            {
+                timeOverlaps = evt.StartTime < existing.EndTime && evt.EndTime > existing.StartTime;
+            }
+            else
+            {
+                // When an event has no specific start/end bounds (e.g. all-day celebration), it spans the day and overlaps
+                timeOverlaps = true;
+            }
+
+            if (!timeOverlaps) continue;
+
+            // Check scope overlap
+            bool scopeConflicts = false;
+            if (evt.Scope == "Organization" || evt.IsOrganizationWide || existing.Scope == "Organization" || existing.IsOrganizationWide)
+            {
+                scopeConflicts = true;
+            }
+            else if (evt.BranchId.HasValue && existing.BranchId.HasValue)
+            {
+                scopeConflicts = (evt.BranchId == existing.BranchId);
+            }
+            else
+            {
+                scopeConflicts = true;
+            }
+
+            if (scopeConflicts)
+            {
+                var timeDisplay = (existing.StartTime.HasValue && existing.EndTime.HasValue)
+                    ? $"{existing.StartTime.Value:hh\\:mm} - {existing.EndTime.Value:hh\\:mm}"
+                    : "all-day";
+                throw new InvalidOperationException($"Another event ('{existing.Title}', {timeDisplay}) is already planned during this time period on {existing.EventDate:yyyy-MM-dd}. No other event can be planned at the same time.");
+            }
+        }
     }
 
     public async Task DeleteEventAsync(Guid id)

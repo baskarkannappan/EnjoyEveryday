@@ -1,0 +1,735 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.UI.Shared.Services
+@inject IEndOfDayService EndOfDayService
+@inject IAppNotificationService NotificationService
+
+@if (IsOpen)
+{
+    <div class="eod-modal-backdrop" @onclick="HandleBackdropClick">
+        <div class="eod-modal-card" @onclick:stopPropagation="true">
+            @if (_report != null)
+            {
+                <!-- STATE 2: COMPLETION REPORT -->
+                <div class="eod-modal-header completion">
+                    <div class="eod-eyebrow">SYSTEM END OF DAY PROCESS COMPLETED</div>
+                    <h2 class="eod-title">✦ Day Successfully Closed</h2>
+                    <p class="eod-sub">
+                        All open attendances, active children, and scheduled experiences were autoclosed by the system at @_report.ProcessTime.ToString(@"hh\:mm").
+                    </p>
+                </div>
+
+                <div class="eod-report-body">
+                    <div class="eod-stat-strip">
+                        <div class="eod-stat-box">
+                            <span class="eod-stat-icon">👥</span>
+                            <div class="eod-stat-val">@_report.TeachersCheckedOutCount</div>
+                            <div class="eod-stat-lbl">Teachers Checked Out</div>
+                        </div>
+                        <div class="eod-stat-box">
+                            <span class="eod-stat-icon">🎒</span>
+                            <div class="eod-stat-val">@_report.ChildrenCheckedOutCount</div>
+                            <div class="eod-stat-lbl">Children Checked Out</div>
+                        </div>
+                        <div class="eod-stat-box">
+                            <span class="eod-stat-icon">🎨</span>
+                            <div class="eod-stat-val">@_report.ActivitiesClosedCount</div>
+                            <div class="eod-stat-lbl">Activities Auto-Closed</div>
+                        </div>
+                        <div class="eod-stat-box">
+                            <span class="eod-stat-icon">🎉</span>
+                            <div class="eod-stat-val">@_report.EventsClosedCount</div>
+                            <div class="eod-stat-lbl">Events Auto-Closed</div>
+                        </div>
+                    </div>
+
+                    <div class="eod-breakdown-container">
+                        @if (_report.TeachersCheckedOutNames.Any())
+                        {
+                            <div class="eod-breakdown-card">
+                                <div class="eod-card-title">
+                                    <span>👥 Teachers Auto-Checked Out (@_report.TeachersCheckedOutNames.Count)</span>
+                                    <span class="pill-autoclosed">⚡ System Auto-Closed</span>
+                                </div>
+                                <div class="eod-pill-list">
+                                    @foreach (var name in _report.TeachersCheckedOutNames)
+                                    {
+                                        <span class="eod-item-pill">@name</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_report.ChildrenCheckedOutNames.Any())
+                        {
+                            <div class="eod-breakdown-card">
+                                <div class="eod-card-title">
+                                    <span>🎒 Children Auto-Checked Out (@_report.ChildrenCheckedOutNames.Count)</span>
+                                    <span class="pill-autoclosed">⚡ System Auto-Closed</span>
+                                </div>
+                                <div class="eod-pill-list">
+                                    @foreach (var name in _report.ChildrenCheckedOutNames)
+                                    {
+                                        <span class="eod-item-pill">@name</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_report.ActivitiesClosedTitles.Any())
+                        {
+                            <div class="eod-breakdown-card">
+                                <div class="eod-card-title">
+                                    <span>🎨 Activities Auto-Closed (@_report.ActivitiesClosedTitles.Count)</span>
+                                    <span class="pill-autoclosed">⚡ System Auto-Closed</span>
+                                </div>
+                                <div class="eod-pill-list">
+                                    @foreach (var title in _report.ActivitiesClosedTitles)
+                                    {
+                                        <span class="eod-item-pill">@title</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (_report.EventsClosedTitles.Any())
+                        {
+                            <div class="eod-breakdown-card">
+                                <div class="eod-card-title">
+                                    <span>🎉 Celebrations Auto-Closed (@_report.EventsClosedTitles.Count)</span>
+                                    <span class="pill-autoclosed">⚡ System Auto-Closed</span>
+                                </div>
+                                <div class="eod-pill-list">
+                                    @foreach (var title in _report.EventsClosedTitles)
+                                    {
+                                        <span class="eod-item-pill">@title</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (!_report.TeachersCheckedOutNames.Any() && !_report.ChildrenCheckedOutNames.Any() && !_report.ActivitiesClosedTitles.Any() && !_report.EventsClosedTitles.Any())
+                        {
+                            <div class="eod-empty-notice">
+                                All attendances, children, and activities were already closed prior to execution.
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="eod-modal-footer">
+                    <button type="button" class="btn primary" @onclick="CloseAndFinish">
+                        Done &amp; Refresh Operations
+                    </button>
+                </div>
+            }
+            else
+            {
+                <!-- STATE 1: CONFIRMATION -->
+                <div class="eod-modal-header">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div>
+                            <div class="eod-eyebrow">DAYCARE CLOSING PROCEDURE</div>
+                            <h2 class="eod-title">🌙 End of Day Process</h2>
+                        </div>
+                        <button type="button" class="eod-close-btn" @onclick="Cancel">✕</button>
+                    </div>
+                    <p class="eod-sub">
+                        Review and run the automated end-of-day closure. The system will check out all active educators, record departures for remaining children, and close all open activities and celebrations for today.
+                    </p>
+                </div>
+
+                <div class="eod-modal-body">
+                    @if (_isLoadingSummary)
+                    {
+                        <div class="eod-loading">
+                            <span>Checking active daycare operations...</span>
+                        </div>
+                    }
+                    else if (_summary != null)
+                    {
+                        <div class="eod-items-grid">
+                            <div class="eod-scope-box @(_summary.ActiveTeachersCount > 0 ? "has-items" : "is-clear")">
+                                <div class="eod-scope-head">
+                                    <span>👥 Teacher Check Out</span>
+                                    <span class="eod-badge">@_summary.ActiveTeachersCount Active</span>
+                                </div>
+                                <p class="eod-scope-desc">
+                                    @(_summary.ActiveTeachersCount > 0 
+                                        ? $"{_summary.ActiveTeachersCount} teacher(s) currently clocked in will be checked out automatically."
+                                        : "All teachers already checked out.")
+                                </p>
+                                @if (_summary.ActiveTeachersNames.Any())
+                                {
+                                    <div class="eod-name-tags">
+                                        @foreach (var tName in _summary.ActiveTeachersNames.Take(4))
+                                        {
+                                            <span class="eod-tag">@tName</span>
+                                        }
+                                        @if (_summary.ActiveTeachersNames.Count > 4)
+                                        {
+                                            <span class="eod-tag-more">+@(_summary.ActiveTeachersNames.Count - 4) more</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="eod-scope-box @(_summary.ActiveChildrenCount > 0 ? "has-items" : "is-clear")">
+                                <div class="eod-scope-head">
+                                    <span>🎒 Children Check Out</span>
+                                    <span class="eod-badge">@_summary.ActiveChildrenCount On Site</span>
+                                </div>
+                                <p class="eod-scope-desc">
+                                    @(_summary.ActiveChildrenCount > 0 
+                                        ? $"{_summary.ActiveChildrenCount} child(ren) present without departure will be checked out with system sign-off."
+                                        : "All children already checked out.")
+                                </p>
+                                @if (_summary.ActiveChildrenNames.Any())
+                                {
+                                    <div class="eod-name-tags">
+                                        @foreach (var cName in _summary.ActiveChildrenNames.Take(4))
+                                        {
+                                            <span class="eod-tag">@cName</span>
+                                        }
+                                        @if (_summary.ActiveChildrenNames.Count > 4)
+                                        {
+                                            <span class="eod-tag-more">+@(_summary.ActiveChildrenNames.Count - 4) more</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="eod-scope-box @(_summary.PlannedActivitiesCount > 0 ? "has-items" : "is-clear")">
+                                <div class="eod-scope-head">
+                                    <span>🎨 Activities Planned</span>
+                                    <span class="eod-badge">@_summary.PlannedActivitiesCount Open</span>
+                                </div>
+                                <p class="eod-scope-desc">
+                                    @(_summary.PlannedActivitiesCount > 0 
+                                        ? $"{_summary.PlannedActivitiesCount} scheduled learning experience(s) will be autoclosed."
+                                        : "No open experiences scheduled today.")
+                                </p>
+                                @if (_summary.PlannedActivitiesTitles.Any())
+                                {
+                                    <div class="eod-name-tags">
+                                        @foreach (var title in _summary.PlannedActivitiesTitles.Take(3))
+                                        {
+                                            <span class="eod-tag">@title</span>
+                                        }
+                                        @if (_summary.PlannedActivitiesTitles.Count > 3)
+                                        {
+                                            <span class="eod-tag-more">+@(_summary.PlannedActivitiesTitles.Count - 3) more</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="eod-scope-box @(_summary.PlannedEventsCount > 0 ? "has-items" : "is-clear")">
+                                <div class="eod-scope-head">
+                                    <span>🎉 Celebrations &amp; Events</span>
+                                    <span class="eod-badge">@_summary.PlannedEventsCount Open</span>
+                                </div>
+                                <p class="eod-scope-desc">
+                                    @(_summary.PlannedEventsCount > 0 
+                                        ? $"{_summary.PlannedEventsCount} planned celebration(s) will be autoclosed."
+                                        : "No open celebrations today.")
+                                </p>
+                                @if (_summary.PlannedEventsTitles.Any())
+                                {
+                                    <div class="eod-name-tags">
+                                        @foreach (var ev in _summary.PlannedEventsTitles.Take(3))
+                                        {
+                                            <span class="eod-tag">@ev</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="eod-time-row">
+                            <label class="eod-time-label">
+                                <strong>Recorded Checkout Timestamp:</strong>
+                                <span>Departure and completion times will be recorded at:</span>
+                            </label>
+                            <input type="time" class="eod-time-input" value="@_checkoutTime.ToString(@"hh\:mm")" @onchange="OnTimeChanged" />
+                        </div>
+
+                        <div class="eod-audit-note">
+                            ✦ <strong>System Notice:</strong> All affected items will show an explicit <code>⚡ System Auto-Closed</code> indicator to preserve complete administrative and regulatory transparency.
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div class="eod-error-banner">
+                            ⚠️ @_errorMessage
+                        </div>
+                    }
+                </div>
+
+                <div class="eod-modal-footer">
+                    <button type="button" class="btn secondary" @onclick="Cancel" disabled="@_isExecuting">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn primary eod-confirm-btn" @onclick="ExecuteEndOfDay" disabled="@(_isExecuting || _isLoadingSummary)">
+                        @if (_isExecuting)
+                        {
+                            <span>Autoclosing operations...</span>
+                        }
+                        else
+                        {
+                            <span>✓ Execute End of Day Process</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+.eod-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(38, 51, 45, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.eod-modal-card {
+    background: #ffffff;
+    border: 1px solid #e4e7df;
+    border-radius: 20px;
+    box-shadow: 0 16px 48px rgba(40, 55, 47, 0.18);
+    width: 100%;
+    max-width: 680px;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    animation: eodSlideIn 0.22s ease-out;
+}
+
+@@keyframes eodSlideIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.eod-modal-header {
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid #edf0ec;
+}
+
+.eod-modal-header.completion {
+    background: linear-gradient(135deg, #f3f7f4 0%, #ffffff 100%);
+    border-bottom: 1px solid #d8e5dc;
+}
+
+.eod-eyebrow {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    color: #557c6c;
+    text-transform: uppercase;
+}
+
+.eod-title {
+    margin: 4px 0 6px 0;
+    font-size: 22px;
+    font-weight: 800;
+    color: #26332d;
+    letter-spacing: -0.4px;
+}
+
+.eod-sub {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #6c7870;
+}
+
+.eod-close-btn {
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    color: #6c7870;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+}
+.eod-close-btn:hover {
+    background: #f4eee1;
+}
+
+.eod-modal-body, .eod-report-body {
+    padding: 22px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.eod-items-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.eod-scope-box {
+    background: #f8f9f5;
+    border: 1px solid #e4e7df;
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.eod-scope-box.has-items {
+    border-color: #c9dbcf;
+    background: #f5f9f6;
+}
+
+.eod-scope-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 750;
+    font-size: 13.5px;
+    color: #26332d;
+}
+
+.eod-badge {
+    font-size: 11px;
+    font-weight: 700;
+    background: #e6eee9;
+    color: #3e6253;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.eod-scope-desc {
+    margin: 0;
+    font-size: 12px;
+    color: #6c7870;
+    line-height: 1.4;
+}
+
+.eod-name-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 4px;
+}
+
+.eod-tag {
+    font-size: 11px;
+    background: #ffffff;
+    border: 1px solid #dce4de;
+    padding: 2px 7px;
+    border-radius: 6px;
+    color: #26332d;
+    font-weight: 600;
+}
+
+.eod-tag-more {
+    font-size: 11px;
+    color: #557c6c;
+    font-weight: 700;
+    align-self: center;
+}
+
+.eod-time-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fafbfa;
+    border: 1px solid #e4e7df;
+    border-radius: 12px;
+    padding: 12px 16px;
+}
+
+.eod-time-label strong {
+    display: block;
+    font-size: 13px;
+    color: #26332d;
+}
+.eod-time-label span {
+    font-size: 12px;
+    color: #6c7870;
+}
+
+.eod-time-input {
+    border: 1px solid #d0d7d2;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #26332d;
+    background: #ffffff;
+}
+
+.eod-audit-note {
+    background: #fdfbee;
+    border: 1px solid #fae8a4;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #71580f;
+    line-height: 1.45;
+}
+
+.eod-stat-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.eod-stat-box {
+    background: #f8f9f5;
+    border: 1px solid #e1e6e0;
+    border-radius: 12px;
+    padding: 12px 10px;
+    text-align: center;
+}
+
+.eod-stat-icon {
+    font-size: 18px;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.eod-stat-val {
+    font-size: 22px;
+    font-weight: 800;
+    color: #3e6253;
+}
+
+.eod-stat-lbl {
+    font-size: 11px;
+    color: #6c7870;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.eod-breakdown-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.eod-breakdown-card {
+    background: #ffffff;
+    border: 1px solid #e4e7df;
+    border-radius: 12px;
+    padding: 12px 16px;
+}
+
+.eod-card-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 750;
+    color: #26332d;
+    margin-bottom: 8px;
+}
+
+.pill-autoclosed {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 6px;
+    letter-spacing: 0.2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.eod-pill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.eod-item-pill {
+    background: #f5f8f6;
+    border: 1px solid #d4e2d8;
+    color: #26332d;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.eod-empty-notice {
+    padding: 18px;
+    text-align: center;
+    color: #6c7870;
+    font-size: 13px;
+    background: #f8f9f5;
+    border-radius: 12px;
+}
+
+.eod-error-banner {
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: #9b2c2c;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.eod-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 28px 24px;
+    border-top: 1px solid #edf0ec;
+}
+
+.btn.primary.eod-confirm-btn {
+    background: var(--accent, #557c6c);
+    color: #ffffff;
+    font-weight: 750;
+    border: none;
+    border-radius: 11px;
+    padding: 9px 18px;
+    font-size: 13px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(85, 124, 108, 0.25);
+    transition: all 0.15s ease;
+}
+
+.btn.primary.eod-confirm-btn:hover {
+    background: var(--accent-dark, #3e6253);
+}
+
+.btn.secondary {
+    background: #ffffff;
+    border: 1px solid #d0d7d2;
+    color: #26332d;
+    font-weight: 650;
+    border-radius: 11px;
+    padding: 9px 16px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.btn.secondary:hover {
+    background: #f8f9f5;
+}
+</style>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid? BranchId { get; set; }
+    [Parameter] public DateTime? Date { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<EndOfDayProcessReport> OnCompleted { get; set; }
+
+    private bool _isLoadingSummary = false;
+    private bool _isExecuting = false;
+    private EndOfDayPendingSummary? _summary;
+    private EndOfDayProcessReport? _report;
+    private TimeSpan _checkoutTime = DateTime.Now.TimeOfDay;
+    private string? _errorMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && _report == null && _summary == null && !_isLoadingSummary)
+        {
+            await LoadSummaryAsync();
+        }
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        _isLoadingSummary = true;
+        _errorMessage = null;
+        try
+        {
+            _checkoutTime = DateTime.Now.TimeOfDay;
+            _summary = await EndOfDayService.GetPendingSummaryAsync(BranchId, Date);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoadingSummary = false;
+        }
+    }
+
+    private void OnTimeChanged(ChangeEventArgs e)
+    {
+        if (TimeSpan.TryParse(e.Value?.ToString(), out var t))
+        {
+            _checkoutTime = t;
+        }
+    }
+
+    private async Task ExecuteEndOfDay()
+    {
+        _isExecuting = true;
+        _errorMessage = null;
+        try
+        {
+            _report = await EndOfDayService.ExecuteEndOfDayProcessAsync(BranchId, Date, _checkoutTime);
+            if (OnCompleted.HasDelegate)
+            {
+                await OnCompleted.InvokeAsync(_report);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isExecuting = false;
+        }
+    }
+
+    private async Task CloseAndFinish()
+    {
+        _report = null;
+        _summary = null;
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        _report = null;
+        _summary = null;
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (_report != null)
+        {
+            await CloseAndFinish();
+        }
+        else if (!_isExecuting)
+        {
+            await Cancel();
+        }
+    }
+}

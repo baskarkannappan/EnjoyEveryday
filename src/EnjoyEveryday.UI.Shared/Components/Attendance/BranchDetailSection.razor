@@ -76,6 +76,10 @@
                     </select>
                     <button class="btn primary" @onclick="MarkSelectedPresent">Mark selected present</button>
                     <button class="btn" @onclick="() => ShowToast()">Save changes</button>
+                    <button class="btn secondary" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-weight:700;" @onclick="() => _isEndOfDayModalOpen = true">
+                        <span>🌙</span>
+                        <span>End of Day Process</span>
+                    </button>
                 </div>
                 <div class="tablewrap">
                     <table>
@@ -104,7 +108,13 @@
                                             {
                                                 <div style="display: flex; align-items: center; gap: 6px;">
                                                     <span style="font-weight: 700; color: #26332d;">@p.Out</span>
-                                                    @if (!string.IsNullOrEmpty(p.PickupPersonName))
+                                                    @if (p.PickupVerificationMethod == "System Auto-Closed" || (p.PickupNotes?.Contains("System auto-checkout") == true))
+                                                    {
+                                                        <span class="pill amber" style="font-size: 10px; padding: 2px 6px;" title="Automatically checked out by system at End of Day">
+                                                            ⚡ System Auto-Closed
+                                                        </span>
+                                                    }
+                                                    else if (!string.IsNullOrEmpty(p.PickupPersonName))
                                                     {
                                                         <span class="pill green" style="font-size: 10px; padding: 2px 6px;" title="Collected by @p.PickupPersonName (@p.PickupPersonRelationship) · @p.PickupVerificationMethod">
                                                             <i class="bi bi-shield-check"></i> @p.PickupPersonName
@@ -116,6 +126,27 @@
                                             {
                                                 <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => OpenSecurePickupModal(p)">
                                                     <i class="bi bi-shield-check"></i> Check Out
+                                                </button>
+                                            }
+                                        }
+                                        else if (p.Type == "teachers" && (p.Status == "Present" || p.Status == "Late"))
+                                        {
+                                            @if (p.Out != "—")
+                                            {
+                                                <div style="display: flex; align-items: center; gap: 6px;">
+                                                    <span style="font-weight: 700; color: #26332d;">@p.Out</span>
+                                                    @if (p.Notes?.Contains("System auto-checkout") == true)
+                                                    {
+                                                        <span class="pill amber" style="font-size: 10px; padding: 2px 6px;" title="Automatically checked out by system at End of Day">
+                                                            ⚡ System Auto-Closed
+                                                        </span>
+                                                    }
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => CheckOutTeacher(p)">
+                                                    Check Out
                                                 </button>
                                             }
                                         }
@@ -149,6 +180,13 @@
     ArrivalTime="@_activePickupArrivalTime"
     OnDepartureConfirmed="HandleDepartureConfirmed"
     OnClose="() => _isPickupModalOpen = false" />
+
+<EndOfDayProcessModal 
+    IsOpen="_isEndOfDayModalOpen"
+    BranchId="_branchId"
+    Date="_filterDate"
+    OnClose="() => _isEndOfDayModalOpen = false"
+    OnCompleted="HandleEndOfDayCompleted" />
 
 @if (showToast)
 {
@@ -191,7 +229,33 @@
         _isPickupModalOpen = true;
     }
 
+    private bool _isEndOfDayModalOpen = false;
+
     private async Task HandleDepartureConfirmed(ChildAttendance att)
+    {
+        await LoadDataAsync();
+        StateHasChanged();
+    }
+
+    private async Task CheckOutTeacher(PersonRow teacher)
+    {
+        var att = new TeacherAttendance {
+            Id = teacher.AttendanceId ?? Guid.NewGuid(),
+            BranchId = _branchId,
+            TeacherId = teacher.Id,
+            AttendanceDate = _filterDate,
+            Status = "Present",
+            ClockInTime = TimeSpan.TryParse(teacher.In, out var inTime) ? inTime : DateTime.Now.TimeOfDay,
+            ClockOutTime = DateTime.Now.TimeOfDay,
+            Notes = "Manual teacher checkout",
+            RecordedByUserId = UserContext.UserId
+        };
+        await AttendanceService.MarkTeacherAttendanceAsync(att);
+        await LoadDataAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleEndOfDayCompleted(EndOfDayProcessReport report)
     {
         await LoadDataAsync();
         StateHasChanged();
@@ -305,6 +369,8 @@
                 PickupPersonName = att?.PickupPersonName,
                 PickupPersonRelationship = att?.PickupPersonRelationship,
                 PickupVerificationMethod = att?.PickupVerificationMethod,
+                PickupNotes = att?.PickupNotes,
+                Notes = att?.Notes,
                 Type = "children",
                 AttendanceId = att?.Id
             });
@@ -322,6 +388,7 @@
                 Status = att?.Status ?? "Not marked",
                 In = att?.ClockInTime?.ToString(@"hh\:mm") ?? "—",
                 Out = att?.ClockOutTime?.ToString(@"hh\:mm") ?? "—",
+                Notes = att?.Notes,
                 Type = "teachers",
                 AttendanceId = att?.Id
             });
@@ -416,6 +483,8 @@
         public string? PickupPersonName { get; set; }
         public string? PickupPersonRelationship { get; set; }
         public string? PickupVerificationMethod { get; set; }
+        public string? PickupNotes { get; set; }
+        public string? Notes { get; set; }
         public string Type { get; set; } = ""; 
         public bool IsDirty { get; set; }
         public bool IsSelected { get; set; }

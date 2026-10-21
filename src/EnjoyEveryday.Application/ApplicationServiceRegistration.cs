@@ -52,6 +52,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<EmergencyContactService>();
         services.AddScoped<IChildDailyCareService, ChildDailyCareService>();
         services.AddScoped<ChildDailyCareService>();
+        services.AddScoped<IEndOfDayService, EndOfDayService>();
+        services.AddScoped<EndOfDayService>();
         Action<HttpClient> configureAiClient = client =>
         {
             client.BaseAddress = new Uri("http://127.0.0.1:8000");

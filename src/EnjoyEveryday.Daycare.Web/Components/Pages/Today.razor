@@ -19,7 +19,7 @@
 @inject TimeProvider TimeProvider
 @rendermode InteractiveServer
 
-<PageTitle>Live Daycare Operations Board — EnjoyEveryday</PageTitle>
+<PageTitle>Live Daycare Operations — Teacher Portal — EnjoyEveryday</PageTitle>
 
 <div class="content operations-board-page">
     @if (_loading)
@@ -58,6 +58,10 @@
                     </select>
                 }
 
+                <button type="button" class="btn secondary" style="display: inline-flex; align-items: center; gap: 5px; font-weight: 700;" @onclick="() => _isEndOfDayModalOpen = true">
+                    <span>🌙</span>
+                    <span>End of Day Process</span>
+                </button>
                 <a href="/attendance" class="btn secondary">Attendance Desk</a>
                 <a href="/daily-care" class="btn primary">+ Record Daily Care</a>
             </RightContent>
@@ -342,6 +346,10 @@
                                     }
                                     <div class="rhythm-actions">
                                         <span class="status-pill status-@item.Status.ToLower()">@item.Status</span>
+                                        @if (item.PreparationNotes?.Contains("System Auto-Closed") == true)
+                                        {
+                                            <span class="pill-autoclosed" title="Closed automatically by the system at End of Day">⚡ System Auto-Closed</span>
+                                        }
                                         @if (!item.IsCelebration)
                                         {
                                             @if (item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed")
@@ -511,6 +519,13 @@
     </div>
 }
 
+<EndOfDayProcessModal 
+    IsOpen="_isEndOfDayModalOpen"
+    BranchId="@(Guid.TryParse(_selectedBranchId, out var bId) ? bId : null)"
+    Date="DateTime.Today"
+    OnClose="() => _isEndOfDayModalOpen = false"
+    OnCompleted="HandleEndOfDayCompleted" />
+
 @code {
     private bool _loading = true;
     private OperationsBoardModel _board = new();
@@ -524,6 +539,7 @@
     public record RoleOption(string RoleKey, string DisplayName, int Rank);
 
     // Modals
+    private bool _isEndOfDayModalOpen = false;
     private bool _isSessionModalOpen = false;
     private Guid _activeSessionScheduleId;
     private bool _isPhotoModalOpen = false;
@@ -667,6 +683,12 @@
         {
             _loading = false;
         }
+    }
+
+    private async Task HandleEndOfDayCompleted(EndOfDayProcessReport report)
+    {
+        await RefreshBoardAsync();
+        await NotificationService.ShowSuccessAsync($"Day successfully closed! Autoclosed {report.TeachersCheckedOutCount} educators, {report.ChildrenCheckedOutCount} children, and {report.ActivitiesClosedCount + report.EventsClosedCount} activities/events.");
     }
 
     private async Task OnRoleChanged(ChangeEventArgs e)

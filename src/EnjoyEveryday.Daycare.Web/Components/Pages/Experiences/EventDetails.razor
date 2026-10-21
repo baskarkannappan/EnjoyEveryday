@@ -258,6 +258,14 @@
                                 <textarea class="form-textarea" rows="4" @bind="_event.Description" placeholder="Overview of traditions, planned activities, special treats, and instructions..."></textarea>
                             </div>
 
+                            @if (!string.IsNullOrEmpty(_saveErrorMessage))
+                            {
+                                <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 10px; padding: 10px 14px; color: #9b2c2c; font-size: 13px; font-weight: 600; margin-top: 10px; display: flex; align-items: flex-start; gap: 8px;">
+                                    <span>⚠️</span>
+                                    <span>@_saveErrorMessage</span>
+                                </div>
+                            }
+
                             <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px;">
                                 @if (_isSavedNotice)
                                 {
@@ -459,6 +467,7 @@
     private TimeSpan? _startTime;
     private TimeSpan? _endTime;
     private bool _isSavedNotice = false;
+    private string? _saveErrorMessage;
     private bool _isDeleteConfirmOpen = false;
 
     private bool IsAdmin =>
@@ -554,29 +563,38 @@
     private async Task SaveOverview()
     {
         if (!IsAdmin || _event == null) return;
-        _event.StartTime = _startTime;
-        _event.EndTime = _endTime;
-        if (_event.Scope != "Branch") _event.BranchId = null;
-        await EventService.UpdateEventAsync(_event);
-
-        if (_event.Scope == "Classroom")
+        _saveErrorMessage = null;
+        try
         {
-            var existing = (await EventService.GetEventClassroomsAsync(_event.Id)).ToHashSet();
-            foreach (var removeId in existing.Except(_selectedClassroomIds))
-            {
-                await EventService.RemoveClassroomFromEventAsync(_event.Id, removeId);
-            }
-            foreach (var addId in _selectedClassroomIds.Except(existing))
-            {
-                await EventService.AddClassroomToEventAsync(_event.Id, addId);
-            }
-        }
+            _event.StartTime = _startTime;
+            _event.EndTime = _endTime;
+            if (_event.Scope != "Branch") _event.BranchId = null;
+            await EventService.UpdateEventAsync(_event);
 
-        _isSavedNotice = true;
-        StateHasChanged();
-        await Task.Delay(2500);
-        _isSavedNotice = false;
-        StateHasChanged();
+            if (_event.Scope == "Classroom")
+            {
+                var existing = (await EventService.GetEventClassroomsAsync(_event.Id)).ToHashSet();
+                foreach (var removeId in existing.Except(_selectedClassroomIds))
+                {
+                    await EventService.RemoveClassroomFromEventAsync(_event.Id, removeId);
+                }
+                foreach (var addId in _selectedClassroomIds.Except(existing))
+                {
+                    await EventService.AddClassroomToEventAsync(_event.Id, addId);
+                }
+            }
+
+            _isSavedNotice = true;
+            StateHasChanged();
+            await Task.Delay(2500);
+            _isSavedNotice = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _saveErrorMessage = ex.Message;
+            StateHasChanged();
+        }
     }
 
     private async Task UpdateStatus(string newStatus)

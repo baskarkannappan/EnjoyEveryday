@@ -196,6 +196,14 @@
                 <button type="button" class="modal-close-btn" @onclick="CloseCreateModal">✕</button>
             </div>
 
+            @if (!string.IsNullOrEmpty(_createErrorMessage))
+            {
+                <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 10px; padding: 12px 14px; color: #9b2c2c; font-size: 13px; font-weight: 600; display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px;">
+                    <span style="font-size: 16px;">⚠️</span>
+                    <span>@_createErrorMessage</span>
+                </div>
+            }
+
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div class="form-group">
                     <label class="form-label">Event Scope *</label>
@@ -345,6 +353,7 @@
     private HashSet<Guid> _selectedClassroomIds = new();
     private TimeSpan? _newEventStartTime = new TimeSpan(10, 0, 0);
     private TimeSpan? _newEventEndTime = new TimeSpan(11, 30, 0);
+    private string? _createErrorMessage;
 
     private bool IsAdmin =>
         UserContext.Roles.Any(r =>
@@ -501,39 +510,50 @@
         };
         _newEventStartTime = new TimeSpan(10, 0, 0);
         _newEventEndTime = new TimeSpan(11, 30, 0);
+        _createErrorMessage = null;
         _isCreateModalOpen = true;
     }
 
     private void CloseCreateModal()
     {
+        _createErrorMessage = null;
         _isCreateModalOpen = false;
     }
 
     private async Task CreateNewEvent()
     {
-        if (string.IsNullOrWhiteSpace(_newEvent.Title))
+        _createErrorMessage = null;
+        try
         {
-            _newEvent.Title = "New Celebration";
-        }
-
-        _newEvent.StartTime = _newEventStartTime;
-        _newEvent.EndTime = _newEventEndTime;
-        _newEvent.Scope = _newEventScope;
-        _newEvent.BranchId = _newEventScope == "Branch" ? _selectedBranchId : null;
-
-        var id = await EventService.CreateEventAsync(_newEvent);
-
-        if (_newEventScope == "Classroom")
-        {
-            foreach (var crId in _selectedClassroomIds)
+            if (string.IsNullOrWhiteSpace(_newEvent.Title))
             {
-                await EventService.AddClassroomToEventAsync(id, crId);
+                _newEvent.Title = "New Celebration";
             }
-        }
 
-        _isCreateModalOpen = false;
-        await LoadDataAsync();
-        NavigateToEvent(id);
+            _newEvent.StartTime = _newEventStartTime;
+            _newEvent.EndTime = _newEventEndTime;
+            _newEvent.Scope = _newEventScope;
+            _newEvent.BranchId = _newEventScope == "Branch" ? _selectedBranchId : null;
+
+            var id = await EventService.CreateEventAsync(_newEvent);
+
+            if (_newEventScope == "Classroom")
+            {
+                foreach (var crId in _selectedClassroomIds)
+                {
+                    await EventService.AddClassroomToEventAsync(id, crId);
+                }
+            }
+
+            _isCreateModalOpen = false;
+            await LoadDataAsync();
+            NavigateToEvent(id);
+        }
+        catch (Exception ex)
+        {
+            _createErrorMessage = ex.Message;
+            StateHasChanged();
+        }
     }
 
     private async Task ConfirmDelete(Event evt)
