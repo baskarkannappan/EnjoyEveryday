@@ -88,8 +88,30 @@ public static class InfrastructureServiceRegistration
                 ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             });
 
-        // Storage
-        services.AddSingleton<EnjoyEveryday.Domain.Storage.IBlobStorageService, EnjoyEveryday.Infrastructure.Storage.LocalDiskBlobStorageService>();
+        // Storage (Provider-Independent Object Storage Abstraction + Multi-Provider Adapters)
+        services.AddSingleton<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>();
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IObjectStorage>(sp => sp.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>());
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IBlobStorageService>(sp => sp.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>());
+
+        services.AddSingleton<EnjoyEveryday.Infrastructure.Storage.AzureBlobObjectStorage>();
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IObjectStorage>(sp => sp.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.AzureBlobObjectStorage>());
+
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IObjectStorage>(sp =>
+            new EnjoyEveryday.Infrastructure.Storage.S3CompatibleObjectStorage(
+                "AmazonS3",
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                sp.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<EnjoyEveryday.Infrastructure.Storage.S3CompatibleObjectStorage>>()));
+
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IObjectStorage>(sp =>
+            new EnjoyEveryday.Infrastructure.Storage.S3CompatibleObjectStorage(
+                "CloudflareR2",
+                sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>(),
+                sp.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<EnjoyEveryday.Infrastructure.Storage.S3CompatibleObjectStorage>>()));
+
+        services.AddSingleton<EnjoyEveryday.Domain.Storage.IObjectStorageRegistry, EnjoyEveryday.Infrastructure.Storage.ObjectStorageRegistry>();
+        services.AddScoped<EnjoyEveryday.Infrastructure.Storage.StorageMigrationService>();
 
         // Observability & Diagnostics
         services.AddAppObservability();

@@ -36,7 +36,7 @@ Always reference these CSS variables or their hex equivalents:
 
 ## 3. Typography & Fonts
 
-- **Font Family**: `"Figtree", Inter, -apple-system, sans-serif`
+- **Font Family**: `"Plus Jakarta Sans", "Figtree", Inter, -apple-system, sans-serif` — defined once as `--ee-font` in `src/EnjoyEveryday.UI.Shared/wwwroot/css/ee-foundation.css` (loaded last by every portal). Do NOT hardcode other font families in pages or components; use the shared type scale variables (`--fs-xs` … `--fs-2xl`).
 - **Heading 1 / 2**: `font-weight: 750` to `800`, letter-spacing `-0.3px` to `-0.5px`, color `var(--text, #26332d)`.
 - **Subtitles**: `font-size: 13px` to `14px`, color `var(--muted, #6c7870)`.
 

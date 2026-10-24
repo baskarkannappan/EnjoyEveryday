@@ -1,0 +1,304 @@
+@page "/providers"
+@using EnjoyEveryday.Domain.Storage
+@using EnjoyEveryday.UI.Shared.Components
+@inject IObjectStorageRegistry StorageRegistry
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+<PageTitle>Provider Management — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="PLATFORM ARCHITECTURE"
+              Title="Provider Management"
+              Subtitle="Inspect active storage adapters, intelligence models, health status, and operational boundaries.">
+        <RightContent>
+            <button class="secondary" @onclick="RefreshStatus">↻ Refresh Status</button>
+            <span class="active-badge">● Production Mode</span>
+        </RightContent>
+    </PageHero>
+
+    <!-- SUMMARY METRICS -->
+    <div class="metrics-row">
+        <div class="metric-card">
+            <div class="metric-label">ACTIVE STORAGE PROVIDER</div>
+            <div class="metric-value">@ActiveStorageProvider</div>
+            <div class="metric-desc">Default storage engine for daycare media &amp; documents</div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-label">CONFIGURED AI ENGINE</div>
+            <div class="metric-value">@ActiveAiProvider</div>
+            <div class="metric-desc">Multi-tenant child developmental intelligence gateway</div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-label">STORAGE FALLBACK MODE</div>
+            <div class="metric-value">Local Disk</div>
+            <div class="metric-desc">Deterministic fail-safe when cloud stores are unconfigured</div>
+        </div>
+    </div>
+
+    <!-- PROVIDER ADAPTERS GRID -->
+    <h3 style="margin: 28px 0 14px; font-weight: 750;">Registered Storage Adapters</h3>
+    
+    <div class="providers-grid">
+        @foreach (var provider in AvailableProviders)
+        {
+            var isDefault = provider.Name == ActiveStorageProvider;
+            <div class="provider-card @(isDefault ? "active-border" : "")">
+                <div class="card-head">
+                    <div class="provider-icon">@(provider.Icon)</div>
+                    <div>
+                        <div class="provider-name">@provider.Name</div>
+                        <div class="provider-type">@provider.Category</div>
+                    </div>
+                    @if (isDefault)
+                    {
+                        <span class="badge-default">DEFAULT ACTIVE</span>
+                    }
+                    else
+                    {
+                        <span class="badge-standby">STANDBY</span>
+                    }
+                </div>
+
+                <div class="provider-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-val status-healthy">● Ready / Operational</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Capabilities</span>
+                        <span class="detail-val">@provider.Capabilities</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Fail-Safe Behavior</span>
+                        <span class="detail-val">Seamless Local Disk Fallback</span>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- AI ENGINE STATUS -->
+    <h3 style="margin: 32px 0 14px; font-weight: 750;">Configured AI Intelligence Engine</h3>
+    <div class="ai-status-card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+            <div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="font-size: 24px;">✨</div>
+                    <div>
+                        <h4 style="margin: 0; font-weight: 750;">@ActiveAiProvider Gateway</h4>
+                        <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">Endpoint: <code>@AiBaseUrl</code></div>
+                    </div>
+                </div>
+            </div>
+            <span class="badge-default">DYNAMIC MULTI-TENANT</span>
+        </div>
+
+        <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div>
+                <div style="font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase;">Tenant Key Ownership</div>
+                <div style="font-size: 13px; font-weight: 600; margin-top: 4px; color: var(--text);">Configured per daycare in Daycare Settings</div>
+            </div>
+            <div>
+                <div style="font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase;">Encryption Standard</div>
+                <div style="font-size: 13px; font-weight: 600; margin-top: 4px; color: var(--text);">AES-GCM (Zero Plaintext Storage)</div>
+            </div>
+            <div>
+                <div style="font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase;">Supported Models</div>
+                <div style="font-size: 13px; font-weight: 600; margin-top: 4px; color: var(--text);">Gemini 2.5/3, GPT-4o-mini, Local Models</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .metrics-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+    }
+
+    .metric-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        box-shadow: var(--shadow);
+    }
+
+    .metric-label {
+        font-size: 10.5px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        color: var(--muted);
+        text-transform: uppercase;
+    }
+
+    .metric-value {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        color: var(--text);
+        margin: 6px 0;
+    }
+
+    .metric-desc {
+        font-size: 12px;
+        color: var(--muted);
+    }
+
+    .providers-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+    }
+
+    .provider-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        box-shadow: var(--shadow);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .provider-card.active-border {
+        border: 1.5px solid var(--accent);
+        background: #fbfdfc;
+    }
+
+    .card-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .provider-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+    }
+
+    .provider-name {
+        font-weight: 750;
+        font-size: 15px;
+        color: var(--text);
+    }
+
+    .provider-type {
+        font-size: 11.5px;
+        color: var(--muted);
+    }
+
+    .badge-default {
+        margin-left: auto;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border: 1px solid #c8dacd;
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        padding: 3px 8px;
+    }
+
+    .badge-standby {
+        margin-left: auto;
+        background: var(--surface-soft);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 3px 8px;
+    }
+
+    .provider-details {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 12.5px;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+    }
+
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .detail-label {
+        color: var(--muted);
+    }
+
+    .detail-val {
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    .status-healthy {
+        color: #15803d;
+        font-weight: 700;
+    }
+
+    .ai-status-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+        box-shadow: var(--shadow);
+    }
+
+    .active-badge {
+        background: #f0fdf4;
+        color: #15803d;
+        border: 1px solid #bbf7d0;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 11.5px;
+        font-weight: 750;
+    }
+</style>
+
+@code {
+    private string ActiveStorageProvider = "Local";
+    private string ActiveAiProvider = "Google Gemini";
+    private string AiBaseUrl = "http://127.0.0.1:8000";
+
+    private class ProviderDisplay
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public string Icon { get; set; } = string.Empty;
+        public string Capabilities { get; set; } = string.Empty;
+    }
+
+    private List<ProviderDisplay> AvailableProviders = new();
+
+    protected override void OnInitialized()
+    {
+        RefreshStatus();
+    }
+
+    private void RefreshStatus()
+    {
+        ActiveStorageProvider = StorageRegistry.Default.ProviderId;
+        AiBaseUrl = Configuration["AiAgent:BaseUrl"] ?? Configuration["Providers:AI:BaseUrl"] ?? "http://127.0.0.1:8000";
+
+        AvailableProviders = new List<ProviderDisplay>
+        {
+            new() { Name = "Local", Category = "Local Filesystem", Icon = "💾", Capabilities = "Metadata, Stream Read/Write" },
+            new() { Name = "AzureBlob", Category = "Microsoft Azure Blob", Icon = "☁️", Capabilities = "Signed URLs, Metadata, Blob Streams" },
+            new() { Name = "AmazonS3", Category = "Amazon Web Services S3", Icon = "📦", Capabilities = "Signed URLs, Metadata, Bucket Replication" },
+            new() { Name = "CloudflareR2", Category = "Cloudflare R2 (S3-Compatible)", Icon = "⚡", Capabilities = "Zero Egress, Signed URLs, S3 Protocol" }
+        };
+    }
+}

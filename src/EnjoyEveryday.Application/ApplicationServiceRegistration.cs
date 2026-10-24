@@ -54,10 +54,21 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ChildDailyCareService>();
         services.AddScoped<IEndOfDayService, EndOfDayService>();
         services.AddScoped<EndOfDayService>();
-        Action<HttpClient> configureAiClient = client =>
+        Action<IServiceProvider, HttpClient> configureAiClient = (sp, client) =>
         {
-            client.BaseAddress = new Uri("http://127.0.0.1:8000");
-            client.Timeout = TimeSpan.FromSeconds(15);
+            var config = sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+            var baseUrl = config["AiAgent:BaseUrl"] 
+                ?? config["Providers:AI:BaseUrl"] 
+                ?? "http://127.0.0.1:8000";
+
+            var timeoutSeconds = 15;
+            if (int.TryParse(config["AiAgent:TimeoutSeconds"] ?? config["Providers:AI:TimeoutSeconds"], out var t) && t > 0)
+            {
+                timeoutSeconds = t;
+            }
+
+            client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         };
 
         services.AddHttpClient<IAiIdeaService, AiIdeaService>(configureAiClient);

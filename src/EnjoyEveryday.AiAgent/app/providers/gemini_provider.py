@@ -13,6 +13,8 @@ from app.security.rate_limiter import rate_limiter
 logger = logging.getLogger("EnjoyEveryday.AIProvider")
 
 class GeminiProvider:
+    provider_id: str = "GoogleGemini"
+
     FALLBACK_MODELS: List[str] = [
         "gemini-flash-latest",
         "gemini-3-flash-preview",

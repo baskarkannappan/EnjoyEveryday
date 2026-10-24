@@ -8,10 +8,11 @@ class Settings:
     APP_VERSION: str = "2.0.0"
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
-    # Gemini AI configuration
-    DEFAULT_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-    DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "60"))
-    MAX_RETRIES: int = int(os.getenv("GEMINI_MAX_RETRIES", "2"))
+    # Provider Selection & Configuration
+    DEFAULT_PROVIDER: str = os.getenv("AI_PROVIDER", "GoogleGemini")
+    DEFAULT_MODEL: str = os.getenv("AI_MODEL", os.getenv("GEMINI_MODEL", "gemini-flash-latest"))
+    DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", os.getenv("GEMINI_TIMEOUT_SECONDS", "60")))
+    MAX_RETRIES: int = int(os.getenv("AI_MAX_RETRIES", os.getenv("GEMINI_MAX_RETRIES", "2")))
 
     # Server-to-server security
     SERVICE_SECRET: Optional[str] = os.getenv("AI_SERVICE_SECRET", None)
