@@ -1,0 +1,86 @@
+@using EnjoyEveryday.Application.Services
+
+<div class="board-section-card">
+    <div class="section-title-row">
+        <div>
+            <h2>Classroom Live Occupancy &amp; Coverage</h2>
+            <p class="section-sub">Real-time attendance vs. licensed capacity and active learning sessions</p>
+        </div>
+        <a href="/classrooms" class="section-link">All Classrooms &rarr;</a>
+    </div>
+
+    <div class="classrooms-table-wrap">
+        <table class="board-table">
+            <thead>
+                <tr>
+                    <th>Classroom</th>
+                    <th>Branch</th>
+                    <th>Children Here</th>
+                    <th>Occupancy</th>
+                    <th>Staff Ratio</th>
+                    <th>Current Activity</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Classrooms != null)
+                {
+                    @foreach (var room in Classrooms)
+                    {
+                        <tr class="@(room.IsOverCapacity ? "row-danger" : (room.IsUnderstaffed ? "row-warning" : ""))">
+                            <td>
+                                <div class="room-name-cell">
+                                    <div class="status-indicator @(room.IsOverCapacity ? "dot-danger" : (room.IsUnderstaffed ? "dot-warning" : "dot-ok"))"></div>
+                                    <div>
+                                        <strong>@room.ClassroomName</strong>
+                                        <span class="sub-label">@room.AgeGroup</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>@room.BranchName</td>
+                            <td>
+                                <strong>@room.PresentChildren</strong> / @room.Capacity
+                            </td>
+                            <td>
+                                <div class="occupancy-bar-container">
+                                    <div class="occupancy-bar" style="width: @Math.Min(100, room.OccupancyPercentage)%; background: @(room.IsOverCapacity ? "#c53030" : "var(--accent)");"></div>
+                                </div>
+                                <span class="occupancy-txt">@room.OccupancyPercentage%</span>
+                            </td>
+                            <td>
+                                <span class="ratio-pill @(room.IsUnderstaffed ? "ratio-short" : "ratio-ok")">
+                                    @room.PresentStaff : @room.RequiredStaff req
+                                </span>
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(room.ActiveExperienceTitle))
+                                {
+                                    <span class="activity-pill">
+                                        🎨 @room.ActiveExperienceTitle
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="activity-none">Free Play / Transition</span>
+                                }
+                            </td>
+                            <td>
+                                <a href="/attendance" class="view-link">Open &rarr;</a>
+                            </td>
+                        </tr>
+                    }
+                }
+                @if (Classrooms == null || !Classrooms.Any())
+                {
+                    <tr>
+                        <td colspan="7" class="empty-cell">No classrooms match the active scope.</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ClassroomBoardItem>? Classrooms { get; set; }
+}

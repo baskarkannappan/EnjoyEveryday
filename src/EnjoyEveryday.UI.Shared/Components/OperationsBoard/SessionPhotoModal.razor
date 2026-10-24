@@ -1,0 +1,54 @@
+@using EnjoyEveryday.UI.Shared.Components
+
+@if (IsOpen)
+{
+    <div class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h3>📸 Experience Session Photos</h3>
+                    <p>@Title</p>
+                </div>
+                <button type="button" class="close-btn" @onclick="Close">✕</button>
+            </div>
+            <EventPhotoUploader Photos="@Photos"
+                                PhotosChanged="OnPhotosChanged"
+                                MaxPhotos="@MaxPhotos"
+                                ReadOnly="false"
+                                IsCompleted="true" />
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn secondary btn-xs" @onclick="OpenFullSession">
+                    Open Full Session &rarr;
+                </button>
+                <button type="button" class="btn primary btn-xs" @onclick="Close">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid ScheduleId { get; set; }
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string[] Photos { get; set; } = Array.Empty<string>();
+    [Parameter] public int MaxPhotos { get; set; } = 5;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string[]> PhotosChanged { get; set; }
+    [Parameter] public EventCallback<Guid> OnOpenFullSession { get; set; }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task OnPhotosChanged(string[] updated)
+    {
+        await PhotosChanged.InvokeAsync(updated);
+    }
+
+    private async Task OpenFullSession()
+    {
+        await OnOpenFullSession.InvokeAsync(ScheduleId);
+    }
+}

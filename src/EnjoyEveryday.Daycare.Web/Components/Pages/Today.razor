@@ -5,6 +5,8 @@
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
+@using EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.UI.Shared.Components.OperationsBoard
 @inject IDaycareOperationsBoardService OperationsBoardService
 @inject ClassroomService ClassroomService
 @inject BranchService BranchService
@@ -33,432 +35,64 @@
                   Title="@($"Daycare Operations — {_board.OrganizationName}")"
                   Subtitle="@($"Real-time operational cockpit for {_board.EffectiveRole}: attendance, staffing coverage, live experiences, and actionable care alerts.")">
             <RightContent>
-                <!-- Role / Persona Filter (Preselected automatically to user's assigned higher role) -->
-                @if (_availableRoles.Count > 0)
-                {
-                    <div class="role-switcher">
-                        <span class="role-lbl">Viewing as:</span>
-                        <select class="role-select" value="@_selectedRoleOverride" @onchange="OnRoleChanged" disabled="@(_availableRoles.Count <= 1)">
-                            @foreach (var role in _availableRoles)
-                            {
-                                <option value="@role.RoleKey">@role.DisplayName</option>
-                            }
-                        </select>
-                    </div>
-                }
-
-                @if (_board.EffectiveRole != RoleTemplates.PlatformAdmin)
-                {
-                    <select class="scope-select" value="@_selectedBranchId" @onchange="OnBranchChanged">
-                        <option value="">All Branches</option>
-                        @foreach (var br in _branches)
-                        {
-                            <option value="@br.Id">@br.Name</option>
-                        }
-                    </select>
-                }
-
-                <button type="button" class="btn secondary" style="display: inline-flex; align-items: center; gap: 5px; font-weight: 700;" @onclick="() => _isEndOfDayModalOpen = true">
-                    <span>🌙</span>
-                    <span>End of Day Process</span>
-                </button>
-                <a href="/attendance" class="btn secondary">Attendance Desk</a>
-                <a href="/daily-care" class="btn primary">+ Record Daily Care</a>
+                <OperationsBoardHeroControls 
+                    EffectiveRole="@_board.EffectiveRole"
+                    SelectedRoleOverride="@_selectedRoleOverride"
+                    SelectedBranchId="@_selectedBranchId"
+                    AvailableRoles="@_availableRoles"
+                    Branches="@_branches"
+                    OnRoleChanged="HandleRoleChanged"
+                    OnBranchChanged="HandleBranchChanged"
+                    OnOpenEndOfDay="() => _isEndOfDayModalOpen = true" />
             </RightContent>
         </PageHero>
 
         <!-- PULSE METRICS STRIP -->
-        <div class="pulse-metrics-container">
-            <div class="pulse-card main-summary">
-                <div class="pulse-tag">✦ LIVE DAYCARE STATUS</div>
-                <div class="pulse-headline">
-                    @(_board.CheckedInChildrenCount > 0 ? $"{_board.CheckedInChildrenCount} children on site" : "Ready for today's arrivals")
-                </div>
-                <div class="pulse-sub">
-                    <span><strong>@_board.ExpectedChildrenCount</strong> expected</span>
-                    <span class="dot">•</span>
-                    <span><strong>@_board.TotalClassroomsCount</strong> active classrooms</span>
-                    <span class="dot">•</span>
-                    <span><strong>@_board.PlannedExperiencesCount</strong> experiences today</span>
-                </div>
-            </div>
-
-            <div class="pulse-card">
-                <div class="stat-label">Children Here</div>
-                <div class="stat-number highlight-accent">@_board.CheckedInChildrenCount</div>
-                <div class="stat-note">
-                    @(_board.ExpectedNotArrivedCount > 0 ? $"{_board.ExpectedNotArrivedCount} not yet arrived" : "All expected checked in")
-                </div>
-            </div>
-
-            <div class="pulse-card">
-                <div class="stat-label">Staff On Site</div>
-                <div class="stat-number @(_board.UnderstaffedClassroomsCount > 0 ? "highlight-warning" : "")">
-                    @_board.PresentStaffCount
-                </div>
-                <div class="stat-note">
-                    @(_board.UnderstaffedClassroomsCount > 0 ? $"⚠️ {_board.UnderstaffedClassroomsCount} room coverage alert" : "All classrooms covered")
-                </div>
-            </div>
-
-            <div class="pulse-card">
-                <div class="stat-label">Care Records</div>
-                <div class="stat-number @(_board.MissingCareRecordsCount > 0 ? "highlight-attention" : "")">
-                    @(_board.CheckedInChildrenCount - _board.MissingCareRecordsCount) / @_board.CheckedInChildrenCount
-                </div>
-                <div class="stat-note">
-                    @(_board.MissingCareRecordsCount > 0 ? $"{_board.MissingCareRecordsCount} children missing records" : "All records up to date")
-                </div>
-            </div>
-
-            @if (_board.HasFinanceAccess)
-            {
-                <div class="pulse-card">
-                    <div class="stat-label">Outstanding Dues</div>
-                    <div class="stat-number @(_board.OverdueInvoicesCount > 0 ? "highlight-danger" : "")">
-                        ₹@(_board.OutstandingReceivables.ToString("N0"))
-                    </div>
-                    <div class="stat-note">
-                        @(_board.OverdueInvoicesCount > 0 ? $"{_board.OverdueInvoicesCount} overdue invoices" : "Billing healthy")
-                    </div>
-                </div>
-            }
-        </div>
+        <OperationsPulseMetricsStrip Board="@_board" />
 
         <!-- ACTIONABLE OPERATIONAL ALERTS (Only shown when there are exceptions) -->
-        @if (_board.Alerts.Any())
-        {
-            <div class="alerts-section">
-                <div class="alerts-header">
-                    <h3>Operational Alerts Requiring Action</h3>
-                    <span class="alerts-badge">@_board.Alerts.Count Actionable</span>
-                </div>
-                <div class="alerts-grid">
-                    @foreach (var alert in _board.Alerts)
-                    {
-                        <div class="op-alert-card severity-@alert.Severity.ToLower()">
-                            <div class="alert-icon-box">
-                                @if (alert.AlertType == "Capacity") { <span>⚠️</span> }
-                                else if (alert.AlertType == "Staffing") { <span>👥</span> }
-                                else if (alert.AlertType == "CareRecord") { <span>📝</span> }
-                                else if (alert.AlertType == "Pickup") { <span>⏰</span> }
-                                else if (alert.AlertType == "Finance") { <span>💳</span> }
-                                else { <span>ℹ️</span> }
-                            </div>
-                            <div class="alert-body">
-                                <div class="alert-title-row">
-                                    <strong class="alert-title">@alert.Title</strong>
-                                    <span class="alert-time">@alert.SourceContext</span>
-                                </div>
-                                <p class="alert-desc">@alert.Description</p>
-                            </div>
-                            <a href="@alert.ActionUrl" class="btn secondary alert-action-btn">
-                                @alert.ActionText &rarr;
-                            </a>
-                        </div>
-                    }
-                </div>
-            </div>
-        }
+        <OperationsAlertsSection Alerts="@_board.Alerts" />
 
         <!-- MAIN TWO-COLUMN DASHBOARD GRID -->
         <div class="board-grid">
             <!-- LEFT COLUMN: CLASSROOM LIVE OCCUPANCY & RATIOS -->
             <div class="grid-left">
-                <div class="board-section-card">
-                    <div class="section-title-row">
-                        <div>
-                            <h2>Classroom Live Occupancy &amp; Coverage</h2>
-                            <p class="section-sub">Real-time attendance vs. licensed capacity and active learning sessions</p>
-                        </div>
-                        <a href="/classrooms" class="section-link">All Classrooms &rarr;</a>
-                    </div>
-
-                    <div class="classrooms-table-wrap">
-                        <table class="board-table">
-                            <thead>
-                                <tr>
-                                    <th>Classroom</th>
-                                    <th>Branch</th>
-                                    <th>Children Here</th>
-                                    <th>Occupancy</th>
-                                    <th>Staff Ratio</th>
-                                    <th>Current Activity</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var room in _board.Classrooms)
-                                {
-                                    <tr class="@(room.IsOverCapacity ? "row-danger" : (room.IsUnderstaffed ? "row-warning" : ""))">
-                                        <td>
-                                            <div class="room-name-cell">
-                                                <div class="status-indicator @(room.IsOverCapacity ? "dot-danger" : (room.IsUnderstaffed ? "dot-warning" : "dot-ok"))"></div>
-                                                <div>
-                                                    <strong>@room.ClassroomName</strong>
-                                                    <span class="sub-label">@room.AgeGroup</span>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>@room.BranchName</td>
-                                        <td>
-                                            <strong>@room.PresentChildren</strong> / @room.Capacity
-                                        </td>
-                                        <td>
-                                            <div class="occupancy-bar-container">
-                                                <div class="occupancy-bar" style="width: @Math.Min(100, room.OccupancyPercentage)%; background: @(room.IsOverCapacity ? "#c53030" : "var(--accent)");"></div>
-                                            </div>
-                                            <span class="occupancy-txt">@room.OccupancyPercentage%</span>
-                                        </td>
-                                        <td>
-                                            <span class="ratio-pill @(room.IsUnderstaffed ? "ratio-short" : "ratio-ok")">
-                                                @room.PresentStaff : @room.RequiredStaff req
-                                            </span>
-                                        </td>
-                                        <td>
-                                            @if (!string.IsNullOrEmpty(room.ActiveExperienceTitle))
-                                            {
-                                                <span class="activity-pill">
-                                                    🎨 @room.ActiveExperienceTitle
-                                                </span>
-                                            }
-                                            else
-                                            {
-                                                <span class="activity-none">Free Play / Transition</span>
-                                            }
-                                        </td>
-                                        <td>
-                                            <a href="/attendance" class="view-link">Open &rarr;</a>
-                                        </td>
-                                    </tr>
-                                }
-                                @if (!_board.Classrooms.Any())
-                                {
-                                    <tr>
-                                        <td colspan="7" class="empty-cell">No classrooms match the active scope.</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <OperationsClassroomOccupancyTable Classrooms="@_board.Classrooms" />
 
                 <!-- TEACHER CARE TASK BOARD (When viewing as Teacher or Classroom scope) -->
                 @if (_board.EffectiveRole == RoleTemplates.ClassroomTeacher || _board.SelectedClassroomId.HasValue)
                 {
-                    <div class="board-section-card">
-                        <div class="section-title-row">
-                            <div>
-                                <h2>Classroom Care Tracker</h2>
-                                <p class="section-sub">Immediate care tasks for children currently in your room</p>
-                            </div>
-                            <a href="/daily-care" class="section-link">Daily Care Log &rarr;</a>
-                        </div>
-
-                        <div class="teacher-care-list">
-                            @foreach (var child in _board.TeacherChildrenCareStatus)
-                            {
-                                <div class="care-child-row @(child.NeedsAttention ? "care-needs-attention" : "")">
-                                    <div class="child-avatar">
-                                        @child.FullName.FirstOrDefault()
-                                    </div>
-                                    <div class="child-info">
-                                        <strong>@child.FullName</strong>
-                                        <span class="care-sub">
-                                            Arrival: @(child.ArrivalTime?.ToString(@"hh\:mm") ?? "Present") • 
-                                            Last: @child.LastRecordedCareType
-                                        </span>
-                                    </div>
-                                    <div class="care-status-pill">
-                                        @if (child.NeedsAttention)
-                                        {
-                                            <span class="pill-warning">⚠️ No Care Logged</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="pill-ok">✓ @child.CareEventsCount logged</span>
-                                        }
-                                    </div>
-                                    <a href="/daily-care" class="btn secondary care-action-btn">+ Log Event</a>
-                                </div>
-                            }
-                            @if (!_board.TeacherChildrenCareStatus.Any())
-                            {
-                                <div class="empty-hint">No children currently checked into this room.</div>
-                            }
-                        </div>
-                    </div>
+                    <OperationsClassroomCareTracker ChildrenCareStatus="@_board.TeacherChildrenCareStatus" />
                 }
             </div>
 
             <!-- RIGHT COLUMN: TODAY'S RHYTHM, READINESS & QUICK ACTIONS -->
             <div class="grid-right">
                 <!-- READINESS & OPENING CHECKLIST -->
-                <div class="board-section-card">
-                    <div class="section-title-row">
-                        <div>
-                            <h2>Classroom Readiness</h2>
-                            <p class="section-sub">Standard opening and safety verifications</p>
-                        </div>
-                    </div>
-
-                    <div class="readiness-list">
-                        @foreach (var item in _board.ReadinessChecklist)
-                        {
-                            <div class="readiness-item @(item.IsCompleted ? "completed" : "pending")">
-                                <div class="check-box @(item.IsCompleted ? "checked" : "")">
-                                    @(item.IsCompleted ? "✓" : "○")
-                                </div>
-                                <div class="readiness-text">
-                                    <strong>@item.Label</strong>
-                                    <p>@item.Description</p>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                </div>
+                <OperationsClassroomReadinessCard Checklist="@_board.ReadinessChecklist" />
 
                 <!-- TODAY'S RHYTHM & EXPERIENCES -->
-                <div class="board-section-card">
-                    <div class="section-title-row">
-                        <div>
-                            <h2>Today's Rhythm</h2>
-                            <p class="section-sub">Scheduled experiences and celebrations</p>
-                        </div>
-                        <a href="/rhythm-history" class="section-link">History &rarr;</a>
-                    </div>
-
-                    <div class="rhythm-timeline">
-                        @foreach (var item in _board.TodayRhythm)
-                        {
-                            <div class="rhythm-item @(item.IsCelebration ? "is-celebration" : "")">
-                                <div class="rhythm-dot @(item.Status == "Completed" ? "dot-completed" : (item.Status == "InProgress" ? "dot-active" : ""))"></div>
-                                <div class="rhythm-body">
-                                    <div class="rhythm-time">@item.TimeDisplay</div>
-                                    <div class="rhythm-title">
-                                        @if (item.IsCelebration) { <span>🎉 </span> }
-                                        <strong>@item.Title</strong>
-                                        <span class="rhythm-scope">@item.ScopeDisplay</span>
-                                    </div>
-                                    @if (!string.IsNullOrEmpty(item.PreparationNotes))
-                                    {
-                                        <div class="rhythm-notes">@item.PreparationNotes</div>
-                                    }
-                                    <div class="rhythm-actions">
-                                        <span class="status-pill status-@item.Status.ToLower()">@item.Status</span>
-                                        @if (item.PreparationNotes?.Contains("System Auto-Closed") == true)
-                                        {
-                                            <span class="pill-autoclosed" title="Closed automatically by the system at End of Day">⚡ System Auto-Closed</span>
-                                        }
-                                        @if (!item.IsCelebration)
-                                        {
-                                            @if (item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed")
-                                            {
-                                                <button class="btn primary btn-xs" @onclick="() => StartSession(item.Id)">▶ Start</button>
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">👁️ View</button>
-                                                <button class="btn danger-outline btn-xs" @onclick="() => CancelSession(item.Id)">✕ Cancel</button>
-                                            }
-                                            else if (item.Status == "Started" || item.Status == "Active")
-                                            {
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">Active Session</button>
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)" title="View Session">👁️ View</button>
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenSessionPhotoModal(item)" title="Session Photos">📸 Photos</button>
-                                                <button class="btn success-outline btn-xs" @onclick="() => CloseSession(item.Id)" title="Close Session">✓ Close</button>
-                                                <button class="btn danger-outline btn-xs" @onclick="() => CancelSession(item.Id)" title="Cancel Session">✕ Cancel</button>
-                                            }
-                                            else if (item.Status == "Completed" || item.Status == "Finished")
-                                            {
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">👁️ View</button>
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenSessionPhotoModal(item)">📸 Photos</button>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            @if (item.Status == "Planned" || item.Status == "Approved" || item.Status == "Published")
-                                            {
-                                                <button class="btn primary btn-xs" @onclick="() => StartCelebration(item.Id)">▶️ Start</button>
-                                            }
-                                            else if (item.Status == "InProgress")
-                                            {
-                                                <button class="btn secondary btn-xs" @onclick="() => FinishCelebration(item.Id)">🏁 Finish</button>
-                                            }
-                                            else if (item.Status == "Completed")
-                                            {
-                                                <button class="btn secondary btn-xs" @onclick="() => OpenEventPhotoModal(item.Id)">📸 Photos</button>
-                                            }
-                                            <a href="/events/@item.Id" class="view-link">View &rarr;</a>
-                                        }
-                                    </div>
-                                    @if (item.PhotoUrls != null && item.PhotoUrls.Length > 0)
-                                    {
-                                        <div class="photo-strip">
-                                            @foreach (var photo in item.PhotoUrls)
-                                            {
-                                                <img src="@photo" alt="Photo" class="thumb-img" @onclick="() => _previewPhoto = photo" />
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            </div>
-                        }
-                        @if (!_board.TodayRhythm.Any())
-                        {
-                            <div class="empty-hint">No planned experiences or celebrations scheduled today.</div>
-                        }
-                    </div>
-                </div>
+                <OperationsTodayRhythmTimeline 
+                    Items="@_board.TodayRhythm"
+                    OnStartSession="StartSession"
+                    OnOpenActiveSession="OpenActiveSession"
+                    OnCloseSession="CloseSession"
+                    OnCancelSession="CancelSession"
+                    OnOpenSessionPhotoModal="OpenSessionPhotoModal"
+                    OnStartCelebration="StartCelebration"
+                    OnFinishCelebration="FinishCelebration"
+                    OnOpenEventPhotoModal="OpenEventPhotoModal"
+                    OnPreviewPhoto="photo => _previewPhoto = photo" />
 
                 <!-- QUICK DAYCARE ACTIONS -->
-                <div class="board-section-card">
-                    <div class="section-title-row">
-                        <h2>Quick Actions</h2>
-                    </div>
-                    <div class="quick-links-grid">
-                        <a href="/studio" class="quick-link-box">
-                            <span class="quick-icon">✦</span>
-                            <div>
-                                <strong>Experience Studio</strong>
-                                <small>Draft and plan learning</small>
-                            </div>
-                        </a>
-                        <a href="/planning" class="quick-link-box">
-                            <span class="quick-icon">📅</span>
-                            <div>
-                                <strong>Experience Calendar</strong>
-                                <small>View month rhythm</small>
-                            </div>
-                        </a>
-                        <a href="/attendance" class="quick-link-box">
-                            <span class="quick-icon">📋</span>
-                            <div>
-                                <strong>Attendance Desk</strong>
-                                <small>Check in / departure</small>
-                            </div>
-                        </a>
-                        <a href="/daily-care" class="quick-link-box">
-                            <span class="quick-icon">🍼</span>
-                            <div>
-                                <strong>Daily Care Logs</strong>
-                                <small>Meals, naps &amp; wellbeing</small>
-                            </div>
-                        </a>
-                    </div>
-                </div>
+                <OperationsQuickActionsCard />
             </div>
         </div>
     }
 </div>
 
 @* PHOTO LIGHTBOX PREVIEW *@
-@if (!string.IsNullOrEmpty(_previewPhoto))
-{
-    <div class="photo-lightbox" @onclick="() => _previewPhoto = null">
-        <div class="lightbox-content" @onclick:stopPropagation>
-            <button class="lightbox-close" @onclick="() => _previewPhoto = null">✕</button>
-            <img src="@_previewPhoto" alt="Preview" class="lightbox-img" />
-        </div>
-    </div>
-}
+<PhotoLightboxModal PhotoUrl="@_previewPhoto" OnClose="() => _previewPhoto = null" />
 
 @* ACTIVE SESSION MODAL *@
 @if (_isSessionModalOpen)
@@ -469,56 +103,26 @@
 }
 
 @* EVENT PHOTO MODAL *@
-@if (_isPhotoModalOpen)
-{
-    <div class="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <div>
-                    <h3>📸 Celebration Photos</h3>
-                    <p>@_photoModalEventTitle</p>
-                </div>
-                <button type="button" class="close-btn" @onclick="() => _isPhotoModalOpen = false">✕</button>
-            </div>
-            <EventPhotoUploader Photos="@_photoModalEventPhotos"
-                                PhotosChanged="OnEventPhotosSaved"
-                                MaxPhotos="3"
-                                ReadOnly="false"
-                                IsCompleted="true" />
-            <div class="modal-footer">
-                <button type="button" class="btn primary" @onclick="() => _isPhotoModalOpen = false">Done</button>
-            </div>
-        </div>
-    </div>
-}
+<EventPhotoModal 
+    IsOpen="_isPhotoModalOpen"
+    Title="@_photoModalEventTitle"
+    Photos="@_photoModalEventPhotos"
+    MaxPhotos="3"
+    PhotosChanged="OnEventPhotosSaved"
+    OnClose="() => _isPhotoModalOpen = false" />
 
 @* SESSION PHOTO MODAL *@
-@if (_isSessionPhotoModalOpen)
-{
-    <div class="modal-overlay">
-        <div class="modal-card">
-            <div class="modal-header">
-                <div>
-                    <h3>📸 Experience Session Photos</h3>
-                    <p>@_sessionPhotoTitle</p>
-                </div>
-                <button type="button" class="close-btn" @onclick="() => _isSessionPhotoModalOpen = false">✕</button>
-            </div>
-            <EventPhotoUploader Photos="@_sessionPhotoUrls"
-                                PhotosChanged="OnSessionPhotosSaved"
-                                MaxPhotos="5"
-                                ReadOnly="false"
-                                IsCompleted="true" />
-            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-                <button type="button" class="btn secondary btn-xs" @onclick="() => { _isSessionPhotoModalOpen = false; OpenActiveSession(_sessionPhotoScheduleId); }">
-                    Open Full Session &rarr;
-                </button>
-                <button type="button" class="btn primary btn-xs" @onclick="() => _isSessionPhotoModalOpen = false">Done</button>
-            </div>
-        </div>
-    </div>
-}
+<SessionPhotoModal 
+    IsOpen="_isSessionPhotoModalOpen"
+    ScheduleId="@_sessionPhotoScheduleId"
+    Title="@_sessionPhotoTitle"
+    Photos="@_sessionPhotoUrls"
+    MaxPhotos="5"
+    PhotosChanged="OnSessionPhotosSaved"
+    OnOpenFullSession="OpenActiveSession"
+    OnClose="() => _isSessionPhotoModalOpen = false" />
 
+@* END OF DAY PROCESS MODAL *@
 <EndOfDayProcessModal 
     IsOpen="_isEndOfDayModalOpen"
     BranchId="@(Guid.TryParse(_selectedBranchId, out var bId) ? bId : null)"
@@ -534,9 +138,7 @@
     private string _selectedBranchId = "";
     private string? _previewPhoto;
 
-    private List<RoleOption> _availableRoles = new();
-
-    public record RoleOption(string RoleKey, string DisplayName, int Rank);
+    private List<OperationsBoardHeroControls.RoleOptionModel> _availableRoles = new();
 
     // Modals
     private bool _isEndOfDayModalOpen = false;
@@ -570,9 +172,9 @@
         }
     }
 
-    private List<RoleOption> ResolveAvailableRoles()
+    private List<OperationsBoardHeroControls.RoleOptionModel> ResolveAvailableRoles()
     {
-        var options = new List<RoleOption>();
+        var options = new List<OperationsBoardHeroControls.RoleOptionModel>();
         var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
 
         bool isPlatformAdmin = userRoles.Any(r => 
@@ -598,31 +200,31 @@
         // 1. Platform Admin (Rank 1: only users holding PlatformAdmin role)
         if (isPlatformAdmin)
         {
-            options.Add(new RoleOption(RoleTemplates.PlatformAdmin, "Platform Admin", 1));
+            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.PlatformAdmin, "Platform Admin", 1));
         }
 
         // 2. Org Admin (Rank 2: Organization Owner or Administrator)
         if (isOrgAdmin)
         {
-            options.Add(new RoleOption(RoleTemplates.OrganizationAdmin, "Org Admin", 2));
+            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.OrganizationAdmin, "Org Admin", 2));
         }
 
         // 3. Branch Manager (Rank 3: Branch Director or higher administrative supervisor)
         if (isBranchAdmin || isOrgAdmin)
         {
-            options.Add(new RoleOption(RoleTemplates.BranchAdmin, "Branch Manager", 3));
+            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.BranchAdmin, "Branch Manager", 3));
         }
 
         // 4. Teacher (Rank 4: Classroom Educator or supervisory director)
         if (isTeacher || isOrgAdmin || isBranchAdmin)
         {
-            options.Add(new RoleOption(RoleTemplates.ClassroomTeacher, "Teacher", 4));
+            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.ClassroomTeacher, "Teacher", 4));
         }
 
         // Safe fallback if unassigned
         if (!options.Any())
         {
-            options.Add(new RoleOption(RoleTemplates.ClassroomTeacher, "Teacher", 4));
+            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.ClassroomTeacher, "Teacher", 4));
         }
 
         return options.OrderBy(o => o.Rank).ToList();
@@ -691,15 +293,15 @@
         await NotificationService.ShowSuccessAsync($"Day successfully closed! Autoclosed {report.TeachersCheckedOutCount} educators, {report.ChildrenCheckedOutCount} children, and {report.ActivitiesClosedCount + report.EventsClosedCount} activities/events.");
     }
 
-    private async Task OnRoleChanged(ChangeEventArgs e)
+    private async Task HandleRoleChanged(string role)
     {
-        _selectedRoleOverride = e.Value?.ToString() ?? "";
+        _selectedRoleOverride = role;
         await RefreshBoardAsync();
     }
 
-    private async Task OnBranchChanged(ChangeEventArgs e)
+    private async Task HandleBranchChanged(string branchId)
     {
-        _selectedBranchId = e.Value?.ToString() ?? "";
+        _selectedBranchId = branchId;
         await RefreshBoardAsync();
     }
 

@@ -1,0 +1,63 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Authorization
+
+<div class="board-hero-controls">
+    @if (AvailableRoles?.Count > 0)
+    {
+        <div class="role-switcher">
+            <span class="role-lbl">Viewing as:</span>
+            <select class="role-select" value="@SelectedRoleOverride" @onchange="HandleRoleChanged" disabled="@(AvailableRoles.Count <= 1)">
+                @foreach (var role in AvailableRoles)
+                {
+                    <option value="@role.RoleKey">@role.DisplayName</option>
+                }
+            </select>
+        </div>
+    }
+
+    @if (EffectiveRole != RoleTemplates.PlatformAdmin)
+    {
+        <select class="scope-select" value="@SelectedBranchId" @onchange="HandleBranchChanged">
+            <option value="">All Branches</option>
+            @if (Branches != null)
+            {
+                @foreach (var br in Branches)
+                {
+                    <option value="@br.Id">@br.Name</option>
+                }
+            }
+        </select>
+    }
+
+    <button type="button" class="btn secondary eod-btn" @onclick="OnOpenEndOfDay">
+        <span>🌙</span>
+        <span>End of Day Process</span>
+    </button>
+    <a href="/attendance" class="btn secondary">Attendance Desk</a>
+    <a href="/daily-care" class="btn primary">+ Record Daily Care</a>
+</div>
+
+@code {
+    [Parameter] public string EffectiveRole { get; set; } = string.Empty;
+    [Parameter] public string SelectedRoleOverride { get; set; } = string.Empty;
+    [Parameter] public string SelectedBranchId { get; set; } = string.Empty;
+    [Parameter] public IReadOnlyList<RoleOptionModel>? AvailableRoles { get; set; }
+    [Parameter] public IReadOnlyList<Branch>? Branches { get; set; }
+
+    [Parameter] public EventCallback<string> OnRoleChanged { get; set; }
+    [Parameter] public EventCallback<string> OnBranchChanged { get; set; }
+    [Parameter] public EventCallback OnOpenEndOfDay { get; set; }
+
+    private async Task HandleRoleChanged(ChangeEventArgs e)
+    {
+        await OnRoleChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+    }
+
+    private async Task HandleBranchChanged(ChangeEventArgs e)
+    {
+        await OnBranchChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+    }
+
+    public record RoleOptionModel(string RoleKey, string DisplayName, int Rank);
+}

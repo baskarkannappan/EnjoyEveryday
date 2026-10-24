@@ -1,0 +1,57 @@
+@using EnjoyEveryday.Application.Services
+
+@if (Alerts != null && Alerts.Any())
+{
+    <aside class="alerts-section" aria-label="Operational alerts requiring immediate action">
+        <div class="alerts-header">
+            <div class="header-left">
+                <span class="header-indicator" aria-hidden="true"></span>
+                <h3 class="alerts-heading">Operational Alerts</h3>
+            </div>
+            <span class="alerts-badge">@Alerts.Count Actionable</span>
+        </div>
+
+        <div class="alerts-list">
+            @foreach (var alert in Alerts)
+            {
+                var severityClass = alert.Severity?.ToLowerInvariant() switch
+                {
+                    "high" => "severity-high",
+                    "medium" => "severity-medium",
+                    _ => "severity-info"
+                };
+
+                <div class="op-alert-row @severityClass">
+                    <div class="alert-icon-box" aria-hidden="true">
+                        @if (alert.AlertType == "Capacity") { <span>⚠️</span> }
+                        else if (alert.AlertType == "Staffing") { <span>👥</span> }
+                        else if (alert.AlertType == "CareRecord") { <span>📝</span> }
+                        else if (alert.AlertType == "Pickup") { <span>⏰</span> }
+                        else if (alert.AlertType == "Finance") { <span>💳</span> }
+                        else { <span>ℹ️</span> }
+                    </div>
+
+                    <div class="alert-main">
+                        <div class="alert-title-group">
+                            <strong class="alert-title">@alert.Title</strong>
+                            @if (!string.IsNullOrWhiteSpace(alert.SourceContext))
+                            {
+                                <span class="alert-tag">@alert.SourceContext</span>
+                            }
+                        </div>
+                        <p class="alert-desc">@alert.Description</p>
+                    </div>
+
+                    <a href="@alert.ActionUrl" class="alert-action-btn" title="@alert.ActionText">
+                        <span>@alert.ActionText</span>
+                        <span class="arrow-glyph" aria-hidden="true">&rarr;</span>
+                    </a>
+                </div>
+            }
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<OperationalAlertItem>? Alerts { get; set; }
+}

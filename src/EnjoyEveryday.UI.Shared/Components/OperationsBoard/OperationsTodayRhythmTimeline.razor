@@ -1,0 +1,109 @@
+@using EnjoyEveryday.Application.Services
+
+<div class="board-section-card">
+    <div class="section-title-row">
+        <div>
+            <h2>Today's Rhythm</h2>
+            <p class="section-sub">Scheduled experiences and celebrations</p>
+        </div>
+        <a href="/rhythm-history" class="section-link">History &rarr;</a>
+    </div>
+
+    <div class="rhythm-timeline">
+        @if (Items != null)
+        {
+            @foreach (var item in Items)
+            {
+                <div class="rhythm-item @(item.IsCelebration ? "is-celebration" : "")">
+                    <div class="rhythm-dot @(item.Status == "Completed" ? "dot-completed" : (item.Status == "InProgress" ? "dot-active" : ""))"></div>
+                    <div class="rhythm-body">
+                        <div class="rhythm-time">@item.TimeDisplay</div>
+                        <div class="rhythm-title">
+                            @if (item.IsCelebration) { <span>🎉 </span> }
+                            <strong>@item.Title</strong>
+                            <span class="rhythm-scope">@item.ScopeDisplay</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(item.PreparationNotes))
+                        {
+                            <div class="rhythm-notes">@item.PreparationNotes</div>
+                        }
+                        <div class="rhythm-actions">
+                            <span class="status-pill status-@item.Status.ToLower()">@item.Status</span>
+                            @if (item.PreparationNotes?.Contains("System Auto-Closed") == true)
+                            {
+                                <span class="pill-autoclosed" title="Closed automatically by the system at End of Day">⚡ System Auto-Closed</span>
+                            }
+                            @if (!item.IsCelebration)
+                            {
+                                @if (item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed")
+                                {
+                                    <button class="btn primary btn-xs" @onclick="() => OnStartSession.InvokeAsync(item.Id)">▶ Start</button>
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenActiveSession.InvokeAsync(item.Id)">👁️ View</button>
+                                    <button class="btn danger-outline btn-xs" @onclick="() => OnCancelSession.InvokeAsync(item.Id)">✕ Cancel</button>
+                                }
+                                else if (item.Status == "Started" || item.Status == "Active")
+                                {
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenActiveSession.InvokeAsync(item.Id)">Active Session</button>
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenActiveSession.InvokeAsync(item.Id)" title="View Session">👁️ View</button>
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenSessionPhotoModal.InvokeAsync(item)" title="Session Photos">📸 Photos</button>
+                                    <button class="btn success-outline btn-xs" @onclick="() => OnCloseSession.InvokeAsync(item.Id)" title="Close Session">✓ Close</button>
+                                    <button class="btn danger-outline btn-xs" @onclick="() => OnCancelSession.InvokeAsync(item.Id)" title="Cancel Session">✕ Cancel</button>
+                                }
+                                else if (item.Status == "Completed" || item.Status == "Finished")
+                                {
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenActiveSession.InvokeAsync(item.Id)">👁️ View</button>
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenSessionPhotoModal.InvokeAsync(item)">📸 Photos</button>
+                                }
+                            }
+                            else
+                            {
+                                @if (item.Status == "Planned" || item.Status == "Approved" || item.Status == "Published")
+                                {
+                                    <button class="btn primary btn-xs" @onclick="() => OnStartCelebration.InvokeAsync(item.Id)">▶️ Start</button>
+                                }
+                                else if (item.Status == "InProgress")
+                                {
+                                    <button class="btn secondary btn-xs" @onclick="() => OnFinishCelebration.InvokeAsync(item.Id)">🏁 Finish</button>
+                                }
+                                else if (item.Status == "Completed")
+                                {
+                                    <button class="btn secondary btn-xs" @onclick="() => OnOpenEventPhotoModal.InvokeAsync(item.Id)">📸 Photos</button>
+                                }
+                                <a href="/events/@item.Id" class="view-link">View &rarr;</a>
+                            }
+                        </div>
+                        @if (item.PhotoUrls != null && item.PhotoUrls.Length > 0)
+                        {
+                            <div class="photo-strip">
+                                @foreach (var photo in item.PhotoUrls)
+                                {
+                                    <img src="@photo" alt="Photo" class="thumb-img" @onclick="() => OnPreviewPhoto.InvokeAsync(photo)" />
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+        @if (Items == null || !Items.Any())
+        {
+            <div class="empty-hint">No planned experiences or celebrations scheduled today.</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<RhythmScheduleItem>? Items { get; set; }
+
+    [Parameter] public EventCallback<Guid> OnStartSession { get; set; }
+    [Parameter] public EventCallback<Guid> OnOpenActiveSession { get; set; }
+    [Parameter] public EventCallback<Guid> OnCloseSession { get; set; }
+    [Parameter] public EventCallback<Guid> OnCancelSession { get; set; }
+    [Parameter] public EventCallback<RhythmScheduleItem> OnOpenSessionPhotoModal { get; set; }
+
+    [Parameter] public EventCallback<Guid> OnStartCelebration { get; set; }
+    [Parameter] public EventCallback<Guid> OnFinishCelebration { get; set; }
+    [Parameter] public EventCallback<Guid> OnOpenEventPhotoModal { get; set; }
+
+    [Parameter] public EventCallback<string> OnPreviewPhoto { get; set; }
+}
