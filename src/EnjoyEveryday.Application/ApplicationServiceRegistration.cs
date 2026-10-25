@@ -1,4 +1,5 @@
 using EnjoyEveryday.Application.Services;
+using EnjoyEveryday.Application.Services.Ai;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -71,6 +72,7 @@ public static class ApplicationServiceRegistration
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         };
 
+        services.AddScoped<IStorybookGenerationService, StorybookGenerationService>();
         services.AddHttpClient<IAiIdeaService, AiIdeaService>(configureAiClient);
         services.AddHttpClient<IActivityRecommendationService, ActivityRecommendationService>(configureAiClient);
         services.AddScoped<ActivityRecommendationService>();

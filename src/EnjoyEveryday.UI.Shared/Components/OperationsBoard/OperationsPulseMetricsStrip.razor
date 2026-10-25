@@ -1,60 +1,88 @@
 @using EnjoyEveryday.Application.Services
 
-<div class="pulse-metrics-container">
-    <div class="pulse-card main-summary">
-        <div class="pulse-tag">✦ LIVE DAYCARE STATUS</div>
-        <div class="pulse-headline">
-            @(Board.CheckedInChildrenCount > 0 ? $"{Board.CheckedInChildrenCount} children on site" : "Ready for today's arrivals")
+<div class="today-care-banner">
+    <div class="banner-header">
+        <div class="banner-status-tag">
+            <span class="status-dot"></span>
+            <span>TODAY'S CARE STATUS</span>
         </div>
-        <div class="pulse-sub">
-            <span><strong>@Board.ExpectedChildrenCount</strong> expected</span>
-            <span class="dot">•</span>
+        <div class="banner-subtext">
             <span><strong>@Board.TotalClassroomsCount</strong> active classrooms</span>
-            <span class="dot">•</span>
-            <span><strong>@Board.PlannedExperiencesCount</strong> experiences today</span>
+            <span class="sep">•</span>
+            <span><strong>@Board.PlannedExperiencesCount</strong> experiences planned</span>
         </div>
     </div>
 
-    <div class="pulse-card">
-        <div class="stat-label">Children Here</div>
-        <div class="stat-number highlight-accent">@Board.CheckedInChildrenCount</div>
-        <div class="stat-note">
-            @(Board.ExpectedNotArrivedCount > 0 ? $"{Board.ExpectedNotArrivedCount} not yet arrived" : "All expected checked in")
-        </div>
+    <div class="banner-headline">
+        @(Board.ExpectedChildrenCount > 0 
+            ? $"{Board.ExpectedChildrenCount} little ones are expected today" 
+            : "Welcome to today's daily overview")
     </div>
+    <p class="banner-motto">
+        @(Board.CheckedInChildrenCount > 0
+            ? $"{Board.CheckedInChildrenCount} children on site — welcome children, check staff coverage, and nurture today's discoveries."
+            : "Welcome children, check staff coverage, and prepare today's experiences.")
+    </p>
 
-    <div class="pulse-card">
-        <div class="stat-label">Staff On Site</div>
-        <div class="stat-number @(Board.UnderstaffedClassroomsCount > 0 ? "highlight-warning" : "")">
-            @Board.PresentStaffCount
-        </div>
-        <div class="stat-note">
-            @(Board.UnderstaffedClassroomsCount > 0 ? $"⚠️ {Board.UnderstaffedClassroomsCount} room coverage alert" : "All classrooms covered")
-        </div>
-    </div>
-
-    <div class="pulse-card">
-        <div class="stat-label">Care Records</div>
-        <div class="stat-number @(Board.MissingCareRecordsCount > 0 ? "highlight-attention" : "")">
-            @(Board.CheckedInChildrenCount - Board.MissingCareRecordsCount) / @Board.CheckedInChildrenCount
-        </div>
-        <div class="stat-note">
-            @(Board.MissingCareRecordsCount > 0 ? $"{Board.MissingCareRecordsCount} children missing records" : "All records up to date")
-        </div>
-    </div>
-
-    @if (Board.HasFinanceAccess)
-    {
-        <div class="pulse-card">
-            <div class="stat-label">Outstanding Dues</div>
-            <div class="stat-number @(Board.OverdueInvoicesCount > 0 ? "highlight-danger" : "")">
-                ₹@(Board.OutstandingReceivables.ToString("N0"))
+    <!-- Embedded high-scan operational metric tiles -->
+    <div class="banner-tiles-grid">
+        <div class="banner-tile tile-green">
+            <div class="tile-label">Children Present</div>
+            <div class="tile-val">
+                <span class="val-num">@Board.CheckedInChildrenCount</span>
+                <span class="val-denom">/ @Board.ExpectedChildrenCount</span>
             </div>
-            <div class="stat-note">
-                @(Board.OverdueInvoicesCount > 0 ? $"{Board.OverdueInvoicesCount} overdue invoices" : "Billing healthy")
+            <div class="tile-footer">
+                @(Board.ExpectedNotArrivedCount > 0 ? $"{Board.ExpectedNotArrivedCount} not yet arrived" : "All expected present")
             </div>
         </div>
-    }
+
+        <div class="banner-tile tile-blue">
+            <div class="tile-label">Staff On Site</div>
+            <div class="tile-val">
+                <span class="val-num">@Board.PresentStaffCount</span>
+                <span class="val-denom">teachers</span>
+            </div>
+            <div class="tile-footer">
+                @(Board.UnderstaffedClassroomsCount > 0 ? $"⚠️ {Board.UnderstaffedClassroomsCount} room coverage alert" : "All classrooms covered")
+            </div>
+        </div>
+
+        <div class="banner-tile tile-amber">
+            <div class="tile-label">Actions Needed</div>
+            <div class="tile-val">
+                <span class="val-num">@(Board.Alerts?.Count ?? 0)</span>
+                <span class="val-denom">alerts</span>
+            </div>
+            <div class="tile-footer">
+                @((Board.Alerts?.Count ?? 0) > 0 ? $"{Board.Alerts!.Count} require review" : "Everything running smoothly")
+            </div>
+        </div>
+
+        <div class="banner-tile tile-warm">
+            <div class="tile-label">Care Records</div>
+            <div class="tile-val">
+                <span class="val-num">@(Board.CheckedInChildrenCount - Board.MissingCareRecordsCount)</span>
+                <span class="val-denom">/ @Board.CheckedInChildrenCount</span>
+            </div>
+            <div class="tile-footer">
+                @(Board.MissingCareRecordsCount > 0 ? $"{Board.MissingCareRecordsCount} missing logs" : "All records logged")
+            </div>
+        </div>
+
+        @if (Board.HasFinanceAccess)
+        {
+            <div class="banner-tile tile-purple">
+                <div class="tile-label">Outstanding Dues</div>
+                <div class="tile-val">
+                    <span class="val-num">₹@(Board.OutstandingReceivables.ToString("N0"))</span>
+                </div>
+                <div class="tile-footer">
+                    @(Board.OverdueInvoicesCount > 0 ? $"{Board.OverdueInvoicesCount} overdue" : "Billing healthy")
+                </div>
+            </div>
+        }
+    </div>
 </div>
 
 @code {

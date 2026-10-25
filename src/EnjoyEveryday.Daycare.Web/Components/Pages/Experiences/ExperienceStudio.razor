@@ -15,11 +15,15 @@
 @inject IJSRuntime JS
 @inject EnjoyEveryday.Daycare.Web.Services.StorybookStorageService StorybookStorageService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Application.Services.Ai.IStorybookGenerationService StorybookGenerationService
 <div class="content">
     <PageHero Eyebrow="Little Stars"
               Title="Experience Studio"
               Subtitle="Design and refine developmental experiences with structured DNA, timeline phases, and AI co-creation.">
         <RightContent>
+            <button class="studio-btn studio-btn-secondary" @onclick="GenerateStorybookInteractiveAsync" style="border-color: var(--accent, #557c6c); color: var(--accent-dark, #3e6253); background: var(--accent-light, #e6eee9); font-weight: 700;">
+                📖 Generate Storybook
+            </button>
             @if (_experience.Status != "Published")
             {
                 <button class="studio-btn studio-btn-secondary" @onclick="OpenHistoryDialog">
@@ -448,6 +452,42 @@
     private bool _isSuggestingMaterials = false;
     private List<ExperienceFullData> _aiSuggestions = new();
     private string _newMaterial = string.Empty;
+
+    private async Task GenerateStorybookInteractiveAsync()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_experience.Title) || _experience.Title == "New Experience")
+            {
+                await ToastService.ShowErrorToastAsync("Please provide an experience title first.");
+                return;
+            }
+
+            // Ensure draft is saved so experience has an ID
+            if (_experience.Id == Guid.Empty)
+            {
+                await SaveDraftAsync();
+            }
+
+            var generated = StorybookGenerationService.GenerateStorybook(_experience, _dna);
+            if (generated.Validation.SafetyFlags.Count > 0)
+            {
+                foreach (var flag in generated.Validation.SafetyFlags)
+                {
+                    await ToastService.ShowWarningToastAsync(flag);
+                }
+            }
+
+            await ToastService.ShowSuccessToastAsync($"Generated '{generated.Title}' ({generated.ExperienceType}) Storybook with {generated.Chapters.Count} chapters!");
+
+            // Open the rich Storybook Viewer
+            NavigationManager.NavigateTo($"/experiences/{_experience.Id}/story");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorToastAsync($"Could not generate storybook: {ex.Message}");
+        }
+    }
 
     private async Task GenerateIdeasAsync()
     {

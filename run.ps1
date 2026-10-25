@@ -14,6 +14,10 @@ Write-Host ""
 # Ensure the DB connection string is set via environment variable so the app can pick it up
 $env:ConnectionStrings__DefaultConnection = $ConnectionString
 
+# Stop any running app instances before building to prevent DLL file locks
+Write-Host "Releasing any running application instances..." -ForegroundColor Yellow
+Get-Process -Name "EnjoyEveryday.Daycare.Web", "EnjoyEveryday.Api", "EnjoyEveryday.Admin.Web", "EnjoyEveryday.Parent.Web" -ErrorAction SilentlyContinue | Stop-Process -Force
+
 # Build the entire solution first sequentially to prevent DLL locking
 Write-Host "Building the solution..." -ForegroundColor Green
 dotnet build "$PSScriptRoot\EnjoyEveryday.slnx"

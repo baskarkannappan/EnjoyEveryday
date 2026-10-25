@@ -1,0 +1,155 @@
+@using Microsoft.FluentUI.AspNetCore.Components
+
+<div class="ee-datagrid-container">
+    @if (ShowHeader)
+    {
+        <div class="ee-datagrid-header">
+            <div class="ee-datagrid-title-block">
+                @if (!string.IsNullOrWhiteSpace(Title))
+                {
+                    <h3 class="ee-datagrid-title">@Title</h3>
+                }
+                @if (!string.IsNullOrWhiteSpace(Subtitle))
+                {
+                    <p class="ee-datagrid-subtitle">@Subtitle</p>
+                }
+            </div>
+
+            <div class="ee-datagrid-actions">
+                @if (HeaderActions != null)
+                {
+                    @HeaderActions
+                }
+
+                @if (EnableSearch)
+                {
+                    <div class="ee-grid-search-box">
+                        <span class="ee-search-icon" aria-hidden="true">🔍</span>
+                        <input type="search"
+                               class="ee-search-input"
+                               placeholder="@SearchPlaceholder"
+                               value="@_searchTerm"
+                               @oninput="OnSearchChanged" />
+                        @if (!string.IsNullOrEmpty(_searchTerm))
+                        {
+                            <button type="button"
+                                    class="ee-clear-btn"
+                                    aria-label="Clear search"
+                                    @onclick="ClearSearch">
+                                &times;
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="ee-grid-wrapper">
+        <FluentDataGrid TGridItem="TItem"
+                        Items="@ProcessedItems"
+                        Pagination="@(EnablePagination ? _pagination : null)"
+                        RowClass="@RowClass"
+                        Class="ee-fluent-table"
+                        GenerateHeader="DataGridGeneratedHeaderType.Default">
+            <ChildContent>
+                @ChildContent
+            </ChildContent>
+            <EmptyContent>
+                <div class="ee-grid-empty">
+                    @if (EmptyContent != null)
+                    {
+                        @EmptyContent
+                    }
+                    else
+                    {
+                        <div class="ee-empty-default">
+                            <strong>No records found</strong>
+                            <span>Try adjusting your search or filters.</span>
+                        </div>
+                    }
+                </div>
+            </EmptyContent>
+        </FluentDataGrid>
+    </div>
+
+    @if (EnablePagination && TotalItemsCount > _pagination.ItemsPerPage)
+    {
+        <div class="ee-grid-pagination-bar">
+            <span class="ee-pagination-summary">
+                Showing @(Math.Min((_pagination.CurrentPageIndex * _pagination.ItemsPerPage) + 1, TotalItemsCount)) - @(Math.Min((_pagination.CurrentPageIndex + 1) * _pagination.ItemsPerPage, TotalItemsCount)) of @TotalItemsCount
+            </span>
+            <FluentPaginator State="@_pagination" Class="ee-custom-paginator" />
+        </div>
+    }
+</div>
+
+@typeparam TItem
+
+@code {
+    [Parameter] public IQueryable<TItem>? Items { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? EmptyContent { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public bool ShowHeader { get; set; } = true;
+
+    [Parameter] public bool EnableSearch { get; set; } = true;
+    [Parameter] public string SearchPlaceholder { get; set; } = "Search...";
+    [Parameter] public Func<TItem, string, bool>? SearchPredicate { get; set; }
+
+    [Parameter] public bool EnablePagination { get; set; } = true;
+    [Parameter] public int PageSize { get; set; } = 8;
+    [Parameter] public Func<TItem, string>? RowClass { get; set; }
+
+    private string _searchTerm = string.Empty;
+    private PaginationState _pagination = new();
+
+    protected override void OnInitialized()
+    {
+        _pagination.ItemsPerPage = PageSize > 0 ? PageSize : 8;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_pagination.ItemsPerPage != PageSize && PageSize > 0)
+        {
+            _pagination.ItemsPerPage = PageSize;
+        }
+    }
+
+    private int TotalItemsCount => ProcessedItems.Count();
+
+    private IQueryable<TItem> ProcessedItems
+    {
+        get
+        {
+            if (Items == null)
+            {
+                return Enumerable.Empty<TItem>().AsQueryable();
+            }
+
+            if (EnableSearch && !string.IsNullOrWhiteSpace(_searchTerm) && SearchPredicate != null)
+            {
+                var term = _searchTerm.Trim();
+                return Items.Where(item => SearchPredicate(item, term));
+            }
+
+            return Items;
+        }
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? string.Empty;
+        _ = _pagination.SetCurrentPageIndexAsync(0);
+    }
+
+    private void ClearSearch()
+    {
+        _searchTerm = string.Empty;
+        _ = _pagination.SetCurrentPageIndexAsync(0);
+    }
+}

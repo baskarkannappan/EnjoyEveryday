@@ -1395,6 +1395,47 @@ public static class StandaloneHtmlGenerator
   <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 4 · THE DISCOVERY SPARK</text>
 </svg>",
 
+            "reef" or "ocean" => @"
+<svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
+  <defs>
+    <linearGradient id=""seaBg"" x1=""0%"" y1=""0%"" x2=""0%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#e6f4f1""/>
+      <stop offset=""50%"" stop-color=""#ccebe5""/>
+      <stop offset=""100%"" stop-color=""#a2dad0""/>
+    </linearGradient>
+  </defs>
+  <rect width=""800"" height=""360"" fill=""url(#seaBg)""/>
+  <!-- Gentle sea ripples -->
+  <path d=""M0 120 Q 200 90 400 120 T 800 120"" stroke=""rgba(255,255,255,0.7)"" stroke-width=""5"" fill=""none""/>
+  <path d=""M0 160 Q 200 130 400 160 T 800 160"" stroke=""rgba(255,255,255,0.5)"" stroke-width=""3"" fill=""none""/>
+  <!-- Coral seafloor -->
+  <path d=""M0 310 Q 250 280 500 310 T 800 300 L 800 360 L 0 360 Z"" fill=""#ebdcc5""/>
+  <!-- Coral fans & sea anemones -->
+  <path d=""M 120 310 C 100 240, 160 210, 140 310"" stroke=""#d9826c"" stroke-width=""14"" stroke-linecap=""round""/>
+  <path d=""M 150 310 C 140 230, 200 220, 170 310"" stroke=""#e9b65e"" stroke-width=""10"" stroke-linecap=""round""/>
+  <path d=""M 650 310 C 630 220, 710 200, 680 310"" stroke=""#557c6c"" stroke-width=""14"" stroke-linecap=""round""/>
+  <!-- Colorful Fish Friends Swimming -->
+  <ellipse cx=""320"" cy=""180"" rx=""24"" ry=""14"" fill=""#e9b65e""/>
+  <polygon points=""340,180 358,168 358,192"" fill=""#df9b3a""/>
+  <circle cx=""310"" cy=""177"" r=""3"" fill=""#26332d""/>
+
+  <ellipse cx=""480"" cy=""140"" rx=""26"" ry=""15"" fill=""#d9826c""/>
+  <polygon points=""502,140 522,128 522,152"" fill=""#c96e57""/>
+  <circle cx=""470"" cy=""137"" r=""3"" fill=""#ffffff""/>
+
+  <ellipse cx=""240"" cy=""220"" rx=""20"" ry=""11"" fill=""#557c6c""/>
+  <polygon points=""258,220 274,210 274,230"" fill=""#3e6253""/>
+  <circle cx=""232"" cy=""218"" r=""2.5"" fill=""#ffffff""/>
+
+  <!-- Bubbles -->
+  <circle cx=""330"" cy=""140"" r=""7"" stroke=""white"" stroke-width=""2"" fill=""rgba(255,255,255,0.4)""/>
+  <circle cx=""345"" cy=""115"" r=""5"" stroke=""white"" stroke-width=""1.5"" fill=""rgba(255,255,255,0.4)""/>
+  <circle cx=""490"" cy=""100"" r=""6"" stroke=""white"" stroke-width=""2"" fill=""rgba(255,255,255,0.4)""/>
+  <!-- Stage Label Badge -->
+  <rect x=""30"" y=""24"" width=""320"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">OCEAN EXPLORATION REEF BLUEPRINT</text>
+</svg>",
+
             "reflection" or _ => @"
 <svg viewBox=""0 0 800 360"" fill=""none"" xmlns=""http://www.w3.org/2000/svg"" style=""width:100%;height:100%;"">
   <defs>
