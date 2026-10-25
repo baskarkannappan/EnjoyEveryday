@@ -100,34 +100,36 @@
     <div class="main-workspace-grid">
 
         <!-- LEFT COLUMN: QUICK CARE ENTRY (Matching Screenshot 1) -->
-        <div class="card-panel entry-panel">
-            <div class="panel-header">
-                <div class="header-with-toggle">
+        <!-- LEFT COLUMN: QUICK CARE ENTRY (Redesigned with Main Campus card structure) -->
+        <article class="card-panel entry-panel care-card">
+            <!-- Header matching branch-head in Main Campus card -->
+            <div class="care-card-head">
+                <div class="care-card-title-row">
+                    <div class="care-card-icon">🍼</div>
                     <div>
-                        <div class="eyebrow">Interactive Care Logger</div>
-                        <h2>Quick care entry</h2>
-                    </div>
-                    <div class="mode-toggle-group">
-                        <button type="button" 
-                                class="mode-tab @(!_isBulkMode ? "active" : "")" 
-                                @onclick="() => SetEntryMode(false)">
-                            👤 Single Child
-                        </button>
-                        <button type="button" 
-                                class="mode-tab @(_isBulkMode ? "active" : "")" 
-                                @onclick="() => SetEntryMode(true)">
-                            👥 Group / Bulk (@_selectedChildIds.Count)
-                        </button>
+                        <div class="care-card-name">Quick care entry</div>
+                        <div class="care-card-subtitle">Fast routine recording for teachers &amp; staff</div>
                     </div>
                 </div>
-                <p class="panel-desc">Fast, single-tap routine recording for teachers. Current timestamp recorded automatically.</p>
+                <div class="mode-toggle-group">
+                    <button type="button" 
+                            class="mode-tab @(!_isBulkMode ? "active" : "")" 
+                            @onclick="() => SetEntryMode(false)">
+                        👤 Single Child
+                    </button>
+                    <button type="button" 
+                            class="mode-tab @(_isBulkMode ? "active" : "")" 
+                            @onclick="() => SetEntryMode(true)">
+                        👥 Group / Bulk (@_selectedChildIds.Count)
+                    </button>
+                </div>
             </div>
 
             @if (!_isBulkMode)
             {
                 <!-- Single Child Selector -->
                 <div class="form-field">
-                    <label>Child</label>
+                    <label class="field-label">Child</label>
                     <select class="select-input child-select" @onchange="OnSelectedChildChanged">
                         @if (_classroomOverview.Count == 0)
                         {
@@ -150,13 +152,13 @@
                 <!-- Bulk Child Multi-Select Area -->
                 <div class="form-field bulk-children-field">
                     <div class="bulk-toolbar">
-                        <label>Select Children (@_selectedChildIds.Count of @_classroomOverview.Count selected)</label>
+                        <label class="field-label">Select Children (@_selectedChildIds.Count of @_classroomOverview.Count selected)</label>
                         <div class="bulk-quick-actions">
                             <button type="button" class="btn sm outline" @onclick="SelectAllCheckedInChildren">
-                                Select All Checked In (@_classroomOverview.Count(c => c.IsCheckedIn))
+                                Checked In (@_classroomOverview.Count(c => c.IsCheckedIn))
                             </button>
                             <button type="button" class="btn sm outline" @onclick="SelectAllChildren">
-                                Select All
+                                All
                             </button>
                             <button type="button" class="btn sm text-btn" @onclick="ClearSelectedChildren">
                                 Clear
@@ -182,9 +184,9 @@
                 </div>
             }
 
-            <!-- Care Activity 2x3 Grid Tiles (Matching Screenshot 1) -->
+            <!-- Care Activity 3-Column Grid (matching branch-stats format) -->
             <div class="form-field">
-                <label>Care activity</label>
+                <label class="field-label">Care Activity</label>
                 <div class="activity-tiles-grid">
 
                     <!-- Tile 1: Diaper change -->
@@ -274,45 +276,42 @@
                 </div>
             </div>
 
-            <!-- Activity Details Selection -->
-            <div class="form-field">
-                <label>Activity details</label>
-                <select class="select-input" @bind="_selectedDetail">
-                    @foreach (var opt in GetDetailsOptionsForActivity(_selectedActivity))
-                    {
-                        <option value="@opt">@opt</option>
-                    }
-                </select>
+            <!-- Activity Details & Observation Note (Structured note block matching branch-note) -->
+            <div class="care-note-block">
+                <div class="form-field-compact">
+                    <label class="field-label">Activity Details</label>
+                    <select class="select-input select-note-field" @bind="_selectedDetail">
+                        @foreach (var opt in GetDetailsOptionsForActivity(_selectedActivity))
+                        {
+                            <option value="@opt">@opt</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-field-compact">
+                    <label class="field-label">Optional Observation Note</label>
+                    <input type="text" 
+                           class="text-input note-input" 
+                           placeholder="Add a short factual observation..." 
+                           @bind="_entryNote" />
+                </div>
             </div>
 
-            <!-- Optional Note -->
-            <div class="form-field">
-                <label>Optional note</label>
-                <input type="text" 
-                       class="text-input" 
-                       placeholder="Add a short factual observation..." 
-                       @bind="_entryNote" />
-            </div>
-
-            <!-- Visibility checkbox -->
-            <div class="form-field checkbox-field">
+            <!-- Card Footer matching branch-footer -->
+            <div class="care-card-footer">
                 <label class="checkbox-label">
                     <input type="checkbox" @bind="_parentVisible" />
                     <span>Share on parent daily summary</span>
                 </label>
-            </div>
 
-            <!-- Submit Button (Matching Screenshot 1 & Bulk Mode) -->
-            <div class="submit-action-box">
                 @if (!_isBulkMode)
                 {
-                    <button class="btn primary btn-block" @onclick="SubmitQuickCareEntry" disabled="@(_isSubmitting || _selectedChildId == Guid.Empty)">
+                    <button class="btn primary submit-btn" @onclick="SubmitQuickCareEntry" disabled="@(_isSubmitting || _selectedChildId == Guid.Empty)">
                         @(_isSubmitting ? "Saving Entry..." : "Record care entry")
                     </button>
                 }
                 else
                 {
-                    <button class="btn primary btn-block" @onclick="SubmitBulkCareEntry" disabled="@(_isSubmitting || _selectedChildIds.Count == 0)">
+                    <button class="btn primary submit-btn" @onclick="SubmitBulkCareEntry" disabled="@(_isSubmitting || _selectedChildIds.Count == 0)">
                         @(_isSubmitting ? "Recording for group..." : $"Record '{_selectedActivity}' for {_selectedChildIds.Count} children")
                     </button>
                 }
@@ -354,7 +353,7 @@
                 </div>
             }
 
-        </div>
+        </article>
 
         <!-- RIGHT COLUMN: CHILD CARE TIMELINE (Matching Screenshot 2) -->
         <div class="card-panel timeline-panel">

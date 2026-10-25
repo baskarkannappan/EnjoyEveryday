@@ -1,0 +1,166 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components.ClassroomWizard
+
+<div class="classroom-profile-container">
+    <!-- Header: Avatar, Name, Status, Completion -->
+    <div class="profile-header-strip">
+        <div class="profile-avatar">
+            @if (!string.IsNullOrEmpty(Classroom.PhotoUrl))
+            {
+                <img src="@Classroom.PhotoUrl" alt="@Classroom.Name" />
+            }
+            else
+            {
+                <span class="avatar-initial">@(Classroom.Name?.FirstOrDefault().ToString() ?? "?")</span>
+            }
+        </div>
+        <div class="profile-title-block">
+            <h2 class="profile-name">@Classroom.Name</h2>
+            <p class="profile-type">@(Model.ClassroomType ?? "Classroom") &middot; @(Model.AgeGroup ?? "")</p>
+            <div class="profile-badges-row">
+                <span class="status-badge @Classroom.Status.ToLowerInvariant()">
+                    @Classroom.Status
+                </span>
+                <span class="completion-text">
+                    Profile Completion: @Classroom.ProfileCompletionPercentage%
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Grid -->
+    <div class="profile-sections-grid">
+        <!-- Basic Information -->
+        <div class="info-card">
+            <h3 class="info-card-title">Basic Information</h3>
+            <dl class="info-dl">
+                <dt>Classroom Name</dt>
+                <dd>@Classroom.Name</dd>
+                
+                <dt>Code</dt>
+                <dd>@(Model.Code ?? "-")</dd>
+                
+                <dt>Description</dt>
+                <dd>@(Model.Description ?? "-")</dd>
+            </dl>
+        </div>
+
+        <!-- Capacity & Environment -->
+        <div class="info-card">
+            <h3 class="info-card-title">Capacity &amp; Environment</h3>
+            <dl class="info-dl">
+                <dt>Capacity</dt>
+                <dd>@(Model.Capacity?.ToString() ?? "-") children</dd>
+                
+                <dt>Environment Type</dt>
+                <dd>@(Model.Environment ?? "-")</dd>
+                
+                <dt>Age Group</dt>
+                <dd>@(Model.AgeGroup ?? "-")</dd>
+            </dl>
+        </div>
+
+        <!-- Assigned Teachers -->
+        <div class="info-card">
+            <h3 class="info-card-title">Assigned Teachers</h3>
+            <dl class="info-dl">
+                <dt>Lead Teacher</dt>
+                <dd>@(Model.LeadTeacher ?? "-")</dd>
+                
+                <dt>Assistant Teachers</dt>
+                <dd>@(Model.AssistantTeachers ?? "-")</dd>
+            </dl>
+        </div>
+
+        <!-- Schedule -->
+        <div class="info-card">
+            <h3 class="info-card-title">Schedule</h3>
+            <dl class="info-dl">
+                <dt>Operating Hours</dt>
+                <dd>@(Model.OpeningTime?.ToString("HH:mm") ?? "-") to @(Model.ClosingTime?.ToString("HH:mm") ?? "-")</dd>
+                
+                <dt>Key Daily Times</dt>
+                <dd>
+                    Arrival: @(Model.ArrivalTime?.ToString("HH:mm") ?? "-")<br />
+                    Meal: @(Model.MealTime?.ToString("HH:mm") ?? "-")<br />
+                    Nap: @(Model.NapTime?.ToString("HH:mm") ?? "-")<br />
+                    Departure: @(Model.DepartureTime?.ToString("HH:mm") ?? "-")
+                </dd>
+            </dl>
+        </div>
+
+        <!-- Safety Information -->
+        <div class="info-card">
+            <h3 class="info-card-title">Safety Information</h3>
+            <dl class="info-dl">
+                <dt>Emergency Exit Route</dt>
+                <dd>@(Model.EmergencyExit ?? "-")</dd>
+                
+                <dt>First Aid Kit Location</dt>
+                <dd>@(Model.FirstAidLocation ?? "-")</dd>
+                
+                <dt>Assembly Point</dt>
+                <dd>@(Model.AssemblyPoint ?? "-")</dd>
+            </dl>
+        </div>
+
+        <!-- Resources & Equipment -->
+        <div class="info-card">
+            <h3 class="info-card-title">Resources &amp; Equipment</h3>
+            <dl class="info-dl">
+                <dt>Key Equipment</dt>
+                <dd>@(Model.Equipment ?? "-")</dd>
+                
+                <dt>Learning Resources</dt>
+                <dd>@(Model.LearningResources ?? "-")</dd>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Experience History Section -->
+    <div class="history-section">
+        <h3 class="history-title">Experience History</h3>
+        
+        @if (ExperienceHistory == null)
+        {
+            <p class="history-loading">Loading history...</p>
+        }
+        else if (!ExperienceHistory.Any())
+        {
+            <div class="history-empty">
+                No experiences recorded yet for this classroom.
+            </div>
+        }
+        else
+        {
+            <div class="history-list">
+                @foreach (var session in ExperienceHistory.OrderByDescending(s => s.SessionDate))
+                {
+                    var expTitle = ExperiencesDict.ContainsKey(session.ExperienceId) 
+                        ? ExperiencesDict[session.ExperienceId] 
+                        : "Unknown Experience";
+                    <div class="history-item">
+                        <div>
+                            <h4 class="session-title">@expTitle</h4>
+                            <div class="session-meta">
+                                @session.SessionDate.ToString("MMM dd, yyyy") &middot; 
+                                @(session.StartTime?.ToString(@"hh\:mm") ?? "-") to @(session.EndTime?.ToString(@"hh\:mm") ?? "-")
+                            </div>
+                        </div>
+                        <span class="status-badge active">
+                            @session.Status
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Classroom Classroom { get; set; } = default!;
+    [Parameter, EditorRequired] public ClassroomWizardModel Model { get; set; } = default!;
+    [Parameter] public List<ExperienceSession>? ExperienceHistory { get; set; }
+    [Parameter] public Dictionary<Guid, string> ExperiencesDict { get; set; } = new();
+}

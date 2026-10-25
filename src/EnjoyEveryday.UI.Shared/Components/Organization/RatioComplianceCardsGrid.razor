@@ -1,0 +1,80 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+
+<div class="ratio-cards-grid">
+    @foreach (var r in Ratios)
+    {
+        <div class="ratio-card @GetRatioClass(r.Status)">
+            <div class="ratio-card-top">
+                <div>
+                    <span class="room-title">@r.ClassroomName</span>
+                    <span class="rule-badge">@r.StatutoryRule</span>
+                </div>
+                <span class="status-badge @GetRatioClass(r.Status)">
+                    @if (r.Status == RatioComplianceStatus.Compliant)
+                    {
+                        <span>✓ Compliant</span>
+                    }
+                    else if (r.Status == RatioComplianceStatus.AtRisk)
+                    {
+                        <span>⚠️ At Capacity</span>
+                    }
+                    else
+                    {
+                        <span>🚨 Understaffed</span>
+                    }
+                </span>
+            </div>
+
+            <div class="ratio-metric-row">
+                <div class="metric-block">
+                    <span class="metric-value">@r.ChildrenPresent</span>
+                    <span class="metric-caption">Children Present</span>
+                </div>
+                <div class="metric-divider">:</div>
+                <div class="metric-block">
+                    <span class="metric-value">@r.TeachersPresent</span>
+                    <span class="metric-caption">Educators Active</span>
+                </div>
+            </div>
+
+            <div class="ratio-bar-container">
+                <div class="ratio-bar-track">
+                    <div class="ratio-bar-fill @GetRatioClass(r.Status)" 
+                         style="width: @(Math.Min(100, r.TeachersPresent > 0 ? (r.CurrentRatio / r.MaxAllowedRatio * 100) : (r.ChildrenPresent > 0 ? 100 : 0)))%;"></div>
+                </div>
+                <div class="ratio-bar-footer">
+                    <span>Ratio 1:@(r.CurrentRatio)</span>
+                    <span>Limit 1:@(r.MaxAllowedRatio)</span>
+                </div>
+            </div>
+
+            @if (r.Status == RatioComplianceStatus.Breached)
+            {
+                <div class="ratio-alert-action">
+                    <span><strong>+@r.MissingTeachersCount</strong> educator needed for compliance</span>
+                    @if (HasFloatTeachers)
+                    {
+                        <button class="btn secondary dispatch-btn" @onclick="() => OnDispatchFloat.InvokeAsync(r.ClassroomId)">
+                            Dispatch Float
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IEnumerable<ClassroomRatioCompliance> Ratios { get; set; } = Enumerable.Empty<ClassroomRatioCompliance>();
+    [Parameter] public bool HasFloatTeachers { get; set; }
+    [Parameter] public EventCallback<Guid> OnDispatchFloat { get; set; }
+
+    private string GetRatioClass(RatioComplianceStatus status) => status switch
+    {
+        RatioComplianceStatus.Compliant => "compliant",
+        RatioComplianceStatus.AtRisk => "atrisk",
+        RatioComplianceStatus.Breached => "breached",
+        _ => ""
+    };
+}

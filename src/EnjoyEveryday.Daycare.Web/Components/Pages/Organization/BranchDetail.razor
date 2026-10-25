@@ -10,193 +10,49 @@
 @inject ITeacherService TeacherService
 @inject NavigationManager NavigationManager
 
-<PageTopbar Breadcrumb="@($"Organization · Branch Detail")" Title="@(Branch?.Name ?? "Loading...")">
-    <RightContent>
-        <button class="icon-button" @onclick="GoBack">←</button>
-    </RightContent>
-</PageTopbar>
+<PageTitle>@(Branch?.Name ?? "Branch Detail") — EnjoyEveryday</PageTitle>
 
-<section class="content" style="padding: 34px; max-width: 1600px; margin: auto;">
-
+<div class="content branch-detail-page">
     @if (Branch == null)
     {
-        <p>Loading branch details...</p>
+        <div style="padding: 40px; text-align: center; color: var(--muted, #6c7870);">
+            <p>Loading branch details...</p>
+        </div>
     }
     else
     {
-        <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-                <div class="eyebrow">Branch View</div>
-                <h1>@Branch.Name</h1>
-                <p class="header-description">
-                    Location: @Branch.Location <br/>
-                    Status: @(Branch.IsActive ? "Active" : "Inactive")
-                </p>
-            </div>
-            <div class="header-actions">
-                <button class="btn" @onclick="GoToCreateClassroom">＋ Add Classroom</button>
-                <button class="btn">Edit Branch</button>
-                <button class="btn @(Branch.IsActive ? "" : "primary")" @onclick="ToggleActive">
+        <PageHero Eyebrow="BRANCH VIEW"
+                  Title="@Branch.Name"
+                  Subtitle="@($"Location: {Branch.Location ?? "Main"} • Status: {(Branch.IsActive ? "Active" : "Inactive")}")">
+            <RightContent>
+                <button type="button" class="btn secondary" @onclick="GoBack">&larr; Back to Management</button>
+                <button type="button" class="btn secondary" @onclick="GoToCreateClassroom">＋ Add Classroom</button>
+                <button type="button" class="btn @(Branch.IsActive ? "secondary" : "primary")" @onclick="ToggleActive">
                     @(Branch.IsActive ? "Deactivate Branch" : "Activate Branch")
                 </button>
-            </div>
-        </div>
+            </RightContent>
+        </PageHero>
 
-        <style>
-            .branch-tabs {
-                display: flex;
-                gap: 32px;
-                border-bottom: 1px solid #e5eae6;
-                margin-top: 40px;
-                margin-bottom: 24px;
-            }
-            .branch-tab {
-                background: transparent;
-                border: none;
-                padding: 12px 0;
-                font-size: 15px;
-                font-weight: 600;
-                color: #6b7280;
-                cursor: pointer;
-                position: relative;
-                transition: color 0.2s;
-            }
-            .branch-tab:hover {
-                color: #374151;
-            }
-            .branch-tab.active {
-                color: #111827;
-            }
-            .branch-tab.active::after {
-                content: '';
-                position: absolute;
-                bottom: -1px;
-                left: 0;
-                right: 0;
-                height: 3px;
-                background: #456a55;
-                border-radius: 3px 3px 0 0;
-            }
-            .list-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-                gap: 20px;
-            }
-            .list-card {
-                background: white;
-                border: 1px solid #e5eae6;
-                border-radius: 12px;
-                padding: 20px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-                transition: all 0.2s;
-            }
-            .list-card:hover {
-                border-color: #cbd9ce;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-            }
-        </style>
-
-        <div class="branch-tabs">
-            <button class="branch-tab @(ActiveTab == "classrooms" ? "active" : "")" @onclick="@(() => ActiveTab = "classrooms")">Classrooms (@(Classrooms?.Count() ?? 0))</button>
-            <button class="branch-tab @(ActiveTab == "children" ? "active" : "")" @onclick="@(() => ActiveTab = "children")">Enrolled Children (@(BranchChildren?.Count() ?? 0))</button>
-            <button class="branch-tab @(ActiveTab == "teachers" ? "active" : "")" @onclick="@(() => ActiveTab = "teachers")">Teachers (@(BranchTeachers?.Count() ?? 0))</button>
-        </div>
+        <FilterTabs Tabs="BranchTabs"
+                    ActiveTab="@ActiveTab"
+                    OnTabSelected="tab => ActiveTab = tab" />
 
         @if (ActiveTab == "classrooms")
         {
-            <div class="list-grid">
-                @if (Classrooms == null)
-                {
-                    <p>Loading classrooms...</p>
-                }
-                else if (!Classrooms.Any())
-                {
-                    <div class="empty-state">
-                        <p>No classrooms yet.</p>
-                        <button class="btn" @onclick="GoToCreateClassroom">＋ Add Classroom</button>
-                    </div>
-                }
-                else
-                {
-                    @foreach (var room in Classrooms)
-                    {
-                        <div class="list-card" style="cursor: pointer;" @onclick="() => GoToClassroomDetail(room.Id)">
-                            <div style="font-weight: 700; font-size: 16px; color: #111827; margin-bottom: 6px;">@room.Name</div>
-                            <div style="color: #4b5563; font-size: 13px; margin-bottom: 16px;">
-                                Age: @room.AgeGroup &bull; Capacity: @room.Capacity
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f3f4f6; padding-top: 12px;">
-                                <span style="font-size: 13px; font-weight: 600; color: #374151;">@room.CurrentEnrollment children</span>
-                                <span style="font-size: 12px; padding: 4px 8px; background: #f3f4f6; border-radius: 6px; color: #4b5563;">@room.Status</span>
-                            </div>
-                        </div>
-                    }
-                }
-            </div>
+            <BranchClassroomsGrid Classrooms="@Classrooms"
+                                  OnAddClassroom="GoToCreateClassroom"
+                                  OnSelectClassroom="GoToClassroomDetail" />
         }
         else if (ActiveTab == "children")
         {
-            <div class="list-grid">
-                @if (BranchChildren == null)
-                {
-                    <p>Loading children...</p>
-                }
-                else if (!BranchChildren.Any())
-                {
-                    <div class="empty-state"><p>No children enrolled in this branch yet.</p></div>
-                }
-                else
-                {
-                    @foreach (var child in BranchChildren)
-                    {
-                        <div class="list-card">
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <div style="width: 40px; height: 40px; border-radius: 50%; background: #dce9df; color: #365844; display: flex; align-items: center; justify-content: center; font-weight: bold;">
-                                    @(child.FirstName?.FirstOrDefault().ToString() ?? "")
-                                </div>
-                                <div>
-                                    <div style="font-weight: 700; font-size: 15px; color: #111827;">@child.FirstName @child.LastName</div>
-                                    <div style="color: #6b7280; font-size: 12px;">DoB: @child.DateOfBirth?.ToString("MMM dd, yyyy")</div>
-                                </div>
-                            </div>
-                        </div>
-                    }
-                }
-            </div>
+            <BranchChildrenGrid Children="@BranchChildren" />
         }
         else if (ActiveTab == "teachers")
         {
-            <div class="list-grid">
-                @if (BranchTeachers == null)
-                {
-                    <p>Loading teachers...</p>
-                }
-                else if (!BranchTeachers.Any())
-                {
-                    <div class="empty-state"><p>No teachers assigned to this branch yet.</p></div>
-                }
-                else
-                {
-                    @foreach (var teacher in BranchTeachers)
-                    {
-                        <div class="list-card">
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <div style="width: 40px; height: 40px; border-radius: 50%; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; display: flex; align-items: center; justify-content: center; font-weight: bold;">
-                                    @(teacher.FirstName?.FirstOrDefault().ToString() ?? "")
-                                </div>
-                                <div>
-                                    <div style="font-weight: 700; font-size: 15px; color: #111827;">@teacher.FullName</div>
-                                    <div style="color: #6b7280; font-size: 12px;">@teacher.Status</div>
-                                </div>
-                            </div>
-                        </div>
-                    }
-                }
-            </div>
+            <BranchTeachersGrid Teachers="@BranchTeachers" />
         }
     }
-
-</section>
+</div>
 
 @code {
     [Parameter] public Guid BranchId { get; set; }
@@ -207,6 +63,13 @@
     private List<Teacher>? BranchTeachers;
     
     private string ActiveTab = "classrooms";
+
+    private List<FilterTabs.TabItem> BranchTabs => new()
+    {
+        new FilterTabs.TabItem { Text = $"Classrooms ({Classrooms?.Count() ?? 0})", Value = "classrooms" },
+        new FilterTabs.TabItem { Text = $"Enrolled Children ({BranchChildren?.Count ?? 0})", Value = "children" },
+        new FilterTabs.TabItem { Text = $"Teachers ({BranchTeachers?.Count ?? 0})", Value = "teachers" }
+    };
 
     protected override async Task OnInitializedAsync()
     {

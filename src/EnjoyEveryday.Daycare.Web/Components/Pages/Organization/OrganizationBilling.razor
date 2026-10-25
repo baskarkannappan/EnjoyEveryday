@@ -47,42 +47,13 @@
     }
 
     <!-- METRICS SUMMARY -->
-    <div class="metrics-summary-grid">
-        <div class="summary-card">
-            <span class="summary-card-label">Outstanding Balance</span>
-            <span class="summary-card-value" style="color: @(TotalOutstandingBalance > 0 ? "#b55a5a" : "var(--text)");">
-                @TotalOutstandingBalance.ToString("C2")
-            </span>
-            <span class="summary-card-sub">
-                @(OverdueCount > 0 ? $"{OverdueCount} invoice(s) overdue" : "All current accounts up to date")
-            </span>
-        </div>
-        <div class="summary-card">
-            <span class="summary-card-label">Total Paid to Date</span>
-            <span class="summary-card-value" style="color: var(--accent-dark, #3e6253);">
-                @TotalAmountPaid.ToString("C2")
-            </span>
-            <span class="summary-card-sub">Across @_invoices.Count(i => i.AmountPaid > 0) invoice payments</span>
-        </div>
-        <div class="summary-card">
-            <span class="summary-card-label">Next Payment Due</span>
-            <span class="summary-card-value" style="font-size: 20px;">
-                @(NextDueDate.HasValue ? NextDueDate.Value.ToString("MMM dd, yyyy") : "None Pending")
-            </span>
-            <span class="summary-card-sub">
-                @(NextDueDate.HasValue ? $"Due in {(int)(NextDueDate.Value - DateTimeOffset.UtcNow).TotalDays} days" : "No active unpaid balances")
-            </span>
-        </div>
-        <div class="summary-card">
-            <span class="summary-card-label">Billing Schedule</span>
-            <span class="summary-card-value" style="font-size: 20px; text-transform: capitalize;">
-                @(_billingSettings?.Frequency.ToString() ?? "Monthly")
-            </span>
-            <span class="summary-card-sub">
-                @(_billingSettings?.Mode == BillingMode.Automatic ? "Automatic scheduled billing" : "Manual administrative invoicing")
-            </span>
-        </div>
-    </div>
+    <BillingMetricsStrip TotalOutstandingBalance="@TotalOutstandingBalance"
+                         OverdueCount="@OverdueCount"
+                         TotalAmountPaid="@TotalAmountPaid"
+                         PaidInvoicesCount="@_invoices.Count(i => i.AmountPaid > 0)"
+                         NextDueDate="@NextDueDate"
+                         BillingScheduleFrequency="@(_billingSettings?.Frequency.ToString() ?? "Monthly")"
+                         BillingScheduleModeDescription="@(_billingSettings?.Mode == BillingMode.Automatic ? "Automatic scheduled billing" : "Manual administrative invoicing")" />
 
     <!-- FILTER & SEARCH ROW -->
     <div class="filter-row">
@@ -113,63 +84,10 @@
     }
     else
     {
-        <div class="invoices-panel">
-            <table class="invoices-data-table">
-                <thead>
-                    <tr>
-                        <th>Invoice #</th>
-                        <th>Billing Memo</th>
-                        <th>Issue Date</th>
-                        <th>Due Date</th>
-                        <th>Total Amount</th>
-                        <th>Paid</th>
-                        <th>Balance Due</th>
-                        <th>Status</th>
-                        <th style="text-align: right;">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var inv in FilteredInvoices)
-                    {
-                        <tr>
-                            <td style="font-weight: 800; font-family: monospace; font-size: 13.5px; color: var(--text);">
-                                @inv.InvoiceNumber
-                            </td>
-                            <td>
-                                <div style="font-weight: 650; color: var(--text);">@(!string.IsNullOrWhiteSpace(inv.Description) ? inv.Description : "Platform Subscription Fee")</div>
-                                @if (!string.IsNullOrWhiteSpace(inv.BillingPeriod))
-                                {
-                                    <div style="font-size: 11px; color: var(--muted); margin-top: 2px;">Billing Period: @inv.BillingPeriod</div>
-                                }
-                            </td>
-                            <td style="color: var(--muted);">@inv.IssueDate.ToString("MMM dd, yyyy")</td>
-                            <td style="color: var(--muted);">@inv.DueDate.ToString("MMM dd, yyyy")</td>
-                            <td style="font-weight: 800;">@inv.TotalAmount.ToString("C2")</td>
-                            <td style="color: var(--accent-dark); font-weight: 700;">@inv.AmountPaid.ToString("C2")</td>
-                            <td style="font-weight: 800; color: @(inv.BalanceDue > 0 ? "#b55a5a" : "var(--text)");">
-                                @inv.BalanceDue.ToString("C2")
-                            </td>
-                            <td>
-                                <StatusBadge Status="@inv.Status.ToString()" />
-                            </td>
-                            <td style="text-align: right;">
-                                <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
-                                    @if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Draft && inv.Status != InvoiceStatus.Void)
-                                    {
-                                        <button class="btn-pay-now" @onclick="() => PayInvoiceOnline(inv)" disabled="@_isProcessingPayment">
-                                            💳 Pay Now
-                                        </button>
-                                    }
-                                    <button class="btn-view-invoice" @onclick="() => OpenInvoiceModal(inv)">
-                                        📄 View Details
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
+        <InvoicesTable Invoices="@FilteredInvoices"
+                       IsProcessingPayment="@_isProcessingPayment"
+                       OnPayOnline="PayInvoiceOnline"
+                       OnViewDetails="OpenInvoiceModal" />
     }
 
     <!-- SUPPORT / REMITTANCE BANNER -->

@@ -1,0 +1,73 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+<div class="memory-selector-bar">
+    <div class="selector-group">
+        <label class="selector-label">Branch</label>
+        <select class="selector-input" value="@SelectedBranchId" @onchange="OnBranchChanged">
+            <option value="@Guid.Empty">All Branches</option>
+            @foreach (var branch in Branches)
+            {
+                <option value="@branch.Id">@branch.Name</option>
+            }
+        </select>
+    </div>
+
+    <div class="selector-group">
+        <label class="selector-label">Classroom</label>
+        <select class="selector-input" value="@SelectedClassroomId" @onchange="OnClassroomChanged" disabled="@(!Classrooms.Any())">
+            <option value="@Guid.Empty">All Classrooms</option>
+            @foreach (var cls in Classrooms)
+            {
+                <option value="@cls.Id">@cls.Name</option>
+            }
+        </select>
+    </div>
+
+    <div class="selector-group primary-selector">
+        <label class="selector-label">Child</label>
+        <select class="selector-input child-dropdown" value="@SelectedChildId" @onchange="OnChildChanged">
+            <option value="@Guid.Empty">-- Select a Child to view their stream --</option>
+            @foreach (var child in Children)
+            {
+                <option value="@child.Id">@child.FirstName @child.LastName</option>
+            }
+        </select>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<Branch> Branches { get; set; } = Enumerable.Empty<Branch>();
+    [Parameter] public IEnumerable<Classroom> Classrooms { get; set; } = Enumerable.Empty<Classroom>();
+    [Parameter] public IEnumerable<Child> Children { get; set; } = Enumerable.Empty<Child>();
+    [Parameter] public Guid SelectedBranchId { get; set; }
+    [Parameter] public Guid SelectedClassroomId { get; set; }
+    [Parameter] public Guid SelectedChildId { get; set; }
+    [Parameter] public EventCallback<Guid> SelectedBranchIdChanged { get; set; }
+    [Parameter] public EventCallback<Guid> SelectedClassroomIdChanged { get; set; }
+    [Parameter] public EventCallback<Guid> SelectedChildIdChanged { get; set; }
+
+    private async Task OnBranchChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            await SelectedBranchIdChanged.InvokeAsync(id);
+        }
+    }
+
+    private async Task OnClassroomChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            await SelectedClassroomIdChanged.InvokeAsync(id);
+        }
+    }
+
+    private async Task OnChildChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            await SelectedChildIdChanged.InvokeAsync(id);
+        }
+    }
+}

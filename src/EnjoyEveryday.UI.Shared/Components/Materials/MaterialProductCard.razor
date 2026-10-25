@@ -1,0 +1,81 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+@{
+    var off = Product.Offering;
+    var bal = Product.StockBalance;
+    var isKit = Product.MaterialType == "ActivityKit" || Product.MaterialType == "Reusable";
+}
+
+<div class="material-product-card">
+    <div class="card-media">
+        <div class="media-placeholder">
+            <span>@(isKit ? "🧩" : "🎨")</span>
+        </div>
+        <span class="type-badge @Product.MaterialType.ToLowerInvariant()">
+            @(isKit ? "Reusable Kit" : "Consumable")
+        </span>
+        @if (bal != null && bal.AvailableStock > 0)
+        {
+            <span class="stock-badge available">● @bal.AvailableStock in stock</span>
+        }
+        else
+        {
+            <span class="stock-badge request">Borrow on request</span>
+        }
+    </div>
+
+    <div class="card-body">
+        <div class="category-tag">@Product.Category</div>
+        <h3 class="product-name">@Product.Name</h3>
+        <p class="product-desc">@Product.Description</p>
+
+        @if (!string.IsNullOrWhiteSpace(Product.SafetyInstructions))
+        {
+            <div class="safety-tip">
+                <span>🛡️</span>
+                <span>@Product.SafetyInstructions</span>
+            </div>
+        }
+
+        <div class="pricing-container">
+            @if (off?.AllowPurchase == true)
+            {
+                <div class="price-box">
+                    <div class="price-lbl">BUY TO KEEP</div>
+                    <div class="price-val">₹@off.PurchasePrice.ToString("N0")</div>
+                </div>
+            }
+
+            @if (off?.AllowBorrow == true)
+            {
+                <div class="price-box borrow">
+                    <div class="price-lbl">BORROW KIT</div>
+                    <div class="price-val">
+                        ₹@off.RentalFee.ToString("N0")
+                        <span class="loan-period">/@(off.DefaultLoanDurationDays)d</span>
+                    </div>
+                    @if (off.RefundableDeposit > 0)
+                    {
+                        <div class="deposit-note">+ ₹@off.RefundableDeposit.ToString("N0") deposit</div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="card-actions">
+            <button class="btn secondary" @onclick="() => OnViewDetails.InvokeAsync(Product)">
+                Details &amp; Safety
+            </button>
+            <button class="primary" @onclick="() => OnAddToOrder.InvokeAsync(Product)">
+                + Add to Order
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MaterialProduct Product { get; set; } = null!;
+    [Parameter] public EventCallback<MaterialProduct> OnViewDetails { get; set; }
+    [Parameter] public EventCallback<MaterialProduct> OnAddToOrder { get; set; }
+}

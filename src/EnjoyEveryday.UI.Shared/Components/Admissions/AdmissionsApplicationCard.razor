@@ -1,0 +1,148 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+
+<div class="app-card">
+    <div class="app-card-header">
+        <div class="avatar-box">
+            @(string.IsNullOrWhiteSpace(Application.ChildFirstName) ? "C" : Application.ChildFirstName[0].ToString().ToUpper())
+        </div>
+        <div class="header-content">
+            <div class="name-stage-row">
+                <h4 class="child-name">@Application.ChildFullName</h4>
+                <span class="stage-pill @Application.PipelineStage.ToLowerInvariant()">@GetStageDisplayName(Application.PipelineStage)</span>
+            </div>
+            <div class="child-meta">
+                <span>Age: <strong>@Application.AgeInMonths mos</strong></span>
+                <span>&bull;</span>
+                <span>DOB: @Application.DateOfBirth.ToString("MMM dd, yyyy")</span>
+                @if (!string.IsNullOrWhiteSpace(Application.Gender))
+                {
+                    <span>&bull;</span>
+                    <span>@Application.Gender</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="app-body">
+        <div class="info-row">
+            <span class="info-label">Parent / Guardian:</span>
+            <span class="info-val"><strong>@Application.ParentGuardianName</strong></span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Contact:</span>
+            <span class="info-val">@Application.ParentEmail | @Application.ParentPhone</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Room &amp; Schedule:</span>
+            <span class="info-val">
+                @(Application.TargetClassroomName ?? "Unassigned")
+                <span class="schedule-badge">@FormatSchedule(Application.ScheduleType)</span>
+            </span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Tuition Plan:</span>
+            <span class="info-val tuition-highlight">
+                @Application.EffectiveMonthlyRate.ToString("C0")/mo
+                @if (Application.SiblingDiscountPercent > 0)
+                {
+                    <span class="discount-badge">-@Application.SiblingDiscountPercent% Sibling</span>
+                }
+            </span>
+        </div>
+        @if (Application.TourDate.HasValue)
+        {
+            <div class="info-row tour-highlight">
+                <span class="info-label">Tour Scheduled:</span>
+                <span class="info-val">📅 @Application.TourDate.Value.ToString("ddd, MMM dd @ h:mm tt")</span>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Application.InternalNotes))
+        {
+            <div class="notes-box">
+                <span class="notes-title">Admissions Notes</span>
+                <p class="notes-text">@Application.InternalNotes</p>
+            </div>
+        }
+    </div>
+
+    <div class="app-card-footer">
+        @if (Application.PipelineStage == "Enquiry")
+        {
+            <button class="btn secondary" @onclick="() => OnScheduleTour.InvokeAsync(Application)">
+                📅 Schedule Tour
+            </button>
+            <button class="primary" @onclick='() => OnAdvanceStage.InvokeAsync((Application.Id, "ApplicationSubmitted"))'>
+                Submit Application &rarr;
+            </button>
+        }
+        else if (Application.PipelineStage == "TourScheduled")
+        {
+            <button class="btn secondary" @onclick="() => OnScheduleTour.InvokeAsync(Application)">
+                Reschedule Tour
+            </button>
+            <button class="primary" @onclick='() => OnAdvanceStage.InvokeAsync((Application.Id, "UnderReview"))'>
+                Tour Complete &amp; Review &rarr;
+            </button>
+        }
+        else if (Application.PipelineStage == "ApplicationSubmitted" || Application.PipelineStage == "UnderReview")
+        {
+            <button class="btn secondary" @onclick='() => OnAdvanceStage.InvokeAsync((Application.Id, "Waitlisted"))'>
+                Waitlist
+            </button>
+            <button class="primary" @onclick='() => OnAdvanceStage.InvokeAsync((Application.Id, "OfferSent"))'>
+                Extend Offer ✉️
+            </button>
+        }
+        else if (Application.PipelineStage == "OfferSent")
+        {
+            <button class="primary full-width" @onclick="() => OnAcceptOffer.InvokeAsync(Application)">
+                ✓ Accept Offer &amp; Finalize Tuition Contract
+            </button>
+        }
+        else if (Application.PipelineStage == "Enrolled")
+        {
+            <div class="enrolled-status-bar">
+                <span class="enrolled-badge">✓ Actively Enrolled Child</span>
+                <a href="/children" class="btn secondary link-btn">
+                    View in Child Directory
+                </a>
+            </div>
+        }
+        else
+        {
+            <button class="btn secondary" @onclick='() => OnAdvanceStage.InvokeAsync((Application.Id, "UnderReview"))'>
+                Re-open Application
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EnrollmentPipelineApplicationDto Application { get; set; } = default!;
+    [Parameter] public EventCallback<EnrollmentPipelineApplicationDto> OnScheduleTour { get; set; }
+    [Parameter] public EventCallback<(Guid AppId, string NextStage)> OnAdvanceStage { get; set; }
+    [Parameter] public EventCallback<EnrollmentPipelineApplicationDto> OnAcceptOffer { get; set; }
+
+    private static string GetStageDisplayName(string stage) => stage switch
+    {
+        "Enquiry" => "New Enquiry",
+        "TourScheduled" => "Tour Booked",
+        "ApplicationSubmitted" => "Applied",
+        "UnderReview" => "Under Review",
+        "OfferSent" => "Offer Extended",
+        "Enrolled" => "Enrolled Active",
+        "Waitlisted" => "Waitlisted",
+        "Declined" => "Closed / Declined",
+        _ => stage
+    };
+
+    private static string FormatSchedule(string scheduleType) => scheduleType switch
+    {
+        "FullTime" => "Full-Time (M-F)",
+        "PartTime_MWF" => "Part-Time (MWF)",
+        "PartTime_TTh" => "Part-Time (T/Th)",
+        "HalfDay_Morning" => "Half-Day (Mornings)",
+        _ => scheduleType
+    };
+}

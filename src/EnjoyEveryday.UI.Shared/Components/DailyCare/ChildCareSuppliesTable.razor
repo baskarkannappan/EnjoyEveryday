@@ -1,0 +1,66 @@
+@namespace EnjoyEveryday.UI.Shared.Components.DailyCare
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+
+<div class="supplies-table-card">
+    @if (Supplies == null || Supplies.Count == 0)
+    {
+        <EmptyState Icon="📦"
+                    Title="No supply records registered yet"
+                    Description="Personal cubby supply tracking will show diaper, wipe, and clothing stock alerts here." />
+    }
+    else
+    {
+        <table class="styled-table">
+            <thead>
+                <tr>
+                    <th>Child</th>
+                    <th>Supply Item</th>
+                    <th>Current Status</th>
+                    <th>Cubby Details</th>
+                    <th>Last Reported By</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var supply in Supplies)
+                {
+                    <tr>
+                        <td><strong>@supply.ChildName</strong></td>
+                        <td>@supply.SupplyType</td>
+                        <td>
+                            <span class="status-pill @supply.Status.ToLower()">@supply.Status</span>
+                        </td>
+                        <td>@(supply.ThresholdNote ?? "Standard stock")</td>
+                        <td>@(supply.LastReportedByName ?? "Teacher")</td>
+                        <td>
+                            <div class="supply-actions">
+                                @if (supply.Status != "Low")
+                                {
+                                    <button type="button" class="btn-theme-outline" @onclick='() => OnSetStatus.InvokeAsync((supply, "Low"))'>
+                                        Mark Low
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn-theme-secondary" @onclick='() => OnSetStatus.InvokeAsync((supply, "Adequate"))'>
+                                        Mark Restocked
+                                    </button>
+                                    <button type="button" class="btn-theme-primary" @onclick="() => OnSendReminder.InvokeAsync(supply)">
+                                        Notify Parent
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ChildCareSupply> Supplies { get; set; } = Array.Empty<ChildCareSupply>();
+    [Parameter] public EventCallback<(ChildCareSupply Supply, string Status)> OnSetStatus { get; set; }
+    [Parameter] public EventCallback<ChildCareSupply> OnSendReminder { get; set; }
+}

@@ -1,0 +1,165 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+@{
+    var isLoanOrder = Order.Items.Any(i => i.FulfilmentMode == "Borrow");
+    var isPurchaseOrder = Order.Items.Any(i => i.FulfilmentMode == "Purchase");
+}
+
+<div class="material-order-card">
+    <div class="order-header">
+        <div>
+            <div class="order-title-row">
+                <strong class="order-num">@Order.OrderNumber</strong>
+                <span class="status-pill @GetStatusClass(Order.WorkflowStatus)">
+                    @FormatStatus(Order.WorkflowStatus)
+                </span>
+                @if (Order.PaymentStatus == "Completed")
+                {
+                    <span class="payment-pill paid">✓ Paid</span>
+                }
+                else if (Order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || Order.WorkflowStatus == MaterialWorkflowStatus.UnderReview)
+                {
+                    <span class="payment-pill review">Awaiting Review</span>
+                }
+                else if (Order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)
+                {
+                    <span class="payment-pill quote">Quote Offered</span>
+                }
+                else
+                {
+                    <span class="payment-pill unpaid">Payment Pending</span>
+                }
+            </div>
+            <div class="order-meta">
+                Placed on @Order.CreatedAt.ToLocalTime().ToString("d MMM yyyy, h:mm tt")
+                @if (Order.RequiredDeliveryDate.HasValue)
+                {
+                    <span>· Needed by: @Order.RequiredDeliveryDate.Value.ToLocalTime().ToString("d MMM yyyy")</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(Order.ClassroomName))
+                {
+                    <span>· Classroom: <strong>@Order.ClassroomName</strong></span>
+                }
+                @if (!string.IsNullOrWhiteSpace(Order.PlannedExperienceTitle))
+                {
+                    <span>· Activity: <strong>@Order.PlannedExperienceTitle</strong></span>
+                }
+            </div>
+        </div>
+
+        <div class="order-amount-col">
+            <div class="order-total">₹@Order.TotalAmount.ToString("N2")</div>
+            <div class="order-items-count">
+                @Order.Items.Sum(i => i.Quantity) items (@(isLoanOrder && isPurchaseOrder ? "Buy & Borrow" : (isLoanOrder ? "Borrow Loan" : "Purchase")))
+            </div>
+        </div>
+    </div>
+
+    <!-- ITEMS PREVIEW -->
+    <div class="order-items-preview">
+        @foreach (var itm in Order.Items)
+        {
+            <div class="item-chip">
+                <span class="item-mode @itm.FulfilmentMode.ToLowerInvariant()">@itm.FulfilmentMode</span>
+                <span>@itm.ProductName × @itm.Quantity</span>
+                @if (itm.FulfilmentMode == "Borrow")
+                {
+                    <span class="chip-duration">(@itm.LoanDurationDays d)</span>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- FOOTER ACTIONS -->
+    <div class="order-footer">
+        <div class="next-action-hint">
+            @NextActionHint
+        </div>
+
+        <div class="action-buttons-group">
+            @if (Order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)
+            {
+                <button class="primary" @onclick="() => OnAcceptQuotation.InvokeAsync(Order)">
+                    ✓ Accept Quotation
+                </button>
+            }
+
+            @if (Order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && Order.PaymentStatus != "Completed")
+            {
+                <button class="pay-btn" @onclick="() => OnPayOrder.InvokeAsync(Order)" disabled="@IsProcessingPayment">
+                    @if (IsProcessingPayment)
+                    {
+                        <span>⏳ Launching Razorpay...</span>
+                    }
+                    else
+                    {
+                        <span>💳 Pay with Razorpay (₹@Order.TotalAmount.ToString("N0"))</span>
+                    }
+                </button>
+                <button class="btn secondary quick-pay-btn" title="Simulate payment instantly without external Razorpay/hCaptcha scripts" @onclick="() => OnQuickTestPay.InvokeAsync(Order)" disabled="@IsProcessingPayment">
+                    ⚡ Quick Test Pay
+                </button>
+            }
+
+            @if (Order.WorkflowStatus == MaterialWorkflowStatus.Dispatched)
+            {
+                <button class="btn secondary" @onclick="() => OnConfirmReceipt.InvokeAsync(Order)">
+                    ✓ Confirm Delivery Receipt
+                </button>
+            }
+
+            <button class="btn secondary" @onclick="() => OnOpenDetails.InvokeAsync(Order)">
+                View Details &amp; Timeline ➔
+            </button>
+
+            @if (Order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || 
+                 Order.WorkflowStatus == MaterialWorkflowStatus.UnderReview || 
+                 Order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered || 
+                 (Order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && Order.PaymentStatus != "Completed"))
+            {
+                <button class="btn-cancel" @onclick="() => OnCancelOrder.InvokeAsync(Order)">
+                    Cancel
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MaterialOrder Order { get; set; } = null!;
+    [Parameter] public string NextActionHint { get; set; } = string.Empty;
+    [Parameter] public bool IsProcessingPayment { get; set; }
+    [Parameter] public EventCallback<MaterialOrder> OnAcceptQuotation { get; set; }
+    [Parameter] public EventCallback<MaterialOrder> OnPayOrder { get; set; }
+    [Parameter] public EventCallback<MaterialOrder> OnQuickTestPay { get; set; }
+    [Parameter] public EventCallback<MaterialOrder> OnConfirmReceipt { get; set; }
+    [Parameter] public EventCallback<MaterialOrder> OnOpenDetails { get; set; }
+    [Parameter] public EventCallback<MaterialOrder> OnCancelOrder { get; set; }
+
+    private string GetStatusClass(string s) => s switch
+    {
+        MaterialWorkflowStatus.RequestSubmitted => "submitted",
+        MaterialWorkflowStatus.UnderReview => "review",
+        MaterialWorkflowStatus.QuotationOffered => "quote",
+        MaterialWorkflowStatus.Confirmed => "confirmed",
+        MaterialWorkflowStatus.Dispatched => "dispatched",
+        MaterialWorkflowStatus.ReceiptConfirmed => "receipt",
+        MaterialWorkflowStatus.Completed => "completed",
+        MaterialWorkflowStatus.Cancelled => "cancelled",
+        _ => "submitted"
+    };
+
+    private string FormatStatus(string s) => s switch
+    {
+        MaterialWorkflowStatus.RequestSubmitted => "Request Submitted",
+        MaterialWorkflowStatus.UnderReview => "Under Review",
+        MaterialWorkflowStatus.QuotationOffered => "Quotation Offered",
+        MaterialWorkflowStatus.Confirmed => "Confirmed",
+        MaterialWorkflowStatus.Dispatched => "Dispatched",
+        MaterialWorkflowStatus.ReceiptConfirmed => "Receipt Confirmed",
+        MaterialWorkflowStatus.Completed => "Completed",
+        MaterialWorkflowStatus.Cancelled => "Cancelled",
+        _ => s ?? string.Empty
+    };
+}

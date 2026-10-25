@@ -1,0 +1,223 @@
+@namespace EnjoyEveryday.UI.Shared.Components.SafetyTrust
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+
+<div class="signing-card">
+    <div class="signing-header">
+        <div class="brand-badge">🛡️ Little Stars Safety &amp; Trust</div>
+        <h1>@(Session?.DocumentTitle ?? "Electronic Consent Document")</h1>
+        <p class="signing-subtitle">
+            Authorized guardian verification &amp; electronic consent review for EnjoyEveryday Daycare.
+        </p>
+    </div>
+
+    @if (IsLoading)
+    {
+        <div class="signing-state-box">
+            <p>Verifying secure signing link...</p>
+        </div>
+    }
+    else if (IsSignedSuccess)
+    {
+        <div class="success-screen">
+            <div class="success-icon">✓</div>
+            <h2>Document Successfully Signed</h2>
+            <p class="success-desc">
+                Thank you, <strong>@TypedLegalName</strong>. Your electronic signature and consent choices for <strong>@Session?.ChildName</strong> have been securely recorded.
+            </p>
+            <div class="receipt-box">
+                <div><strong>Signed At:</strong> @DateTime.UtcNow.ToString("dd MMM yyyy HH:mm:ss UTC")</div>
+                <div><strong>Confirmation Status:</strong> Legally Recorded • Audit Trail Active</div>
+                <div><strong>Child:</strong> @Session?.ChildName</div>
+                <div><strong>Signer:</strong> @TypedLegalName (@Session?.SignerRelationship)</div>
+            </div>
+            <p class="receipt-note">
+                A confirmation copy has been sent to your verified email address: @Session?.SignerEmail.
+            </p>
+        </div>
+    }
+    else if (Session == null || Session.IsInvalid)
+    {
+        <div class="signing-state-box">
+            <div class="state-icon">🔒</div>
+            <h2>Invalid or Expired Link</h2>
+            <p class="state-desc">
+                @(Session?.ErrorMessage ?? "This signing link is no longer valid, has expired, or has already been used.")
+            </p>
+            <p class="state-sub">
+                Please contact Little Stars daycare administration if you need a new invitation.
+            </p>
+        </div>
+    }
+    else if (Session.IsAlreadySigned)
+    {
+        <div class="signing-state-box">
+            <div class="state-icon">✅</div>
+            <h2>Already Completed</h2>
+            <p class="state-desc">
+                This document for <strong>@Session.ChildName</strong> was already signed by <strong>@Session.SignerName</strong> and is securely archived in the daycare records.
+            </p>
+        </div>
+    }
+    else if (Session.IsExpired)
+    {
+        <div class="signing-state-box">
+            <div class="state-icon">⌛</div>
+            <h2 class="expired-title">Signing Invitation Expired</h2>
+            <p class="state-desc">
+                The signing deadline for this document has passed. Please contact daycare staff to receive an updated invitation.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="signing-body">
+            <!-- Signer & Child verified identity context -->
+            <div class="child-meta-box">
+                <div class="meta-field">
+                    <label>Child</label>
+                    <span>@Session.ChildName</span>
+                </div>
+                <div class="meta-field">
+                    <label>Authorized Signer</label>
+                    <span>@Session.SignerName (@Session.SignerRelationship)</span>
+                </div>
+                <div class="meta-field">
+                    <label>Verified Email</label>
+                    <span>@Session.SignerEmail</span>
+                </div>
+                <div class="meta-field">
+                    <label>Deadline</label>
+                    <span>@(Session.SigningDeadline?.ToString("dd MMM yyyy") ?? "Within 7 days")</span>
+                </div>
+            </div>
+
+            <!-- Immutable Terms & Conditions Snapshot -->
+            <div>
+                <h3 class="terms-title">
+                    Document Terms &amp; Instructions (Version @Session.TemplateVersion)
+                </h3>
+                <div class="document-terms-box">
+                    @Session.DocumentSnapshot
+                </div>
+            </div>
+
+            <!-- Granular Choices (Non-bundled consents) -->
+            @if (Session.Choices.Any())
+            {
+                <div class="choices-section">
+                    <div class="choices-title">Your Consent Choices (Select your preference for each section):</div>
+                    @foreach (var ch in Session.Choices)
+                    {
+                        <div class="choice-item-card">
+                            <div class="choice-info">
+                                <strong>@ch.SectionTitle</strong>
+                                <small>@(ch.IsMandatory ? "Required acknowledgment for enrollment" : "Optional parent permission")</small>
+                            </div>
+                            <div class="choice-options">
+                                @if (ch.IsMandatory)
+                                {
+                                    <button type="button" class="choice-btn selected-grant" disabled>Acknowledged</button>
+                                }
+                                else
+                                {
+                                    var isGranted = GetSelectedChoice(ch.SectionKey) == ConsentChoiceValue.Granted;
+                                    <button type="button"
+                                            class="choice-btn @(isGranted ? "selected-grant" : "")"
+                                            @onclick='() => SetChoice(ch.SectionKey, ConsentChoiceValue.Granted)'>
+                                        ✓ Grant Consent
+                                    </button>
+                                    <button type="button"
+                                            class="choice-btn @(!isGranted ? "selected-decline" : "")"
+                                            @onclick='() => SetChoice(ch.SectionKey, ConsentChoiceValue.Declined)'>
+                                        ✕ Decline
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- Electronic Signature & Intent Section -->
+            <div class="signing-signature-area">
+                <label class="intent-checkbox-label">
+                    <input type="checkbox" checked="@LegalIntentConfirmed" @onchange="OnIntentChanged" />
+                    <span>
+                        <strong>I confirm that I have reviewed this document and intend to sign electronically.</strong><br>
+                        <span class="intent-sub">
+                            By checking this box, I acknowledge that my electronic signature constitutes my legal affirmation and agreement to the selected terms on behalf of my child.
+                        </span>
+                    </span>
+                </label>
+
+                <div class="typed-name-group">
+                    <label>Type Full Legal Name (Signer Identity)</label>
+                    <input type="text"
+                           class="typed-input"
+                           placeholder="e.g. @Session.SignerName"
+                           value="@TypedLegalName"
+                           @oninput="OnNameInput" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(ErrorMessage))
+                {
+                    <div class="error-banner">
+                        ⚠️ @ErrorMessage
+                    </div>
+                }
+
+                <div class="signing-actions">
+                    <button type="button" class="btn-decline" @onclick="OnDeclineDocument">
+                        Decline Document
+                    </button>
+                    <button type="button"
+                            class="btn-sign"
+                            disabled="@(!LegalIntentConfirmed || string.IsNullOrWhiteSpace(TypedLegalName) || IsSubmitting)"
+                            @onclick="OnSubmitSignature">
+                        @(IsSubmitting ? "Submitting..." : "Adopt & Sign Electronically")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public ParentSigningSession? Session { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public bool IsSubmitting { get; set; }
+    [Parameter] public bool IsSignedSuccess { get; set; }
+    [Parameter] public string? ErrorMessage { get; set; }
+    [Parameter] public bool LegalIntentConfirmed { get; set; }
+    [Parameter] public string TypedLegalName { get; set; } = string.Empty;
+    [Parameter] public Dictionary<string, string> SelectedChoices { get; set; } = new();
+
+    [Parameter] public EventCallback<bool> LegalIntentConfirmedChanged { get; set; }
+    [Parameter] public EventCallback<string> TypedLegalNameChanged { get; set; }
+    [Parameter] public EventCallback<(string SectionKey, string Value)> OnChoiceChanged { get; set; }
+    [Parameter] public EventCallback OnSubmitSignature { get; set; }
+    [Parameter] public EventCallback OnDeclineDocument { get; set; }
+
+    private string GetSelectedChoice(string sectionKey)
+    {
+        return SelectedChoices.TryGetValue(sectionKey, out var val) ? val : ConsentChoiceValue.Granted;
+    }
+
+    private async Task SetChoice(string sectionKey, string value)
+    {
+        await OnChoiceChanged.InvokeAsync((sectionKey, value));
+    }
+
+    private async Task OnIntentChanged(ChangeEventArgs e)
+    {
+        var val = (bool)(e.Value ?? false);
+        await LegalIntentConfirmedChanged.InvokeAsync(val);
+    }
+
+    private async Task OnNameInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? string.Empty;
+        await TypedLegalNameChanged.InvokeAsync(val);
+    }
+}

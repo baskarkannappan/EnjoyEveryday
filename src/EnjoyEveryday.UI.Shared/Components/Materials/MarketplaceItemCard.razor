@@ -1,0 +1,123 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+<article class="marketplace-item-card" data-status="@(Item.IsPurchasedOrEntitled ? "entitled" : "available")">
+    <!-- Header matching branch-head -->
+    <div class="card-head">
+        <div class="card-title-row">
+            <div class="card-icon" title="@Item.Category">
+                @GetCategoryIcon(Item.Category)
+            </div>
+            <div class="card-headings">
+                <span class="category-eyebrow">@Item.Category</span>
+                <h3 class="item-title" title="@Item.Title">@Item.Title</h3>
+            </div>
+        </div>
+        <div class="status-wrapper">
+            @if (Item.IsPurchasedOrEntitled)
+            {
+                <span class="status-badge entitled">✓ Entitled</span>
+            }
+            else if (Item.PricingModel == ExperiencePricingModel.IncludedInSubscription)
+            {
+                <span class="status-badge plan-included">Plan Included</span>
+            }
+            else
+            {
+                <span class="status-badge price">₹@Item.PriceAmount.ToString("N2")</span>
+            }
+        </div>
+    </div>
+
+    <!-- 3 Stat Metric Boxes matching branch-stats -->
+    <div class="card-stats">
+        <div class="stat-box">
+            <div class="stat-number">@FormatAgeRange()</div>
+            <div class="stat-label">AGE GROUP</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">@(Item.DurationMinutes.HasValue ? $"{Item.DurationMinutes}m" : "20–30m")</div>
+            <div class="stat-label">DURATION</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-number">v@(Item.CurrentVersion)</div>
+            <div class="stat-label">VERSION</div>
+        </div>
+    </div>
+
+    <!-- Description in styled note box with green left accent border matching branch-note -->
+    <div class="card-note">
+        @Item.Description
+    </div>
+
+    <!-- Footer matching branch-footer -->
+    <div class="card-footer">
+        <div class="attribution-info">
+            @if (!string.IsNullOrWhiteSpace(Item.CreatorAttribution))
+            {
+                <span class="curator-text" title="Curated from @Item.CreatorAttribution">
+                    By @Item.CreatorAttribution
+                </span>
+            }
+            else
+            {
+                <span class="curator-text">
+                    🌿 Platform Curriculum
+                </span>
+            }
+        </div>
+
+        <div class="action-buttons-group">
+            @if (Item.IsPurchasedOrEntitled)
+            {
+                <button class="btn-action primary" @onclick="() => OnAddToLibrary.InvokeAsync(Item)">
+                    + Add to My Library
+                </button>
+            }
+            else
+            {
+                <button class="btn-action primary" @onclick="() => OnAcquire.InvokeAsync(Item)">
+                    @(Item.PricingModel == ExperiencePricingModel.IncludedInSubscription ? "Redeem Access" : $"Acquire (₹{Item.PriceAmount:0.00})")
+                </button>
+            }
+            <button class="btn-action secondary" @onclick="() => OnViewDetails.InvokeAsync(Item)">
+                Details
+            </button>
+        </div>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public PlatformExperience Item { get; set; } = null!;
+    [Parameter] public EventCallback<PlatformExperience> OnAddToLibrary { get; set; }
+    [Parameter] public EventCallback<PlatformExperience> OnAcquire { get; set; }
+    [Parameter] public EventCallback<PlatformExperience> OnViewDetails { get; set; }
+
+    private string GetCategoryIcon(string? category) => category?.ToLowerInvariant() switch
+    {
+        "stem" or "science" => "🔬",
+        "sensory" or "sensory & tactile" => "🎨",
+        "nature" or "nature & outdoors" => "🌿",
+        "art" or "creative arts" => "🎭",
+        "social" or "social-emotional" => "🤝",
+        "early childhood" or "early" => "🧸",
+        _ => "✨"
+    };
+
+    private string FormatAgeRange()
+    {
+        if (!Item.AgeRangeMinMonths.HasValue && !Item.AgeRangeMaxMonths.HasValue)
+            return "All Ages";
+
+        var min = Item.AgeRangeMinMonths ?? 0;
+        var max = Item.AgeRangeMaxMonths ?? 72;
+
+        if (min >= 12 && max >= 12)
+        {
+            var minYears = min / 12;
+            var maxYears = max / 12;
+            return minYears == maxYears ? $"{minYears} yrs" : $"{minYears}–{maxYears} yrs";
+        }
+        return $"{min}–{max} mo";
+    }
+}

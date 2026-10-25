@@ -50,36 +50,10 @@
     else if (_overview != null)
     {
         <!-- KPI Strip -->
-        <div class="roster-kpi-grid">
-            <div class="kpi-card kpi-scheduled">
-                <div class="kpi-header">
-                    <span class="kpi-lbl">Educators Scheduled</span>
-                    <span class="kpi-icon"><i class="bi bi-people-fill"></i></span>
-                </div>
-                <span class="kpi-num">@_overview.TotalTeachersScheduled</span>
-            </div>
-            <div class="kpi-card kpi-clocked">
-                <div class="kpi-header">
-                    <span class="kpi-lbl">Clocked In Now</span>
-                    <span class="kpi-icon"><i class="bi bi-clock-history"></i></span>
-                </div>
-                <span class="kpi-num">@_overview.TotalTeachersClockedIn</span>
-            </div>
-            <div class="kpi-card kpi-understaffed @(_overview.UnderstaffedRoomsCount > 0 ? "has-understaffed" : "is-healthy")">
-                <div class="kpi-header">
-                    <span class="kpi-lbl">Understaffed Rooms</span>
-                    <span class="kpi-icon"><i class="bi bi-shield-exclamation"></i></span>
-                </div>
-                <span class="kpi-num">@_overview.UnderstaffedRoomsCount</span>
-            </div>
-            <div class="kpi-card kpi-leaves">
-                <div class="kpi-header">
-                    <span class="kpi-lbl">Staff On Leave Today</span>
-                    <span class="kpi-icon"><i class="bi bi-calendar2-minus"></i></span>
-                </div>
-                <span class="kpi-num">@_overview.TotalLeavesToday</span>
-            </div>
-        </div>
+        <StaffRosterKpiStrip TotalTeachersScheduled="@_overview.TotalTeachersScheduled"
+                             TotalTeachersClockedIn="@_overview.TotalTeachersClockedIn"
+                             UnderstaffedRoomsCount="@_overview.UnderstaffedRoomsCount"
+                             TotalLeavesToday="@_overview.TotalLeavesToday" />
 
         <!-- Section 1: Statutory Educator-to-Child Ratio Compliance -->
         <div class="section-container">
@@ -92,69 +66,9 @@
                 </div>
             </div>
 
-            <div class="ratio-cards-grid">
-                @foreach (var r in _overview.Ratios)
-                {
-                    <div class="ratio-card @GetRatioClass(r.Status)">
-                        <div class="ratio-card-top">
-                            <div>
-                                <span class="room-title">@r.ClassroomName</span>
-                                <span class="rule-badge">@r.StatutoryRule</span>
-                            </div>
-                            <span class="status-badge @GetRatioClass(r.Status)">
-                                @if (r.Status == RatioComplianceStatus.Compliant)
-                                {
-                                    <i class="bi bi-check-circle-fill"></i> <text>Compliant</text>
-                                }
-                                else if (r.Status == RatioComplianceStatus.AtRisk)
-                                {
-                                    <i class="bi bi-exclamation-triangle-fill"></i> <text>At Capacity</text>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-exclamation-octagon-fill"></i> <text>Understaffed</text>
-                                }
-                            </span>
-                        </div>
-
-                        <div class="ratio-metric-row">
-                            <div class="metric-block">
-                                <span class="metric-value">@r.ChildrenPresent</span>
-                                <span class="metric-caption">Children Present</span>
-                            </div>
-                            <div class="metric-divider">:</div>
-                            <div class="metric-block">
-                                <span class="metric-value">@r.TeachersPresent</span>
-                                <span class="metric-caption">Educators Active</span>
-                            </div>
-                        </div>
-
-                        <div class="ratio-bar-container">
-                            <div class="ratio-bar-track">
-                                <div class="ratio-bar-fill @GetRatioClass(r.Status)" 
-                                     style="width: @(Math.Min(100, r.TeachersPresent > 0 ? (r.CurrentRatio / r.MaxAllowedRatio * 100) : (r.ChildrenPresent > 0 ? 100 : 0)))%;"></div>
-                            </div>
-                            <div class="ratio-bar-footer">
-                                <span>Ratio 1:@(r.CurrentRatio)</span>
-                                <span>Limit 1:@(r.MaxAllowedRatio)</span>
-                            </div>
-                        </div>
-
-                        @if (r.Status == RatioComplianceStatus.Breached)
-                        {
-                            <div class="ratio-alert-action">
-                                <span><strong>+@r.MissingTeachersCount</strong> educator needed for compliance</span>
-                                @if (_overview.AvailableFloatTeachers.Any())
-                                {
-                                    <button class="btn secondary dispatch-btn" @onclick="() => DispatchFloat(r.ClassroomId)">
-                                        Dispatch Float
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
+            <RatioComplianceCardsGrid Ratios="@_overview.Ratios"
+                                      HasFloatTeachers="@_overview.AvailableFloatTeachers.Any()"
+                                      OnDispatchFloat="DispatchFloat" />
         </div>
 
         <!-- Section 2: Shift Roster Board & Float Support -->
@@ -168,39 +82,7 @@
                 </div>
             </div>
 
-            <div class="shift-grid">
-                @foreach (var shift in _overview.Shifts)
-                {
-                    <div class="shift-card @(shift.IsOnLeave ? "on-leave" : "")">
-                        <div class="shift-card-header">
-                            <div class="shift-teacher-identity">
-                                <div class="teacher-avatar">
-                                    @(shift.TeacherName.FirstOrDefault().ToString())
-                                </div>
-                                <div>
-                                    <div class="teacher-name">@shift.TeacherName</div>
-                                    <div class="teacher-room">@shift.ClassroomName</div>
-                                </div>
-                            </div>
-                            @if (shift.IsOnLeave)
-                            {
-                                <span class="leave-tag"><i class="bi bi-calendar-x"></i> @shift.LeaveNote</span>
-                            }
-                            else if (shift.IsClockedIn)
-                            {
-                                <span class="clock-tag clocked-in"><i class="bi bi-circle-fill"></i> Active</span>
-                            }
-                            else
-                            {
-                                <span class="clock-tag scheduled">Scheduled</span>
-                            }
-                        </div>
-                        <div class="shift-timing">
-                            <i class="bi bi-sun"></i> @shift.ShiftType
-                        </div>
-                    </div>
-                }
-            </div>
+            <ShiftRosterGrid Shifts="@_overview.Shifts" />
         </div>
 
         <!-- Section 3: Staff Leave & Absence Coverage -->
@@ -216,52 +98,8 @@
 
             @if (_overview.Leaves.Any())
             {
-                <div class="leaves-table-wrap">
-                    <table class="leaves-table">
-                        <thead>
-                            <tr>
-                                <th>Educator</th>
-                                <th>Leave Type</th>
-                                <th>Dates</th>
-                                <th>Reason</th>
-                                <th>Coverage Status</th>
-                                <th>Substitute Educator</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var l in _overview.Leaves)
-                            {
-                                <tr>
-                                    <td><strong>@l.TeacherName</strong></td>
-                                    <td><span class="leave-pill">@l.LeaveType</span></td>
-                                    <td>@l.StartDate.ToString("MMM d") – @l.EndDate.ToString("MMM d, yyyy")</td>
-                                    <td>@(l.Reason ?? "General scheduled absence")</td>
-                                    <td>
-                                        <span class="coverage-pill @(l.CoverageStatus == "Covered" ? "covered" : "uncovered")">
-                                            @l.CoverageStatus
-                                        </span>
-                                    </td>
-                                    <td>
-                                        @(string.IsNullOrEmpty(l.SubstituteTeacherName) ? "None assigned" : l.SubstituteTeacherName)
-                                    </td>
-                                    <td>
-                                        @if (l.CoverageStatus != "Covered")
-                                        {
-                                            <button class="btn secondary sub-btn" @onclick="() => OpenSubModal(l)">
-                                                Assign Sub
-                                            </button>
-                                        }
-                                        else
-                                        {
-                                            <span style="font-size: 11px; color: #52745e; font-weight: 700;"><i class="bi bi-check"></i> Covered</span>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                <LeaveCoverageTable Leaves="@_overview.Leaves"
+                                    OnAssignSubstitute="OpenSubModal" />
             }
             else
             {

@@ -62,128 +62,15 @@
             <div class="orders-list">
                 @foreach (var order in FilteredOrders)
                 {
-                    var isLoanOrder = order.Items.Any(i => i.FulfilmentMode == "Borrow");
-                    var isPurchaseOrder = order.Items.Any(i => i.FulfilmentMode == "Purchase");
-
-                    <div class="order-card">
-                        <div class="order-header">
-                            <div>
-                                <div style="display: flex; gap: 10px; align-items: center;">
-                                    <strong style="font-size: 16px; color: var(--text);">@order.OrderNumber</strong>
-                                    <span class="status-pill @GetStatusClass(order.WorkflowStatus)">
-                                        @FormatStatus(order.WorkflowStatus)
-                                    </span>
-                                    @if (order.PaymentStatus == "Completed")
-                                    {
-                                        <span class="payment-pill paid">✓ Paid</span>
-                                    }
-                                    else if (order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || order.WorkflowStatus == MaterialWorkflowStatus.UnderReview)
-                                    {
-                                        <span class="payment-pill review">Awaiting Review</span>
-                                    }
-                                    else if (order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)
-                                    {
-                                        <span class="payment-pill quote">Quote Offered</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="payment-pill unpaid">Payment Pending</span>
-                                    }
-                                </div>
-                                <div class="order-meta">
-                                    Placed on @order.CreatedAt.ToLocalTime().ToString("d MMM yyyy, h:mm tt")
-                                    @if (order.RequiredDeliveryDate.HasValue)
-                                    {
-                                        <span>· Needed by: @order.RequiredDeliveryDate.Value.ToLocalTime().ToString("d MMM yyyy")</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(order.ClassroomName))
-                                    {
-                                        <span>· Classroom: <strong>@order.ClassroomName</strong></span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(order.PlannedExperienceTitle))
-                                    {
-                                        <span>· Activity: <strong>@order.PlannedExperienceTitle</strong></span>
-                                    }
-                                </div>
-                            </div>
-
-                            <div style="text-align: right;">
-                                <div style="font-size: 18px; font-weight: 800; color: var(--text);">₹@order.TotalAmount.ToString("N2")</div>
-                                <div style="font-size: 11.5px; color: var(--muted);">
-                                    @order.Items.Sum(i => i.Quantity) items (@(isLoanOrder && isPurchaseOrder ? "Buy & Borrow" : (isLoanOrder ? "Borrow Loan" : "Purchase")))
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- ITEMS PREVIEW -->
-                        <div class="order-items-preview">
-                            @foreach (var itm in order.Items)
-                            {
-                                <div class="item-chip">
-                                    <span class="item-mode @itm.FulfilmentMode.ToLowerInvariant()">@itm.FulfilmentMode</span>
-                                    <span>@itm.ProductName × @itm.Quantity</span>
-                                    @if (itm.FulfilmentMode == "Borrow")
-                                    {
-                                        <span class="chip-duration">(@itm.LoanDurationDays d)</span>
-                                    }
-                                </div>
-                            }
-                        </div>
-
-                        <!-- FOOTER ACTIONS -->
-                        <div class="order-footer">
-                            <div class="next-action-hint">
-                                @GetNextActionHint(order)
-                            </div>
-
-                            <div style="display: flex; gap: 8px;">
-                                @if (order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered)
-                                {
-                                    <button class="primary" @onclick="() => AcceptQuotation(order)">
-                                        ✓ Accept Quotation
-                                    </button>
-                                }
-
-                                @if (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && order.PaymentStatus != "Completed")
-                                {
-                                    <button class="pay-btn" @onclick="() => PayOrderDirectly(order)" disabled="@(_isProcessingPayment && _processingOrderId == order.Id)">
-                                        @if (_isProcessingPayment && _processingOrderId == order.Id)
-                                        {
-                                            <span>⏳ Launching Razorpay...</span>
-                                        }
-                                        else
-                                        {
-                                            <span>💳 Pay with Razorpay (₹@order.TotalAmount.ToString("N0"))</span>
-                                        }
-                                    </button>
-                                    <button class="btn secondary" style="font-size: 11.5px; padding: 7px 11px;" title="Simulate payment instantly without external Razorpay/hCaptcha scripts" @onclick="() => QuickSimulateOrderPayment(order)" disabled="@_isProcessingPayment">
-                                        ⚡ Quick Test Pay
-                                    </button>
-                                }
-
-                                @if (order.WorkflowStatus == MaterialWorkflowStatus.Dispatched)
-                                {
-                                    <button class="btn secondary" @onclick="() => ConfirmReceipt(order, true)">
-                                        ✓ Confirm Delivery Receipt
-                                    </button>
-                                }
-
-                                <button class="btn secondary" @onclick="() => OpenOrderDetails(order)">
-                                    View Details &amp; Timeline ➔
-                                </button>
-
-                                @if (order.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || 
-                                     order.WorkflowStatus == MaterialWorkflowStatus.UnderReview || 
-                                     order.WorkflowStatus == MaterialWorkflowStatus.QuotationOffered || 
-                                     (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed && order.PaymentStatus != "Completed"))
-                                {
-                                    <button class="btn-cancel" @onclick="() => PromptCancelOrder(order)">
-                                        ✕ Cancel Order
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                    </div>
+                    <MaterialOrderTrackerCard Order="@order"
+                                              NextActionHint="@GetNextActionHint(order)"
+                                              IsProcessingPayment="@(_isProcessingPayment && _processingOrderId == order.Id)"
+                                              OnAcceptQuotation="AcceptQuotation"
+                                              OnPayOrder="PayOrderDirectly"
+                                              OnQuickTestPay="QuickSimulateOrderPayment"
+                                              OnConfirmReceipt="ord => ConfirmReceipt(ord, true)"
+                                              OnOpenDetails="OpenOrderDetails"
+                                              OnCancelOrder="PromptCancelOrder" />
                 }
             </div>
         }

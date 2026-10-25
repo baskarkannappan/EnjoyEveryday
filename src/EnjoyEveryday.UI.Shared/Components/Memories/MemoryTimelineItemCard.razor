@@ -1,0 +1,86 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+
+<div class="timeline-item" @onclick="() => OnSelect.InvokeAsync(Memory)">
+    <div class="timeline-icon-column">
+        <div class="timeline-circle @GetCategoryCssClass(Memory.Category)">
+            <i class="bi @Memory.CategoryIcon"></i>
+        </div>
+        <div class="timeline-line"></div>
+    </div>
+
+    <div class="timeline-card">
+        <div class="card-top-row">
+            <div class="card-meta">
+                <span class="category-badge @GetCategoryCssClass(Memory.Category)">@Memory.Category</span>
+                <span class="event-time">@Memory.EventDate.ToString("h:mm tt")</span>
+                @if (!string.IsNullOrEmpty(Memory.TeacherName))
+                {
+                    <span class="separator-dot">•</span>
+                    <span class="staff-author"><i class="bi bi-person"></i> @Memory.TeacherName</span>
+                }
+            </div>
+            <div class="card-actions">
+                @if (Memory.IsParentVisible)
+                {
+                    <span class="visibility-badge parent-visible" title="Visible to approved parents">
+                        <i class="bi bi-eye"></i> Family Visible
+                    </span>
+                }
+                else
+                {
+                    <span class="visibility-badge internal-only" title="Staff Only">
+                        <i class="bi bi-lock"></i> Staff Only
+                    </span>
+                }
+            </div>
+        </div>
+
+        <h3 class="memory-card-title">@Memory.Title</h3>
+        
+        @if (!string.IsNullOrEmpty(Memory.Description))
+        {
+            <p class="memory-card-desc">@Truncate(Memory.Description, 220)</p>
+        }
+
+        @if (!string.IsNullOrEmpty(Memory.ExperienceTitle))
+        {
+            <div class="activity-tag">
+                <i class="bi bi-lightbulb"></i> Experience: <strong>@Memory.ExperienceTitle</strong>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(Memory.MediaUrl))
+        {
+            <div class="memory-media-preview">
+                <img src="@Memory.MediaUrl" alt="@Memory.Title" loading="lazy" />
+            </div>
+        }
+
+        <div class="card-footer-row">
+            <span class="click-hint">Click to view complete details</span>
+            <i class="bi bi-arrow-right-short card-arrow"></i>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MemoryEvent Memory { get; set; } = default!;
+    [Parameter] public EventCallback<MemoryEvent> OnSelect { get; set; }
+
+    private static string GetCategoryCssClass(string category) => category switch
+    {
+        "Learning Experiences" => "cat-learning",
+        "Observations" => "cat-observations",
+        "Milestones" => "cat-milestones",
+        "Celebrations" => "cat-celebrations",
+        "Daily Care" => "cat-dailycare",
+        _ => "cat-default"
+    };
+
+    private static string Truncate(string value, int maxChars)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxChars) return value;
+        return value.Substring(0, maxChars) + "…";
+    }
+}

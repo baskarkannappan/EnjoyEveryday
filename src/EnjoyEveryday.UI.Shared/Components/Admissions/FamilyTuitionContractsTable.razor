@@ -1,0 +1,79 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+<div class="contracts-container-card">
+    <div class="contracts-header">
+        <div>
+            <h3 class="contracts-title">Active Family Tuition Contracts</h3>
+            <p class="contracts-subtitle">Signed tuition schedules linked directly into your organization billing ledger.</p>
+        </div>
+    </div>
+
+    @if (!Contracts.Any())
+    {
+        <div class="contracts-empty">
+            <span class="empty-icon">📑</span>
+            <p>No active family contracts found yet. Finalize an enrollment in the pipeline above to establish a tuition plan.</p>
+        </div>
+    }
+    else
+    {
+        <div class="contracts-table-wrapper">
+            <table class="contracts-table">
+                <thead>
+                    <tr>
+                        <th>Parent &amp; Child</th>
+                        <th>Schedule</th>
+                        <th>Billing Cycle</th>
+                        <th>Base Rate</th>
+                        <th>Discount</th>
+                        <th>Effective Rate</th>
+                        <th>Deposit Held</th>
+                        <th>Contract Status</th>
+                        <th>Start Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Contracts)
+                    {
+                        <tr>
+                            <td>
+                                <div class="parent-name">@c.ParentName</div>
+                                <div class="parent-email">@c.ParentEmail</div>
+                            </td>
+                            <td>
+                                <span class="schedule-badge">@FormatSchedule(c.ScheduleType)</span>
+                            </td>
+                            <td>@c.BillingCycle</td>
+                            <td>@c.BaseRate.ToString("C2")</td>
+                            <td>@(c.DiscountPercent > 0 ? $"-{c.DiscountPercent}%" : "None")</td>
+                            <td>
+                                <strong class="effective-rate">@c.EffectiveRate.ToString("C2")</strong>
+                            </td>
+                            <td>@c.DepositHeld.ToString("C2")</td>
+                            <td>
+                                <span class="status-badge">
+                                    @c.Status
+                                </span>
+                            </td>
+                            <td>@c.StartDate.ToString("MMM dd, yyyy")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<FamilyBillingContract> Contracts { get; set; } = new();
+
+    private static string FormatSchedule(string scheduleType) => scheduleType switch
+    {
+        "FullTime" => "Full-Time (M-F)",
+        "PartTime_MWF" => "Part-Time (MWF)",
+        "PartTime_TTh" => "Part-Time (T/Th)",
+        "HalfDay_Morning" => "Half-Day (Mornings)",
+        _ => scheduleType
+    };
+}

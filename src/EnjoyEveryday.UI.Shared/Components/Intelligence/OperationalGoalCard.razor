@@ -1,0 +1,56 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+<div class="goal-card">
+    <div>
+        <div class="goal-header">
+            <span class="goal-cat-badge">@Goal.Category</span>
+            <span class="goal-status-badge @Goal.Status.ToLowerInvariant()">
+                @Goal.Status
+            </span>
+        </div>
+        <h4 class="goal-title">@Goal.Title</h4>
+        <div class="goal-branch">
+            Assigned Branch: <strong>@(Goal.BranchName ?? "Organization-Wide")</strong>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Goal.TargetMetric))
+        {
+            <div class="goal-metric-row">
+                <span class="metric-name">@Goal.TargetMetric:</span>
+                <span>
+                    Current: <strong>@Goal.CurrentValue</strong> &rarr; Target: <strong class="target-val">@Goal.TargetValue</strong>
+                </span>
+            </div>
+        }
+    </div>
+
+    <div class="goal-footer">
+        <div class="goal-owner">
+            👤 <strong>@(Goal.OwnerName ?? "Director")</strong>
+            @if (Goal.TargetDate.HasValue)
+            {
+                <span class="due-date">• Due @Goal.TargetDate.Value.ToString("MMM dd")</span>
+            }
+        </div>
+        <div>
+            @if (Goal.Status != "Completed")
+            {
+                <button class="btn secondary action-btn" @onclick='() => OnStatusChanged.InvokeAsync((Goal.Id, "Completed"))'>
+                    ✓ Complete
+                </button>
+            }
+            else
+            {
+                <button class="btn secondary action-btn" @onclick='() => OnStatusChanged.InvokeAsync((Goal.Id, "InProgress"))'>
+                    Reopen
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BranchOperationalGoal Goal { get; set; } = default!;
+    [Parameter] public EventCallback<(Guid GoalId, string NewStatus)> OnStatusChanged { get; set; }
+}

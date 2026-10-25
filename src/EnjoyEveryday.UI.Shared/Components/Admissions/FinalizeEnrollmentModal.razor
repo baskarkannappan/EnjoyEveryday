@@ -1,0 +1,110 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+
+@if (IsOpen && Application != null)
+{
+    <div class="modal-backdrop-pipeline" @onclick="OnClose">
+        <div class="modal-card-pipeline" @onclick:stopPropagation="true">
+            <div class="modal-header-pipeline">
+                <h3 class="modal-title">Finalize Enrollment &amp; Setup Family Tuition</h3>
+                <button class="close-x" @onclick="OnClose">✕</button>
+            </div>
+            <div class="modal-body-pipeline">
+                <div class="child-summary-banner">
+                    <div class="summary-name">@Application.ChildFullName</div>
+                    <div class="summary-guardian">
+                        Guardian: @Application.ParentGuardianName (@Application.ParentEmail)
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Assigned Classroom *</label>
+                        <select class="input-field" @bind="EnrollContract.ClassroomId">
+                            @foreach (var c in Classrooms)
+                            {
+                                <option value="@c.Id">@c.Name (@c.AgeGroup)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Official Start Date *</label>
+                        <input type="date" class="input-field" @bind="EnrollContract.StartDate" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Schedule Contract</label>
+                        <select class="input-field" @bind="EnrollContract.ScheduleType">
+                            <option value="FullTime">Full-Time (Monday - Friday)</option>
+                            <option value="PartTime_MWF">Part-Time (3 Days: Mon/Wed/Fri)</option>
+                            <option value="PartTime_TTh">Part-Time (2 Days: Tue/Thu)</option>
+                            <option value="HalfDay_Morning">Half-Day Morning</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Billing Frequency</label>
+                        <select class="input-field" @bind="EnrollContract.BillingCycle">
+                            <option value="Monthly">Monthly</option>
+                            <option value="BiWeekly">Bi-Weekly</option>
+                            <option value="Weekly">Weekly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Base Monthly Tuition Rate ($)</label>
+                        <input type="number" step="10" class="input-field" @bind="EnrollContract.BaseMonthlyRate" />
+                    </div>
+                    <div class="form-group">
+                        <label>Sibling Discount (%)</label>
+                        <input type="number" step="1" class="input-field" @bind="EnrollContract.SiblingDiscountPercent" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Deposit Held ($)</label>
+                        <input type="number" step="10" class="input-field" @bind="EnrollContract.DepositHeld" />
+                    </div>
+                    <div class="form-group cost-display-col">
+                        <span class="cost-label">Effective Monthly Cost</span>
+                        <div class="cost-value">
+                            @((EnrollContract.BaseMonthlyRate * (1 - (EnrollContract.SiblingDiscountPercent / 100m))).ToString("C2")) / mo
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ledger-checkbox-box">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="EnrollContract.CreateInitialTuitionInvoice" />
+                        <div>
+                            <strong>Create initial registration fee + deposit invoice in Account Book</strong>
+                            <p class="checkbox-subtext">
+                                Automatically generates an invoice for the held deposit and registration fee, linked to the family ledger.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer-pipeline">
+                <button class="btn secondary" @onclick="OnClose">Cancel</button>
+                <button class="primary" @onclick="OnConfirm">
+                    Confirm Enrollment &amp; Bind Tuition Plan
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EnrollmentPipelineApplicationDto? Application { get; set; }
+    [Parameter] public FinalizeEnrollmentContractRequest EnrollContract { get; set; } = new();
+    [Parameter] public List<Classroom> Classrooms { get; set; } = new();
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+}

@@ -169,6 +169,8 @@ public partial class EnrollmentPipeline : ComponentBase
         }
     }
 
+    private Task HandleAdvanceStage((Guid AppId, string NextStage) args) => AdvanceStage(args.AppId, args.NextStage);
+
     private void OpenTourModal(EnrollmentPipelineApplicationDto app)
     {
         _selectedApp = app;

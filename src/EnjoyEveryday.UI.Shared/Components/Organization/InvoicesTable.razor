@@ -1,0 +1,67 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+
+<div class="invoices-panel">
+    <table class="invoices-data-table">
+        <thead>
+            <tr>
+                <th>Invoice #</th>
+                <th>Billing Memo</th>
+                <th>Issue Date</th>
+                <th>Due Date</th>
+                <th>Total Amount</th>
+                <th>Paid</th>
+                <th>Balance Due</th>
+                <th>Status</th>
+                <th style="text-align: right;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var inv in Invoices)
+            {
+                <tr>
+                    <td class="inv-number">
+                        @inv.InvoiceNumber
+                    </td>
+                    <td>
+                        <div class="inv-title">@(!string.IsNullOrWhiteSpace(inv.Description) ? inv.Description : "Platform Subscription Fee")</div>
+                        @if (!string.IsNullOrWhiteSpace(inv.BillingPeriod))
+                        {
+                            <div class="inv-period">Billing Period: @inv.BillingPeriod</div>
+                        }
+                    </td>
+                    <td class="inv-date">@inv.IssueDate.ToString("MMM dd, yyyy")</td>
+                    <td class="inv-date">@inv.DueDate.ToString("MMM dd, yyyy")</td>
+                    <td class="inv-amount">@inv.TotalAmount.ToString("C2")</td>
+                    <td class="inv-paid">@inv.AmountPaid.ToString("C2")</td>
+                    <td class="inv-balance" style="color: @(inv.BalanceDue > 0 ? "#b55a5a" : "var(--text, #26332d)");">
+                        @inv.BalanceDue.ToString("C2")
+                    </td>
+                    <td>
+                        <StatusBadge Status="@inv.Status.ToString()" />
+                    </td>
+                    <td style="text-align: right;">
+                        <div class="inv-actions">
+                            @if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Draft && inv.Status != InvoiceStatus.Void)
+                            {
+                                <button class="btn-pay-now" @onclick="() => OnPayOnline.InvokeAsync(inv)" disabled="@IsProcessingPayment">
+                                    💳 Pay Now
+                                </button>
+                            }
+                            <button class="btn-view-invoice" @onclick="() => OnViewDetails.InvokeAsync(inv)">
+                                📄 View Details
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<Invoice> Invoices { get; set; } = Enumerable.Empty<Invoice>();
+    [Parameter] public bool IsProcessingPayment { get; set; }
+    [Parameter] public EventCallback<Invoice> OnPayOnline { get; set; }
+    [Parameter] public EventCallback<Invoice> OnViewDetails { get; set; }
+}

@@ -3,6 +3,7 @@
 
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
 @inject IOrganizationIntelligenceService IntelService
 @inject IBranchBenchmarkingService BenchmarkingService
 @inject OrganizationService OrgService
@@ -83,171 +84,18 @@
         else
         {
             <!-- NETWORK PULSE -->
-            <div class="benchmarking-pulse-strip">
-                <div class="pulse-card">
-                    <span class="pulse-card-label">Network Capacity</span>
-                    <div class="pulse-card-value">@_scorecards.Sum(s => s.EnrolledChildren) / @_scorecards.Sum(s => s.TotalCapacity)</div>
-                    <span style="font-size: 12px; color: var(--muted);">
-                        @Math.Round((double)_scorecards.Sum(s => s.EnrolledChildren) / Math.Max(1, _scorecards.Sum(s => s.TotalCapacity)) * 100, 1)% Total Occupancy
-                    </span>
-                </div>
-                <div class="pulse-card">
-                    <span class="pulse-card-label">Network Attendance</span>
-                    <div class="pulse-card-value" style="color: var(--accent, #557c6c);">
-                        @(Math.Round(_scorecards.Average(s => s.AttendanceRatePercentage), 1))%
-                    </div>
-                    <span style="font-size: 12px; color: var(--muted);">30-day average attendance health</span>
-                </div>
-                <div class="pulse-card">
-                    <span class="pulse-card-label">Ratio Compliance Rate</span>
-                    <div class="pulse-card-value" style="color: var(--accent-dark, #3e6253);">
-                        @(Math.Round(_scorecards.Average(s => s.RatioCompliancePercentage), 1))%
-                    </div>
-                    <span style="font-size: 12px; color: var(--muted);">Statutory educator-to-child ratios</span>
-                </div>
-                <div class="pulse-card">
-                    <span class="pulse-card-label">Tuition Collection Health</span>
-                    <div class="pulse-card-value" style="color: #2563eb;">
-                        @(Math.Round(_scorecards.Average(s => s.TuitionCollectionRatePercentage), 1))%
-                    </div>
-                    <span style="font-size: 12px; color: var(--muted);">Invoiced tuition collected to date</span>
-                </div>
-            </div>
+            <BranchBenchmarkingPulseStrip Scorecards="_scorecards" />
 
             <!-- BRANCH SCORECARDS GRID -->
             <div class="scorecards-grid">
                 @foreach (var sc in _scorecards)
                 {
-                    <div class="branch-score-card">
-                        <div class="scorecard-header">
-                            <div>
-                                <h3 class="scorecard-title">@sc.BranchName</h3>
-                                <span class="scorecard-loc">📍 @sc.Location • @sc.TotalClassrooms Classrooms</span>
-                            </div>
-                            <span class="health-pill @sc.RatingCssClass">
-                                @sc.CompositeHealthScore pts • @sc.HealthRating
-                            </span>
-                        </div>
-
-                        <!-- Occupancy Bar -->
-                        <div class="metric-bar-item">
-                            <div class="metric-bar-header">
-                                <span>Occupancy Rate (@sc.EnrolledChildren / @sc.TotalCapacity children)</span>
-                                <strong>@sc.OccupancyPercentage%</strong>
-                            </div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" style="width: @Math.Min(100, sc.OccupancyPercentage)%;"></div>
-                            </div>
-                        </div>
-
-                        <!-- Attendance Bar -->
-                        <div class="metric-bar-item">
-                            <div class="metric-bar-header">
-                                <span>Attendance Health (30-day)</span>
-                                <strong>@sc.AttendanceRatePercentage%</strong>
-                            </div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" style="width: @Math.Min(100, sc.AttendanceRatePercentage)%; background: #0284c7;"></div>
-                            </div>
-                        </div>
-
-                        <!-- Ratio Compliance Bar -->
-                        <div class="metric-bar-item">
-                            <div class="metric-bar-header">
-                                <span>Statutory Ratio Compliance</span>
-                                <strong>@sc.RatioCompliancePercentage%</strong>
-                            </div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" style="width: @Math.Min(100, sc.RatioCompliancePercentage)%; background: #059669;"></div>
-                            </div>
-                        </div>
-
-                        <!-- Planning Coverage Bar -->
-                        <div class="metric-bar-item">
-                            <div class="metric-bar-header">
-                                <span>Weekly Experience Planning Coverage</span>
-                                <strong>@sc.PlanningCoveragePercentage%</strong>
-                            </div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" style="width: @Math.Min(100, sc.PlanningCoveragePercentage)%; background: #c28b26;"></div>
-                            </div>
-                        </div>
-
-                        <!-- Tuition Collection Bar -->
-                        <div class="metric-bar-item">
-                            <div class="metric-bar-header">
-                                <span>Tuition Collection Health</span>
-                                <strong>@sc.TuitionCollectionRatePercentage%</strong>
-                            </div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" style="width: @Math.Min(100, sc.TuitionCollectionRatePercentage)%; background: #7c3aed;"></div>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border);">
-                            <a href="/management/roster" class="btn secondary" style="font-size: 11.5px; text-decoration: none; padding: 5px 10px;">
-                                View Staff Roster
-                            </a>
-                            <a href="/enrollment" class="btn secondary" style="font-size: 11.5px; text-decoration: none; padding: 5px 10px;">
-                                Admissions Pipeline
-                            </a>
-                        </div>
-                    </div>
+                    <BranchScorecardCard Scorecard="sc" />
                 }
             </div>
 
             <!-- SIDE-BY-SIDE BENCHMARKING TABLE -->
-            <div class="benchmark-table-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <div>
-                        <h3 style="margin: 0; font-size: 16px; font-weight: 750; color: var(--text);">Cross-Branch Benchmarking Matrix</h3>
-                        <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--muted);">Direct comparative performance against organizational operational standards.</p>
-                    </div>
-                </div>
-
-                <div style="overflow-x: auto;">
-                    <table class="bench-table">
-                        <thead>
-                            <tr>
-                                <th>Branch Campus</th>
-                                <th>Classrooms</th>
-                                <th>Capacity / Enrolled</th>
-                                <th>Occupancy</th>
-                                <th>Attendance</th>
-                                <th>Ratio Compliance</th>
-                                <th>Planning</th>
-                                <th>Collection Rate</th>
-                                <th>Health Score</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var sc in _scorecards)
-                            {
-                                <tr>
-                                    <td>
-                                        <strong>@sc.BranchName</strong>
-                                        <div style="font-size: 11px; color: var(--muted);">@sc.Location</div>
-                                    </td>
-                                    <td>@sc.TotalClassrooms</td>
-                                    <td>@sc.EnrolledChildren / @sc.TotalCapacity</td>
-                                    <td>
-                                        <strong>@sc.OccupancyPercentage%</strong>
-                                    </td>
-                                    <td>@sc.AttendanceRatePercentage%</td>
-                                    <td>@sc.RatioCompliancePercentage%</td>
-                                    <td>@sc.PlanningCoveragePercentage%</td>
-                                    <td>@sc.TuitionCollectionRatePercentage%</td>
-                                    <td>
-                                        <span class="health-pill @sc.RatingCssClass">
-                                            @sc.CompositeHealthScore • @sc.HealthRating
-                                        </span>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <CrossBranchBenchmarkingTable Scorecards="_scorecards" />
         }
     }
 
@@ -380,39 +228,7 @@
                     {
                         @foreach (var insight in _report.Insights)
                         {
-                            <div class="insight-card">
-                                <div class="insight-top">
-                                    <span class="category-pill">@insight.Category</span>
-                                    <span class="strength-pill strength-@insight.EvidenceStrength.ToLower()">
-                                        ● Evidence: @insight.EvidenceStrength
-                                    </span>
-                                </div>
-
-                                <h3 class="insight-title">@insight.Title</h3>
-
-                                <div class="insight-observation">
-                                    <span class="obs-icon">🔍</span>
-                                    <p>@insight.Observation</p>
-                                </div>
-
-                                @if (!string.IsNullOrEmpty(insight.PossibleExplanation))
-                                {
-                                    <div class="insight-explanation">
-                                        <strong>Interpretation:</strong> @insight.PossibleExplanation
-                                    </div>
-                                }
-
-                                @if (!string.IsNullOrEmpty(insight.SuggestedNextStep))
-                                {
-                                    <div class="insight-action">
-                                        <strong>Suggested Next Step:</strong> @insight.SuggestedNextStep
-                                    </div>
-                                }
-
-                                <div class="insight-limitations">
-                                    <em>Data limitations:</em> @insight.DataLimitations
-                                </div>
-                            </div>
+                            <ExecutiveAiInsightCard Insight="insight" />
                         }
                     }
                     else
@@ -583,54 +399,7 @@
             <div class="goals-grid">
                 @foreach (var g in _operationalGoals)
                 {
-                    <div class="goal-card">
-                        <div>
-                            <div class="goal-header">
-                                <span class="goal-cat-badge">@g.Category</span>
-                                <span style="font-size: 11px; font-weight: 750; padding: 3px 8px; border-radius: 6px; background: @(g.Status == "Completed" ? "#e6eee9" : g.Status == "AtRisk" ? "#fff5f5" : "#e0f2fe"); color: @(g.Status == "Completed" ? "#3e6253" : g.Status == "AtRisk" ? "#9b2c2c" : "#0369a1");">
-                                    @g.Status
-                                </span>
-                            </div>
-                            <h4 class="goal-title">@g.Title</h4>
-                            <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
-                                Assigned Branch: <strong>@(g.BranchName ?? "Organization-Wide")</strong>
-                            </div>
-
-                            @if (!string.IsNullOrWhiteSpace(g.TargetMetric))
-                            {
-                                <div class="goal-metric-row">
-                                    <span style="color: var(--muted);">@g.TargetMetric:</span>
-                                    <span>
-                                        Current: <strong>@g.CurrentValue</strong> → Target: <strong style="color: var(--accent-dark);">@g.TargetValue</strong>
-                                    </span>
-                                </div>
-                            }
-                        </div>
-
-                        <div class="goal-footer">
-                            <div>
-                                👤 <strong>@(g.OwnerName ?? "Director")</strong>
-                                @if (g.TargetDate.HasValue)
-                                {
-                                    <span style="margin-left: 6px;">• Due @g.TargetDate.Value.ToString("MMM dd")</span>
-                                }
-                            </div>
-                            <div>
-                                @if (g.Status != "Completed")
-                                {
-                                    <button class="btn secondary" style="font-size: 11.5px; padding: 4px 8px;" @onclick='() => UpdateGoalStatus(g.Id, "Completed")'>
-                                        ✓ Complete
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button class="btn secondary" style="font-size: 11.5px; padding: 4px 8px;" @onclick='() => UpdateGoalStatus(g.Id, "InProgress")'>
-                                        Reopen
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                    </div>
+                    <OperationalGoalCard Goal="g" OnStatusChanged="HandleGoalStatusChanged" />
                 }
             </div>
         }
@@ -844,6 +613,8 @@
             _errorMessage = $"Failed to update goal: {ex.Message}";
         }
     }
+
+    private Task HandleGoalStatusChanged((Guid GoalId, string NewStatus) tuple) => UpdateGoalStatus(tuple.GoalId, tuple.NewStatus);
 
     private double GetDomainBarWidth(int value)
     {

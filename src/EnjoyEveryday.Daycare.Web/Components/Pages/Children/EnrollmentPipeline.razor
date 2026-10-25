@@ -6,7 +6,6 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.UI.Shared.Components
 
-
 <PageTitle>Admissions &amp; Family Accounts — EnjoyEveryday</PageTitle>
 
 <div class="content enrollment-pipeline-page">
@@ -37,71 +36,10 @@
     }
 
     <!-- METRICS STRIP -->
-    <div class="pipeline-metrics-grid">
-        <div class="metric-card metric-inquiries">
-            <span class="metric-label">Active Inquiries &amp; Leads</span>
-            <span class="metric-value">@(_overview?.EnquiriesCount ?? 0)</span>
-            <span class="metric-sub">Prospective families in early review</span>
-        </div>
-        <div class="metric-card metric-tours">
-            <span class="metric-label">Scheduled Visits &amp; Tours</span>
-            <span class="metric-value">@(_overview?.ToursScheduledCount ?? 0)</span>
-            <span class="metric-sub">Upcoming parent classroom walkthroughs</span>
-        </div>
-        <div class="metric-card metric-review">
-            <span class="metric-label">Under Admissions Review</span>
-            <span class="metric-value">@(_overview?.ApplicationsReviewCount ?? 0)</span>
-            <span class="metric-sub">Classroom fit &amp; ratio verification</span>
-        </div>
-        <div class="metric-card metric-tuition">
-            <span class="metric-label">Projected Monthly Tuition</span>
-            <span class="metric-value">@((_overview?.TotalPipelineProjectedValue ?? 0).ToString("C0"))</span>
-            <span class="metric-sub">Combined value across admissions pipeline</span>
-        </div>
-    </div>
+    <AdmissionsPipelineMetricsStrip Overview="_overview" />
 
     <!-- CLASSROOM VACANCY & CAPACITY PULSE -->
-    <div class="vacancy-section-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <div>
-                <h3 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0;">Classroom Vacancy &amp; Opening Forecaster</h3>
-                <p style="font-size: 13px; color: var(--muted); margin: 3px 0 0 0;">Check available spots by age group before extending an enrollment offer.</p>
-            </div>
-            <span style="font-size: 12px; font-weight: 700; color: var(--accent-dark); background: var(--accent-light); padding: 4px 10px; border-radius: 6px;">
-                @(_overview?.ClassroomVacancies.Sum(v => v.AvailableSpots) ?? 0) Total Open Spots
-            </span>
-        </div>
-
-        <div class="vacancy-grid">
-            @if (_overview?.ClassroomVacancies != null)
-            {
-                @foreach (var room in _overview.ClassroomVacancies)
-                {
-                    <div class="vacancy-card">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div>
-                                <span class="room-title">@room.ClassroomName</span>
-                                <span class="room-tag">@room.AgeGroup</span>
-                            </div>
-                            <span class="badge-status @room.StatusBadge.ToLowerInvariant()">
-                                @room.StatusBadge (@room.AvailableSpots spots)
-                            </span>
-                        </div>
-                        <div class="capacity-meter-bar">
-                            <div class="capacity-meter-fill" style="width: @(room.Capacity > 0 ? Math.Min(100, (double)room.CurrentEnrolled / room.Capacity * 100) : 0)%;"></div>
-                        </div>
-                        <div class="vacancy-footer">
-                            <span>Enrolled: <strong>@room.CurrentEnrolled / @room.Capacity</strong></span>
-                            @if (room.PendingOffers > 0)
-                            {
-                                <span style="color: #c28b26;">(@room.PendingOffers pending offers)</span>
-                            }
-                        </div>
-                    </div>
-                }
-            }
-        </div>
-    </div>
+    <ClassroomVacancyForecasterCard Overview="_overview" />
 
     <!-- MAIN PIPELINE TABS & SEARCH -->
     <div class="pipeline-controls-bar">
@@ -153,122 +91,10 @@
             <div class="applications-grid">
                 @foreach (var app in _filteredApplications)
                 {
-                    <div class="app-card">
-                        <div class="app-card-header">
-                            <div class="avatar-box">
-                                @(string.IsNullOrWhiteSpace(app.ChildFirstName) ? "C" : app.ChildFirstName[0].ToString().ToUpper())
-                            </div>
-                            <div style="flex-grow: 1; min-width: 0;">
-                                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                                    <h4 class="child-name">@app.ChildFullName</h4>
-                                    <span class="stage-pill @app.PipelineStage.ToLowerInvariant()">@GetStageDisplayName(app.PipelineStage)</span>
-                                </div>
-                                <div class="child-meta">
-                                    <span>Age: <strong>@app.AgeInMonths mos</strong></span>
-                                    <span>•</span>
-                                    <span>DOB: @app.DateOfBirth.ToString("MMM dd, yyyy")</span>
-                                    @if (!string.IsNullOrWhiteSpace(app.Gender))
-                                    {
-                                        <span>•</span>
-                                        <span>@app.Gender</span>
-                                    }
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="app-body">
-                            <div class="info-row">
-                                <span class="info-label">Parent / Guardian:</span>
-                                <span class="info-val"><strong>@app.ParentGuardianName</strong></span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Contact:</span>
-                                <span class="info-val">@app.ParentEmail | @app.ParentPhone</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Room &amp; Schedule:</span>
-                                <span class="info-val">
-                                    @(app.TargetClassroomName ?? "Unassigned")
-                                    <span class="schedule-badge">@FormatSchedule(app.ScheduleType)</span>
-                                </span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Tuition Plan:</span>
-                                <span class="info-val" style="color: var(--accent-dark); font-weight: 750;">
-                                    @app.EffectiveMonthlyRate.ToString("C0")/mo
-                                    @if (app.SiblingDiscountPercent > 0)
-                                    {
-                                        <span class="discount-badge">-@app.SiblingDiscountPercent% Sibling</span>
-                                    }
-                                </span>
-                            </div>
-                            @if (app.TourDate.HasValue)
-                            {
-                                <div class="info-row tour-highlight">
-                                    <span class="info-label">Tour Scheduled:</span>
-                                    <span class="info-val">📅 @app.TourDate.Value.ToString("ddd, MMM dd @ h:mm tt")</span>
-                                </div>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(app.InternalNotes))
-                            {
-                                <div class="notes-box">
-                                    <span style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: var(--muted);">Admissions Notes</span>
-                                    <p style="margin: 3px 0 0 0; font-size: 12px; color: var(--text);">@app.InternalNotes</p>
-                                </div>
-                            }
-                        </div>
-
-                        <div class="app-card-footer">
-                            @if (app.PipelineStage == "Enquiry")
-                            {
-                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick="() => OpenTourModal(app)">
-                                    📅 Schedule Tour
-                                </button>
-                                <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick='() => AdvanceStage(app.Id, "ApplicationSubmitted")'>
-                                    Submit Application →
-                                </button>
-                            }
-                            else if (app.PipelineStage == "TourScheduled")
-                            {
-                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick="() => OpenTourModal(app)">
-                                    Reschedule Tour
-                                </button>
-                                <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick='() => AdvanceStage(app.Id, "UnderReview")'>
-                                    Tour Complete &amp; Review →
-                                </button>
-                            }
-                            else if (app.PipelineStage == "ApplicationSubmitted" || app.PipelineStage == "UnderReview")
-                            {
-                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick='() => AdvanceStage(app.Id, "Waitlisted")'>
-                                    Waitlist
-                                </button>
-                                <button class="primary" style="font-size: 12px; padding: 6px 14px;" @onclick='() => AdvanceStage(app.Id, "OfferSent")'>
-                                    Extend Offer ✉️
-                                </button>
-                            }
-                            else if (app.PipelineStage == "OfferSent")
-                            {
-                                <button class="primary" style="font-size: 12px; padding: 8px 16px; width: 100%;" @onclick="() => OpenEnrollmentModal(app)">
-                                    ✓ Accept Offer &amp; Finalize Tuition Contract
-                                </button>
-                            }
-                            else if (app.PipelineStage == "Enrolled")
-                            {
-                                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-dark);">✓ Actively Enrolled Child</span>
-                                    <a href="/children" class="btn secondary" style="font-size: 12px; padding: 5px 10px; text-decoration: none;">
-                                        View in Child Directory
-                                    </a>
-                                </div>
-                            }
-                            else
-                            {
-                                <button class="btn secondary" style="font-size: 12px; padding: 6px 12px;" @onclick='() => AdvanceStage(app.Id, "UnderReview")'>
-                                    Re-open Application
-                                </button>
-                            }
-                        </div>
-                    </div>
+                    <AdmissionsApplicationCard Application="app"
+                                               OnScheduleTour="OpenTourModal"
+                                               OnAdvanceStage="HandleAdvanceStage"
+                                               OnAcceptOffer="OpenEnrollmentModal" />
                 }
             </div>
         }
@@ -276,304 +102,29 @@
     else
     {
         <!-- FAMILY CONTRACTS VIEW -->
-        <div class="contracts-container-card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <div>
-                    <h3 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0;">Active Family Tuition Contracts</h3>
-                    <p style="font-size: 13px; color: var(--muted); margin: 3px 0 0 0;">Signed tuition schedules linked directly into your organization billing ledger.</p>
-                </div>
-            </div>
-
-            @if (!_familyContracts.Any())
-            {
-                <div style="padding: 40px; text-align: center; color: var(--muted);">
-                    <span style="font-size: 32px;">📑</span>
-                    <p style="margin-top: 8px;">No active family contracts found yet. Finalize an enrollment in the pipeline above to establish a tuition plan.</p>
-                </div>
-            }
-            else
-            {
-                <div class="contracts-table-wrapper">
-                    <table class="contracts-table">
-                        <thead>
-                            <tr>
-                                <th>Parent &amp; Child</th>
-                                <th>Schedule</th>
-                                <th>Billing Cycle</th>
-                                <th>Base Rate</th>
-                                <th>Discount</th>
-                                <th>Effective Rate</th>
-                                <th>Deposit Held</th>
-                                <th>Contract Status</th>
-                                <th>Start Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var c in _familyContracts)
-                            {
-                                <tr>
-                                    <td>
-                                        <div style="font-weight: 700; color: var(--text);">@c.ParentName</div>
-                                        <div style="font-size: 12px; color: var(--muted);">@c.ParentEmail</div>
-                                    </td>
-                                    <td>
-                                        <span class="schedule-badge">@FormatSchedule(c.ScheduleType)</span>
-                                    </td>
-                                    <td>@c.BillingCycle</td>
-                                    <td>@c.BaseRate.ToString("C2")</td>
-                                    <td>@(c.DiscountPercent > 0 ? $"-{c.DiscountPercent}%" : "None")</td>
-                                    <td>
-                                        <strong style="color: var(--accent-dark);">@c.EffectiveRate.ToString("C2")</strong>
-                                    </td>
-                                    <td>@c.DepositHeld.ToString("C2")</td>
-                                    <td>
-                                        <span style="background: var(--accent-light); color: var(--accent-dark); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
-                                            @c.Status
-                                        </span>
-                                    </td>
-                                    <td>@c.StartDate.ToString("MMM dd, yyyy")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </div>
+        <FamilyTuitionContractsTable Contracts="_familyContracts" />
     }
 </div>
 
 <!-- MODAL: NEW INQUIRY -->
-@if (_isNewInquiryModalOpen)
-{
-    <div class="modal-backdrop-pipeline" @onclick="() => _isNewInquiryModalOpen = false">
-        <div class="modal-card-pipeline" @onclick:stopPropagation="true">
-            <div class="modal-header-pipeline">
-                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Log Inbound Family Inquiry</h3>
-                <button class="close-x" @onclick="() => _isNewInquiryModalOpen = false">✕</button>
-            </div>
-            <div class="modal-body-pipeline">
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Child First Name *</label>
-                        <input class="input-field" @bind="_newInquiry.ChildFirstName" placeholder="e.g. Leo" />
-                    </div>
-                    <div class="form-group">
-                        <label>Child Last Name *</label>
-                        <input class="input-field" @bind="_newInquiry.ChildLastName" placeholder="e.g. Sterling" />
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Date of Birth *</label>
-                        <input type="date" class="input-field" @bind="_newInquiry.DateOfBirth" />
-                    </div>
-                    <div class="form-group">
-                        <label>Gender</label>
-                        <select class="input-field" @bind="_newInquiry.Gender">
-                            <option value="Unspecified">Select / Unspecified</option>
-                            <option value="Female">Female</option>
-                            <option value="Male">Male</option>
-                            <option value="Non-Binary">Non-Binary</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Parent / Guardian Name *</label>
-                        <input class="input-field" @bind="_newInquiry.ParentGuardianName" placeholder="e.g. Claire Sterling" />
-                    </div>
-                    <div class="form-group">
-                        <label>Parent Email *</label>
-                        <input type="email" class="input-field" @bind="_newInquiry.ParentEmail" placeholder="claire@example.com" />
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Parent Phone *</label>
-                        <input class="input-field" @bind="_newInquiry.ParentPhone" placeholder="+1 (555) 019-2831" />
-                    </div>
-                    <div class="form-group">
-                        <label>Desired Start Date</label>
-                        <input type="date" class="input-field" @bind="_newInquiry.DesiredStartDate" />
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Requested Schedule</label>
-                        <select class="input-field" @bind="_newInquiry.ScheduleType">
-                            <option value="FullTime">Full-Time (Monday - Friday)</option>
-                            <option value="PartTime_MWF">Part-Time (3 Days: Mon/Wed/Fri)</option>
-                            <option value="PartTime_TTh">Part-Time (2 Days: Tue/Thu)</option>
-                            <option value="HalfDay_Morning">Half-Day Morning</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Target Classroom</label>
-                        <select class="input-field" @bind="_newInquiry.TargetClassroomId">
-                            <option value="">-- Auto-assess based on age --</option>
-                            @foreach (var c in _classrooms)
-                            {
-                                <option value="@c.Id">@c.Name (@c.AgeGroup)</option>
-                            }
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Monthly Tuition Rate ($)</label>
-                        <input type="number" step="10" class="input-field" @bind="_newInquiry.TuitionMonthlyRate" />
-                    </div>
-                    <div class="form-group">
-                        <label>Sibling Discount (%)</label>
-                        <input type="number" step="1" class="input-field" @bind="_newInquiry.SiblingDiscountPercent" />
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Admissions Notes / Special Requirements</label>
-                    <textarea class="input-field" style="height: 70px;" @bind="_newInquiry.InternalNotes" placeholder="e.g. Inquired about dairy allergies, referred by current preschool family."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer-pipeline">
-                <button class="btn secondary" @onclick="() => _isNewInquiryModalOpen = false">Cancel</button>
-                <button class="primary" @onclick="SubmitNewInquiry">Save Inquiry</button>
-            </div>
-        </div>
-    </div>
-}
+<NewFamilyInquiryModal IsOpen="_isNewInquiryModalOpen"
+                       Inquiry="_newInquiry"
+                       Classrooms="_classrooms"
+                       OnClose="() => _isNewInquiryModalOpen = false"
+                       OnSave="SubmitNewInquiry" />
 
 <!-- MODAL: SCHEDULE TOUR -->
-@if (_isTourModalOpen && _selectedApp != null)
-{
-    <div class="modal-backdrop-pipeline" @onclick="() => _isTourModalOpen = false">
-        <div class="modal-card-pipeline" @onclick:stopPropagation="true" style="max-width: 480px;">
-            <div class="modal-header-pipeline">
-                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">Schedule Campus Tour</h3>
-                <button class="close-x" @onclick="() => _isTourModalOpen = false">✕</button>
-            </div>
-            <div class="modal-body-pipeline">
-                <p style="font-size: 13px; color: var(--muted); margin-top: 0;">
-                    Booking visit for <strong>@_selectedApp.ChildFullName</strong> with guardian <strong>@_selectedApp.ParentGuardianName</strong>.
-                </p>
-                <div class="form-group">
-                    <label>Tour Date &amp; Time *</label>
-                    <input type="datetime-local" class="input-field" @bind="_tourDateTime" />
-                </div>
-                <div class="form-group">
-                    <label>Tour Preparation Notes</label>
-                    <textarea class="input-field" style="height: 70px;" @bind="_tourNotes" placeholder="e.g. Introduce to lead infant teacher, tour outdoor play yard."></textarea>
-                </div>
-            </div>
-            <div class="modal-footer-pipeline">
-                <button class="btn secondary" @onclick="() => _isTourModalOpen = false">Cancel</button>
-                <button class="primary" @onclick="SaveTour">Confirm Tour</button>
-            </div>
-        </div>
-    </div>
-}
+<ScheduleTourModal IsOpen="_isTourModalOpen"
+                   Application="_selectedApp"
+                   @bind-TourDateTime="_tourDateTime"
+                   @bind-TourNotes="_tourNotes"
+                   OnClose="() => _isTourModalOpen = false"
+                   OnSave="SaveTour" />
 
 <!-- MODAL: FINALIZE ENROLLMENT & TUITION CONTRACT -->
-@if (_isEnrollModalOpen && _selectedApp != null)
-{
-    <div class="modal-backdrop-pipeline" @onclick="() => _isEnrollModalOpen = false">
-        <div class="modal-card-pipeline" @onclick:stopPropagation="true">
-            <div class="modal-header-pipeline">
-                <h3 style="margin: 0; font-size: 17px; font-weight: 750; color: var(--text);">
-                    Finalize Enrollment &amp; Setup Family Tuition
-                </h3>
-                <button class="close-x" @onclick="() => _isEnrollModalOpen = false">✕</button>
-            </div>
-            <div class="modal-body-pipeline">
-                <div style="background: var(--surface-soft); padding: 14px; border-radius: 12px; margin-bottom: 16px; border: 1px solid var(--border);">
-                    <div style="font-weight: 750; font-size: 15px; color: var(--text);">@_selectedApp.ChildFullName</div>
-                    <div style="font-size: 13px; color: var(--muted); margin-top: 2px;">
-                        Guardian: @_selectedApp.ParentGuardianName (@_selectedApp.ParentEmail)
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Assigned Classroom *</label>
-                        <select class="input-field" @bind="_enrollContract.ClassroomId">
-                            @foreach (var c in _classrooms)
-                            {
-                                <option value="@c.Id">@c.Name (@c.AgeGroup)</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Official Start Date *</label>
-                        <input type="date" class="input-field" @bind="_enrollContract.StartDate" />
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Schedule Contract</label>
-                        <select class="input-field" @bind="_enrollContract.ScheduleType">
-                            <option value="FullTime">Full-Time (Monday - Friday)</option>
-                            <option value="PartTime_MWF">Part-Time (3 Days: Mon/Wed/Fri)</option>
-                            <option value="PartTime_TTh">Part-Time (2 Days: Tue/Thu)</option>
-                            <option value="HalfDay_Morning">Half-Day Morning</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Billing Frequency</label>
-                        <select class="input-field" @bind="_enrollContract.BillingCycle">
-                            <option value="Monthly">Monthly</option>
-                            <option value="BiWeekly">Bi-Weekly</option>
-                            <option value="Weekly">Weekly</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Base Monthly Tuition Rate ($)</label>
-                        <input type="number" step="10" class="input-field" @bind="_enrollContract.BaseMonthlyRate" />
-                    </div>
-                    <div class="form-group">
-                        <label>Sibling Discount (%)</label>
-                        <input type="number" step="1" class="input-field" @bind="_enrollContract.SiblingDiscountPercent" />
-                    </div>
-                </div>
-
-                <div class="form-row-2">
-                    <div class="form-group">
-                        <label>Deposit Held ($)</label>
-                        <input type="number" step="10" class="input-field" @bind="_enrollContract.DepositHeld" />
-                    </div>
-                    <div class="form-group" style="display: flex; flex-direction: column; justify-content: center;">
-                        <span style="font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase;">Effective Monthly Cost</span>
-                        <div style="font-size: 18px; font-weight: 800; color: var(--accent-dark); margin-top: 4px;">
-                            @((_enrollContract.BaseMonthlyRate * (1 - (_enrollContract.SiblingDiscountPercent / 100m))).ToString("C2")) / mo
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-top: 10px; padding: 12px; border-radius: 10px; background: #fdfaf3; border: 1px solid #ebdcc5;">
-                    <label style="display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 13px; color: var(--text);">
-                        <input type="checkbox" style="margin-top: 2px;" @bind="_enrollContract.CreateInitialTuitionInvoice" />
-                        <div>
-                            <strong>Create initial registration fee + deposit invoice in Account Book</strong>
-                            <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--muted);">
-                                Automatically generates an invoice for the held deposit and registration fee, linked to the family ledger.
-                            </p>
-                        </div>
-                    </label>
-                </div>
-            </div>
-            <div class="modal-footer-pipeline">
-                <button class="btn secondary" @onclick="() => _isEnrollModalOpen = false">Cancel</button>
-                <button class="primary" @onclick="ConfirmEnrollment">
-                    Confirm Enrollment &amp; Bind Tuition Plan
-                </button>
-            </div>
-        </div>
-    </div>
-}
+<FinalizeEnrollmentModal IsOpen="_isEnrollModalOpen"
+                         Application="_selectedApp"
+                         EnrollContract="_enrollContract"
+                         Classrooms="_classrooms"
+                         OnClose="() => _isEnrollModalOpen = false"
+                         OnConfirm="ConfirmEnrollment" />

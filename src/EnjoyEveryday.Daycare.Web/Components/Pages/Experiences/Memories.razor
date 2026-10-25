@@ -5,7 +5,6 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Shared.Tenancy
 
-
 <PageTitle>Memories — EnjoyEveryday</PageTitle>
 
 <div class="content" style="max-width: 1380px; margin: auto; padding: 32px 24px;">
@@ -24,74 +23,19 @@
     </PageHero>
 
     <!-- Scope Selector Row (Branch, Classroom, Child) -->
-    <div class="memory-selector-bar">
-        <div class="selector-group">
-            <label class="selector-label">Branch</label>
-            <select class="selector-input" @bind="SelectedBranchId">
-                <option value="@Guid.Empty">All Branches</option>
-                @foreach (var branch in _branches)
-                {
-                    <option value="@branch.Id">@branch.Name</option>
-                }
-            </select>
-        </div>
-
-        <div class="selector-group">
-            <label class="selector-label">Classroom</label>
-            <select class="selector-input" @bind="SelectedClassroomId" disabled="@(_classrooms.Count == 0)">
-                <option value="@Guid.Empty">All Classrooms</option>
-                @foreach (var cls in _filteredClassrooms)
-                {
-                    <option value="@cls.Id">@cls.Name</option>
-                }
-            </select>
-        </div>
-
-        <div class="selector-group primary-selector">
-            <label class="selector-label">Child</label>
-            <select class="selector-input child-dropdown" @bind="SelectedChildId">
-                <option value="@Guid.Empty">-- Select a Child to view their stream --</option>
-                @foreach (var child in _filteredChildren)
-                {
-                    <option value="@child.Id">@child.FirstName @child.LastName</option>
-                }
-            </select>
-        </div>
-    </div>
+    <MemoryScopeSelectorBar Branches="_branches"
+                            Classrooms="_filteredClassrooms"
+                            Children="_filteredChildren"
+                            @bind-SelectedBranchId="SelectedBranchId"
+                            @bind-SelectedClassroomId="SelectedClassroomId"
+                            @bind-SelectedChildId="SelectedChildId" />
 
     @if (_selectedChild != null)
     {
         <!-- Child Profile Pill & Quick Stats Banner -->
-        <div class="child-hero-card">
-            <div class="child-avatar-badge">
-                @if (!string.IsNullOrEmpty(_selectedChild.PhotoUrl))
-                {
-                    <img src="@_selectedChild.PhotoUrl" alt="@_selectedChild.FirstName" class="child-img" />
-                }
-                else
-                {
-                    <span class="child-initials">@_selectedChild.FirstName.FirstOrDefault()@_selectedChild.LastName.FirstOrDefault()</span>
-                }
-            </div>
-            <div class="child-hero-info">
-                <div class="child-hero-title">
-                    <h2>@_selectedChild.FirstName @_selectedChild.LastName</h2>
-                    <span class="status-pill active-pill">Active Journey</span>
-                </div>
-                <p class="child-hero-subtitle">
-                    Classroom: <strong>@(string.IsNullOrEmpty(_selectedClassroomName) ? "General" : _selectedClassroomName)</strong>
-                    @if (_selectedChild.DateOfBirth.HasValue)
-                    {
-                        <span class="separator-dot">•</span>
-                        <span>Age @CalculateAge(_selectedChild.DateOfBirth.Value)</span>
-                    }
-                </p>
-            </div>
-            <div class="memory-count-badge">
-                <span class="count-number">@_memories.Count</span>
-                <span class="count-label">Memories</span>
-            </div>
-        </div>
+        <ChildHeroBanner Child="_selectedChild"
+                         ClassroomName="@_selectedClassroomName"
+                         MemoriesCount="@_memories.Count" />
 
         <!-- Filter Row & Category Tabs -->
         <div class="filter-controls-row">
@@ -159,68 +103,7 @@
                         </div>
                     }
 
-                    <div class="timeline-item" @onclick="() => ShowDetails(mem)">
-                        <div class="timeline-icon-column">
-                            <div class="timeline-circle @GetCategoryCssClass(mem.Category)">
-                                <i class="bi @mem.CategoryIcon"></i>
-                            </div>
-                            <div class="timeline-line"></div>
-                        </div>
-
-                        <div class="timeline-card">
-                            <div class="card-top-row">
-                                <div class="card-meta">
-                                    <span class="category-badge @GetCategoryCssClass(mem.Category)">@mem.Category</span>
-                                    <span class="event-time">@mem.EventDate.ToString("h:mm tt")</span>
-                                    @if (!string.IsNullOrEmpty(mem.TeacherName))
-                                    {
-                                        <span class="separator-dot">•</span>
-                                        <span class="staff-author"><i class="bi bi-person"></i> @mem.TeacherName</span>
-                                    }
-                                </div>
-                                <div class="card-actions">
-                                    @if (mem.IsParentVisible)
-                                    {
-                                        <span class="visibility-badge parent-visible" title="Visible to approved parents">
-                                            <i class="bi bi-eye"></i> Family Visible
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="visibility-badge internal-only" title="Staff Only">
-                                            <i class="bi bi-lock"></i> Staff Only
-                                        </span>
-                                    }
-                                </div>
-                            </div>
-
-                            <h3 class="memory-card-title">@mem.Title</h3>
-                            
-                            @if (!string.IsNullOrEmpty(mem.Description))
-                            {
-                                <p class="memory-card-desc">@Truncate(mem.Description, 220)</p>
-                            }
-
-                            @if (!string.IsNullOrEmpty(mem.ExperienceTitle))
-                            {
-                                <div class="activity-tag">
-                                    <i class="bi bi-lightbulb"></i> Experience: <strong>@mem.ExperienceTitle</strong>
-                                </div>
-                            }
-
-                            @if (!string.IsNullOrEmpty(mem.MediaUrl))
-                            {
-                                <div class="memory-media-preview">
-                                    <img src="@mem.MediaUrl" alt="@mem.Title" loading="lazy" />
-                                </div>
-                            }
-
-                            <div class="card-footer-row">
-                                <span class="click-hint">Click to view complete details</span>
-                                <i class="bi bi-arrow-right-short card-arrow"></i>
-                            </div>
-                        </div>
-                    </div>
+                    <MemoryTimelineItemCard Memory="mem" OnSelect="ShowDetails" />
                 }
             </div>
         }
@@ -237,69 +120,4 @@
 </div>
 
 <!-- Memory Detail Modal / Drawer -->
-@if (_selectedMemory != null)
-{
-    <div class="modal-backdrop-custom" @onclick="CloseDetails">
-        <div class="modal-card-custom" @onclick:stopPropagation="true">
-            <div class="modal-header-custom">
-                <div>
-                    <span class="category-badge @GetCategoryCssClass(_selectedMemory.Category)">@_selectedMemory.Category</span>
-                    <h2 class="modal-title-custom">@_selectedMemory.Title</h2>
-                    <span class="modal-subtext">@_selectedMemory.EventDate.ToString("f")</span>
-                </div>
-                <button class="close-btn-custom" @onclick="CloseDetails">✕</button>
-            </div>
-
-            <div class="modal-body-custom">
-                @if (!string.IsNullOrEmpty(_selectedMemory.MediaUrl))
-                {
-                    <div class="modal-media-wrap">
-                        <img src="@_selectedMemory.MediaUrl" alt="@_selectedMemory.Title" class="modal-full-img" />
-                    </div>
-                }
-
-                <div class="detail-section">
-                    <label class="detail-label">Story & Observations</label>
-                    <p class="detail-text">@_selectedMemory.Description</p>
-                </div>
-
-                @if (!string.IsNullOrEmpty(_selectedMemory.ExperienceTitle))
-                {
-                    <div class="detail-section highlight-box">
-                        <label class="detail-label">Linked Learning Experience</label>
-                        <p class="detail-text"><strong>@_selectedMemory.ExperienceTitle</strong></p>
-                    </div>
-                }
-
-                <div class="detail-grid">
-                    <div class="grid-item">
-                        <label class="detail-label">Child</label>
-                        <span>@(_selectedMemory.ChildName ?? "Child")</span>
-                    </div>
-                    <div class="grid-item">
-                        <label class="detail-label">Recorded By</label>
-                        <span>@(_selectedMemory.TeacherName ?? "Educator")</span>
-                    </div>
-                    <div class="grid-item">
-                        <label class="detail-label">Classroom</label>
-                        <span>@(_selectedMemory.ClassroomName ?? "General Room")</span>
-                    </div>
-                    <div class="grid-item">
-                        <label class="detail-label">Audience Visibility</label>
-                        <span>@(_selectedMemory.IsParentVisible ? "Family & Educators" : "Educators Only")</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="modal-footer-custom">
-                <button class="btn secondary" @onclick="CloseDetails">Close</button>
-                @if (_selectedMemory.ChildId.HasValue)
-                {
-                    <a href="/journey/@_selectedMemory.ChildId.Value" class="btn primary" style="text-decoration: none;">
-                        Open Child Journey
-                    </a>
-                }
-            </div>
-        </div>
-    </div>
-}
+<MemoryDetailModal Memory="_selectedMemory" OnClose="CloseDetails" />

@@ -1,0 +1,145 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components.TeacherWizard
+
+<div class="teacher-profile-card">
+    <div class="profile-header">
+        <div class="profile-avatar">
+            @if (!string.IsNullOrEmpty(Teacher.ProfilePhotoUrl))
+            {
+                <img src="@Teacher.ProfilePhotoUrl" alt="@Teacher.FullName" />
+            }
+            else
+            {
+                <span>@(Teacher.FirstName?.FirstOrDefault().ToString() ?? "?")</span>
+            }
+        </div>
+        <div class="profile-identity">
+            <h1 class="teacher-name">@Teacher.FullName</h1>
+            <p class="teacher-title">@(Model.JobTitle ?? "No Title")</p>
+            <div class="teacher-status-row">
+                <span class="status-pill @(Teacher.Status == "Active" ? "active" : "")">
+                    @Teacher.Status
+                </span>
+                <span class="completion-pill">
+                    Profile Completion: @Teacher.ProfileCompletionPercentage%
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="info-grid">
+        <!-- Personal Information -->
+        <div class="info-section">
+            <h3 class="section-title">Personal Information</h3>
+            <dl class="info-list">
+                <dt>Full Name</dt>
+                <dd>@Teacher.FullName</dd>
+                
+                <dt>Preferred Name</dt>
+                <dd>@(Model.PreferredName ?? "-")</dd>
+                
+                <dt>Email</dt>
+                <dd>@Model.Email</dd>
+            </dl>
+        </div>
+
+        <!-- Employment Information -->
+        <div class="info-section">
+            <h3 class="section-title">Employment Information</h3>
+            <dl class="info-list">
+                <dt>Employee Number</dt>
+                <dd>@(Model.EmployeeNumber ?? "-")</dd>
+                
+                <dt>Employment Type</dt>
+                <dd>@(Model.EmploymentType ?? "-")</dd>
+                
+                <dt>Assigned Classroom</dt>
+                <dd>@(Model.AssignedClassroom ?? "-") @(Model.IsPrimaryTeacher ? "(Primary)" : "")</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div class="info-grid" style="margin-top: 24px;">
+        <!-- Emergency Contact -->
+        <div class="info-section">
+            <h3 class="section-title">Emergency Contact</h3>
+            <dl class="info-list">
+                <dt>Name</dt>
+                <dd>@(Model.EmergencyContactName ?? "-")</dd>
+                
+                <dt>Relationship</dt>
+                <dd>@(Model.EmergencyContactRelationship ?? "-")</dd>
+                
+                <dt>Phone Number</dt>
+                <dd>@(Model.EmergencyContactPhone ?? "-")</dd>
+            </dl>
+        </div>
+
+        <!-- Qualifications -->
+        <div class="info-section">
+            <h3 class="section-title">Qualifications &amp; Skills</h3>
+            <dl class="info-list">
+                <dt>Highest Qualification</dt>
+                <dd>@(Model.HighestQualification ?? "-")</dd>
+                
+                <dt>Meets State Requirements</dt>
+                <dd>@(Model.MeetsStateRequirements ? "Yes" : "No")</dd>
+                
+                <dt>Skills</dt>
+                <dd>
+                    @{
+                        var skills = new List<string>();
+                        if (Model.HasSkillStorytelling) skills.Add("Storytelling");
+                        if (Model.HasSkillMusic) skills.Add("Music");
+                        if (Model.HasSkillOutdoor) skills.Add("Outdoor");
+                        if (Model.HasSkillFirstAid) skills.Add("First Aid");
+                        
+                        @(skills.Any() ? string.Join(", ", skills) : "None selected")
+                    }
+                </dd>
+            </dl>
+        </div>
+    </div>
+
+    @if (Model.Educations != null && Model.Educations.Any())
+    {
+        <div class="info-section" style="margin-top: 24px;">
+            <h3 class="section-title">Education History</h3>
+            <div class="timeline-entries">
+                @foreach (var edu in Model.Educations)
+                {
+                    <div class="timeline-item">
+                        <strong class="timeline-title">@edu.Degree in @edu.FieldOfStudy</strong>
+                        <span class="timeline-sub">@edu.InstitutionName • Class of @edu.GraduationYear</span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (Model.Experiences != null && Model.Experiences.Any())
+    {
+        <div class="info-section" style="margin-top: 24px;">
+            <h3 class="section-title">Work Experience</h3>
+            <div class="timeline-entries">
+                @foreach (var exp in Model.Experiences)
+                {
+                    <div class="timeline-item">
+                        <strong class="timeline-title">@exp.Position</strong>
+                        <span class="timeline-sub">@exp.OrganizationName • Age Group: @exp.AgeGroup</span>
+                        @if (exp.ExperienceStartDate.HasValue)
+                        {
+                            <div class="timeline-date">Started: @exp.ExperienceStartDate.Value.ToString("MMM yyyy")</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Teacher Teacher { get; set; } = null!;
+    [Parameter, EditorRequired] public TeacherCreationWizard.TeacherWizardModel Model { get; set; } = null!;
+}

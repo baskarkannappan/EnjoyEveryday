@@ -1,0 +1,50 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+
+<div class="leaves-table-wrap">
+    <table class="leaves-table">
+        <thead>
+            <tr>
+                <th>Educator</th>
+                <th>Leave Type</th>
+                <th>Dates</th>
+                <th>Reason</th>
+                <th>Coverage Status</th>
+                <th>Substitute Educator</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in Leaves)
+            {
+                <tr>
+                    <td><strong>@l.TeacherName</strong></td>
+                    <td><span class="leave-pill">@l.LeaveType</span></td>
+                    <td>@l.StartDate.ToString("MMM d") – @l.EndDate.ToString("MMM d, yyyy")</td>
+                    <td>@(l.Reason ?? "General scheduled absence")</td>
+                    <td>
+                        <span class="coverage-pill @(l.CoverageStatus == "Covered" ? "covered" : "uncovered")">
+                            @l.CoverageStatus
+                        </span>
+                    </td>
+                    <td>
+                        @(string.IsNullOrEmpty(l.SubstituteTeacherName) ? "None assigned" : l.SubstituteTeacherName)
+                    </td>
+                    <td>
+                        @if (l.CoverageStatus != "Covered")
+                        {
+                            <button class="btn secondary sub-btn" @onclick="() => OnAssignSubstitute.InvokeAsync(l)">
+                                Assign Sub
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<StaffLeaveItem> Leaves { get; set; } = Enumerable.Empty<StaffLeaveItem>();
+    [Parameter] public EventCallback<StaffLeaveItem> OnAssignSubstitute { get; set; }
+}
