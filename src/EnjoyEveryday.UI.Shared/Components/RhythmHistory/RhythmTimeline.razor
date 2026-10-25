@@ -1,0 +1,59 @@
+@namespace EnjoyEveryday.UI.Shared.Components.RhythmHistory
+@using EnjoyEveryday.UI.Shared.Components
+@using Microsoft.FluentUI.AspNetCore.Components
+
+<div class="section-card">
+    <div class="section-header">
+        <div>
+            <h2>Daily Flow Timeline</h2>
+            <span class="section-subtitle">Chronological rhythm for @SelectedDate.ToString("MMMM d, yyyy")</span>
+        </div>
+        @if (IsLoading)
+        {
+            <span class="loading-indicator">
+                <FluentSpinner Size="SpinnerSize.ExtraSmall" /> Loading day rhythm...
+            </span>
+        }
+    </div>
+
+    @if (!IsLoading && !TimelineItems.Any())
+    {
+        <EmptyState Icon="🍃"
+                    Title="No recorded rhythm for this date"
+                    Description="@($"No experiences or special celebrations were logged for {SelectedDate.ToString("MMMM d, yyyy")} with the selected branch/classroom filters.")">
+            <ActionContent>
+                <div class="empty-state-buttons">
+                    <button type="button" class="date-pill-btn active" @onclick="() => OnSetDate.InvokeAsync(Today)">
+                        View Today Instead
+                    </button>
+                    <button type="button" class="date-pill-btn" @onclick="() => OnSetDate.InvokeAsync(Today.AddDays(-1))">
+                        Check Yesterday
+                    </button>
+                </div>
+            </ActionContent>
+        </EmptyState>
+    }
+    else
+    {
+        <div class="timeline">
+            @foreach (var item in TimelineItems)
+            {
+                <RhythmTimelineItemCard Item="@item"
+                                        OnOpenPhotoModal="OnOpenPhotoModal"
+                                        OnTogglePhotoEditor="OnTogglePhotoEditor"
+                                        OnEventPhotosUpdated="OnEventPhotosUpdated" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public DateOnly SelectedDate { get; set; }
+    [Parameter] public DateOnly Today { get; set; }
+    [Parameter] public IReadOnlyList<HistoricalRhythmItem> TimelineItems { get; set; } = Array.Empty<HistoricalRhythmItem>();
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public EventCallback<DateOnly> OnSetDate { get; set; }
+    [Parameter] public EventCallback<string> OnOpenPhotoModal { get; set; }
+    [Parameter] public EventCallback<HistoricalRhythmItem> OnTogglePhotoEditor { get; set; }
+    [Parameter] public EventCallback<(HistoricalRhythmItem Item, string[] Photos)> OnEventPhotosUpdated { get; set; }
+}

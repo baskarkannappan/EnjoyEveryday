@@ -1,0 +1,109 @@
+@namespace EnjoyEveryday.UI.Shared.Components.RhythmHistory
+@using EnjoyEveryday.Domain.Entities
+
+<div class="section-card filter-card">
+    <div class="filter-grid">
+        <!-- Organization -->
+        <div class="filter-group">
+            <label class="filter-label">Organization</label>
+            <select class="theme-select" value="@SelectedOrgId" @onchange="HandleOrgChanged">
+                @foreach (var org in Organizations)
+                {
+                    <option value="@org.Id">@org.Name</option>
+                }
+            </select>
+        </div>
+
+        <!-- Branch -->
+        <div class="filter-group">
+            <label class="filter-label">Branch</label>
+            <select class="theme-select" value="@SelectedBranchId" @onchange="HandleBranchChanged">
+                <option value="">🏢 All Branches</option>
+                @foreach (var b in Branches)
+                {
+                    <option value="@b.Id">@b.Name (@(b.Location ?? "Main"))</option>
+                }
+            </select>
+        </div>
+
+        <!-- Classroom -->
+        <div class="filter-group">
+            <label class="filter-label">Classroom</label>
+            <select class="theme-select" value="@SelectedClassroomId" @onchange="HandleClassroomChanged">
+                <option value="">🚪 All Classrooms</option>
+                @foreach (var c in Classrooms)
+                {
+                    <option value="@c.Id">@c.Name</option>
+                }
+            </select>
+        </div>
+
+        <!-- Date -->
+        <div class="filter-group">
+            <label class="filter-label">Date</label>
+            <input type="date"
+                   class="theme-date-input"
+                   value="@SelectedDate.ToString("yyyy-MM-dd")"
+                   @onchange="HandleDateChanged" />
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<Organization> Organizations { get; set; } = Array.Empty<Organization>();
+    [Parameter] public Guid? SelectedOrgId { get; set; }
+    [Parameter] public EventCallback<Guid> OnOrgChanged { get; set; }
+
+    [Parameter] public IReadOnlyList<Branch> Branches { get; set; } = Array.Empty<Branch>();
+    [Parameter] public Guid? SelectedBranchId { get; set; }
+    [Parameter] public EventCallback<Guid?> OnBranchChanged { get; set; }
+
+    [Parameter] public IReadOnlyList<Classroom> Classrooms { get; set; } = Array.Empty<Classroom>();
+    [Parameter] public Guid? SelectedClassroomId { get; set; }
+    [Parameter] public EventCallback<Guid?> OnClassroomChanged { get; set; }
+
+    [Parameter] public DateOnly SelectedDate { get; set; }
+    [Parameter] public EventCallback<DateOnly> OnDateChanged { get; set; }
+
+    private async Task HandleOrgChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var orgId))
+        {
+            await OnOrgChanged.InvokeAsync(orgId);
+        }
+    }
+
+    private async Task HandleBranchChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (Guid.TryParse(val, out var bId))
+        {
+            await OnBranchChanged.InvokeAsync(bId);
+        }
+        else
+        {
+            await OnBranchChanged.InvokeAsync(null);
+        }
+    }
+
+    private async Task HandleClassroomChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (Guid.TryParse(val, out var cId))
+        {
+            await OnClassroomChanged.InvokeAsync(cId);
+        }
+        else
+        {
+            await OnClassroomChanged.InvokeAsync(null);
+        }
+    }
+
+    private async Task HandleDateChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            await OnDateChanged.InvokeAsync(parsed);
+        }
+    }
+}

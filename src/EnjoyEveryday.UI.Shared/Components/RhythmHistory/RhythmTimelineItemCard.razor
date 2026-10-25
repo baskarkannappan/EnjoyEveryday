@@ -1,0 +1,100 @@
+@namespace EnjoyEveryday.UI.Shared.Components.RhythmHistory
+@using EnjoyEveryday.UI.Shared.Components
+
+<div class="timeline-item">
+    <!-- Elegant Timeline Dot matching app theme -->
+    <div class="timeline-dot @(Item.IsEvent ? "event-dot" : "")"></div>
+
+    <!-- Card matching the .classroom card style -->
+    <div class="classroom rhythm-entry-card">
+        <div class="classroom-top">
+            <div class="classroom-name">
+                <div class="classroom-dot" style="background-color: @(Item.IsEvent ? "#d98a2c" : "var(--accent, #557c6c)");"></div>
+                <div>
+                    <strong>@Item.Title</strong>
+                    <small>⏰ @Item.TimeDisplay • @Item.ScopeDisplay</small>
+                </div>
+            </div>
+
+            <div class="badge-cluster">
+                <span class="status @(Item.Status == "Active" || Item.Status == "Started" || Item.Status == "InProgress" ? "active" : "")">
+                    @Item.Status
+                </span>
+                @if (Item.IsEvent)
+                {
+                    <span class="scope-badge @Item.Scope.ToLower()">
+                        @(Item.Scope == "Organization" ? "🌐 Org-Wide" : Item.Scope == "Branch" ? "🏢 Branch" : "🚪 Classroom")
+                    </span>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Item.Description))
+        {
+            <div class="entry-description">
+                @Item.Description
+            </div>
+        }
+
+        <!-- Event Photo Thumbnails -->
+        @if (Item.IsEvent && Item.PhotoUrls != null && Item.PhotoUrls.Length > 0)
+        {
+            <div class="photo-strip-container">
+                <div class="photo-strip-header">
+                    📸 Event Photos (@Item.PhotoUrls.Length / 3)
+                </div>
+                <div class="photo-strip-grid">
+                    @foreach (var pUrl in Item.PhotoUrls)
+                    {
+                        <div class="rhythm-photo-thumb" @onclick="() => OnOpenPhotoModal.InvokeAsync(pUrl)">
+                            <img src="@pUrl" alt="Event photo" />
+                            <div class="rhythm-photo-overlay">🔍</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Bottom Action Row -->
+        <div class="classroom-bottom">
+            <div class="mini-info">
+                Type
+                <strong>@(Item.IsEvent ? "🎉 Celebration" : "🎨 Structured Experience")</strong>
+            </div>
+
+            <div class="action-buttons-group">
+                @if (Item.IsEvent)
+                {
+                    @if (string.Equals(Item.Status, "Completed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <button type="button" class="btn-theme-secondary" @onclick="() => OnTogglePhotoEditor.InvokeAsync(Item)">
+                            📸 @(Item.EditingPhotos ? "Close Photo Editor" : "Manage Photos")
+                        </button>
+                    }
+                    <a class="view-btn" href="/events/@Item.EventId">
+                        Details &rarr;
+                    </a>
+                }
+            </div>
+        </div>
+
+        <!-- Expandable Photo Uploader for Completed Celebrations -->
+        @if (Item.IsEvent && Item.EditingPhotos)
+        {
+            <div class="photo-uploader-panel">
+                <EventPhotoUploader Photos="@Item.PhotoUrls"
+                                    PhotosChanged="urls => OnEventPhotosUpdated.InvokeAsync((Item, urls))"
+                                    MaxPhotos="3"
+                                    ReadOnly="false"
+                                    IsCompleted="true" />
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public HistoricalRhythmItem Item { get; set; } = default!;
+    [Parameter] public EventCallback<string> OnOpenPhotoModal { get; set; }
+    [Parameter] public EventCallback<HistoricalRhythmItem> OnTogglePhotoEditor { get; set; }
+    [Parameter] public EventCallback<(HistoricalRhythmItem Item, string[] Photos)> OnEventPhotosUpdated { get; set; }
+}
