@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_create_branch_operational_goal
+-- Backup generated on 2026-10-25 20:33:50
+
+CREATE OR REPLACE PROCEDURE public.sp_create_branch_operational_goal(IN p_id uuid, IN p_tenant_id uuid, IN p_organization_id uuid, IN p_branch_id uuid, IN p_title character varying, IN p_category character varying, IN p_target_metric character varying, IN p_current_value character varying, IN p_target_value character varying, IN p_status character varying, IN p_target_date date, IN p_owner_name character varying)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO branch_operational_goals (         id, tenant_id, organization_id, branch_id, title, category,         target_metric, current_value, target_value, status, target_date, owner_name     ) VALUES (         p_id, p_tenant_id, p_organization_id, p_branch_id, p_title, p_category,         p_target_metric, p_current_value, p_target_value, p_status, p_target_date, p_owner_name     ); END; $procedure$ ;

@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_record_activity_recommendation_decision
+-- Backup generated on 2026-10-25 20:34:04
+
+CREATE OR REPLACE PROCEDURE public.sp_record_activity_recommendation_decision(IN p_id uuid, IN p_request_id uuid, IN p_recommendation_item_id uuid, IN p_tenant_id uuid, IN p_decided_by_user_id uuid, IN p_decision character varying, IN p_rejection_reason text, IN p_resulting_schedule_id uuid, IN p_decided_at timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO activity_recommendation_decisions (         id, request_id, recommendation_item_id, tenant_id, decided_by_user_id,         decision, rejection_reason, resulting_schedule_id, decided_at     ) VALUES (         p_id, p_request_id, p_recommendation_item_id, p_tenant_id, p_decided_by_user_id,         p_decision, p_rejection_reason, p_resulting_schedule_id, p_decided_at     ); END; $procedure$ ;

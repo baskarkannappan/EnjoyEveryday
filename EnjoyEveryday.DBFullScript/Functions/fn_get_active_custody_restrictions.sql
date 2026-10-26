@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_active_custody_restrictions
+-- Backup generated on 2026-10-25 20:32:57
+
+CREATE OR REPLACE FUNCTION public.fn_get_active_custody_restrictions(p_tenant_id uuid, p_child_id uuid)  RETURNS TABLE(id uuid, restriction_type character varying, notes character varying, effective_from timestamp with time zone, effective_to timestamp with time zone, person_name character varying)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT r.id, r.restriction_type::VARCHAR, r.notes::VARCHAR, r.effective_from, r.effective_to,            COALESCE(p.first_name || ' ' || p.last_name, 'Restricted Individual')::VARCHAR AS person_name     FROM child_person_restrictions r     LEFT JOIN persons p ON r.person_id = p.id     WHERE r.tenant_id = p_tenant_id AND r.child_id = p_child_id       AND (r.effective_to IS NULL OR r.effective_to >= NOW()); END; $function$ ;

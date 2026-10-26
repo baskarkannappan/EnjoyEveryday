@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_portfolio_child_profile
+-- Backup generated on 2026-10-25 20:33:39
+
+CREATE OR REPLACE FUNCTION public.fn_get_portfolio_child_profile(p_tenant_id uuid, p_child_id uuid)  RETURNS TABLE(id uuid, first_name character varying, last_name character varying, photo_url text, date_of_birth date, classroom_name character varying, branch_name character varying)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT c.id, c.first_name::VARCHAR, c.last_name::VARCHAR,            c.photo_url, c.date_of_birth,            cr.name::VARCHAR AS classroom_name, b.name::VARCHAR AS branch_name     FROM children c     LEFT JOIN classrooms cr ON c.classroom_id = cr.id     LEFT JOIN branches b ON cr.branch_id = b.id     WHERE c.tenant_id = p_tenant_id AND c.id = p_child_id; END; $function$ ;

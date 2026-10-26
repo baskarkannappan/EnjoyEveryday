@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_update_experience_schedule
+-- Backup generated on 2026-10-25 20:34:10
+
+CREATE OR REPLACE PROCEDURE public.sp_update_experience_schedule(IN p_id uuid, IN p_tenant_id uuid, IN p_scheduled_date date, IN p_time_of_day character varying, IN p_status character varying, IN p_primary_teacher_id uuid, IN p_planned_start_time time without time zone, IN p_planned_end_time time without time zone, IN p_preparation_notes text, IN p_updated_at timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     UPDATE experience_schedules     SET scheduled_date = p_scheduled_date,         time_of_day = p_time_of_day,         status = p_status,         primary_teacher_id = p_primary_teacher_id,         planned_start_time = p_planned_start_time,         planned_end_time = p_planned_end_time,         preparation_notes = p_preparation_notes,         updated_at = p_updated_at     WHERE id = p_id AND tenant_id = p_tenant_id; END; $procedure$ ;

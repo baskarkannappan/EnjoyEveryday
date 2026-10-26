@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_update_material_order_quotation
+-- Backup generated on 2026-10-25 20:34:12
+
+CREATE OR REPLACE PROCEDURE public.sp_update_material_order_quotation(IN p_order_id uuid, IN p_total_purchase_amount numeric, IN p_total_rental_fee numeric, IN p_total_deposit numeric, IN p_shipping_fee numeric, IN p_total_amount numeric, IN p_quotation_notes text, IN p_valid_until timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     UPDATE material_orders SET         total_purchase_amount = p_total_purchase_amount,         total_rental_fee = p_total_rental_fee,         total_deposit = p_total_deposit,         shipping_fee = p_shipping_fee,         total_amount = p_total_amount,         quotation_notes = p_quotation_notes,         quotation_valid_until = p_valid_until,         workflow_status = 'QuotationOffered',         updated_at = NOW()     WHERE id = p_order_id; END; $procedure$ ;

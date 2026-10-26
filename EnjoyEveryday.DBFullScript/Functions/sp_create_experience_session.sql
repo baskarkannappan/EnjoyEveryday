@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_create_experience_session
+-- Backup generated on 2026-10-25 20:33:51
+
+CREATE OR REPLACE PROCEDURE public.sp_create_experience_session(IN p_id uuid, IN p_tenant_id uuid, IN p_experience_id uuid, IN p_experience_schedule_id uuid, IN p_classroom_id uuid, IN p_session_date date, IN p_start_time time without time zone, IN p_end_time time without time zone, IN p_status character varying, IN p_primary_teacher_id uuid, IN p_actual_notes text)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO experience_sessions (         id, tenant_id, experience_id, experience_schedule_id, classroom_id,          session_date, start_time, end_time, status, primary_teacher_id, actual_notes     ) VALUES (         p_id, p_tenant_id, p_experience_id, p_experience_schedule_id, p_classroom_id,          p_session_date, p_start_time, p_end_time, p_status, p_primary_teacher_id, p_actual_notes     ); END; $procedure$ ;

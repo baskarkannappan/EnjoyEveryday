@@ -7,9 +7,10 @@
 @inject ExperienceCurationService CurationService
 @inject UserService UserService
 @inject PlannerService PlannerService
-@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
+@using EnjoyEveryday.Domain.Repositories
+@inject IClassroomRepository ClassroomRepository
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Daycare.Web.Services.StorybookStorageService StorybookStorageService
-@using Dapper
 @using System.Text.Json
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
@@ -482,26 +483,12 @@
 
     private async Task SaveScheduleAsync()
     {
-        using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var classroomId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
-        
-        if (!classroomId.HasValue || classroomId.Value == Guid.Empty)
+        var classrooms = await ClassroomRepository.GetAllAsync(TenantContext.TenantId);
+        var classroom = classrooms.FirstOrDefault();
+        if (classroom != null)
         {
-            var branchId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM branches LIMIT 1");
-            if (!branchId.HasValue || branchId.Value == Guid.Empty)
-            {
-                branchId = Guid.NewGuid();
-                var tenantId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM tenants LIMIT 1") ?? Guid.NewGuid();
-                var orgId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM organizations LIMIT 1") ?? Guid.NewGuid();
-                await connection.ExecuteAsync("INSERT INTO branches (id, tenant_id, organization_id, name, is_active, created_at, updated_at) VALUES (@Id, @TenantId, @OrgId, 'Main Branch', true, @Now, @Now)", new { Id = branchId.Value, TenantId = tenantId, OrgId = orgId, Now = DateTimeOffset.UtcNow });
-            }
-            
-            classroomId = Guid.NewGuid();
-            var tId = await connection.QueryFirstOrDefaultAsync<Guid>("SELECT tenant_id FROM branches WHERE id = @Id", new { Id = branchId.Value });
-            await connection.ExecuteAsync("INSERT INTO classrooms (id, tenant_id, branch_id, name, is_active, created_at, updated_at) VALUES (@Id, @TenantId, @BranchId, 'Room A', true, @Now, @Now)", new { Id = classroomId.Value, TenantId = tId, BranchId = branchId.Value, Now = DateTimeOffset.UtcNow });
+            await PlannerService.ScheduleExperienceAsync(_currentExperience.Id, classroom.Id, DateOnly.FromDateTime(_scheduleDate), _scheduleTimeOfDay);
         }
-
-        await PlannerService.ScheduleExperienceAsync(_currentExperience.Id, classroomId.Value, DateOnly.FromDateTime(_scheduleDate), _scheduleTimeOfDay);
         _isScheduleModalOpen = false;
     }
 

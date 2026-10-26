@@ -4,14 +4,13 @@
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.OperationsBoard
 @using EnjoyEveryday.UI.Shared.Components.RhythmHistory
-@using Dapper
-@using EnjoyEveryday.Shared.Data
+@using EnjoyEveryday.Domain.Repositories
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject ExperienceService ExperienceService
 @inject EventService EventService
-@inject IDbConnectionFactory DbConnectionFactory
+@inject IExperienceScheduleRepository ExperienceScheduleRepository
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager NavigationManager
@@ -162,32 +161,13 @@
         try
         {
             var tenantId = TenantContext.TenantId;
-            using var connection = await DbConnectionFactory.CreateConnectionAsync();
-
-            // 1. Fetch experience schedules for selected date
-            var schedSql = @"
-                SELECT s.id, s.tenant_id as TenantId, s.experience_id as ExperienceId, 
-                       s.classroom_id as ClassroomId, s.scheduled_date as ScheduledDate, 
-                       s.time_of_day as TimeOfDay, s.status as Status, s.planned_start_time as PlannedStartTime, 
-                       s.planned_end_time as PlannedEndTime, s.preparation_notes as PreparationNotes
-                FROM experience_schedules s
-                JOIN classrooms c ON s.classroom_id = c.id
-                JOIN branches b ON c.branch_id = b.id
-                WHERE s.tenant_id = @TenantId
-                  AND (@OrgId IS NULL OR b.organization_id = @OrgId)
-                  AND s.scheduled_date = @Date
-                  AND (@ClassroomId IS NULL OR s.classroom_id = @ClassroomId)
-                  AND (@BranchId IS NULL OR c.branch_id = @BranchId)
-                ORDER BY s.planned_start_time ASC NULLS LAST, s.time_of_day ASC";
-
-            var schedules = (await connection.QueryAsync<ExperienceSchedule>(schedSql, new
-            {
-                TenantId = tenantId,
-                OrgId = _selectedOrgId,
-                Date = _selectedDate.ToDateTime(TimeOnly.MinValue),
-                ClassroomId = _selectedClassroomId,
-                BranchId = _selectedBranchId
-            })).ToList();
+            var scheduleList = await ExperienceScheduleRepository.GetFilteredSchedulesAsync(
+                tenantId,
+                _selectedDate,
+                _selectedOrgId,
+                _selectedBranchId,
+                _selectedClassroomId);
+            var schedules = scheduleList.ToList();
 
             // 2. Fetch events for selected date
             var events = (await EventService.GetEventsForDateAsync(

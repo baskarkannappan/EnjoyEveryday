@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_add_material_order_history
+-- Backup generated on 2026-10-25 20:33:48
+
+CREATE OR REPLACE PROCEDURE public.sp_add_material_order_history(IN p_id uuid, IN p_order_id uuid, IN p_event_type character varying, IN p_previous_status character varying, IN p_new_status character varying, IN p_actor_user_id uuid, IN p_actor_email character varying, IN p_actor_role character varying, IN p_description text, IN p_notes text, IN p_is_internal_note boolean, IN p_created_at timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO material_order_history (         id, order_id, event_type, previous_status, new_status, actor_user_id,         actor_email, actor_role, description, notes, is_internal_note, created_at     ) VALUES (         p_id, p_order_id, p_event_type, p_previous_status, p_new_status, p_actor_user_id,         p_actor_email, p_actor_role, p_description, p_notes, p_is_internal_note, p_created_at     ); END; $procedure$ ;

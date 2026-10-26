@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_create_journey_evidence
+-- Backup generated on 2026-10-25 20:33:53
+
+CREATE OR REPLACE PROCEDURE public.sp_create_journey_evidence(IN p_id uuid, IN p_journey_entry_id uuid, IN p_evidence_type character varying, IN p_media_id uuid, IN p_text_content text, IN p_captured_at timestamp with time zone, IN p_captured_by uuid, IN p_visibility character varying, IN p_created_at timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO child_journey_evidence (         id, journey_entry_id, evidence_type, media_id, text_content,          captured_at, captured_by, visibility, created_at     ) VALUES (         p_id, p_journey_entry_id, p_evidence_type, p_media_id, p_text_content,          p_captured_at, p_captured_by, p_visibility, p_created_at     ); END; $procedure$ ;

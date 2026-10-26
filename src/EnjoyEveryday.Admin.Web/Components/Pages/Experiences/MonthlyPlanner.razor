@@ -6,8 +6,9 @@
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject ExperienceService ExperienceService
-@inject EnjoyEveryday.Shared.Data.IDbConnectionFactory DbConnectionFactory
-@using Dapper
+@using EnjoyEveryday.Domain.Repositories
+@inject IClassroomRepository ClassroomRepository
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @rendermode InteractiveServer
  <section id="page-planner" class="page active">
     <PageHero 
@@ -184,12 +185,7 @@
         _currentDate = DateOnly.FromDateTime(today.AddDays(-1 * diff));
         _currentDateTime = _currentDate.ToDateTime(TimeOnly.MinValue);
         
-        using var connection = await DbConnectionFactory.CreateConnectionAsync();
-        var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
-        if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
-        {
-            _selectedClassroomId = fallbackId.Value.ToString();
-        }
+        await EnsureClassroomSelectedAsync();
 
         _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
         
@@ -210,15 +206,7 @@
         if (_currentDateTime.HasValue)
         {
             _currentDate = DateOnly.FromDateTime(_currentDateTime.Value);
-                    if (string.IsNullOrEmpty(_selectedClassroomId))
-        {
-            using var connection = await DbConnectionFactory.CreateConnectionAsync();
-            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
-            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
-            {
-                _selectedClassroomId = fallbackId.Value.ToString();
-            }
-        }
+            await EnsureClassroomSelectedAsync();
 
         await LoadSchedules();
         CloseDialog();
@@ -278,15 +266,7 @@
         if (_currentScheduleId.HasValue)
         {
             await PlannerService.DeleteScheduleAsync(_currentScheduleId.Value);
-                    if (string.IsNullOrEmpty(_selectedClassroomId))
-        {
-            using var connection = await DbConnectionFactory.CreateConnectionAsync();
-            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
-            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
-            {
-                _selectedClassroomId = fallbackId.Value.ToString();
-            }
-        }
+            await EnsureClassroomSelectedAsync();
 
         await LoadSchedules();
             CloseDialog();
@@ -320,18 +300,23 @@
             await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
         }
         
-                if (string.IsNullOrEmpty(_selectedClassroomId))
-        {
-            using var connection = await DbConnectionFactory.CreateConnectionAsync();
-            var fallbackId = await connection.QueryFirstOrDefaultAsync<Guid?>("SELECT id FROM classrooms LIMIT 1");
-            if (fallbackId.HasValue && fallbackId.Value != Guid.Empty)
-            {
-                _selectedClassroomId = fallbackId.Value.ToString();
-            }
-        }
+        await EnsureClassroomSelectedAsync();
 
         await LoadSchedules();
         CloseDialog();
+    }
+
+    private async Task EnsureClassroomSelectedAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedClassroomId))
+        {
+            var classrooms = await ClassroomRepository.GetAllAsync(TenantContext.TenantId);
+            var fallback = classrooms.FirstOrDefault();
+            if (fallback != null)
+            {
+                _selectedClassroomId = fallback.Id.ToString();
+            }
+        }
     }
     private string GetExperienceType(Experience experience)
     {

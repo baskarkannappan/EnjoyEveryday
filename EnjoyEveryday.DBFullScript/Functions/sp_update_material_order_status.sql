@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_update_material_order_status
+-- Backup generated on 2026-10-25 20:34:12
+
+CREATE OR REPLACE PROCEDURE public.sp_update_material_order_status(IN p_order_id uuid, IN p_new_status character varying, IN p_payment_status character varying DEFAULT NULL::character varying, IN p_fulfilment_status character varying DEFAULT NULL::character varying, IN p_rejection_reason text DEFAULT NULL::text, IN p_cancellation_reason text DEFAULT NULL::text)  LANGUAGE plpgsql AS $procedure$ BEGIN     UPDATE material_orders SET         workflow_status = p_new_status,         payment_status = COALESCE(p_payment_status, payment_status),         fulfilment_status = COALESCE(p_fulfilment_status, fulfilment_status),         rejection_reason = COALESCE(p_rejection_reason, rejection_reason),         cancellation_reason = COALESCE(p_cancellation_reason, cancellation_reason),         updated_at = NOW()     WHERE id = p_order_id; END; $procedure$ ;

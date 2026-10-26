@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_platform_organizations_overview
+-- Backup generated on 2026-10-25 20:33:39
+
+CREATE OR REPLACE FUNCTION public.fn_get_platform_organizations_overview()  RETURNS TABLE(id uuid, tenant_id uuid, name character varying, location character varying, is_active boolean, created_at timestamp with time zone, branch_count integer, admin_email character varying)  LANGUAGE sql  STABLE AS $function$     SELECT o.id AS id, o.tenant_id AS tenant_id, o.name AS name,            o.location AS location, o.is_active AS is_active, o.created_at AS created_at,            COALESCE((SELECT COUNT(*) FROM branches b WHERE b.organization_id = o.id), 0)::int AS branch_count,            (SELECT u.email FROM organization_memberships om JOIN users u ON om.user_id = u.id WHERE om.organization_id = o.id AND om.status = 'Active' ORDER BY om.created_at LIMIT 1) AS admin_email     FROM organizations o     ORDER BY o.name; $function$ ;

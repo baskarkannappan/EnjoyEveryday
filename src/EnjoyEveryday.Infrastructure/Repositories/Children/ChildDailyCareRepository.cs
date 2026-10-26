@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -19,6 +18,66 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         _connectionFactory = connectionFactory;
     }
 
+    private static readonly string[] AddCareEventParams =
+    [
+        "Id", "TenantId", "OrganizationId", "BranchId", "ClassroomId", "ChildId",
+        "EventType", "EventTime", "DiaperCondition", "SkinObservation",
+        "MealType", "FoodOffered", "AmountConsumed", "FluidOz",
+        "RestStatus", "ToiletingActivity", "HygieneType", "ComfortMood",
+        "Notes", "ParentVisible", "RecordedByUserId", "RecordedByName",
+        "CorrectionReason", "IsCorrected", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] UpdateCareEventParams =
+    [
+        "Id", "TenantId", "EventTime", "DiaperCondition", "SkinObservation",
+        "MealType", "FoodOffered", "AmountConsumed", "FluidOz",
+        "RestStatus", "ToiletingActivity", "HygieneType", "ComfortMood",
+        "Notes", "ParentVisible", "CorrectionReason", "UpdatedAt"
+    ];
+
+    private static readonly string[] StartNapSessionParams =
+    [
+        "Id", "TenantId", "OrganizationId", "BranchId", "ClassroomId", "ChildId",
+        "StartTime", "Notes", "StartedByUserId", "StartedByName",
+        "ParentVisible", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] EndNapSessionParams =
+    [
+        "TenantId", "SessionId", "EndTime", "DurationMinutes", "Outcome", "Notes", "EndedByUserId", "EndedByName"
+    ];
+
+    private static readonly string[] SaveCarePlanParams =
+    [
+        "Id", "TenantId", "OrganizationId", "BranchId", "ChildId", "Version",
+        "DiaperRoutineGuidance", "FeedingInstructions", "BottleScheduleGuidance",
+        "SleepRoutineGuidance", "ToiletingSupportPlan", "ComfortCalmingPreferences",
+        "RequiredSuppliesNote", "DietaryAllergiesSummary", "EffectiveDate", "ReviewDate",
+        "Status", "CreatedByUserId", "ApprovedByUserId", "ApprovedAt", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] SaveSupplyStatusParams =
+    [
+        "Id", "TenantId", "OrganizationId", "BranchId", "ClassroomId", "ChildId",
+        "SupplyType", "Status", "Notes", "ThresholdNote", "LastReportedByUserId",
+        "LastReportedByName", "ParentReminderSent", "LastReminderAt", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] CreateHandoverParams =
+    [
+        "Id", "TenantId", "OrganizationId", "BranchId", "ClassroomId", "HandoverDate",
+        "ShiftType", "OutgoingTeacherUserId", "OutgoingTeacherName",
+        "IncomingTeacherUserId", "IncomingTeacherName", "SummaryNotes",
+        "ChildSpecificNotes", "OutstandingCareTasks", "PendingFollowups",
+        "Status", "IsCritical", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] AcknowledgeHandoverParams =
+    [
+        "TenantId", "HandoverId", "UserId", "UserName", "Notes"
+    ];
+
     // ==========================================
     // 1. CARE EVENTS
     // ==========================================
@@ -28,139 +87,70 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         if (ev.Id == Guid.Empty)
             ev.Id = Guid.NewGuid();
 
-        const string sql = @"
-            INSERT INTO child_care_events (
-                id, tenant_id, organization_id, branch_id, classroom_id, child_id,
-                event_type, event_time, diaper_condition, skin_observation,
-                meal_type, food_offered, amount_consumed, fluid_oz,
-                rest_status, toileting_activity, hygiene_type, comfort_mood,
-                notes, parent_visible, recorded_by_user_id, recorded_by_name,
-                correction_reason, is_corrected, created_at, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId, @ChildId,
-                @EventType, @EventTime, @DiaperCondition, @SkinObservation,
-                @MealType, @FoodOffered, @AmountConsumed, @FluidOz,
-                @RestStatus, @ToiletingActivity, @HygieneType, @ComfortMood,
-                @Notes, @ParentVisible, @RecordedByUserId, @RecordedByName,
-                @CorrectionReason, @IsCorrected, @CreatedAt, @UpdatedAt
-            );";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, ev);
+        await conn.ExecuteProcedureAsync(
+            "sp_add_child_care_event",
+            ev,
+            parameterNames: AddCareEventParams,
+            cancellationToken: cancellationToken);
+
         return ev.Id;
     }
 
     public async Task UpdateCareEventAsync(ChildCareEvent ev, CancellationToken cancellationToken = default)
     {
         ev.UpdatedAt = DateTime.UtcNow;
-        const string sql = @"
-            UPDATE child_care_events
-            SET event_time = @EventTime,
-                diaper_condition = @DiaperCondition,
-                skin_observation = @SkinObservation,
-                meal_type = @MealType,
-                food_offered = @FoodOffered,
-                amount_consumed = @AmountConsumed,
-                fluid_oz = @FluidOz,
-                rest_status = @RestStatus,
-                toileting_activity = @ToiletingActivity,
-                hygiene_type = @HygieneType,
-                comfort_mood = @ComfortMood,
-                notes = @Notes,
-                parent_visible = @ParentVisible,
-                correction_reason = @CorrectionReason,
-                is_corrected = TRUE,
-                updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, ev);
+        await conn.ExecuteProcedureAsync(
+            "sp_update_child_care_event",
+            ev,
+            parameterNames: UpdateCareEventParams,
+            cancellationToken: cancellationToken);
     }
 
     public async Task<ChildCareEvent?> GetCareEventByIdAsync(Guid tenantId, Guid eventId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_events e
-            JOIN children c ON e.child_id = c.id
-            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
-            WHERE e.tenant_id = @TenantId AND e.id = @EventId;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QuerySingleOrDefaultAsync<ChildCareEvent>(sql, new { TenantId = tenantId, EventId = eventId });
+        return await conn.QuerySingleFunctionAsync<ChildCareEvent>(
+            "fn_get_child_care_event_by_id",
+            new { TenantId = tenantId, EventId = eventId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildCareEvent>> GetEventsByChildAndDateAsync(Guid tenantId, Guid childId, DateOnly date, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_events e
-            JOIN children c ON e.child_id = c.id
-            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
-            WHERE e.tenant_id = @TenantId 
-              AND e.child_id = @ChildId
-              AND (e.event_time::date = @Date OR (e.event_time AT TIME ZONE 'America/New_York')::date = @Date)
-            ORDER BY e.event_time ASC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCareEvent>(sql, new { TenantId = tenantId, ChildId = childId, Date = date.ToDateTime(TimeOnly.MinValue) });
+        return await conn.QueryFunctionAsync<ChildCareEvent>(
+            "fn_get_child_care_events_by_child_and_date",
+            new { TenantId = tenantId, ChildId = childId, Date = date.ToDateTime(TimeOnly.MinValue) },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildCareEvent>> GetEventsByChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_events e
-            JOIN children c ON e.child_id = c.id
-            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
-            WHERE e.tenant_id = @TenantId 
-              AND e.child_id = @ChildId
-            ORDER BY e.event_time DESC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCareEvent>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await conn.QueryFunctionAsync<ChildCareEvent>(
+            "fn_get_child_care_events_by_child",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildCareEvent>> GetEventsByClassroomAndDateAsync(Guid tenantId, Guid classroomId, DateOnly date, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_events e
-            JOIN children c ON e.child_id = c.id
-            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
-            WHERE e.tenant_id = @TenantId 
-              AND e.classroom_id = @ClassroomId
-              AND (e.event_time::date = @Date OR (e.event_time AT TIME ZONE 'America/New_York')::date = @Date)
-            ORDER BY e.event_time DESC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCareEvent>(sql, new { TenantId = tenantId, ClassroomId = classroomId, Date = date.ToDateTime(TimeOnly.MinValue) });
+        return await conn.QueryFunctionAsync<ChildCareEvent>(
+            "fn_get_child_care_events_by_classroom_and_date",
+            new { TenantId = tenantId, ClassroomId = classroomId, Date = date.ToDateTime(TimeOnly.MinValue) },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildCareEvent>> GetEventsByBranchAndDateAsync(Guid tenantId, Guid branchId, DateOnly date, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_events e
-            JOIN children c ON e.child_id = c.id
-            LEFT JOIN classrooms cl ON e.classroom_id = cl.id
-            WHERE e.tenant_id = @TenantId 
-              AND e.branch_id = @BranchId
-              AND (e.event_time::date = @Date OR (e.event_time AT TIME ZONE 'America/New_York')::date = @Date)
-            ORDER BY e.event_time DESC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCareEvent>(sql, new { TenantId = tenantId, BranchId = branchId, Date = date.ToDateTime(TimeOnly.MinValue) });
+        return await conn.QueryFunctionAsync<ChildCareEvent>(
+            "fn_get_child_care_events_by_branch_and_date",
+            new { TenantId = tenantId, BranchId = branchId, Date = date.ToDateTime(TimeOnly.MinValue) },
+            cancellationToken: cancellationToken);
     }
 
     // ==========================================
@@ -172,19 +162,13 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         if (session.Id == Guid.Empty)
             session.Id = Guid.NewGuid();
 
-        const string sql = @"
-            INSERT INTO child_nap_sessions (
-                id, tenant_id, organization_id, branch_id, classroom_id, child_id,
-                start_time, status, notes, started_by_user_id, started_by_name,
-                parent_visible, created_at, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId, @ChildId,
-                @StartTime, 'Active', @Notes, @StartedByUserId, @StartedByName,
-                @ParentVisible, @CreatedAt, @UpdatedAt
-            );";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, session);
+        await conn.ExecuteProcedureAsync(
+            "sp_start_child_nap_session",
+            session,
+            parameterNames: StartNapSessionParams,
+            cancellationToken: cancellationToken);
+
         return session.Id;
     }
 
@@ -199,76 +183,49 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         string? endedByName,
         CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            UPDATE child_nap_sessions
-            SET end_time = @EndTime,
-                duration_minutes = @DurationMinutes,
-                status = 'Completed',
-                outcome = @Outcome,
-                notes = COALESCE(@Notes, notes),
-                ended_by_user_id = @EndedByUserId,
-                ended_by_name = @EndedByName,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = @SessionId AND tenant_id = @TenantId;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, new
-        {
-            TenantId = tenantId,
-            SessionId = sessionId,
-            EndTime = endTime,
-            DurationMinutes = durationMinutes,
-            Outcome = outcome,
-            Notes = notes,
-            EndedByUserId = endedByUserId,
-            EndedByName = endedByName
-        });
+        await conn.ExecuteProcedureAsync(
+            "sp_end_child_nap_session",
+            new
+            {
+                TenantId = tenantId,
+                SessionId = sessionId,
+                EndTime = endTime,
+                DurationMinutes = durationMinutes,
+                Outcome = outcome,
+                Notes = notes,
+                EndedByUserId = endedByUserId,
+                EndedByName = endedByName
+            },
+            parameterNames: EndNapSessionParams,
+            cancellationToken: cancellationToken);
     }
 
     public async Task<ChildNapSession?> GetActiveNapSessionAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT s.*, CONCAT(c.first_name, ' ', c.last_name) AS ChildName
-            FROM child_nap_sessions s
-            JOIN children c ON s.child_id = c.id
-            WHERE s.tenant_id = @TenantId 
-              AND s.child_id = @ChildId 
-              AND s.status = 'Active'
-            ORDER BY s.start_time DESC
-            LIMIT 1;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QuerySingleOrDefaultAsync<ChildNapSession>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await conn.QuerySingleFunctionAsync<ChildNapSession>(
+            "fn_get_active_child_nap_session",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildNapSession>> GetActiveNapsByClassroomAsync(Guid tenantId, Guid classroomId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT s.*, CONCAT(c.first_name, ' ', c.last_name) AS ChildName
-            FROM child_nap_sessions s
-            JOIN children c ON s.child_id = c.id
-            WHERE s.tenant_id = @TenantId 
-              AND s.classroom_id = @ClassroomId 
-              AND s.status = 'Active'
-            ORDER BY s.start_time ASC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildNapSession>(sql, new { TenantId = tenantId, ClassroomId = classroomId });
+        return await conn.QueryFunctionAsync<ChildNapSession>(
+            "fn_get_active_child_naps_by_classroom",
+            new { TenantId = tenantId, ClassroomId = classroomId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildNapSession>> GetNapsByChildAndDateAsync(Guid tenantId, Guid childId, DateOnly date, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT s.*, CONCAT(c.first_name, ' ', c.last_name) AS ChildName
-            FROM child_nap_sessions s
-            JOIN children c ON s.child_id = c.id
-            WHERE s.tenant_id = @TenantId 
-              AND s.child_id = @ChildId
-              AND s.start_time::date = @Date
-            ORDER BY s.start_time ASC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildNapSession>(sql, new { TenantId = tenantId, ChildId = childId, Date = date.ToDateTime(TimeOnly.MinValue) });
+        return await conn.QueryFunctionAsync<ChildNapSession>(
+            "fn_get_child_naps_by_child_and_date",
+            new { TenantId = tenantId, ChildId = childId, Date = date.ToDateTime(TimeOnly.MinValue) },
+            cancellationToken: cancellationToken);
     }
 
     // ==========================================
@@ -277,18 +234,11 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
 
     public async Task<ChildCarePlan?> GetActiveCarePlanAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT p.*, CONCAT(c.first_name, ' ', c.last_name) AS ChildName
-            FROM child_care_plans p
-            JOIN children c ON p.child_id = c.id
-            WHERE p.tenant_id = @TenantId 
-              AND p.child_id = @ChildId 
-              AND p.status = 'Active'
-            ORDER BY p.version DESC
-            LIMIT 1;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QuerySingleOrDefaultAsync<ChildCarePlan>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await conn.QuerySingleFunctionAsync<ChildCarePlan>(
+            "fn_get_active_child_care_plan",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Guid> SaveCarePlanAsync(ChildCarePlan plan, CancellationToken cancellationToken = default)
@@ -296,63 +246,47 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         if (plan.Id == Guid.Empty)
             plan.Id = Guid.NewGuid();
 
-        const string sql = @"
-            INSERT INTO child_care_plans (
-                id, tenant_id, organization_id, branch_id, child_id, version,
-                diaper_routine_guidance, feeding_instructions, bottle_schedule_guidance,
-                sleep_routine_guidance, toileting_support_plan, comfort_calming_preferences,
-                required_supplies_note, dietary_allergies_summary, effective_date, review_date,
-                status, created_by_user_id, approved_by_user_id, approved_at, created_at, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @ChildId, @Version,
-                @DiaperRoutineGuidance, @FeedingInstructions, @BottleScheduleGuidance,
-                @SleepRoutineGuidance, @ToiletingSupportPlan, @ComfortCalmingPreferences,
-                @RequiredSuppliesNote, @DietaryAllergiesSummary, @EffectiveDate, @ReviewDate,
-                @Status, @CreatedByUserId, @ApprovedByUserId, @ApprovedAt, @CreatedAt, @UpdatedAt
-            );";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, new
-        {
-            plan.Id,
-            plan.TenantId,
-            plan.OrganizationId,
-            plan.BranchId,
-            plan.ChildId,
-            plan.Version,
-            plan.DiaperRoutineGuidance,
-            plan.FeedingInstructions,
-            plan.BottleScheduleGuidance,
-            plan.SleepRoutineGuidance,
-            plan.ToiletingSupportPlan,
-            plan.ComfortCalmingPreferences,
-            plan.RequiredSuppliesNote,
-            plan.DietaryAllergiesSummary,
-            EffectiveDate = plan.EffectiveDate.ToDateTime(TimeOnly.MinValue),
-            ReviewDate = plan.ReviewDate.HasValue ? plan.ReviewDate.Value.ToDateTime(TimeOnly.MinValue) : (DateTime?)null,
-            plan.Status,
-            plan.CreatedByUserId,
-            plan.ApprovedByUserId,
-            plan.ApprovedAt,
-            plan.CreatedAt,
-            plan.UpdatedAt
-        });
+        await conn.ExecuteProcedureAsync(
+            "sp_save_child_care_plan",
+            new
+            {
+                plan.Id,
+                plan.TenantId,
+                plan.OrganizationId,
+                plan.BranchId,
+                plan.ChildId,
+                plan.Version,
+                plan.DiaperRoutineGuidance,
+                plan.FeedingInstructions,
+                plan.BottleScheduleGuidance,
+                plan.SleepRoutineGuidance,
+                plan.ToiletingSupportPlan,
+                plan.ComfortCalmingPreferences,
+                plan.RequiredSuppliesNote,
+                plan.DietaryAllergiesSummary,
+                EffectiveDate = plan.EffectiveDate.ToDateTime(TimeOnly.MinValue),
+                ReviewDate = plan.ReviewDate.HasValue ? plan.ReviewDate.Value.ToDateTime(TimeOnly.MinValue) : (DateTime?)null,
+                plan.Status,
+                plan.CreatedByUserId,
+                plan.ApprovedByUserId,
+                plan.ApprovedAt,
+                plan.CreatedAt,
+                plan.UpdatedAt
+            },
+            parameterNames: SaveCarePlanParams,
+            cancellationToken: cancellationToken);
+
         return plan.Id;
     }
 
     public async Task<IEnumerable<ChildCarePlan>> GetCarePlansByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT p.*, CONCAT(c.first_name, ' ', c.last_name) AS ChildName
-            FROM child_care_plans p
-            JOIN children c ON p.child_id = c.id
-            WHERE p.tenant_id = @TenantId 
-              AND p.branch_id = @BranchId 
-              AND p.status = 'Active'
-            ORDER BY c.first_name ASC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCarePlan>(sql, new { TenantId = tenantId, BranchId = branchId });
+        return await conn.QueryFunctionAsync<ChildCarePlan>(
+            "fn_get_child_care_plans_by_branch",
+            new { TenantId = tenantId, BranchId = branchId },
+            cancellationToken: cancellationToken);
     }
 
     // ==========================================
@@ -361,36 +295,20 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
 
     public async Task<IEnumerable<ChildCareSupply>> GetSuppliesByChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT s.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_supplies s
-            JOIN children c ON s.child_id = c.id
-            LEFT JOIN classrooms cl ON s.classroom_id = cl.id
-            WHERE s.tenant_id = @TenantId AND s.child_id = @ChildId
-            ORDER BY s.supply_type ASC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCareSupply>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await conn.QueryFunctionAsync<ChildCareSupply>(
+            "fn_get_child_care_supplies_by_child",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildCareSupply>> GetLowSuppliesByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT s.*, 
-                   CONCAT(c.first_name, ' ', c.last_name) AS ChildName,
-                   cl.name AS ClassroomName
-            FROM child_care_supplies s
-            JOIN children c ON s.child_id = c.id
-            LEFT JOIN classrooms cl ON s.classroom_id = cl.id
-            WHERE s.tenant_id = @TenantId 
-              AND s.branch_id = @BranchId 
-              AND s.status IN ('Low', 'Depleted')
-            ORDER BY s.updated_at DESC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<ChildCareSupply>(sql, new { TenantId = tenantId, BranchId = branchId });
+        return await conn.QueryFunctionAsync<ChildCareSupply>(
+            "fn_get_low_child_care_supplies_by_branch",
+            new { TenantId = tenantId, BranchId = branchId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Guid> SaveSupplyStatusAsync(ChildCareSupply supply, CancellationToken cancellationToken = default)
@@ -400,28 +318,13 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
 
         supply.UpdatedAt = DateTime.UtcNow;
 
-        const string sql = @"
-            INSERT INTO child_care_supplies (
-                id, tenant_id, organization_id, branch_id, classroom_id, child_id,
-                supply_type, status, notes, threshold_note, last_reported_by_user_id,
-                last_reported_by_name, parent_reminder_sent, last_reminder_at, created_at, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId, @ChildId,
-                @SupplyType, @Status, @Notes, @ThresholdNote, @LastReportedByUserId,
-                @LastReportedByName, @ParentReminderSent, @LastReminderAt, @CreatedAt, @UpdatedAt
-            )
-            ON CONFLICT (id) DO UPDATE
-            SET status = EXCLUDED.status,
-                notes = EXCLUDED.notes,
-                threshold_note = EXCLUDED.threshold_note,
-                last_reported_by_user_id = EXCLUDED.last_reported_by_user_id,
-                last_reported_by_name = EXCLUDED.last_reported_by_name,
-                parent_reminder_sent = EXCLUDED.parent_reminder_sent,
-                last_reminder_at = EXCLUDED.last_reminder_at,
-                updated_at = EXCLUDED.updated_at;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, supply);
+        await conn.ExecuteProcedureAsync(
+            "sp_save_child_care_supply_status",
+            supply,
+            parameterNames: SaveSupplyStatusParams,
+            cancellationToken: cancellationToken);
+
         return supply.Id;
     }
 
@@ -433,97 +336,57 @@ public class ChildDailyCareRepository : IChildDailyCareRepository
         handover.CreatedAt = DateTime.UtcNow;
         handover.UpdatedAt = DateTime.UtcNow;
 
-        const string sql = @"
-            INSERT INTO teacher_handovers (
-                id, tenant_id, organization_id, branch_id, classroom_id, handover_date,
-                shift_type, outgoing_teacher_user_id, outgoing_teacher_name,
-                incoming_teacher_user_id, incoming_teacher_name, summary_notes,
-                child_specific_notes, outstanding_care_tasks, pending_followups,
-                status, is_critical, created_at, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId, @HandoverDate,
-                @ShiftType, @OutgoingTeacherUserId, @OutgoingTeacherName,
-                @IncomingTeacherUserId, @IncomingTeacherName, @SummaryNotes,
-                @ChildSpecificNotes, @OutstandingCareTasks, @PendingFollowups,
-                @Status, @IsCritical, @CreatedAt, @UpdatedAt
-            );";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, handover);
+        await conn.ExecuteProcedureAsync(
+            "sp_create_teacher_handover",
+            handover,
+            parameterNames: CreateHandoverParams,
+            cancellationToken: cancellationToken);
+
         return handover.Id;
     }
 
     public async Task AcknowledgeHandoverAsync(Guid tenantId, Guid handoverId, Guid acknowledgedByUserId, string acknowledgedByName, string? notes, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            UPDATE teacher_handovers
-            SET status = 'Acknowledged',
-                acknowledged_at = NOW(),
-                acknowledged_by_user_id = @UserId,
-                acknowledged_by_name = @UserName,
-                acknowledgement_notes = @Notes,
-                updated_at = NOW()
-            WHERE id = @HandoverId AND tenant_id = @TenantId;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await conn.ExecuteAsync(sql, new
-        {
-            TenantId = tenantId,
-            HandoverId = handoverId,
-            UserId = acknowledgedByUserId,
-            UserName = acknowledgedByName,
-            Notes = notes
-        });
+        await conn.ExecuteProcedureAsync(
+            "sp_acknowledge_teacher_handover",
+            new
+            {
+                TenantId = tenantId,
+                HandoverId = handoverId,
+                UserId = acknowledgedByUserId,
+                UserName = acknowledgedByName,
+                Notes = notes
+            },
+            parameterNames: AcknowledgeHandoverParams,
+            cancellationToken: cancellationToken);
     }
 
     public async Task<TeacherHandover?> GetHandoverByIdAsync(Guid tenantId, Guid handoverId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT th.*,
-                   cl.name AS ClassroomName,
-                   b.name AS BranchName
-            FROM teacher_handovers th
-            JOIN classrooms cl ON th.classroom_id = cl.id
-            JOIN branches b ON th.branch_id = b.id
-            WHERE th.id = @HandoverId AND th.tenant_id = @TenantId;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryFirstOrDefaultAsync<TeacherHandover>(sql, new { TenantId = tenantId, HandoverId = handoverId });
+        return await conn.QuerySingleFunctionAsync<TeacherHandover>(
+            "fn_get_teacher_handover_by_id",
+            new { TenantId = tenantId, HandoverId = handoverId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<TeacherHandover>> GetHandoversByClassroomAndDateAsync(Guid tenantId, Guid classroomId, DateOnly date, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT th.*,
-                   cl.name AS ClassroomName,
-                   b.name AS BranchName
-            FROM teacher_handovers th
-            JOIN classrooms cl ON th.classroom_id = cl.id
-            JOIN branches b ON th.branch_id = b.id
-            WHERE th.tenant_id = @TenantId 
-              AND th.classroom_id = @ClassroomId 
-              AND th.handover_date = @Date
-            ORDER BY th.created_at DESC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<TeacherHandover>(sql, new { TenantId = tenantId, ClassroomId = classroomId, Date = date });
+        return await conn.QueryFunctionAsync<TeacherHandover>(
+            "fn_get_teacher_handovers_by_classroom_and_date",
+            new { TenantId = tenantId, ClassroomId = classroomId, Date = date },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<TeacherHandover>> GetPendingHandoversByBranchAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT th.*,
-                   cl.name AS ClassroomName,
-                   b.name AS BranchName
-            FROM teacher_handovers th
-            JOIN classrooms cl ON th.classroom_id = cl.id
-            JOIN branches b ON th.branch_id = b.id
-            WHERE th.tenant_id = @TenantId 
-              AND th.branch_id = @BranchId 
-              AND th.status = 'PendingAcknowledgement'
-            ORDER BY th.is_critical DESC, th.created_at DESC;";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await conn.QueryAsync<TeacherHandover>(sql, new { TenantId = tenantId, BranchId = branchId });
+        return await conn.QueryFunctionAsync<TeacherHandover>(
+            "fn_get_pending_teacher_handovers_by_branch",
+            new { TenantId = tenantId, BranchId = branchId },
+            cancellationToken: cancellationToken);
     }
 }

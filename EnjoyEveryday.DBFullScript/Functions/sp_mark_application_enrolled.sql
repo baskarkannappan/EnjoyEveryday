@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_mark_application_enrolled
+-- Backup generated on 2026-10-25 20:34:03
+
+CREATE OR REPLACE PROCEDURE public.sp_mark_application_enrolled(IN p_tenant_id uuid, IN p_application_id uuid, IN p_child_id uuid, IN p_classroom_id uuid, IN p_base_rate numeric, IN p_deposit_held numeric, IN p_discount_percent numeric, IN p_enrollment_log text)  LANGUAGE plpgsql AS $procedure$ BEGIN     UPDATE enrollment_pipeline_applications     SET pipeline_stage = 'Enrolled',         child_id = p_child_id,         target_classroom_id = p_classroom_id,         tuition_monthly_rate = p_base_rate,         deposit_amount = p_deposit_held,         sibling_discount_percent = p_discount_percent,         internal_notes = COALESCE(internal_notes || E'\n', '') || p_enrollment_log,         updated_at = NOW()     WHERE tenant_id = p_tenant_id AND id = p_application_id; END; $procedure$ ;

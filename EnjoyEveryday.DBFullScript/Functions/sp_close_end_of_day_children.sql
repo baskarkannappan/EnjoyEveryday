@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_close_end_of_day_children
+-- Backup generated on 2026-10-25 20:33:49
+
+CREATE OR REPLACE PROCEDURE public.sp_close_end_of_day_children(IN p_departure time without time zone, IN p_user_id uuid, IN p_ids uuid[])  LANGUAGE plpgsql AS $procedure$ BEGIN     UPDATE child_attendance     SET departure_time = p_departure,         pickup_person_name = 'System Auto-Closed',         pickup_person_relationship = 'System Process',         pickup_verification_method = 'System Auto-Closed',         pickup_notes = CASE WHEN pickup_notes IS NULL OR pickup_notes = '' THEN 'System auto-checkout at End of Day'                             ELSE pickup_notes || ' · System auto-checkout at End of Day' END,         departure_verified_by_user_id = p_user_id,         updated_at = CURRENT_TIMESTAMP     WHERE id = ANY(p_ids); END; $procedure$ ;

@@ -1,7 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.Data;
-using Dapper;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using Microsoft.Extensions.Logging;
 
@@ -21,36 +26,23 @@ public class BillingRepository : IBillingRepository
     public async Task<List<Invoice>> GetInvoicesForOrganizationAsync(Guid tenantId, Guid organizationId, bool includeDrafts, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT id, tenant_id, organization_id, invoice_number, billing_period,
-                   subtotal, discount_amount, tax_amount, total_amount, amount_paid,
-                   currency, status, issue_date, due_date, paid_at, published_at,
-                   published_by, voided_at, voided_by, void_reason, created_by,
-                   description, notes, payment_instructions, billing_contact_email,
-                   document_storage_key, created_at, updated_at
-            FROM invoices
-            WHERE organization_id = @OrganizationId AND tenant_id = @TenantId " +
-            (includeDrafts ? "" : "AND status != 'Draft' ") +
-            "ORDER BY issue_date DESC, created_at DESC";
+        var invoices = (await conn.QueryFunctionAsync<InvoiceRow>(
+            "fn_get_invoices_for_organization",
+            new { TenantId = tenantId, OrganizationId = organizationId, IncludeDrafts = includeDrafts },
+            cancellationToken: ct)).ToList();
 
-        var invoices = (await conn.QueryAsync<InvoiceRow>(sql, new { OrganizationId = organizationId, TenantId = tenantId })).ToList();
         if (invoices.Count == 0) return new List<Invoice>();
 
         var invoiceIds = invoices.Select(x => x.Id).ToArray();
-        const string lineItemsSql = @"
-            SELECT id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
-            FROM invoice_line_items
-            WHERE invoice_id = ANY(@InvoiceIds)
-            ORDER BY line_number ASC";
-        var lineItemsLookup = (await conn.QueryAsync<InvoiceLineItem>(lineItemsSql, new { InvoiceIds = invoiceIds }))
-            .ToLookup(x => x.InvoiceId);
+        var lineItemsLookup = (await conn.QueryFunctionAsync<InvoiceLineItem>(
+            "fn_get_invoice_line_items_by_ids",
+            new { InvoiceIds = invoiceIds },
+            cancellationToken: ct)).ToLookup(x => x.InvoiceId);
 
-        var paymentsSql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE invoice_id = ANY(@InvoiceIds)
-            ORDER BY payment_date ASC";
-        var paymentsLookup = (await conn.QueryAsync<Payment>(paymentsSql, new { InvoiceIds = invoiceIds }))
+        var paymentsLookup = (await conn.QueryFunctionAsync<Payment>(
+            "fn_get_payments_by_invoice_ids",
+            new { InvoiceIds = invoiceIds },
+            cancellationToken: ct))
             .Where(p => p.InvoiceId.HasValue)
             .ToLookup(p => p.InvoiceId!.Value);
 
@@ -69,46 +61,24 @@ public class BillingRepository : IBillingRepository
     public async Task<List<Invoice>> GetAllInvoicesAsync(Guid? tenantId, Guid? organizationId, InvoiceStatus? status, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT id, tenant_id, organization_id, invoice_number, billing_period,
-                   subtotal, discount_amount, tax_amount, total_amount, amount_paid,
-                   currency, status, issue_date, due_date, paid_at, published_at,
-                   published_by, voided_at, voided_by, void_reason, created_by,
-                   description, notes, payment_instructions, billing_contact_email,
-                   document_storage_key, created_at, updated_at
-            FROM invoices
-            WHERE 1=1 ";
-
-        if (tenantId.HasValue && tenantId.Value != Guid.Empty)
-            sql += " AND tenant_id = @TenantId ";
-
-        if (organizationId.HasValue && organizationId.Value != Guid.Empty)
-            sql += " AND organization_id = @OrganizationId ";
-
-        if (status.HasValue)
-            sql += " AND status = @Status ";
-
-        sql += " ORDER BY issue_date DESC, created_at DESC";
-
         var statusString = status?.ToString();
-        var invoices = (await conn.QueryAsync<InvoiceRow>(sql, new { TenantId = tenantId, OrganizationId = organizationId, Status = statusString })).ToList();
+        var invoices = (await conn.QueryFunctionAsync<InvoiceRow>(
+            "fn_get_all_invoices",
+            new { TenantId = tenantId, OrganizationId = organizationId, Status = statusString },
+            cancellationToken: ct)).ToList();
+
         if (invoices.Count == 0) return new List<Invoice>();
 
         var invoiceIds = invoices.Select(x => x.Id).ToArray();
-        const string lineItemsSql = @"
-            SELECT id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
-            FROM invoice_line_items
-            WHERE invoice_id = ANY(@InvoiceIds)
-            ORDER BY line_number ASC";
-        var lineItemsLookup = (await conn.QueryAsync<InvoiceLineItem>(lineItemsSql, new { InvoiceIds = invoiceIds }))
-            .ToLookup(x => x.InvoiceId);
+        var lineItemsLookup = (await conn.QueryFunctionAsync<InvoiceLineItem>(
+            "fn_get_invoice_line_items_by_ids",
+            new { InvoiceIds = invoiceIds },
+            cancellationToken: ct)).ToLookup(x => x.InvoiceId);
 
-        var paymentsSql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE invoice_id = ANY(@InvoiceIds)
-            ORDER BY payment_date ASC";
-        var paymentsLookup = (await conn.QueryAsync<Payment>(paymentsSql, new { InvoiceIds = invoiceIds }))
+        var paymentsLookup = (await conn.QueryFunctionAsync<Payment>(
+            "fn_get_payments_by_invoice_ids",
+            new { InvoiceIds = invoiceIds },
+            cancellationToken: ct))
             .Where(p => p.InvoiceId.HasValue)
             .ToLookup(p => p.InvoiceId!.Value);
 
@@ -127,18 +97,12 @@ public class BillingRepository : IBillingRepository
     public async Task<Invoice?> GetInvoiceByIdAsync(Guid tenantId, Guid invoiceId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT id, tenant_id, organization_id, invoice_number, billing_period,
-                   subtotal, discount_amount, tax_amount, total_amount, amount_paid,
-                   currency, status, issue_date, due_date, paid_at, published_at,
-                   published_by, voided_at, voided_by, void_reason, created_by,
-                   description, notes, payment_instructions, billing_contact_email,
-                   document_storage_key, created_at, updated_at
-            FROM invoices
-            WHERE id = @InvoiceId " +
-            (tenantId != Guid.Empty ? " AND tenant_id = @TenantId" : "");
+        var tId = tenantId == Guid.Empty ? (Guid?)null : tenantId;
+        var row = await conn.QuerySingleFunctionAsync<InvoiceRow>(
+            "fn_get_invoice_by_id",
+            new { TenantId = tId, InvoiceId = invoiceId },
+            cancellationToken: ct);
 
-        var row = await conn.QuerySingleOrDefaultAsync<InvoiceRow>(sql, new { InvoiceId = invoiceId, TenantId = tenantId });
         if (row == null) return null;
 
         var invoice = MapToInvoice(row);
@@ -150,17 +114,11 @@ public class BillingRepository : IBillingRepository
     public async Task<Invoice?> GetInvoiceByNumberAsync(string invoiceNumber, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        const string sql = @"
-            SELECT id, tenant_id, organization_id, invoice_number, billing_period,
-                   subtotal, discount_amount, tax_amount, total_amount, amount_paid,
-                   currency, status, issue_date, due_date, paid_at, published_at,
-                   published_by, voided_at, voided_by, void_reason, created_by,
-                   description, notes, payment_instructions, billing_contact_email,
-                   document_storage_key, created_at, updated_at
-            FROM invoices
-            WHERE invoice_number = @InvoiceNumber";
+        var row = await conn.QuerySingleFunctionAsync<InvoiceRow>(
+            "fn_get_invoice_by_number",
+            new { InvoiceNumber = invoiceNumber.Trim() },
+            cancellationToken: ct);
 
-        var row = await conn.QuerySingleOrDefaultAsync<InvoiceRow>(sql, new { InvoiceNumber = invoiceNumber.Trim() });
         if (row == null) return null;
 
         var invoice = MapToInvoice(row);
@@ -175,24 +133,7 @@ public class BillingRepository : IBillingRepository
         using var trans = conn.BeginTransaction();
         try
         {
-            const string insertInvoiceSql = @"
-                INSERT INTO invoices (
-                    id, tenant_id, organization_id, invoice_number, billing_period,
-                    subtotal, discount_amount, tax_amount, total_amount, amount_paid,
-                    currency, status, issue_date, due_date, paid_at, published_at,
-                    published_by, voided_at, voided_by, void_reason, created_by,
-                    description, notes, payment_instructions, billing_contact_email,
-                    document_storage_key, created_at, updated_at
-                ) VALUES (
-                    @Id, @TenantId, @OrganizationId, @InvoiceNumber, @BillingPeriod,
-                    @Subtotal, @DiscountAmount, @TaxAmount, @TotalAmount, @AmountPaid,
-                    @Currency, @Status, @IssueDate, @DueDate, @PaidAt, @PublishedAt,
-                    @PublishedBy, @VoidedAt, @VoidedBy, @VoidReason, @CreatedBy,
-                    @Description, @Notes, @PaymentInstructions, @BillingContactEmail,
-                    @DocumentStorageKey, @CreatedAt, @UpdatedAt
-                )";
-
-            await conn.ExecuteAsync(insertInvoiceSql, new
+            await conn.ExecuteProcedureAsync("sp_insert_invoice", new
             {
                 invoice.Id,
                 invoice.TenantId,
@@ -222,22 +163,15 @@ public class BillingRepository : IBillingRepository
                 invoice.DocumentStorageKey,
                 CreatedAt = ToUtc(invoice.CreatedAt),
                 UpdatedAt = ToUtc(invoice.UpdatedAt)
-            }, trans);
+            }, transaction: trans, cancellationToken: ct);
 
             if (invoice.LineItems.Any())
             {
-                const string insertItemSql = @"
-                    INSERT INTO invoice_line_items (
-                        id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
-                    ) VALUES (
-                        @Id, @InvoiceId, @LineNumber, @Description, @Quantity, @UnitPrice, @LineTotal, @Category, @CreatedAt
-                    )";
-
                 foreach (var item in invoice.LineItems)
                 {
                     if (item.Id == Guid.Empty) item.Id = Guid.NewGuid();
                     item.InvoiceId = invoice.Id;
-                    await conn.ExecuteAsync(insertItemSql, new
+                    await conn.ExecuteProcedureAsync("sp_insert_invoice_line_item", new
                     {
                         item.Id,
                         item.InvoiceId,
@@ -248,7 +182,7 @@ public class BillingRepository : IBillingRepository
                         LineTotal = item.LineTotal,
                         item.Category,
                         CreatedAt = ToUtc(item.CreatedAt)
-                    }, trans);
+                    }, transaction: trans, cancellationToken: ct);
                 }
             }
 
@@ -268,31 +202,7 @@ public class BillingRepository : IBillingRepository
         using var trans = conn.BeginTransaction();
         try
         {
-            const string updateInvoiceSql = @"
-                UPDATE invoices SET
-                    subtotal = @Subtotal,
-                    discount_amount = @DiscountAmount,
-                    tax_amount = @TaxAmount,
-                    total_amount = @TotalAmount,
-                    amount_paid = @AmountPaid,
-                    status = @Status,
-                    issue_date = @IssueDate,
-                    due_date = @DueDate,
-                    paid_at = @PaidAt,
-                    published_at = @PublishedAt,
-                    published_by = @PublishedBy,
-                    voided_at = @VoidedAt,
-                    voided_by = @VoidedBy,
-                    void_reason = @VoidReason,
-                    description = @Description,
-                    notes = @Notes,
-                    payment_instructions = @PaymentInstructions,
-                    billing_contact_email = @BillingContactEmail,
-                    document_storage_key = @DocumentStorageKey,
-                    updated_at = @UpdatedAt
-                WHERE id = @Id AND tenant_id = @TenantId";
-
-            var rows = await conn.ExecuteAsync(updateInvoiceSql, new
+            await conn.ExecuteProcedureAsync("sp_update_invoice", new
             {
                 invoice.Id,
                 invoice.TenantId,
@@ -316,24 +226,18 @@ public class BillingRepository : IBillingRepository
                 invoice.BillingContactEmail,
                 invoice.DocumentStorageKey,
                 UpdatedAt = DateTimeOffset.UtcNow
-            }, trans);
+            }, transaction: trans, cancellationToken: ct);
 
             // Re-sync line items if draft
             if (invoice.Status == InvoiceStatus.Draft && invoice.LineItems.Any())
             {
-                await conn.ExecuteAsync("DELETE FROM invoice_line_items WHERE invoice_id = @InvoiceId", new { InvoiceId = invoice.Id }, trans);
-                const string insertItemSql = @"
-                    INSERT INTO invoice_line_items (
-                        id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
-                    ) VALUES (
-                        @Id, @InvoiceId, @LineNumber, @Description, @Quantity, @UnitPrice, @LineTotal, @Category, @CreatedAt
-                    )";
+                await conn.ExecuteProcedureAsync("sp_delete_invoice_line_items", new { InvoiceId = invoice.Id }, transaction: trans, cancellationToken: ct);
 
                 foreach (var item in invoice.LineItems)
                 {
                     if (item.Id == Guid.Empty) item.Id = Guid.NewGuid();
                     item.InvoiceId = invoice.Id;
-                    await conn.ExecuteAsync(insertItemSql, new
+                    await conn.ExecuteProcedureAsync("sp_insert_invoice_line_item", new
                     {
                         item.Id,
                         item.InvoiceId,
@@ -344,12 +248,12 @@ public class BillingRepository : IBillingRepository
                         LineTotal = item.LineTotal,
                         item.Category,
                         CreatedAt = ToUtc(item.CreatedAt)
-                    }, trans);
+                    }, transaction: trans, cancellationToken: ct);
                 }
             }
 
             trans.Commit();
-            return rows > 0;
+            return true;
         }
         catch
         {
@@ -357,19 +261,6 @@ public class BillingRepository : IBillingRepository
             throw;
         }
     }
-
-    private const string PaymentSelectColumns = @"
-        id, tenant_id AS TenantId, organization_id AS OrganizationId, 
-        invoice_id AS InvoiceId, invoice_number AS InvoiceNumber,
-        payment_reference AS PaymentReference, amount, currency, method, 
-        is_verified AS IsVerified, verified_by AS VerifiedBy, verified_at AS VerifiedAt, 
-        status, transaction_id AS TransactionId, notes,
-        provider_order_id AS ProviderOrderId, provider_payment_id AS ProviderPaymentId, 
-        provider_signature AS ProviderSignature, receipt_number AS ReceiptNumber,
-        recorded_by_user_id AS RecordedByUserId, recorded_by_email AS RecordedByEmail,
-        is_reversed AS IsReversed, reversed_at AS ReversedAt, reversed_by AS ReversedBy,
-        reversal_reason AS ReversalReason, reversal_reference AS ReversalReference,
-        audit_metadata AS AuditMetadata, payment_date AS PaymentDate, created_at AS CreatedAt";
 
     public async Task<Payment> RecordPaymentAsync(Payment payment, CancellationToken ct = default)
     {
@@ -380,12 +271,12 @@ public class BillingRepository : IBillingRepository
             // Idempotency: if provider_payment_id is already present, return existing record
             if (!string.IsNullOrWhiteSpace(payment.ProviderPaymentId))
             {
-                var existingSql = @"
-                    SELECT " + PaymentSelectColumns + @"
-                    FROM payments
-                    WHERE provider_payment_id = @ProviderPaymentId AND is_reversed = FALSE
-                    LIMIT 1";
-                var existing = await conn.QuerySingleOrDefaultAsync<Payment>(existingSql, new { payment.ProviderPaymentId }, trans);
+                var existing = await conn.QuerySingleFunctionAsync<Payment>(
+                    "fn_get_payment_by_provider_payment_id",
+                    new { ProviderPaymentId = payment.ProviderPaymentId },
+                    transaction: trans,
+                    cancellationToken: ct);
+
                 if (existing != null)
                 {
                     trans.Commit();
@@ -395,27 +286,7 @@ public class BillingRepository : IBillingRepository
 
             if (payment.Id == Guid.Empty) payment.Id = Guid.NewGuid();
 
-            const string insertPaymentSql = @"
-                INSERT INTO payments (
-                    id, tenant_id, organization_id, invoice_id, invoice_number,
-                    payment_reference, amount, currency, method, is_verified,
-                    verified_by, verified_at, status, transaction_id, notes,
-                    provider_order_id, provider_payment_id, provider_signature,
-                    receipt_number, recorded_by_user_id, recorded_by_email,
-                    is_reversed, reversed_at, reversed_by, reversal_reason, reversal_reference,
-                    audit_metadata, payment_date, created_at
-                ) VALUES (
-                    @Id, @TenantId, @OrganizationId, @InvoiceId, @InvoiceNumber,
-                    @PaymentReference, @Amount, @Currency, @Method, @IsVerified,
-                    @VerifiedBy, @VerifiedAt, @Status, @TransactionId, @Notes,
-                    @ProviderOrderId, @ProviderPaymentId, @ProviderSignature,
-                    @ReceiptNumber, @RecordedByUserId, @RecordedByEmail,
-                    @IsReversed, @ReversedAt, @ReversedBy, @ReversalReason, @ReversalReference,
-                    CASE WHEN @AuditMetadata IS NULL THEN NULL ELSE @AuditMetadata::jsonb END,
-                    @PaymentDate, @CreatedAt
-                )";
-
-            await conn.ExecuteAsync(insertPaymentSql, new
+            await conn.ExecuteProcedureAsync("sp_insert_payment", new
             {
                 payment.Id,
                 payment.TenantId,
@@ -446,12 +317,12 @@ public class BillingRepository : IBillingRepository
                 payment.AuditMetadata,
                 PaymentDate = ToUtc(payment.PaymentDate),
                 CreatedAt = ToUtc(payment.CreatedAt)
-            }, trans);
+            }, transaction: trans, cancellationToken: ct);
 
             // Transactional balance & status recalculation from valid ledger records
             if (payment.InvoiceId.HasValue && payment.InvoiceId.Value != Guid.Empty)
             {
-                await RecalculateInvoiceBalanceInternalAsync(conn, trans, payment.InvoiceId.Value);
+                await conn.ExecuteProcedureAsync("sp_recalculate_invoice_balance", new { InvoiceId = payment.InvoiceId.Value }, transaction: trans, cancellationToken: ct);
             }
 
             trans.Commit();
@@ -467,33 +338,28 @@ public class BillingRepository : IBillingRepository
     public async Task<Payment?> GetPaymentByIdAsync(Guid paymentId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE id = @PaymentId";
-        return await conn.QuerySingleOrDefaultAsync<Payment>(sql, new { PaymentId = paymentId });
+        return await conn.QuerySingleFunctionAsync<Payment>(
+            "fn_get_payment_by_id",
+            new { PaymentId = paymentId },
+            cancellationToken: ct);
     }
 
     public async Task<Payment?> GetPaymentByProviderPaymentIdAsync(string providerPaymentId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE provider_payment_id = @ProviderPaymentId AND is_reversed = FALSE
-            LIMIT 1";
-        return await conn.QuerySingleOrDefaultAsync<Payment>(sql, new { ProviderPaymentId = providerPaymentId.Trim() });
+        return await conn.QuerySingleFunctionAsync<Payment>(
+            "fn_get_payment_by_provider_payment_id",
+            new { ProviderPaymentId = providerPaymentId.Trim() },
+            cancellationToken: ct);
     }
 
     public async Task<Payment?> GetPaymentByReceiptNumberAsync(string receiptNumber, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE receipt_number = @ReceiptNumber AND is_reversed = FALSE
-            LIMIT 1";
-        return await conn.QuerySingleOrDefaultAsync<Payment>(sql, new { ReceiptNumber = receiptNumber.Trim() });
+        return await conn.QuerySingleFunctionAsync<Payment>(
+            "fn_get_payment_by_receipt_number",
+            new { ReceiptNumber = receiptNumber.Trim() },
+            cancellationToken: ct);
     }
 
     public async Task<Payment> ReversePaymentAsync(Guid paymentId, string reversedBy, string reason, CancellationToken ct = default)
@@ -502,12 +368,11 @@ public class BillingRepository : IBillingRepository
         using var trans = conn.BeginTransaction();
         try
         {
-            var selectSql = @"
-                SELECT " + PaymentSelectColumns + @"
-                FROM payments
-                WHERE id = @PaymentId
-                FOR UPDATE";
-            var payment = await conn.QuerySingleOrDefaultAsync<Payment>(selectSql, new { PaymentId = paymentId }, trans)
+            var payment = await conn.QuerySingleFunctionAsync<Payment>(
+                "fn_get_payment_by_id",
+                new { PaymentId = paymentId },
+                transaction: trans,
+                cancellationToken: ct)
                 ?? throw new KeyNotFoundException($"Payment with ID '{paymentId}' was not found.");
 
             if (payment.IsReversed)
@@ -518,24 +383,14 @@ public class BillingRepository : IBillingRepository
             var reversalRef = "REV-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd") + "-" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
             var now = DateTimeOffset.UtcNow;
 
-            const string updatePaymentSql = @"
-                UPDATE payments
-                SET is_reversed = TRUE,
-                    status = 'Reversed',
-                    reversed_at = @ReversedAt,
-                    reversed_by = @ReversedBy,
-                    reversal_reason = @ReversalReason,
-                    reversal_reference = @ReversalReference
-                WHERE id = @PaymentId";
-
-            await conn.ExecuteAsync(updatePaymentSql, new
+            await conn.ExecuteProcedureAsync("sp_reverse_payment", new
             {
                 PaymentId = paymentId,
-                ReversedAt = ToUtc(now),
                 ReversedBy = reversedBy,
                 ReversalReason = reason,
-                ReversalReference = reversalRef
-            }, trans);
+                ReversalReference = reversalRef,
+                ReversedAt = ToUtc(now)
+            }, transaction: trans, cancellationToken: ct);
 
             payment.IsReversed = true;
             payment.Status = "Reversed";
@@ -546,7 +401,7 @@ public class BillingRepository : IBillingRepository
 
             if (payment.InvoiceId.HasValue && payment.InvoiceId.Value != Guid.Empty)
             {
-                await RecalculateInvoiceBalanceInternalAsync(conn, trans, payment.InvoiceId.Value);
+                await conn.ExecuteProcedureAsync("sp_recalculate_invoice_balance", new { InvoiceId = payment.InvoiceId.Value }, transaction: trans, cancellationToken: ct);
             }
 
             trans.Commit();
@@ -565,7 +420,7 @@ public class BillingRepository : IBillingRepository
         using var trans = conn.BeginTransaction();
         try
         {
-            await RecalculateInvoiceBalanceInternalAsync(conn, trans, invoiceId);
+            await conn.ExecuteProcedureAsync("sp_recalculate_invoice_balance", new { InvoiceId = invoiceId }, transaction: trans, cancellationToken: ct);
             trans.Commit();
 
             return await GetInvoiceByIdAsync(Guid.Empty, invoiceId, ct)
@@ -578,38 +433,6 @@ public class BillingRepository : IBillingRepository
         }
     }
 
-    private static async Task RecalculateInvoiceBalanceInternalAsync(IDbConnection conn, IDbTransaction trans, Guid invoiceId)
-    {
-        // 1. Authoritative server calculation: sum only valid non-reversed completed payments
-        const string sumSql = @"
-            SELECT COALESCE(SUM(amount), 0)
-            FROM payments
-            WHERE invoice_id = @InvoiceId
-              AND status = 'Completed'
-              AND is_reversed = FALSE";
-        var totalPaid = await conn.ExecuteScalarAsync<decimal>(sumSql, new { InvoiceId = invoiceId }, trans);
-
-        // 2. Update invoice amount_paid, paid_at, and status accordingly
-        const string updateInvoiceSql = @"
-            UPDATE invoices
-            SET amount_paid = @TotalPaid,
-                paid_at = CASE 
-                    WHEN (total_amount - @TotalPaid) <= 0 THEN COALESCE(paid_at, NOW())
-                    ELSE NULL 
-                END,
-                status = CASE
-                    WHEN status = 'Void' THEN 'Void'
-                    WHEN status = 'Draft' THEN 'Draft'
-                    WHEN (total_amount - @TotalPaid) <= 0 THEN 'Paid'
-                    WHEN @TotalPaid > 0 THEN 'PartiallyPaid'
-                    ELSE 'Unpaid'
-                END,
-                updated_at = NOW()
-            WHERE id = @InvoiceId";
-
-        await conn.ExecuteAsync(updateInvoiceSql, new { TotalPaid = totalPaid, InvoiceId = invoiceId }, trans);
-    }
-
     public async Task<List<Payment>> GetPaymentsForInvoiceAsync(Guid invoiceId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
@@ -619,25 +442,20 @@ public class BillingRepository : IBillingRepository
     public async Task<List<Payment>> GetPaymentsForOrganizationAsync(Guid organizationId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE organization_id = @OrganizationId
-            ORDER BY payment_date DESC, created_at DESC";
-
-        return (await conn.QueryAsync<Payment>(sql, new { OrganizationId = organizationId })).ToList();
+        return (await conn.QueryFunctionAsync<Payment>(
+            "fn_get_payments_for_organization",
+            new { OrganizationId = organizationId },
+            cancellationToken: ct)).ToList();
     }
 
     public async Task<OrganizationBillingSettings?> GetBillingSettingsAsync(Guid organizationId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        const string sql = @"
-            SELECT id, tenant_id, organization_id, mode, frequency, effective_date,
-                    next_billing_date, auto_charge_enabled, notes, updated_by, updated_at
-            FROM organization_billing_settings
-            WHERE organization_id = @OrganizationId";
+        var row = await conn.QuerySingleFunctionAsync<BillingSettingsRow>(
+            "fn_get_organization_billing_settings",
+            new { OrganizationId = organizationId },
+            cancellationToken: ct);
 
-        var row = await conn.QuerySingleOrDefaultAsync<BillingSettingsRow>(sql, new { OrganizationId = organizationId });
         if (row == null) return null;
 
         return new OrganizationBillingSettings
@@ -659,28 +477,10 @@ public class BillingRepository : IBillingRepository
     public async Task<bool> UpsertBillingSettingsAsync(OrganizationBillingSettings settings, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        const string sql = @"
-            INSERT INTO organization_billing_settings (
-                id, tenant_id, organization_id, mode, frequency, effective_date,
-                next_billing_date, auto_charge_enabled, notes, updated_by, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @Mode, @Frequency, @EffectiveDate,
-                @NextBillingDate, @AutoChargeEnabled, @Notes, @UpdatedBy, @UpdatedAt
-            )
-            ON CONFLICT (organization_id) DO UPDATE SET
-                mode = EXCLUDED.mode,
-                frequency = EXCLUDED.frequency,
-                effective_date = EXCLUDED.effective_date,
-                next_billing_date = EXCLUDED.next_billing_date,
-                auto_charge_enabled = EXCLUDED.auto_charge_enabled,
-                notes = EXCLUDED.notes,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = EXCLUDED.updated_at";
-
         if (settings.Id == Guid.Empty) settings.Id = Guid.NewGuid();
         settings.UpdatedAt = DateTimeOffset.UtcNow;
 
-        var rows = await conn.ExecuteAsync(sql, new
+        await conn.ExecuteProcedureAsync("sp_upsert_organization_billing_settings", new
         {
             settings.Id,
             settings.TenantId,
@@ -693,23 +493,19 @@ public class BillingRepository : IBillingRepository
             settings.Notes,
             settings.UpdatedBy,
             UpdatedAt = DateTimeOffset.UtcNow
-        });
+        }, cancellationToken: ct);
 
-        return rows > 0;
+        return true;
     }
 
     public async Task<List<OrganizationBillingSettings>> GetOrganizationsDueForAutomaticBillingAsync(DateTimeOffset asOfDate, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        const string sql = @"
-            SELECT id, tenant_id, organization_id, mode, frequency, effective_date,
-                    next_billing_date, auto_charge_enabled, notes, updated_by, updated_at
-            FROM organization_billing_settings
-            WHERE mode = 'Automatic'
-                AND effective_date <= @AsOfDate
-                AND (next_billing_date IS NULL OR next_billing_date <= @AsOfDate)";
+        var rows = await conn.QueryFunctionAsync<BillingSettingsRow>(
+            "fn_get_organizations_due_for_automatic_billing",
+            new { AsOfDate = ToUtc(asOfDate) },
+            cancellationToken: ct);
 
-        var rows = await conn.QueryAsync<BillingSettingsRow>(sql, new { AsOfDate = ToUtc(asOfDate) });
         return rows.Select(row => new OrganizationBillingSettings
         {
             Id = row.Id,
@@ -728,24 +524,16 @@ public class BillingRepository : IBillingRepository
 
     private static async Task<List<InvoiceLineItem>> GetLineItemsForInvoiceInternalAsync(IDbConnection conn, Guid invoiceId)
     {
-        const string sql = @"
-            SELECT id, invoice_id, line_number, description, quantity, unit_price, line_total, category, created_at
-            FROM invoice_line_items
-            WHERE invoice_id = @InvoiceId
-            ORDER BY line_number ASC";
-
-        return (await conn.QueryAsync<InvoiceLineItem>(sql, new { InvoiceId = invoiceId })).ToList();
+        return (await conn.QueryFunctionAsync<InvoiceLineItem>(
+            "fn_get_invoice_line_items",
+            new { InvoiceId = invoiceId })).ToList();
     }
 
     private static async Task<List<Payment>> GetPaymentsForInvoiceInternalAsync(IDbConnection conn, Guid invoiceId)
     {
-        var sql = @"
-            SELECT " + PaymentSelectColumns + @"
-            FROM payments
-            WHERE invoice_id = @InvoiceId
-            ORDER BY payment_date ASC";
-
-        return (await conn.QueryAsync<Payment>(sql, new { InvoiceId = invoiceId })).ToList();
+        return (await conn.QueryFunctionAsync<Payment>(
+            "fn_get_payments_for_invoice",
+            new { InvoiceId = invoiceId })).ToList();
     }
 
     private static Invoice MapToInvoice(InvoiceRow row)

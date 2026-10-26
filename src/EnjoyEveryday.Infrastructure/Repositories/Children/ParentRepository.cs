@@ -1,6 +1,11 @@
-using Dapper;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -16,110 +21,58 @@ public class ParentRepository : IParentRepository
 
     public async Task<IEnumerable<ParentAuthorizedChild>> GetAuthorizedChildrenAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT 
-                c.id AS ChildId,
-                c.tenant_id AS TenantId,
-                c.first_name AS FirstName,
-                c.last_name AS LastName,
-                c.date_of_birth AS DateOfBirth,
-                c.classroom_id AS ClassroomId,
-                cl.name AS ClassroomName,
-                cl.branch_id AS BranchId,
-                b.name AS BranchName,
-                COALESCE(b.organization_id, o.id, (SELECT o2.id FROM organizations o2 WHERE o2.tenant_id = c.tenant_id ORDER BY o2.created_at LIMIT 1)) AS OrganizationId,
-                o.name AS OrganizationName,
-                c.photo_url AS PhotoUrl,
-                fr.relationship AS Relationship,
-                fr.is_primary AS IsPrimary
-            FROM family_relationships fr
-            JOIN children c ON fr.child_id = c.id
-            LEFT JOIN classrooms cl ON c.classroom_id = cl.id
-            LEFT JOIN branches b ON cl.branch_id = b.id
-            LEFT JOIN organizations o ON b.organization_id = o.id
-            WHERE fr.user_id = @UserId 
-              AND fr.status = 'Verified' AND fr.revoked_at IS NULL
-              AND c.is_active = true
-            ORDER BY c.first_name, c.last_name";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ParentAuthorizedChild>(sql, new { UserId = userId });
+        return await connection.QueryFunctionAsync<ParentAuthorizedChild>(
+            "fn_get_parent_authorized_children",
+            new { TenantId = tenantId, UserId = userId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<bool> HasChildAccessAsync(Guid tenantId, Guid userId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT EXISTS(
-                SELECT 1 
-                FROM family_relationships fr
-                JOIN children c ON fr.child_id = c.id
-                WHERE fr.user_id = @UserId 
-                  AND fr.child_id = @ChildId
-                  AND fr.status = 'Verified' AND fr.revoked_at IS NULL
-                  AND c.is_active = true
-            )";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.ExecuteScalarAsync<bool>(sql, new { UserId = userId, ChildId = childId });
+        return await connection.ExecuteScalarFunctionAsync<bool>(
+            "fn_has_parent_child_access",
+            new { TenantId = tenantId, UserId = userId, ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<ChildAttendance?> GetChildAttendanceForDateAsync(Guid tenantId, Guid childId, DateTime date, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, branch_id, classroom_id, child_id, attendance_date, status, arrival_time, departure_time, notes, recorded_by_user_id, created_at, updated_at
-            FROM child_attendance
-            WHERE child_id = @ChildId AND attendance_date = @Date
-            LIMIT 1";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryFirstOrDefaultAsync<ChildAttendance>(sql, new { ChildId = childId, Date = date.Date });
+        return await connection.QuerySingleFunctionAsync<ChildAttendance>(
+            "fn_get_child_attendance_for_date",
+            new { ChildId = childId, Date = date.Date },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ChildJourneyEntry>> GetApprovedJourneyEntriesAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
 
-        const string sql = @"
-            SELECT *
-            FROM child_journey_entries
-            WHERE child_id = @ChildId 
-              AND is_parent_visible = true
-            ORDER BY observation_date DESC";
-
-        var entries = (await connection.QueryAsync<ChildJourneyEntry>(sql, new { ChildId = childId })).ToList();
+        var entries = (await connection.QueryFunctionAsync<ChildJourneyEntry>(
+            "fn_get_parent_approved_journey_entries",
+            new { ChildId = childId },
+            cancellationToken: cancellationToken)).ToList();
 
         if (entries.Any())
         {
-            // Verify if photo release consent is signed before releasing photos to parents
-            const string consentSql = @"
-                SELECT d.status
-                FROM child_consent_documents d
-                LEFT JOIN consent_templates t ON d.consent_template_id = t.id
-                WHERE d.child_id = @ChildId
-                  AND (t.document_type = 'PhotoVideoConsent' OR d.document_title ILIKE '%Photo%' OR d.document_title ILIKE '%Media%')
-                ORDER BY d.created_at DESC
-                LIMIT 1";
-
-            var consentStatus = await connection.QueryFirstOrDefaultAsync<string?>(consentSql, new { ChildId = childId });
+            var consentStatus = await connection.ExecuteScalarFunctionAsync<string?>(
+                "fn_get_parent_child_photo_consent",
+                new { ChildId = childId },
+                cancellationToken: cancellationToken);
             bool hasPhotoConsent = string.Equals(consentStatus, "Signed", StringComparison.OrdinalIgnoreCase);
 
             if (hasPhotoConsent)
             {
                 var entryIds = entries.Select(e => e.Id).ToArray();
-                const string evidenceSql = @"
-                    SELECT journey_entry_id, text_content
-                    FROM child_journey_evidence
-                    WHERE journey_entry_id = ANY(@EntryIds)
-                      AND evidence_type = 'Photo'
-                      AND (visibility = 'Parent' OR visibility = 'Public')
-                      AND text_content IS NOT NULL AND text_content != ''
-                    ORDER BY created_at ASC";
+                var evidenceRecords = await connection.QueryFunctionAsync<dynamic>(
+                    "fn_get_parent_journey_evidence",
+                    new { EntryIds = entryIds },
+                    cancellationToken: cancellationToken);
 
-                var evidenceRecords = await connection.QueryAsync<(Guid JourneyEntryId, string TextContent)>(
-                    evidenceSql, new { EntryIds = entryIds });
-
-                var photoLookup = evidenceRecords.GroupBy(x => x.JourneyEntryId)
-                    .ToDictionary(g => g.Key, g => g.Select(x => x.TextContent).ToList());
+                var photoLookup = evidenceRecords.GroupBy(x => (Guid)x.journey_entry_id)
+                    .ToDictionary(g => g.Key, g => g.Select(x => (string)x.text_content).ToList());
 
                 foreach (var entry in entries)
                 {
@@ -136,67 +89,44 @@ public class ParentRepository : IParentRepository
 
     public async Task<IEnumerable<ChildMilestone>> GetApprovedMilestonesAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT *
-            FROM child_milestones
-            WHERE child_id = @ChildId 
-              AND parent_visible = true
-            ORDER BY milestone_date DESC";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ChildMilestone>(sql, new { ChildId = childId });
+        return await connection.QueryFunctionAsync<ChildMilestone>(
+            "fn_get_parent_approved_milestones",
+            new { ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<Event>> GetApprovedEventsForChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT DISTINCT e.*
-            FROM events e
-            JOIN children c ON c.id = @ChildId
-            LEFT JOIN event_classrooms ec ON e.id = ec.event_id
-            WHERE (e.tenant_id = c.tenant_id OR e.tenant_id = @TenantId)
-              AND e.status IN ('Published', 'InProgress', 'Completed')
-              AND (
-                  e.is_organization_wide = true
-                  OR ec.classroom_id = c.classroom_id
-                  OR e.branch_id IN (SELECT cl.branch_id FROM classrooms cl WHERE cl.id = c.classroom_id)
-              )
-            ORDER BY e.event_date DESC, e.start_time";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, ChildId = childId });
+        return await connection.QueryFunctionAsync<Event>(
+            "fn_get_parent_approved_events_for_child",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Person?> GetPersonByUserIdAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT *
-            FROM persons
-            WHERE user_id = @UserId
-            ORDER BY (tenant_id = @TenantId) DESC
-            LIMIT 1";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryFirstOrDefaultAsync<Person>(sql, new { TenantId = tenantId, UserId = userId });
+        return await connection.QuerySingleFunctionAsync<Person>(
+            "fn_get_person_by_user_id",
+            new { TenantId = tenantId, UserId = userId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task UpdatePersonContactAsync(Guid tenantId, Guid personId, string? mobilePhone, string? preferredContactMethod, string? preferredLanguage, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            UPDATE persons
-            SET mobile_phone = @MobilePhone,
-                preferred_contact_method = @PreferredContactMethod,
-                preferred_language = @PreferredLanguage,
-                updated_at = NOW()
-            WHERE id = @PersonId AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(sql, new {
-            TenantId = tenantId,
-            PersonId = personId,
-            MobilePhone = mobilePhone,
-            PreferredContactMethod = preferredContactMethod,
-            PreferredLanguage = preferredLanguage
-        });
+        await connection.ExecuteProcedureAsync(
+            "sp_update_person_contact",
+            new
+            {
+                TenantId = tenantId,
+                PersonId = personId,
+                MobilePhone = mobilePhone,
+                PreferredContactMethod = preferredContactMethod,
+                PreferredLanguage = preferredLanguage
+            },
+            cancellationToken: cancellationToken);
     }
 }

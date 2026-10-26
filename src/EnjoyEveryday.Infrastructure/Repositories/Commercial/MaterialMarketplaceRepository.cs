@@ -4,9 +4,9 @@ using System.Data;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using Microsoft.Extensions.Logging;
 
@@ -30,188 +30,34 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
     public async Task<List<MaterialProduct>> GetProductsAsync(string? category = null, string? materialType = null, bool activeOnly = true, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var rows = await conn.QueryFunctionAsync<MaterialProductRow>(
+            "fn_get_material_products",
+            new { Category = category, MaterialType = materialType, ActiveOnly = activeOnly },
+            cancellationToken: ct);
 
-        var sql = @"
-            SELECT p.id, p.sku, p.name, p.description, p.category, p.image_url,
-                   p.material_type, p.safety_instructions, p.age_min_months, p.age_max_months,
-                   p.usage_restrictions, p.cleaning_instructions, p.return_policy,
-                   p.is_active, p.created_at, p.updated_at,
-                   o.id as off_id, o.material_product_id as off_prod_id, o.allow_purchase, o.purchase_price,
-                   o.allow_borrow, o.rental_fee, o.refundable_deposit, o.default_loan_duration_days,
-                   o.max_loan_duration_days, o.currency, o.is_active as off_is_active,
-                   b.id as bal_id, b.total_stock, b.available_stock, b.reserved_stock, b.dispatched_stock,
-                   b.on_loan_stock, b.under_inspection_stock, b.under_cleaning_stock, b.damaged_stock,
-                   b.missing_stock, b.retired_stock
-            FROM material_products p
-            LEFT JOIN material_offerings o ON p.id = o.material_product_id
-            LEFT JOIN inventory_balances b ON p.id = b.material_product_id
-            WHERE 1=1 ";
-
-        if (activeOnly)
-            sql += " AND p.is_active = TRUE ";
-        if (!string.IsNullOrWhiteSpace(category) && category != "All")
-            sql += " AND p.category = @Category ";
-        if (!string.IsNullOrWhiteSpace(materialType) && materialType != "All")
-            sql += " AND p.material_type = @MaterialType ";
-
-        sql += " ORDER BY p.name ASC ";
-
-        var rows = await conn.QueryAsync(sql, new { Category = category, MaterialType = materialType });
-        var result = new List<MaterialProduct>();
-
-        foreach (var r in rows)
-        {
-            var prod = new MaterialProduct
-            {
-                Id = r.id,
-                Sku = r.sku,
-                Name = r.name,
-                Description = r.description,
-                Category = r.category,
-                ImageUrl = r.image_url,
-                MaterialType = r.material_type,
-                SafetyInstructions = r.safety_instructions,
-                AgeMinMonths = r.age_min_months,
-                AgeMaxMonths = r.age_max_months,
-                UsageRestrictions = r.usage_restrictions,
-                CleaningInstructions = r.cleaning_instructions,
-                ReturnPolicy = r.return_policy,
-                IsActive = r.is_active,
-                CreatedAt = r.created_at,
-                UpdatedAt = r.updated_at
-            };
-
-            if (r.off_id != null)
-            {
-                prod.Offering = new MaterialOffering
-                {
-                    Id = r.off_id,
-                    MaterialProductId = r.off_prod_id,
-                    AllowPurchase = r.allow_purchase,
-                    PurchasePrice = r.purchase_price,
-                    AllowBorrow = r.allow_borrow,
-                    RentalFee = r.rental_fee,
-                    RefundableDeposit = r.refundable_deposit,
-                    DefaultLoanDurationDays = r.default_loan_duration_days,
-                    MaxLoanDurationDays = r.max_loan_duration_days,
-                    Currency = r.currency,
-                    IsActive = r.off_is_active
-                };
-            }
-
-            if (r.bal_id != null)
-            {
-                prod.StockBalance = new InventoryBalance
-                {
-                    Id = r.bal_id,
-                    MaterialProductId = prod.Id,
-                    TotalStock = r.total_stock,
-                    AvailableStock = r.available_stock,
-                    ReservedStock = r.reserved_stock,
-                    DispatchedStock = r.dispatched_stock,
-                    OnLoanStock = r.on_loan_stock,
-                    UnderInspectionStock = r.under_inspection_stock,
-                    UnderCleaningStock = r.under_cleaning_stock,
-                    DamagedStock = r.damaged_stock,
-                    MissingStock = r.missing_stock,
-                    RetiredStock = r.retired_stock
-                };
-            }
-
-            result.Add(prod);
-        }
-
-        return result;
+        return rows.Select(MapProductRow).ToList();
     }
 
     public async Task<MaterialProduct?> GetProductByIdAsync(Guid productId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT p.id, p.sku, p.name, p.description, p.category, p.image_url,
-                   p.material_type, p.safety_instructions, p.age_min_months, p.age_max_months,
-                   p.usage_restrictions, p.cleaning_instructions, p.return_policy,
-                   p.is_active, p.created_at, p.updated_at,
-                   o.id as off_id, o.material_product_id as off_prod_id, o.allow_purchase, o.purchase_price,
-                   o.allow_borrow, o.rental_fee, o.refundable_deposit, o.default_loan_duration_days,
-                   o.max_loan_duration_days, o.currency, o.is_active as off_is_active,
-                   b.id as bal_id, b.total_stock, b.available_stock, b.reserved_stock, b.dispatched_stock,
-                   b.on_loan_stock, b.under_inspection_stock, b.under_cleaning_stock, b.damaged_stock,
-                   b.missing_stock, b.retired_stock
-            FROM material_products p
-            LEFT JOIN material_offerings o ON p.id = o.material_product_id
-            LEFT JOIN inventory_balances b ON p.id = b.material_product_id
-            WHERE p.id = @ProductId";
+        var r = await conn.QuerySingleFunctionAsync<MaterialProductRow>(
+            "fn_get_material_product_by_id",
+            new { ProductId = productId },
+            cancellationToken: ct);
 
-        var r = await conn.QuerySingleOrDefaultAsync(sql, new { ProductId = productId });
-        if (r == null) return null;
-
-        var prod = new MaterialProduct
-        {
-            Id = r.id,
-            Sku = r.sku,
-            Name = r.name,
-            Description = r.description,
-            Category = r.category,
-            ImageUrl = r.image_url,
-            MaterialType = r.material_type,
-            SafetyInstructions = r.safety_instructions,
-            AgeMinMonths = r.age_min_months,
-            AgeMaxMonths = r.age_max_months,
-            UsageRestrictions = r.usage_restrictions,
-            CleaningInstructions = r.cleaning_instructions,
-            ReturnPolicy = r.return_policy,
-            IsActive = r.is_active,
-            CreatedAt = r.created_at,
-            UpdatedAt = r.updated_at
-        };
-
-        if (r.off_id != null)
-        {
-            prod.Offering = new MaterialOffering
-            {
-                Id = r.off_id,
-                MaterialProductId = r.off_prod_id,
-                AllowPurchase = r.allow_purchase,
-                PurchasePrice = r.purchase_price,
-                AllowBorrow = r.allow_borrow,
-                RentalFee = r.rental_fee,
-                RefundableDeposit = r.refundable_deposit,
-                DefaultLoanDurationDays = r.default_loan_duration_days,
-                MaxLoanDurationDays = r.max_loan_duration_days,
-                Currency = r.currency,
-                IsActive = r.off_is_active
-            };
-        }
-
-        if (r.bal_id != null)
-        {
-            prod.StockBalance = new InventoryBalance
-            {
-                Id = r.bal_id,
-                MaterialProductId = prod.Id,
-                TotalStock = r.total_stock,
-                AvailableStock = r.available_stock,
-                ReservedStock = r.reserved_stock,
-                DispatchedStock = r.dispatched_stock,
-                OnLoanStock = r.on_loan_stock,
-                UnderInspectionStock = r.under_inspection_stock,
-                UnderCleaningStock = r.under_cleaning_stock,
-                DamagedStock = r.damaged_stock,
-                MissingStock = r.missing_stock,
-                RetiredStock = r.retired_stock
-            };
-        }
-
-        return prod;
+        return r != null ? MapProductRow(r) : null;
     }
 
     public async Task<MaterialProduct?> GetProductBySkuAsync(string sku, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var id = await conn.QuerySingleOrDefaultAsync<Guid?>("SELECT id FROM material_products WHERE sku = @Sku", new { Sku = sku });
-        if (!id.HasValue) return null;
-        return await GetProductByIdAsync(id.Value, ct);
+        var r = await conn.QuerySingleFunctionAsync<MaterialProductRow>(
+            "fn_get_material_product_by_sku",
+            new { Sku = sku },
+            cancellationToken: ct);
+
+        return r != null ? MapProductRow(r) : null;
     }
 
     public async Task<Guid> CreateProductAsync(MaterialProduct product, MaterialOffering offering, CancellationToken ct = default)
@@ -221,27 +67,8 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (offering.Id == Guid.Empty) offering.Id = Guid.NewGuid();
         offering.MaterialProductId = product.Id;
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_products (
-                id, sku, name, description, category, image_url, material_type,
-                safety_instructions, age_min_months, age_max_months, usage_restrictions,
-                cleaning_instructions, return_policy, is_active, created_at, updated_at
-            ) VALUES (
-                @Id, @Sku, @Name, @Description, @Category, @ImageUrl, @MaterialType,
-                @SafetyInstructions, @AgeMinMonths, @AgeMaxMonths, @UsageRestrictions,
-                @CleaningInstructions, @ReturnPolicy, @IsActive, @CreatedAt, @UpdatedAt
-            )", product);
-
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_offerings (
-                id, material_product_id, allow_purchase, purchase_price, allow_borrow,
-                rental_fee, refundable_deposit, default_loan_duration_days, max_loan_duration_days,
-                currency, is_active, created_at, updated_at
-            ) VALUES (
-                @Id, @MaterialProductId, @AllowPurchase, @PurchasePrice, @AllowBorrow,
-                @RentalFee, @RefundableDeposit, @DefaultLoanDurationDays, @MaxLoanDurationDays,
-                @Currency, @IsActive, @CreatedAt, @UpdatedAt
-            )", offering);
+        await conn.ExecuteProcedureAsync("sp_create_material_product", product, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_create_material_offering", offering, cancellationToken: ct);
 
         return product.Id;
     }
@@ -252,35 +79,8 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         product.UpdatedAt = DateTimeOffset.UtcNow;
         offering.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await conn.ExecuteAsync(@"
-            UPDATE material_products SET
-                name = @Name,
-                description = @Description,
-                category = @Category,
-                image_url = @ImageUrl,
-                material_type = @MaterialType,
-                safety_instructions = @SafetyInstructions,
-                age_min_months = @AgeMinMonths,
-                age_max_months = @AgeMaxMonths,
-                usage_restrictions = @UsageRestrictions,
-                cleaning_instructions = @CleaningInstructions,
-                return_policy = @ReturnPolicy,
-                is_active = @IsActive,
-                updated_at = @UpdatedAt
-            WHERE id = @Id", product);
-
-        await conn.ExecuteAsync(@"
-            UPDATE material_offerings SET
-                allow_purchase = @AllowPurchase,
-                purchase_price = @PurchasePrice,
-                allow_borrow = @AllowBorrow,
-                rental_fee = @RentalFee,
-                refundable_deposit = @RefundableDeposit,
-                default_loan_duration_days = @DefaultLoanDurationDays,
-                max_loan_duration_days = @MaxLoanDurationDays,
-                is_active = @IsActive,
-                updated_at = @UpdatedAt
-            WHERE material_product_id = @Id", new
+        await conn.ExecuteProcedureAsync("sp_update_material_product", product, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_update_material_offering", new
         {
             Id = product.Id,
             offering.AllowPurchase,
@@ -292,7 +92,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             offering.MaxLoanDurationDays,
             offering.IsActive,
             offering.UpdatedAt
-        });
+        }, cancellationToken: ct);
     }
 
     #endregion
@@ -302,62 +102,42 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
     public async Task<List<InventoryLocation>> GetLocationsAsync(CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var rows = await conn.QueryAsync<InventoryLocation>(
-            "SELECT * FROM inventory_locations WHERE is_active = TRUE ORDER BY is_central_warehouse DESC, name ASC");
+        var rows = await conn.QueryFunctionAsync<InventoryLocation>("fn_get_inventory_locations", cancellationToken: ct);
         return rows.ToList();
     }
 
     public async Task<InventoryLocation?> GetCentralWarehouseLocationAsync(CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        return await conn.QueryFirstOrDefaultAsync<InventoryLocation>(
-            "SELECT * FROM inventory_locations WHERE is_central_warehouse = TRUE AND is_active = TRUE LIMIT 1");
+        return await conn.QuerySingleFunctionAsync<InventoryLocation>("fn_get_central_warehouse_location", cancellationToken: ct);
     }
 
     public async Task<List<InventoryBalance>> GetInventoryBalancesAsync(Guid? locationId = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT b.*, p.name as product_name, p.sku as product_sku, l.name as location_name
-            FROM inventory_balances b
-            JOIN material_products p ON b.material_product_id = p.id
-            JOIN inventory_locations l ON b.location_id = l.id ";
-
-        if (locationId.HasValue)
-        {
-            sql += " WHERE b.location_id = @LocationId ";
-        }
-        sql += " ORDER BY p.name ASC";
-
-        var rows = await conn.QueryAsync<InventoryBalance>(sql, new { LocationId = locationId });
+        var rows = await conn.QueryFunctionAsync<InventoryBalance>(
+            "fn_get_inventory_balances",
+            new { LocationId = locationId },
+            cancellationToken: ct);
         return rows.ToList();
     }
 
     public async Task<InventoryBalance?> GetInventoryBalanceAsync(Guid productId, Guid locationId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT b.*, p.name as product_name, p.sku as product_sku, l.name as location_name
-            FROM inventory_balances b
-            JOIN material_products p ON b.material_product_id = p.id
-            JOIN inventory_locations l ON b.location_id = l.id
-            WHERE b.material_product_id = @ProductId AND b.location_id = @LocationId";
-
-        return await conn.QuerySingleOrDefaultAsync<InventoryBalance>(sql, new { ProductId = productId, LocationId = locationId });
+        return await conn.QuerySingleFunctionAsync<InventoryBalance>(
+            "fn_get_inventory_balance",
+            new { ProductId = productId, LocationId = locationId },
+            cancellationToken: ct);
     }
 
     public async Task<List<InventoryLedgerEntry>> GetProductLedgerAsync(Guid productId, int limit = 50, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT l.*, p.name as product_name, p.sku as product_sku
-            FROM inventory_ledger l
-            JOIN material_products p ON l.material_product_id = p.id
-            WHERE l.material_product_id = @ProductId
-            ORDER BY l.created_at DESC
-            LIMIT @Limit";
-
-        var rows = await conn.QueryAsync<InventoryLedgerEntry>(sql, new { ProductId = productId, Limit = limit });
+        var rows = await conn.QueryFunctionAsync<InventoryLedgerEntry>(
+            "fn_get_product_ledger",
+            new { ProductId = productId, Limit = limit },
+            cancellationToken: ct);
         return rows.ToList();
     }
 
@@ -367,16 +147,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (entry.Id == Guid.Empty) entry.Id = Guid.NewGuid();
         entry.CreatedAt = entry.CreatedAt.ToUniversalTime();
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO inventory_ledger (
-                id, material_product_id, location_id, transaction_type, quantity_delta,
-                available_delta, reserved_delta, on_loan_delta, reference_type, reference_id,
-                notes, performed_by_user_id, performed_by_email, created_at
-            ) VALUES (
-                @Id, @MaterialProductId, @LocationId, @TransactionType, @QuantityDelta,
-                @AvailableDelta, @ReservedDelta, @OnLoanDelta, @ReferenceType, @ReferenceId,
-                @Notes, @PerformedByUserId, @PerformedByEmail, @CreatedAt
-            )", entry);
+        await conn.ExecuteProcedureAsync("sp_record_inventory_ledger", entry, cancellationToken: ct);
     }
 
     public async Task UpdateInventoryBalanceAtomicAsync(
@@ -395,24 +166,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-
-        // First attempt direct update for existing product balance at location
-        var updateSql = @"
-            UPDATE inventory_balances SET
-                total_stock = total_stock + @TotalDelta,
-                available_stock = GREATEST(0, available_stock + @AvailableDelta),
-                reserved_stock = GREATEST(0, reserved_stock + @ReservedDelta),
-                dispatched_stock = GREATEST(0, dispatched_stock + @DispatchedDelta),
-                on_loan_stock = GREATEST(0, on_loan_stock + @OnLoanDelta),
-                under_inspection_stock = GREATEST(0, under_inspection_stock + @UnderInspectionDelta),
-                under_cleaning_stock = GREATEST(0, under_cleaning_stock + @UnderCleaningDelta),
-                damaged_stock = GREATEST(0, damaged_stock + @DamagedDelta),
-                missing_stock = GREATEST(0, missing_stock + @MissingDelta),
-                retired_stock = GREATEST(0, retired_stock + @RetiredDelta),
-                updated_at = NOW()
-            WHERE material_product_id = @ProductId AND location_id = @LocationId";
-
-        var rows = await conn.ExecuteAsync(updateSql, new
+        await conn.ExecuteProcedureAsync("sp_update_inventory_balance_atomic", new
         {
             ProductId = productId,
             LocationId = locationId,
@@ -426,53 +180,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             DamagedDelta = damagedDelta,
             MissingDelta = missingDelta,
             RetiredDelta = retiredDelta
-        });
-
-        if (rows == 0)
-        {
-            // Initial row if product had no prior balance record at location
-            var insertSql = @"
-                INSERT INTO inventory_balances (
-                    id, material_product_id, location_id, total_stock, available_stock,
-                    reserved_stock, dispatched_stock, on_loan_stock, under_inspection_stock,
-                    under_cleaning_stock, damaged_stock, missing_stock, retired_stock, updated_at
-                ) VALUES (
-                    gen_random_uuid(), @ProductId, @LocationId,
-                    GREATEST(0, @TotalDelta), GREATEST(0, @AvailableDelta),
-                    GREATEST(0, @ReservedDelta), GREATEST(0, @DispatchedDelta),
-                    GREATEST(0, @OnLoanDelta), GREATEST(0, @UnderInspectionDelta),
-                    GREATEST(0, @UnderCleaningDelta), GREATEST(0, @DamagedDelta),
-                    GREATEST(0, @MissingDelta), GREATEST(0, @RetiredDelta), NOW()
-                )
-                ON CONFLICT (material_product_id, location_id) DO UPDATE SET
-                    total_stock = inventory_balances.total_stock + @TotalDelta,
-                    available_stock = GREATEST(0, inventory_balances.available_stock + @AvailableDelta),
-                    reserved_stock = GREATEST(0, inventory_balances.reserved_stock + @ReservedDelta),
-                    dispatched_stock = GREATEST(0, inventory_balances.dispatched_stock + @DispatchedDelta),
-                    on_loan_stock = GREATEST(0, inventory_balances.on_loan_stock + @OnLoanDelta),
-                    under_inspection_stock = GREATEST(0, inventory_balances.under_inspection_stock + @UnderInspectionDelta),
-                    under_cleaning_stock = GREATEST(0, inventory_balances.under_cleaning_stock + @UnderCleaningDelta),
-                    damaged_stock = GREATEST(0, inventory_balances.damaged_stock + @DamagedDelta),
-                    missing_stock = GREATEST(0, inventory_balances.missing_stock + @MissingDelta),
-                    retired_stock = inventory_balances.retired_stock + @RetiredDelta,
-                    updated_at = NOW();";
-
-            await conn.ExecuteAsync(insertSql, new
-            {
-                ProductId = productId,
-                LocationId = locationId,
-                TotalDelta = totalDelta,
-                AvailableDelta = availableDelta,
-                ReservedDelta = reservedDelta,
-                DispatchedDelta = dispatchedDelta,
-                OnLoanDelta = onLoanDelta,
-                UnderInspectionDelta = underInspectionDelta,
-                UnderCleaningDelta = underCleaningDelta,
-                DamagedDelta = damagedDelta,
-                MissingDelta = missingDelta,
-                RetiredDelta = retiredDelta
-            });
-        }
+        }, cancellationToken: ct);
     }
 
     #endregion
@@ -489,24 +197,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (order.RequiredDeliveryDate.HasValue) order.RequiredDeliveryDate = order.RequiredDeliveryDate.Value.ToUniversalTime();
         if (order.QuotationValidUntil.HasValue) order.QuotationValidUntil = order.QuotationValidUntil.Value.ToUniversalTime();
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_orders (
-                id, order_number, tenant_id, organization_id, branch_id, classroom_id,
-                planned_experience_id, requesting_user_id, requesting_user_email,
-                order_type, workflow_status, payment_status, fulfilment_status,
-                total_purchase_amount, total_rental_fee, total_deposit, shipping_fee,
-                tax_amount, total_amount, currency, quotation_notes, quotation_valid_until,
-                delivery_address, delivery_contact_name, delivery_contact_phone,
-                required_delivery_date, created_at, updated_at
-            ) VALUES (
-                @Id, @OrderNumber, @TenantId, @OrganizationId, @BranchId, @ClassroomId,
-                @PlannedExperienceId, @RequestingUserId, @RequestingUserEmail,
-                @OrderType, @WorkflowStatus, @PaymentStatus, @FulfilmentStatus,
-                @TotalPurchaseAmount, @TotalRentalFee, @TotalDeposit, @ShippingFee,
-                @TaxAmount, @TotalAmount, @Currency, @QuotationNotes, @QuotationValidUntil,
-                @DeliveryAddress, @DeliveryContactName, @DeliveryContactPhone,
-                @RequiredDeliveryDate, @CreatedAt, @UpdatedAt
-            )", order);
+        await conn.ExecuteProcedureAsync("sp_create_material_order", order, cancellationToken: ct);
 
         foreach (var item in items)
         {
@@ -515,16 +206,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             item.CreatedAt = item.CreatedAt.ToUniversalTime();
             if (item.ReturnDueDate.HasValue) item.ReturnDueDate = item.ReturnDueDate.Value.ToUniversalTime();
 
-            await conn.ExecuteAsync(@"
-                INSERT INTO material_order_items (
-                    id, order_id, material_product_id, offering_id, fulfilment_mode,
-                    quantity, unit_price, rental_fee, deposit, line_total, loan_duration_days,
-                    return_due_date, status, created_at
-                ) VALUES (
-                    @Id, @OrderId, @MaterialProductId, @OfferingId, @FulfilmentMode,
-                    @Quantity, @UnitPrice, @RentalFee, @Deposit, @LineTotal, @LoanDurationDays,
-                    @ReturnDueDate, @Status, @CreatedAt
-                )", item);
+            await conn.ExecuteProcedureAsync("sp_create_material_order_item", item, cancellationToken: ct);
         }
 
         if (initialHistory.Id == Guid.Empty) initialHistory.Id = Guid.NewGuid();
@@ -538,25 +220,17 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
     public async Task<MaterialOrder?> GetOrderByIdAsync(Guid orderId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT o.*, org.name as organization_name, b.name as branch_name, c.name as classroom_name,
-                   e.title as planned_experience_title
-            FROM material_orders o
-            JOIN organizations org ON o.organization_id = org.id
-            LEFT JOIN branches b ON o.branch_id = b.id
-            LEFT JOIN classrooms c ON o.classroom_id = c.id
-            LEFT JOIN experiences e ON o.planned_experience_id = e.id
-            WHERE o.id = @OrderId";
+        var order = await conn.QuerySingleFunctionAsync<MaterialOrder>(
+            "fn_get_material_order_by_id",
+            new { OrderId = orderId },
+            cancellationToken: ct);
 
-        var order = await conn.QuerySingleOrDefaultAsync<MaterialOrder>(sql, new { OrderId = orderId });
         if (order == null) return null;
 
         order.Items = await GetItemsForOrderInternalAsync(conn, order.Id);
         order.History = await GetHistoryForOrderInternalAsync(conn, order.Id, true);
-        order.Shipment = await conn.QuerySingleOrDefaultAsync<MaterialShipment>(
-            "SELECT * FROM material_shipments WHERE order_id = @OrderId LIMIT 1", new { OrderId = order.Id });
-        order.Loans = (await conn.QueryAsync<MaterialLoan>(
-            "SELECT * FROM material_loans WHERE order_id = @OrderId", new { OrderId = order.Id })).ToList();
+        order.Shipment = await GetShipmentByOrderIdAsync(order.Id, ct);
+        order.Loans = await GetLoansByOrderIdAsync(order.Id, ct);
 
         return order;
     }
@@ -564,33 +238,29 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
     public async Task<MaterialOrder?> GetOrderByNumberAsync(string orderNumber, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var id = await conn.QuerySingleOrDefaultAsync<Guid?>(
-            "SELECT id FROM material_orders WHERE order_number = @OrderNumber", new { OrderNumber = orderNumber });
-        if (!id.HasValue) return null;
-        return await GetOrderByIdAsync(id.Value, ct);
+        var order = await conn.QuerySingleFunctionAsync<MaterialOrder>(
+            "fn_get_material_order_by_number",
+            new { OrderNumber = orderNumber },
+            cancellationToken: ct);
+
+        if (order == null) return null;
+
+        order.Items = await GetItemsForOrderInternalAsync(conn, order.Id);
+        order.History = await GetHistoryForOrderInternalAsync(conn, order.Id, true);
+        order.Shipment = await GetShipmentByOrderIdAsync(order.Id, ct);
+        order.Loans = await GetLoansByOrderIdAsync(order.Id, ct);
+
+        return order;
     }
 
     public async Task<List<MaterialOrder>> GetOrdersForOrganizationAsync(Guid organizationId, string? statusFilter = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT o.*, org.name as organization_name, b.name as branch_name, c.name as classroom_name,
-                   e.title as planned_experience_title
-            FROM material_orders o
-            JOIN organizations org ON o.organization_id = org.id
-            LEFT JOIN branches b ON o.branch_id = b.id
-            LEFT JOIN classrooms c ON o.classroom_id = c.id
-            LEFT JOIN experiences e ON o.planned_experience_id = e.id
-            WHERE o.organization_id = @OrganizationId ";
+        var orders = (await conn.QueryFunctionAsync<MaterialOrder>(
+            "fn_get_material_orders_for_organization",
+            new { OrganizationId = organizationId, Status = statusFilter },
+            cancellationToken: ct)).ToList();
 
-        if (!string.IsNullOrWhiteSpace(statusFilter) && statusFilter != "All")
-        {
-            sql += " AND o.workflow_status = @Status ";
-        }
-
-        sql += " ORDER BY o.created_at DESC";
-
-        var orders = (await conn.QueryAsync<MaterialOrder>(sql, new { OrganizationId = organizationId, Status = statusFilter })).ToList();
         foreach (var ord in orders)
         {
             ord.Items = await GetItemsForOrderInternalAsync(conn, ord.Id);
@@ -602,23 +272,11 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
     public async Task<List<MaterialOrder>> GetPlatformOrderQueueAsync(string? statusFilter = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT o.*, org.name as organization_name, b.name as branch_name, c.name as classroom_name,
-                   e.title as planned_experience_title
-            FROM material_orders o
-            JOIN organizations org ON o.organization_id = org.id
-            LEFT JOIN branches b ON o.branch_id = b.id
-            LEFT JOIN classrooms c ON o.classroom_id = c.id
-            LEFT JOIN experiences e ON o.planned_experience_id = e.id ";
+        var orders = (await conn.QueryFunctionAsync<MaterialOrder>(
+            "fn_get_platform_order_queue",
+            new { Status = statusFilter },
+            cancellationToken: ct)).ToList();
 
-        if (!string.IsNullOrWhiteSpace(statusFilter) && statusFilter != "All")
-        {
-            sql += " WHERE o.workflow_status = @Status ";
-        }
-
-        sql += " ORDER BY o.created_at DESC";
-
-        var orders = (await conn.QueryAsync<MaterialOrder>(sql, new { Status = statusFilter })).ToList();
         foreach (var ord in orders)
         {
             ord.Items = await GetItemsForOrderInternalAsync(conn, ord.Id);
@@ -630,17 +288,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
     public async Task UpdateOrderStatusAsync(Guid orderId, string newStatus, string? paymentStatus = null, string? fulfilmentStatus = null, string? rejectionReason = null, string? cancellationReason = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            UPDATE material_orders SET
-                workflow_status = @NewStatus,
-                payment_status = COALESCE(@PaymentStatus, payment_status),
-                fulfilment_status = COALESCE(@FulfilmentStatus, fulfilment_status),
-                rejection_reason = COALESCE(@RejectionReason, rejection_reason),
-                cancellation_reason = COALESCE(@CancellationReason, cancellation_reason),
-                updated_at = NOW()
-            WHERE id = @OrderId";
-
-        await conn.ExecuteAsync(sql, new
+        await conn.ExecuteProcedureAsync("sp_update_material_order_status", new
         {
             OrderId = orderId,
             NewStatus = newStatus,
@@ -648,26 +296,13 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             FulfilmentStatus = fulfilmentStatus,
             RejectionReason = rejectionReason,
             CancellationReason = cancellationReason
-        });
+        }, cancellationToken: ct);
     }
 
     public async Task UpdateOrderQuotationAsync(Guid orderId, decimal totalPurchaseAmount, decimal totalRentalFee, decimal totalDeposit, decimal shippingFee, decimal totalAmount, string? quotationNotes, DateTimeOffset? validUntil, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            UPDATE material_orders SET
-                total_purchase_amount = @TotalPurchaseAmount,
-                total_rental_fee = @TotalRentalFee,
-                total_deposit = @TotalDeposit,
-                shipping_fee = @ShippingFee,
-                total_amount = @TotalAmount,
-                quotation_notes = @QuotationNotes,
-                quotation_valid_until = @ValidUntil,
-                workflow_status = 'QuotationOffered',
-                updated_at = NOW()
-            WHERE id = @OrderId";
-
-        await conn.ExecuteAsync(sql, new
+        await conn.ExecuteProcedureAsync("sp_update_material_order_quotation", new
         {
             OrderId = orderId,
             TotalPurchaseAmount = totalPurchaseAmount,
@@ -677,7 +312,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             TotalAmount = totalAmount,
             QuotationNotes = quotationNotes,
             ValidUntil = validUntil
-        });
+        }, cancellationToken: ct);
     }
 
     public async Task AddOrderHistoryEventAsync(MaterialOrderHistory history, CancellationToken ct = default)
@@ -686,14 +321,7 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (history.Id == Guid.Empty) history.Id = Guid.NewGuid();
         history.CreatedAt = history.CreatedAt.ToUniversalTime();
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_order_history (
-                id, order_id, event_type, previous_status, new_status, actor_user_id,
-                actor_email, actor_role, description, notes, is_internal_note, created_at
-            ) VALUES (
-                @Id, @OrderId, @EventType, @PreviousStatus, @NewStatus, @ActorUserId,
-                @ActorEmail, @ActorRole, @Description, @Notes, @IsInternalNote, @CreatedAt
-            )", history);
+        await conn.ExecuteProcedureAsync("sp_add_material_order_history", history, cancellationToken: ct);
     }
 
     public async Task<List<MaterialOrderHistory>> GetOrderHistoryAsync(Guid orderId, bool includeInternalNotes = false, CancellationToken ct = default)
@@ -704,30 +332,19 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
 
     private static async Task<List<MaterialOrderItem>> GetItemsForOrderInternalAsync(IDbConnection conn, Guid orderId)
     {
-        var sql = @"
-            SELECT i.*, p.name as product_name, p.sku as product_sku, p.image_url, p.category
-            FROM material_order_items i
-            JOIN material_products p ON i.material_product_id = p.id
-            WHERE i.order_id = @OrderId";
+        var rows = await conn.QueryFunctionAsync<MaterialOrderItem>(
+            "fn_get_material_order_items",
+            new { OrderId = orderId });
 
-        var rows = await conn.QueryAsync<MaterialOrderItem>(sql, new { OrderId = orderId });
         return rows.ToList();
     }
 
     private static async Task<List<MaterialOrderHistory>> GetHistoryForOrderInternalAsync(IDbConnection conn, Guid orderId, bool includeInternalNotes)
     {
-        var sql = @"
-            SELECT * FROM material_order_history
-            WHERE order_id = @OrderId ";
+        var rows = await conn.QueryFunctionAsync<MaterialOrderHistory>(
+            "fn_get_material_order_history",
+            new { OrderId = orderId, IncludeInternalNotes = includeInternalNotes });
 
-        if (!includeInternalNotes)
-        {
-            sql += " AND is_internal_note = FALSE ";
-        }
-
-        sql += " ORDER BY created_at ASC";
-
-        var rows = await conn.QueryAsync<MaterialOrderHistory>(sql, new { OrderId = orderId });
         return rows.ToList();
     }
 
@@ -745,46 +362,29 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (shipment.EstimatedDeliveryDate.HasValue) shipment.EstimatedDeliveryDate = shipment.EstimatedDeliveryDate.Value.ToUniversalTime();
         if (shipment.ActualDeliveryDate.HasValue) shipment.ActualDeliveryDate = shipment.ActualDeliveryDate.Value.ToUniversalTime();
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_shipments (
-                id, order_id, shipment_number, carrier_name, tracking_reference,
-                dispatch_date, estimated_delivery_date, actual_delivery_date,
-                delivery_status, proof_of_delivery_notes, recorded_by_user_id,
-                created_at, updated_at
-            ) VALUES (
-                @Id, @OrderId, @ShipmentNumber, @CarrierName, @TrackingReference,
-                @DispatchDate, @EstimatedDeliveryDate, @ActualDeliveryDate,
-                @DeliveryStatus, @ProofOfDeliveryNotes, @RecordedByUserId,
-                @CreatedAt, @UpdatedAt
-            )", shipment);
-
+        await conn.ExecuteProcedureAsync("sp_create_material_shipment", shipment, cancellationToken: ct);
         return shipment.Id;
     }
 
     public async Task<MaterialShipment?> GetShipmentByOrderIdAsync(Guid orderId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        return await conn.QuerySingleOrDefaultAsync<MaterialShipment>(
-            "SELECT * FROM material_shipments WHERE order_id = @OrderId ORDER BY created_at DESC LIMIT 1",
-            new { OrderId = orderId });
+        return await conn.QuerySingleFunctionAsync<MaterialShipment>(
+            "fn_get_material_shipment_by_order_id",
+            new { OrderId = orderId },
+            cancellationToken: ct);
     }
 
     public async Task UpdateShipmentStatusAsync(Guid shipmentId, string deliveryStatus, DateTimeOffset? actualDeliveryDate, string? proofNotes, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        await conn.ExecuteAsync(@"
-            UPDATE material_shipments SET
-                delivery_status = @DeliveryStatus,
-                actual_delivery_date = COALESCE(@ActualDeliveryDate, actual_delivery_date),
-                proof_of_delivery_notes = COALESCE(@ProofNotes, proof_of_delivery_notes),
-                updated_at = NOW()
-            WHERE id = @ShipmentId", new
+        await conn.ExecuteProcedureAsync("sp_update_material_shipment_status", new
         {
             ShipmentId = shipmentId,
             DeliveryStatus = deliveryStatus,
             ActualDeliveryDate = actualDeliveryDate?.ToUniversalTime(),
             ProofNotes = proofNotes
-        });
+        }, cancellationToken: ct);
     }
 
     #endregion
@@ -803,105 +403,63 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             loan.DueDate = loan.DueDate.ToUniversalTime();
             if (loan.ActualReturnDate.HasValue) loan.ActualReturnDate = loan.ActualReturnDate.Value.ToUniversalTime();
 
-            await conn.ExecuteAsync(@"
-                INSERT INTO material_loans (
-                    id, order_id, order_item_id, material_product_id, organization_id,
-                    classroom_id, quantity_issued, issued_at, due_date, actual_return_date,
-                    return_status, deposit_amount, deposit_status, notes, created_at, updated_at
-                ) VALUES (
-                    @Id, @OrderId, @OrderItemId, @MaterialProductId, @OrganizationId,
-                    @ClassroomId, @QuantityIssued, @IssuedAt, @DueDate, @ActualReturnDate,
-                    @ReturnStatus, @DepositAmount, @DepositStatus, @Notes, @CreatedAt, @UpdatedAt
-                )", loan);
+            await conn.ExecuteProcedureAsync("sp_create_material_loan", loan, cancellationToken: ct);
         }
     }
 
     public async Task<List<MaterialLoan>> GetLoansByOrderIdAsync(Guid orderId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT l.*, p.name as product_name, p.sku as product_sku, o.order_number, c.name as classroom_name
-            FROM material_loans l
-            JOIN material_products p ON l.material_product_id = p.id
-            JOIN material_orders o ON l.order_id = o.id
-            LEFT JOIN classrooms c ON l.classroom_id = c.id
-            WHERE l.order_id = @OrderId";
+        var rows = await conn.QueryFunctionAsync<MaterialLoan>(
+            "fn_get_material_loans_by_order_id",
+            new { OrderId = orderId },
+            cancellationToken: ct);
 
-        var rows = await conn.QueryAsync<MaterialLoan>(sql, new { OrderId = orderId });
         return rows.ToList();
     }
 
     public async Task<List<MaterialLoan>> GetActiveLoansForOrganizationAsync(Guid organizationId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT l.*, p.name as product_name, p.sku as product_sku, o.order_number, c.name as classroom_name
-            FROM material_loans l
-            JOIN material_products p ON l.material_product_id = p.id
-            JOIN material_orders o ON l.order_id = o.id
-            LEFT JOIN classrooms c ON l.classroom_id = c.id
-            WHERE l.organization_id = @OrganizationId
-            ORDER BY l.due_date ASC";
+        var rows = await conn.QueryFunctionAsync<MaterialLoan>(
+            "fn_get_active_material_loans_for_organization",
+            new { OrganizationId = organizationId },
+            cancellationToken: ct);
 
-        var rows = await conn.QueryAsync<MaterialLoan>(sql, new { OrganizationId = organizationId });
         return rows.ToList();
     }
 
     public async Task<List<MaterialLoan>> GetPlatformLoanQueueAsync(string? statusFilter = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT l.*, p.name as product_name, p.sku as product_sku, o.order_number, c.name as classroom_name
-            FROM material_loans l
-            JOIN material_products p ON l.material_product_id = p.id
-            JOIN material_orders o ON l.order_id = o.id
-            LEFT JOIN classrooms c ON l.classroom_id = c.id ";
+        var rows = await conn.QueryFunctionAsync<MaterialLoan>(
+            "fn_get_platform_loan_queue",
+            new { Status = statusFilter },
+            cancellationToken: ct);
 
-        if (!string.IsNullOrWhiteSpace(statusFilter) && statusFilter != "All")
-        {
-            sql += " WHERE l.return_status = @Status ";
-        }
-
-        sql += " ORDER BY l.due_date ASC";
-
-        var rows = await conn.QueryAsync<MaterialLoan>(sql, new { Status = statusFilter });
         return rows.ToList();
     }
 
     public async Task<MaterialLoan?> GetLoanByIdAsync(Guid loanId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT l.*, p.name as product_name, p.sku as product_sku, o.order_number, c.name as classroom_name
-            FROM material_loans l
-            JOIN material_products p ON l.material_product_id = p.id
-            JOIN material_orders o ON l.order_id = o.id
-            LEFT JOIN classrooms c ON l.classroom_id = c.id
-            WHERE l.id = @LoanId";
-
-        return await conn.QuerySingleOrDefaultAsync<MaterialLoan>(sql, new { LoanId = loanId });
+        return await conn.QuerySingleFunctionAsync<MaterialLoan>(
+            "fn_get_material_loan_by_id",
+            new { LoanId = loanId },
+            cancellationToken: ct);
     }
 
     public async Task UpdateLoanStatusAsync(Guid loanId, string returnStatus, DateTimeOffset? actualReturnDate = null, string? notes = null, string? depositStatus = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            UPDATE material_loans SET
-                return_status = @ReturnStatus,
-                actual_return_date = COALESCE(@ActualReturnDate, actual_return_date),
-                notes = COALESCE(@Notes, notes),
-                deposit_status = COALESCE(@DepositStatus, deposit_status),
-                updated_at = NOW()
-            WHERE id = @LoanId";
-
-        await conn.ExecuteAsync(sql, new
+        await conn.ExecuteProcedureAsync("sp_update_material_loan_status", new
         {
             LoanId = loanId,
             ReturnStatus = returnStatus,
             ActualReturnDate = actualReturnDate,
             Notes = notes,
             DepositStatus = depositStatus
-        });
+        }, cancellationToken: ct);
     }
 
     public async Task<Guid> RecordReturnInspectionAsync(MaterialReturnInspection inspection, CancellationToken ct = default)
@@ -911,35 +469,17 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         inspection.CreatedAt = inspection.CreatedAt.ToUniversalTime();
         inspection.InspectedAt = inspection.InspectedAt.ToUniversalTime();
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_return_inspections (
-                id, loan_id, order_id, material_product_id, returned_quantity,
-                inspected_at, inspected_by_user_id, inspected_by_email, condition,
-                quantity_approved_for_stock, quantity_requiring_cleaning,
-                quantity_damaged, quantity_missing, inspection_notes,
-                deposit_disposition, deposit_deduction_amount, resolution_status, created_at
-            ) VALUES (
-                @Id, @LoanId, @OrderId, @MaterialProductId, @ReturnedQuantity,
-                @InspectedAt, @InspectedByUserId, @InspectedByEmail, @Condition,
-                @QuantityApprovedForStock, @QuantityRequiringCleaning,
-                @QuantityDamaged, @QuantityMissing, @InspectionNotes,
-                @DepositDisposition, @DepositDeductionAmount, @ResolutionStatus, @CreatedAt
-            )", inspection);
-
+        await conn.ExecuteProcedureAsync("sp_record_material_return_inspection", inspection, cancellationToken: ct);
         return inspection.Id;
     }
 
     public async Task<MaterialReturnInspection?> GetInspectionByLoanIdAsync(Guid loanId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT i.*, p.name as product_name, p.sku as product_sku
-            FROM material_return_inspections i
-            JOIN material_products p ON i.material_product_id = p.id
-            WHERE i.loan_id = @LoanId
-            ORDER BY i.created_at DESC LIMIT 1";
-
-        return await conn.QuerySingleOrDefaultAsync<MaterialReturnInspection>(sql, new { LoanId = loanId });
+        return await conn.QuerySingleFunctionAsync<MaterialReturnInspection>(
+            "fn_get_material_return_inspection_by_loan_id",
+            new { LoanId = loanId },
+            cancellationToken: ct);
     }
 
     #endregion
@@ -955,67 +495,149 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         schedule.NextRunDate = schedule.NextRunDate.ToUniversalTime();
         if (schedule.LastRunDate.HasValue) schedule.LastRunDate = schedule.LastRunDate.Value.ToUniversalTime();
 
-        await conn.ExecuteAsync(@"
-            INSERT INTO material_recurring_schedules (
-                id, tenant_id, organization_id, branch_id, classroom_id, schedule_type,
-                frequency, material_product_id, offering_id, quantity, loan_duration_days,
-                delivery_address, next_run_date, last_run_date, status, notes,
-                created_by_user_id, created_at, updated_at
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @ClassroomId, @ScheduleType,
-                @Frequency, @MaterialProductId, @OfferingId, @Quantity, @LoanDurationDays,
-                @DeliveryAddress, @NextRunDate, @LastRunDate, @Status, @Notes,
-                @CreatedByUserId, @CreatedAt, @UpdatedAt
-            )", schedule);
-
+        await conn.ExecuteProcedureAsync("sp_create_material_recurring_schedule", schedule, cancellationToken: ct);
         return schedule.Id;
     }
 
     public async Task<List<MaterialRecurringSchedule>> GetRecurringSchedulesAsync(Guid organizationId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT s.*, p.name as product_name, p.sku as product_sku
-            FROM material_recurring_schedules s
-            JOIN material_products p ON s.material_product_id = p.id
-            WHERE s.organization_id = @OrganizationId
-            ORDER BY s.next_run_date ASC";
+        var rows = await conn.QueryFunctionAsync<MaterialRecurringSchedule>(
+            "fn_get_material_recurring_schedules",
+            new { OrganizationId = organizationId },
+            cancellationToken: ct);
 
-        var rows = await conn.QueryAsync<MaterialRecurringSchedule>(sql, new { OrganizationId = organizationId });
         return rows.ToList();
     }
 
     public async Task<List<MaterialRecurringSchedule>> GetDueRecurringSchedulesAsync(DateTimeOffset asOfDate, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var sql = @"
-            SELECT s.*, p.name as product_name, p.sku as product_sku
-            FROM material_recurring_schedules s
-            JOIN material_products p ON s.material_product_id = p.id
-            WHERE s.status = 'Active' AND s.next_run_date <= @AsOfDate
-            ORDER BY s.next_run_date ASC";
+        var rows = await conn.QueryFunctionAsync<MaterialRecurringSchedule>(
+            "fn_get_due_material_recurring_schedules",
+            new { AsOfDate = asOfDate.ToUniversalTime() },
+            cancellationToken: ct);
 
-        var rows = await conn.QueryAsync<MaterialRecurringSchedule>(sql, new { AsOfDate = asOfDate.ToUniversalTime() });
         return rows.ToList();
     }
 
     public async Task UpdateRecurringScheduleStatusAsync(Guid scheduleId, string status, DateTimeOffset? nextRunDate, DateTimeOffset? lastRunDate, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        await conn.ExecuteAsync(@"
-            UPDATE material_recurring_schedules SET
-                status = @Status,
-                next_run_date = COALESCE(@NextRunDate, next_run_date),
-                last_run_date = COALESCE(@LastRunDate, last_run_date),
-                updated_at = NOW()
-            WHERE id = @ScheduleId", new
+        await conn.ExecuteProcedureAsync("sp_update_material_recurring_schedule_status", new
         {
             ScheduleId = scheduleId,
             Status = status,
             NextRunDate = nextRunDate?.ToUniversalTime(),
             LastRunDate = lastRunDate?.ToUniversalTime()
-        });
+        }, cancellationToken: ct);
     }
 
     #endregion
+
+    private static MaterialProduct MapProductRow(MaterialProductRow r)
+    {
+        var prod = new MaterialProduct
+        {
+            Id = r.id,
+            Sku = r.sku,
+            Name = r.name,
+            Description = r.description ?? string.Empty,
+            Category = r.category,
+            ImageUrl = r.image_url,
+            MaterialType = r.material_type,
+            SafetyInstructions = r.safety_instructions,
+            AgeMinMonths = r.age_min_months,
+            AgeMaxMonths = r.age_max_months,
+            UsageRestrictions = r.usage_restrictions,
+            CleaningInstructions = r.cleaning_instructions,
+            ReturnPolicy = r.return_policy,
+            IsActive = r.is_active,
+            CreatedAt = r.created_at,
+            UpdatedAt = r.updated_at
+        };
+
+        if (r.off_id != null)
+        {
+            prod.Offering = new MaterialOffering
+            {
+                Id = r.off_id.Value,
+                MaterialProductId = r.off_prod_id ?? prod.Id,
+                AllowPurchase = r.allow_purchase ?? false,
+                PurchasePrice = r.purchase_price ?? 0,
+                AllowBorrow = r.allow_borrow ?? false,
+                RentalFee = r.rental_fee ?? 0,
+                RefundableDeposit = r.refundable_deposit ?? 0,
+                DefaultLoanDurationDays = r.default_loan_duration_days ?? 7,
+                MaxLoanDurationDays = r.max_loan_duration_days ?? 30,
+                Currency = r.currency ?? "INR",
+                IsActive = r.off_is_active ?? true
+            };
+        }
+
+        if (r.bal_id != null)
+        {
+            prod.StockBalance = new InventoryBalance
+            {
+                Id = r.bal_id.Value,
+                MaterialProductId = prod.Id,
+                TotalStock = r.total_stock ?? 0,
+                AvailableStock = r.available_stock ?? 0,
+                ReservedStock = r.reserved_stock ?? 0,
+                DispatchedStock = r.dispatched_stock ?? 0,
+                OnLoanStock = r.on_loan_stock ?? 0,
+                UnderInspectionStock = r.under_inspection_stock ?? 0,
+                UnderCleaningStock = r.under_cleaning_stock ?? 0,
+                DamagedStock = r.damaged_stock ?? 0,
+                MissingStock = r.missing_stock ?? 0,
+                RetiredStock = r.retired_stock ?? 0
+            };
+        }
+
+        return prod;
+    }
+
+    private class MaterialProductRow
+    {
+        public Guid id { get; set; }
+        public string sku { get; set; } = string.Empty;
+        public string name { get; set; } = string.Empty;
+        public string? description { get; set; }
+        public string category { get; set; } = string.Empty;
+        public string? image_url { get; set; }
+        public string material_type { get; set; } = string.Empty;
+        public string? safety_instructions { get; set; }
+        public int? age_min_months { get; set; }
+        public int? age_max_months { get; set; }
+        public string? usage_restrictions { get; set; }
+        public string? cleaning_instructions { get; set; }
+        public string? return_policy { get; set; }
+        public bool is_active { get; set; }
+        public DateTimeOffset created_at { get; set; }
+        public DateTimeOffset updated_at { get; set; }
+
+        public Guid? off_id { get; set; }
+        public Guid? off_prod_id { get; set; }
+        public bool? allow_purchase { get; set; }
+        public decimal? purchase_price { get; set; }
+        public bool? allow_borrow { get; set; }
+        public decimal? rental_fee { get; set; }
+        public decimal? refundable_deposit { get; set; }
+        public int? default_loan_duration_days { get; set; }
+        public int? max_loan_duration_days { get; set; }
+        public string? currency { get; set; }
+        public bool? off_is_active { get; set; }
+
+        public Guid? bal_id { get; set; }
+        public int? total_stock { get; set; }
+        public int? available_stock { get; set; }
+        public int? reserved_stock { get; set; }
+        public int? dispatched_stock { get; set; }
+        public int? on_loan_stock { get; set; }
+        public int? under_inspection_stock { get; set; }
+        public int? under_cleaning_stock { get; set; }
+        public int? damaged_stock { get; set; }
+        public int? missing_stock { get; set; }
+        public int? retired_stock { get; set; }
+    }
 }

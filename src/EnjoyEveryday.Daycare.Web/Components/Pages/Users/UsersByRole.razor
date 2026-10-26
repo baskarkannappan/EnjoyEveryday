@@ -1,10 +1,10 @@
 @page "/users-by-role"
 @page "/management/users-by-role"
-@using Dapper
-@using EnjoyEveryday.Shared.Data
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.Shared.Tenancy
-@inject IDbConnectionFactory DbConnectionFactory
+@inject IUserRepository UserRepository
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
 
@@ -111,22 +111,8 @@
     private bool _isLoading = true;
     private string _searchTerm = "";
     private string _selectedFilter = "All";
-    private List<UserRecord> _allUsers = new();
+    private List<UserHierarchyRecord> _allUsers = new();
     private List<RoleGroup> _groupedRoles = new();
-
-    public class UserRecord
-    {
-        public Guid UserId { get; set; }
-        public string Email { get; set; } = string.Empty;
-        public string DisplayName { get; set; } = string.Empty;
-        public bool IsActive { get; set; } = true;
-        public DateTimeOffset CreatedAt { get; set; }
-        public string? OrganizationName { get; set; }
-        public string? ClassroomName { get; set; }
-        public int AssociatedChildrenCount { get; set; }
-        public List<string> AssignedRoles { get; set; } = new();
-        public List<string> CanonicalRoles { get; set; } = new();
-    }
 
     public class RoleGroup
     {
@@ -139,7 +125,7 @@
         public string BgColor { get; set; } = "#f9fafb";
         public string BorderColor { get; set; } = "#e5e7eb";
         public string TextColor { get; set; } = "#1f2937";
-        public List<UserRecord> Users { get; set; } = new();
+        public List<UserHierarchyRecord> Users { get; set; } = new();
     }
 
     protected override async Task OnInitializedAsync()
@@ -153,107 +139,8 @@
         try
         {
             var tenantId = TenantContext.TenantId;
-
-            using var conn = await DbConnectionFactory.CreateConnectionAsync();
-
-            // 1. Fetch all users in tenant
-            var sqlUsers = @"
-                SELECT 
-                    u.id AS UserId,
-                    u.email AS Email,
-                    COALESCE(NULLIF(TRIM(u.display_name), ''), NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS DisplayName,
-                    u.is_active AS IsActive,
-                    u.created_at AS CreatedAt
-                FROM users u
-                WHERE @TenantId = '00000000-0000-0000-0000-000000000000'::uuid OR u.tenant_id = @TenantId
-                ORDER BY u.first_name, u.last_name";
-
-            var usersData = (await conn.QueryAsync<UserRecord>(sqlUsers, new { TenantId = tenantId })).ToList();
-            var userMap = usersData.ToDictionary(u => u.UserId);
-
-            // 2. Fetch platform and organization roles
-            var sqlRoles = @"
-                SELECT ur.user_id AS UserId, r.name AS RoleName, NULL AS OrganizationName
-                FROM user_roles ur
-                JOIN roles r ON ur.role_id = r.id
-                UNION ALL
-                SELECT uor.user_id AS UserId, r.name AS RoleName, o.name AS OrganizationName
-                FROM user_organization_roles uor
-                JOIN roles r ON uor.role_id = r.id
-                LEFT JOIN organizations o ON o.id = uor.organization_id";
-
-            var roleRows = await conn.QueryAsync<dynamic>(sqlRoles);
-            foreach (var row in roleRows)
-            {
-                Guid uId = row.userid;
-                string rName = row.rolename;
-                string? orgName = row.organizationname;
-
-                if (userMap.TryGetValue(uId, out var user))
-                {
-                    if (!user.AssignedRoles.Contains(rName, StringComparer.OrdinalIgnoreCase))
-                    {
-                        user.AssignedRoles.Add(rName);
-                        user.CanonicalRoles.Add(RoleTemplates.Resolve(rName));
-                    }
-                    if (!string.IsNullOrEmpty(orgName) && string.IsNullOrEmpty(user.OrganizationName))
-                    {
-                        user.OrganizationName = orgName;
-                    }
-                }
-            }
-
-            // 3. Fetch classroom teacher assignments
-            try
-            {
-                var sqlTeachers = @"
-                    SELECT ct.user_id AS UserId, c.name AS ClassroomName
-                    FROM classroom_teachers ct
-                    JOIN classrooms c ON c.id = ct.classroom_id";
-                var teacherRows = await conn.QueryAsync<dynamic>(sqlTeachers);
-                foreach (var tr in teacherRows)
-                {
-                    Guid uId = tr.userid;
-                    string cName = tr.classroomname;
-                    if (userMap.TryGetValue(uId, out var user))
-                    {
-                        user.ClassroomName = cName;
-                        if (!user.CanonicalRoles.Contains(RoleTemplates.ClassroomTeacher))
-                        {
-                            user.AssignedRoles.Add("Teacher");
-                            user.CanonicalRoles.Add(RoleTemplates.ClassroomTeacher);
-                        }
-                    }
-                }
-            }
-            catch { /* table check safe */ }
-
-            // 4. Fetch family relationships (parents)
-            try
-            {
-                var sqlParents = @"
-                    SELECT fr.user_id AS UserId, COUNT(fr.child_id) AS ChildrenCount
-                    FROM family_relationships fr
-                    GROUP BY fr.user_id";
-                var parentRows = await conn.QueryAsync<dynamic>(sqlParents);
-                foreach (var pr in parentRows)
-                {
-                    Guid uId = pr.userid;
-                    int count = (int)pr.childrencount;
-                    if (userMap.TryGetValue(uId, out var user))
-                    {
-                        user.AssociatedChildrenCount = count;
-                        if (!user.CanonicalRoles.Contains(RoleTemplates.Parent))
-                        {
-                            user.AssignedRoles.Add("Parent");
-                            user.CanonicalRoles.Add(RoleTemplates.Parent);
-                        }
-                    }
-                }
-            }
-            catch { /* table check safe */ }
-
-            _allUsers = usersData;
+            var users = await UserRepository.GetUsersHierarchyAsync(tenantId);
+            _allUsers = users.ToList();
             RecomputeGroups();
         }
         finally

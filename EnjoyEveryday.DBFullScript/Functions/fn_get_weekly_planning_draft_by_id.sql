@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_weekly_planning_draft_by_id
+-- Backup generated on 2026-10-25 20:33:45
+
+CREATE OR REPLACE FUNCTION public.fn_get_weekly_planning_draft_by_id(p_tenant_id uuid, p_draft_id uuid)  RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, classroom_id uuid, requested_by_user_id uuid, week_start_date date, week_end_date date, focus_areas character varying, indoor_outdoor_preference character varying, materials_notes text, status character varying, created_at timestamp with time zone, updated_at timestamp with time zone)  LANGUAGE sql  STABLE AS $function$     SELECT          id, tenant_id, organization_id, classroom_id, requested_by_user_id,         week_start_date, week_end_date, focus_areas, indoor_outdoor_preference,         materials_notes, status, created_at, updated_at     FROM weekly_planning_draft_requests     WHERE tenant_id = p_tenant_id AND id = p_draft_id; $function$ ;

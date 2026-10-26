@@ -1,12 +1,11 @@
 @page "/profile"
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
-@using Dapper
-@using EnjoyEveryday.Shared.Data
+@using EnjoyEveryday.Domain.Repositories
 @using EnjoyEveryday.Shared.Authorization
 @inject AuthenticationStateProvider AuthStateProvider
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
-@inject IDbConnectionFactory DbConnectionFactory
+@inject IUserRepository UserRepository
 
 <PageTitle>User Profile — EnjoyEveryday</PageTitle>
 
@@ -243,45 +242,33 @@
                 {
                     try
                     {
-                        using var conn = await DbConnectionFactory.CreateConnectionAsync();
-                        
-                        var dbUser = await conn.QueryFirstOrDefaultAsync<dynamic>(
-                            "SELECT display_name, first_name, last_name FROM users WHERE id = @Id",
-                            new { Id = parsedUserId });
-                        if (dbUser != null)
+                        var securityDetails = await UserRepository.GetUserProfileSecurityDetailsAsync(parsedUserId);
+                        if (securityDetails != null)
                         {
-                            UserDisplayName = (string?)dbUser.display_name ?? $"{dbUser.first_name} {dbUser.last_name}".Trim();
+                            if (!string.IsNullOrWhiteSpace(securityDetails.DisplayName))
+                            {
+                                UserDisplayName = securityDetails.DisplayName;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(securityDetails.FirstName))
+                            {
+                                UserDisplayName = $"{securityDetails.FirstName} {securityDetails.LastName}".Trim();
+                            }
+
+                            foreach (var dr in securityDetails.AssignedRoleNames)
+                            {
+                                rawRoleNames.Add(dr);
+                            }
+
+                            if (securityDetails.IsClassroomTeacher)
+                            {
+                                rawRoleNames.Add(RoleTemplates.ClassroomTeacher);
+                            }
+
+                            if (securityDetails.IsParent)
+                            {
+                                rawRoleNames.Add(RoleTemplates.Parent);
+                            }
                         }
-
-                        var dbRoles = await conn.QueryAsync<string>(
-                            @"SELECT r.name 
-                              FROM user_roles ur JOIN roles r ON ur.role_id = r.id 
-                              WHERE ur.user_id = @UserId AND r.scope_type = 'Platform' AND r.tenant_id IS NULL
-                              UNION
-                              SELECT r.name 
-                              FROM user_organization_roles uor JOIN roles r ON uor.role_id = r.id 
-                              WHERE uor.user_id = @UserId",
-                            new { UserId = parsedUserId });
-
-                        foreach (var dr in dbRoles)
-                        {
-                            if (!string.IsNullOrWhiteSpace(dr))
-                                rawRoleNames.Add(dr.Trim());
-                        }
-
-                        // Also check if user is in classroom_teachers
-                        var isTeacher = await conn.ExecuteScalarAsync<bool>(
-                            "SELECT EXISTS(SELECT 1 FROM classroom_teachers WHERE user_id = @UserId)",
-                            new { UserId = parsedUserId });
-                        if (isTeacher)
-                            rawRoleNames.Add(RoleTemplates.ClassroomTeacher);
-
-                        // Also check if user is in family_relationships
-                        var isParent = await conn.ExecuteScalarAsync<bool>(
-                            "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId)",
-                            new { UserId = parsedUserId });
-                        if (isParent)
-                            rawRoleNames.Add(RoleTemplates.Parent);
                     }
                     catch
                     {

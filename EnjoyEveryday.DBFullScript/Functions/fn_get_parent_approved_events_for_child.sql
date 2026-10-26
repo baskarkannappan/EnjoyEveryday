@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_parent_approved_events_for_child
+-- Backup generated on 2026-10-25 20:33:34
+
+CREATE OR REPLACE FUNCTION public.fn_get_parent_approved_events_for_child(p_tenant_id uuid, p_child_id uuid)  RETURNS SETOF events  LANGUAGE sql  STABLE AS $function$     SELECT DISTINCT e.*     FROM events e     JOIN children c ON c.id = p_child_id     LEFT JOIN event_classrooms ec ON e.id = ec.event_id     WHERE (e.tenant_id = c.tenant_id OR e.tenant_id = p_tenant_id)       AND e.status IN ('Published', 'InProgress', 'Completed')       AND (           e.is_organization_wide = true           OR ec.classroom_id = c.classroom_id           OR e.branch_id IN (SELECT cl.branch_id FROM classrooms cl WHERE cl.id = c.classroom_id)       )     ORDER BY e.event_date DESC, e.start_time; $function$ ;

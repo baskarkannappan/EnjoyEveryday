@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_organization_billing_settings
+-- Backup generated on 2026-10-25 20:33:33
+
+CREATE OR REPLACE FUNCTION public.fn_get_organization_billing_settings(p_organization_id uuid)  RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, mode character varying, frequency character varying, effective_date timestamp with time zone, next_billing_date timestamp with time zone, auto_charge_enabled boolean, notes text, updated_by character varying, updated_at timestamp with time zone)  LANGUAGE sql  STABLE AS $function$     SELECT          id, tenant_id, organization_id, mode, frequency, effective_date,         next_billing_date, auto_charge_enabled, notes, updated_by, updated_at     FROM organization_billing_settings     WHERE organization_id = p_organization_id; $function$ ;

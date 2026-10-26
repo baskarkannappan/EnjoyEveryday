@@ -1,6 +1,7 @@
 using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -16,83 +17,65 @@ public class OrganizationRepository : IOrganizationRepository
 
     public async Task<Organization?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, name, location, is_active, created_at, updated_at
-            FROM organizations
-            WHERE id = @Id AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleOrDefaultAsync<Organization>(sql, new { Id = id, TenantId = tenantId });
+        return await connection.QuerySingleFunctionAsync<Organization>(
+            "public.fn_get_organization_by_id",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Organization?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, name, location, is_active, created_at, updated_at
-            FROM organizations
-            WHERE id = @Id";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleOrDefaultAsync<Organization>(sql, new { Id = id });
+        return await connection.QuerySingleFunctionAsync<Organization>(
+            "public.fn_get_organization_by_id_global",
+            new { Id = id },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<Organization>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, name, location, is_active, created_at, updated_at
-            FROM organizations
-            WHERE tenant_id = @TenantId
-            ORDER BY name";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Organization>(sql, new { TenantId = tenantId });
+        return await connection.QueryFunctionAsync<Organization>(
+            "public.fn_get_all_organizations",
+            new { TenantId = tenantId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Organization> AddAsync(Organization organization, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            INSERT INTO organizations (id, tenant_id, name, location, is_active, created_at, updated_at)
-            VALUES (@Id, @TenantId, @Name, @Location, @IsActive, @CreatedAt, @UpdatedAt)
-            RETURNING id, tenant_id, name, location, is_active, created_at, updated_at";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleAsync<Organization>(sql, organization);
+        var created = await connection.QuerySingleFunctionAsync<Organization>(
+            "public.fn_create_organization",
+            organization,
+            cancellationToken: cancellationToken);
+        return created ?? organization;
     }
 
     public async Task UpdateAsync(Organization organization, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            UPDATE organizations
-            SET name = @Name,
-                location = @Location,
-                is_active = @IsActive,
-                updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(sql, organization);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_organization",
+            organization,
+            cancellationToken: cancellationToken);
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            DELETE FROM organizations
-            WHERE id = @Id AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_organization",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<Organization>> GetOrganizationsByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT o.id, o.tenant_id as TenantId, o.name, o.location, o.is_active as IsActive, o.created_at as CreatedAt, o.updated_at as UpdatedAt
-            FROM organization_memberships om
-            JOIN organizations o ON om.organization_id = o.id
-            WHERE om.user_id = @UserId AND om.status = 'Active'
-            ORDER BY o.name";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Organization>(sql, new { UserId = userId });
+        return await connection.QueryFunctionAsync<Organization>(
+            "public.fn_get_organizations_by_user_id",
+            new { UserId = userId },
+            cancellationToken: cancellationToken);
     }
 }

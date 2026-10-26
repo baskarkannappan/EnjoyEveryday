@@ -14,5 +14,13 @@ public interface IUserRepository
     Task AssignRoleAsync(Guid userId, string roleName, CancellationToken cancellationToken = default);
     /// <summary>Assigns a role inside ONE organization (organization_memberships + user_organization_roles).</summary>
     Task AssignOrganizationRoleAsync(Guid tenantId, Guid organizationId, Guid userId, string roleName, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets all users in a tenant with their resolved role hierarchy, organization assignments, and associations.</summary>
+    Task<IEnumerable<UserHierarchyRecord>> GetUsersHierarchyAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => Task.FromResult(Enumerable.Empty<UserHierarchyRecord>());
+
+    /// <summary>Gets user profile security details, assigned roles, and authority flags.</summary>
+    Task<UserProfileSecurityDetails?> GetUserProfileSecurityDetailsAsync(Guid userId, CancellationToken cancellationToken = default)
+        => Task.FromResult<UserProfileSecurityDetails?>(null);
 }
 

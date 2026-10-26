@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_end_of_day_pending_activities
+-- Backup generated on 2026-10-25 20:33:15
+
+CREATE OR REPLACE FUNCTION public.fn_get_end_of_day_pending_activities(p_tenant_id uuid, p_date date, p_branch_id uuid DEFAULT NULL::uuid)  RETURNS TABLE(id uuid, name character varying)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT es.id, COALESCE(e.title, 'Planned Experience')::VARCHAR AS name     FROM experience_schedules es     LEFT JOIN experiences e ON es.experience_id = e.id     LEFT JOIN classrooms cr ON es.classroom_id = cr.id     WHERE es.tenant_id = p_tenant_id AND es.scheduled_date = p_date       AND es.status IN ('Planned', 'Scheduled', 'Confirmed', 'Started', 'Active', 'InProgress')       AND (p_branch_id IS NULL OR cr.branch_id = p_branch_id); END; $function$ ;

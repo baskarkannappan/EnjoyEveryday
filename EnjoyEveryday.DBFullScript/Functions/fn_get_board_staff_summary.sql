@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_board_staff_summary
+-- Backup generated on 2026-10-25 20:33:03
+
+CREATE OR REPLACE FUNCTION public.fn_get_board_staff_summary(p_tenant_id uuid, p_org_id uuid, p_date date)  RETURNS TABLE(expected_staff integer, present_staff integer, absent_staff integer)  LANGUAGE sql  STABLE AS $function$     SELECT          COUNT(1)::int AS expected_staff,         COUNT(1) FILTER (WHERE ta.status = 'Present')::int AS present_staff,         COUNT(1) FILTER (WHERE ta.status = 'Absent')::int AS absent_staff     FROM teachers t     LEFT JOIN teacher_attendance ta ON ta.teacher_id = t.id AND ta.attendance_date = p_date AND ta.tenant_id = p_tenant_id     WHERE t.tenant_id = p_tenant_id AND t.status != 'Inactive'       AND EXISTS (           SELECT 1 FROM organization_memberships om           WHERE om.user_id = t.user_id AND om.organization_id = p_org_id AND om.status = 'Active'       ); $function$ ;

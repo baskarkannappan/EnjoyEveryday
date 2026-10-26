@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_material_order_history
+-- Backup generated on 2026-10-25 20:33:31
+
+CREATE OR REPLACE FUNCTION public.fn_get_material_order_history(p_order_id uuid, p_include_internal_notes boolean DEFAULT false)  RETURNS TABLE(id uuid, order_id uuid, event_type character varying, previous_status character varying, new_status character varying, actor_user_id uuid, actor_email character varying, actor_role character varying, description text, notes text, is_internal_note boolean, created_at timestamp with time zone)  LANGUAGE sql  STABLE AS $function$     SELECT          id, order_id, event_type, previous_status, new_status,         actor_user_id, actor_email, actor_role, description, notes,         is_internal_note, created_at     FROM material_order_history     WHERE order_id = p_order_id       AND (p_include_internal_notes OR is_internal_note = FALSE)     ORDER BY created_at ASC; $function$ ;

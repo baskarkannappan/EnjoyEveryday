@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_teacher_attendance_by_date
+-- Backup generated on 2026-10-25 20:33:41
+
+CREATE OR REPLACE FUNCTION public.fn_get_teacher_attendance_by_date(p_tenant_id uuid, p_branch_id uuid, p_date date)  RETURNS TABLE(id uuid, tenant_id uuid, branch_id uuid, teacher_id uuid, attendance_date date, status character varying, clock_in_time time without time zone, clock_out_time time without time zone, notes text, recorded_by_user_id uuid, created_at timestamp with time zone, updated_at timestamp with time zone)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT ta.id, ta.tenant_id, ta.branch_id, ta.teacher_id, ta.attendance_date, ta.status,            ta.clock_in_time, ta.clock_out_time, ta.notes, ta.recorded_by_user_id, ta.created_at, ta.updated_at     FROM teacher_attendance ta     WHERE ta.tenant_id = p_tenant_id AND ta.branch_id = p_branch_id AND ta.attendance_date = p_date; END; $function$ ;

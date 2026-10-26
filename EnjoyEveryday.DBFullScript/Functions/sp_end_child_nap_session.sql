@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_end_child_nap_session
+-- Backup generated on 2026-10-25 20:34:00
+
+CREATE OR REPLACE PROCEDURE public.sp_end_child_nap_session(IN p_tenant_id uuid, IN p_session_id uuid, IN p_end_time timestamp with time zone, IN p_duration_minutes integer, IN p_outcome character varying, IN p_notes text, IN p_ended_by_user_id uuid, IN p_ended_by_name character varying)  LANGUAGE plpgsql AS $procedure$ BEGIN     UPDATE child_nap_sessions     SET end_time = p_end_time,         duration_minutes = p_duration_minutes,         status = 'Completed',         outcome = p_outcome,         notes = COALESCE(p_notes, notes),         ended_by_user_id = p_ended_by_user_id,         ended_by_name = p_ended_by_name,         updated_at = CURRENT_TIMESTAMP     WHERE id = p_session_id AND tenant_id = p_tenant_id; END; $procedure$ ;

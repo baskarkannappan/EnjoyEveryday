@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -17,257 +17,270 @@ public class EventRepository : IEventRepository
         _connectionFactory = connectionFactory;
     }
 
+    private static readonly string[] CreateEventParams =
+    [
+        "Id", "TenantId", "Title", "Description", "EventTypeId", "EventDate", "StartTime", "EndTime",
+        "Location", "OrganizerId", "Status", "Scope", "BranchId", "IsOrganizationWide", "PhotoUrls",
+        "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] UpdateEventParams =
+    [
+        "Id", "TenantId", "Title", "Description", "EventTypeId", "EventDate", "StartTime", "EndTime",
+        "Location", "OrganizerId", "Status", "Scope", "BranchId", "IsOrganizationWide", "PhotoUrls",
+        "UpdatedAt"
+    ];
+
+    private static readonly string[] CreateEventTypeParams =
+    [
+        "Id", "TenantId", "Name", "Description", "IsActive", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] AddClassroomParams =
+    [
+        "EventId", "ClassroomId"
+    ];
+
+    private static readonly string[] AddExperienceParams =
+    [
+        "Id", "EventId", "ExperienceId", "ExperienceScheduleId", "ExperienceSessionId"
+    ];
+
+    private static readonly string[] CreateTaskParams =
+    [
+        "Id", "EventId", "Description", "OwnerId", "DueDate", "IsCompleted", "CompletedAt", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] UpdateTaskParams =
+    [
+        "Id", "Description", "OwnerId", "DueDate", "IsCompleted", "CompletedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] CreateRsvpParams =
+    [
+        "Id", "EventId", "ChildId", "GuardianId", "Status", "Notes", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] UpdateRsvpParams =
+    [
+        "Id", "Status", "Notes", "UpdatedAt"
+    ];
+
     public async Task<Event?> GetByIdAsync(Guid tenantId, Guid id)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QuerySingleOrDefaultAsync<Event>(
-            "SELECT * FROM events WHERE id = @Id AND tenant_id = @TenantId",
-            new { Id = id, TenantId = tenantId }
-        );
+        return await connection.QuerySingleFunctionAsync<Event>(
+            "public.fn_get_event_by_id",
+            new { TenantId = tenantId, Id = id });
     }
 
     public async Task<IEnumerable<Event>> GetAllForTenantAsync(Guid tenantId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<Event>(
-            "SELECT * FROM events WHERE tenant_id = @TenantId ORDER BY event_date DESC",
-            new { TenantId = tenantId }
-        );
+        return await connection.QueryFunctionAsync<Event>(
+            "public.fn_get_all_events_for_tenant",
+            new { TenantId = tenantId });
     }
 
     public async Task<IEnumerable<Event>> GetByBranchAsync(Guid tenantId, Guid branchId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            SELECT DISTINCT e.* FROM events e
-            LEFT JOIN event_classrooms ec ON e.id = ec.event_id
-            LEFT JOIN classrooms c ON c.id = ec.classroom_id
-            WHERE e.tenant_id = @TenantId 
-              AND (e.scope = 'Organization' 
-                   OR e.is_organization_wide = true 
-                   OR (e.scope = 'Branch' AND e.branch_id = @BranchId)
-                   OR (c.branch_id = @BranchId))
-            ORDER BY e.event_date DESC, e.start_time ASC NULLS LAST";
-        return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, BranchId = branchId });
+        return await connection.QueryFunctionAsync<Event>(
+            "public.fn_get_events_by_branch",
+            new { TenantId = tenantId, BranchId = branchId });
     }
 
     public async Task<IEnumerable<Event>> GetByClassroomAsync(Guid tenantId, Guid classroomId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            SELECT DISTINCT e.* FROM events e
-            LEFT JOIN event_classrooms ec ON e.id = ec.event_id
-            LEFT JOIN classrooms c ON c.id = @ClassroomId
-            WHERE e.tenant_id = @TenantId 
-              AND (e.scope = 'Organization' 
-                   OR e.is_organization_wide = true 
-                   OR (e.scope = 'Branch' AND e.branch_id = c.branch_id)
-                   OR (ec.classroom_id = @ClassroomId))
-            ORDER BY e.event_date DESC, e.start_time ASC NULLS LAST";
-        return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, ClassroomId = classroomId });
+        return await connection.QueryFunctionAsync<Event>(
+            "public.fn_get_events_by_classroom",
+            new { TenantId = tenantId, ClassroomId = classroomId });
     }
 
     public async Task<IEnumerable<Event>> GetEventsForDateAsync(Guid tenantId, DateOnly date, Guid? branchId = null, Guid? classroomId = null)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            SELECT DISTINCT e.* FROM events e
-            LEFT JOIN event_classrooms ec ON e.id = ec.event_id
-            LEFT JOIN classrooms c ON c.id = @ClassroomId
-            LEFT JOIN classrooms ec_c ON ec_c.id = ec.classroom_id
-            WHERE e.tenant_id = @TenantId 
-              AND e.event_date = @Date
-              AND (
-                  (@ClassroomId IS NOT NULL AND (
-                      e.scope = 'Organization' 
-                      OR e.is_organization_wide = true 
-                      OR (e.scope = 'Branch' AND e.branch_id = c.branch_id) 
-                      OR (ec.classroom_id = @ClassroomId)
-                  ))
-                  OR
-                  (@ClassroomId IS NULL AND @BranchId IS NOT NULL AND (
-                      e.scope = 'Organization' 
-                      OR e.is_organization_wide = true 
-                      OR (e.scope = 'Branch' AND e.branch_id = @BranchId) 
-                      OR (ec_c.branch_id = @BranchId)
-                  ))
-                  OR
-                  (@ClassroomId IS NULL AND @BranchId IS NULL)
-              )
-            ORDER BY e.start_time ASC NULLS LAST";
-        return await connection.QueryAsync<Event>(sql, new { TenantId = tenantId, Date = date, BranchId = branchId, ClassroomId = classroomId });
+        return await connection.QueryFunctionAsync<Event>(
+            "public.fn_get_events_for_date",
+            new
+            {
+                TenantId = tenantId,
+                Date = date.ToDateTime(TimeOnly.MinValue),
+                BranchId = branchId,
+                ClassroomId = classroomId
+            });
     }
 
     public async Task<Guid> CreateAsync(Event evt)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            INSERT INTO events (id, tenant_id, title, description, event_type_id, event_date, start_time, end_time, location, organizer_id, status, scope, branch_id, is_organization_wide, photo_urls, created_at, updated_at)
-            VALUES (@Id, @TenantId, @Title, @Description, @EventTypeId, @EventDate, @StartTime, @EndTime, @Location, @OrganizerId, @Status, @Scope, @BranchId, @IsOrganizationWide, @PhotoUrls, @CreatedAt, @UpdatedAt)
-            RETURNING id";
-        return await connection.ExecuteScalarAsync<Guid>(sql, evt);
+        return await connection.ExecuteScalarFunctionAsync<Guid>(
+            "public.fn_create_event",
+            evt,
+            parameterNames: CreateEventParams);
     }
 
     public async Task UpdateAsync(Event evt)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
         evt.UpdatedAt = DateTimeOffset.UtcNow;
-        var sql = @"
-            UPDATE events 
-            SET title = @Title, description = @Description, event_type_id = @EventTypeId, 
-                event_date = @EventDate, start_time = @StartTime, end_time = @EndTime, 
-                location = @Location, organizer_id = @OrganizerId, status = @Status, 
-                scope = @Scope, branch_id = @BranchId, is_organization_wide = @IsOrganizationWide, 
-                photo_urls = @PhotoUrls, updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
-        await connection.ExecuteAsync(sql, evt);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_event",
+            evt,
+            parameterNames: UpdateEventParams);
     }
 
     public async Task UpdatePhotosAsync(Guid tenantId, Guid eventId, string[] photoUrls)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            UPDATE events 
-            SET photo_urls = @PhotoUrls, updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
-        await connection.ExecuteAsync(sql, new { Id = eventId, TenantId = tenantId, PhotoUrls = photoUrls, UpdatedAt = DateTimeOffset.UtcNow });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_event_photos",
+            new { Id = eventId, TenantId = tenantId, PhotoUrls = photoUrls, UpdatedAt = DateTimeOffset.UtcNow });
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        await connection.ExecuteAsync("DELETE FROM events WHERE id = @Id AND tenant_id = @TenantId", new { Id = id, TenantId = tenantId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_event",
+            new { TenantId = tenantId, Id = id });
     }
 
     public async Task<IEnumerable<EventType>> GetEventTypesAsync(Guid tenantId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<EventType>(
-            "SELECT * FROM event_types WHERE tenant_id = @TenantId AND is_active = true ORDER BY name",
-            new { TenantId = tenantId }
-        );
+        return await connection.QueryFunctionAsync<EventType>(
+            "public.fn_get_event_types",
+            new { TenantId = tenantId });
     }
 
     public async Task<Guid> CreateEventTypeAsync(EventType eventType)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            INSERT INTO event_types (id, tenant_id, name, description, is_active, created_at, updated_at)
-            VALUES (@Id, @TenantId, @Name, @Description, @IsActive, @CreatedAt, @UpdatedAt)
-            RETURNING id";
-        return await connection.ExecuteScalarAsync<Guid>(sql, eventType);
+        return await connection.ExecuteScalarFunctionAsync<Guid>(
+            "public.fn_create_event_type",
+            eventType,
+            parameterNames: CreateEventTypeParams);
     }
 
     public async Task AddEventClassroomAsync(EventClassroom eventClassroom)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            INSERT INTO event_classrooms (event_id, classroom_id) 
-            VALUES (@EventId, @ClassroomId)
-            ON CONFLICT DO NOTHING";
-        await connection.ExecuteAsync(sql, eventClassroom);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_add_event_classroom",
+            eventClassroom,
+            parameterNames: AddClassroomParams);
     }
 
     public async Task RemoveEventClassroomAsync(Guid eventId, Guid classroomId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        await connection.ExecuteAsync("DELETE FROM event_classrooms WHERE event_id = @EventId AND classroom_id = @ClassroomId", new { EventId = eventId, ClassroomId = classroomId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_remove_event_classroom",
+            new { EventId = eventId, ClassroomId = classroomId });
     }
 
     public async Task<IEnumerable<Guid>> GetEventClassroomsAsync(Guid eventId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<Guid>("SELECT classroom_id FROM event_classrooms WHERE event_id = @EventId", new { EventId = eventId });
+        return await connection.QueryFunctionAsync<Guid>(
+            "public.fn_get_event_classrooms",
+            new { EventId = eventId });
     }
 
     public async Task AddEventExperienceAsync(EventExperience eventExperience)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            INSERT INTO event_experiences (id, event_id, experience_id, experience_schedule_id, experience_session_id)
-            VALUES (@Id, @EventId, @ExperienceId, @ExperienceScheduleId, @ExperienceSessionId)";
-        await connection.ExecuteAsync(sql, eventExperience);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_add_event_experience",
+            eventExperience,
+            parameterNames: AddExperienceParams);
     }
 
     public async Task RemoveEventExperienceAsync(Guid id)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        await connection.ExecuteAsync("DELETE FROM event_experiences WHERE id = @Id", new { Id = id });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_remove_event_experience",
+            new { Id = id });
     }
 
     public async Task<IEnumerable<EventExperience>> GetEventExperiencesAsync(Guid eventId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<EventExperience>("SELECT * FROM event_experiences WHERE event_id = @EventId", new { EventId = eventId });
+        return await connection.QueryFunctionAsync<EventExperience>(
+            "public.fn_get_event_experiences",
+            new { EventId = eventId });
     }
 
     public async Task<Guid> CreateEventTaskAsync(EventTask task)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            INSERT INTO event_tasks (id, event_id, description, owner_id, due_date, is_completed, completed_at, created_at, updated_at)
-            VALUES (@Id, @EventId, @Description, @OwnerId, @DueDate, @IsCompleted, @CompletedAt, @CreatedAt, @UpdatedAt)
-            RETURNING id";
-        return await connection.ExecuteScalarAsync<Guid>(sql, task);
+        return await connection.ExecuteScalarFunctionAsync<Guid>(
+            "public.fn_create_event_task",
+            task,
+            parameterNames: CreateTaskParams);
     }
 
     public async Task UpdateEventTaskAsync(EventTask task)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
         task.UpdatedAt = DateTimeOffset.UtcNow;
-        var sql = @"
-            UPDATE event_tasks 
-            SET description = @Description, owner_id = @OwnerId, due_date = @DueDate, 
-                is_completed = @IsCompleted, completed_at = @CompletedAt, updated_at = @UpdatedAt
-            WHERE id = @Id";
-        await connection.ExecuteAsync(sql, task);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_event_task",
+            task,
+            parameterNames: UpdateTaskParams);
     }
 
     public async Task DeleteEventTaskAsync(Guid id)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        await connection.ExecuteAsync("DELETE FROM event_tasks WHERE id = @Id", new { Id = id });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_event_task",
+            new { Id = id });
     }
 
     public async Task<IEnumerable<EventTask>> GetEventTasksAsync(Guid eventId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<EventTask>("SELECT * FROM event_tasks WHERE event_id = @EventId ORDER BY created_at", new { EventId = eventId });
+        return await connection.QueryFunctionAsync<EventTask>(
+            "public.fn_get_event_tasks",
+            new { EventId = eventId });
     }
 
     public async Task<Guid> CreateEventRsvpAsync(EventRsvp rsvp)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var sql = @"
-            INSERT INTO event_rsvps (id, event_id, child_id, guardian_id, status, notes, created_at, updated_at)
-            VALUES (@Id, @EventId, @ChildId, @GuardianId, @Status, @Notes, @CreatedAt, @UpdatedAt)
-            RETURNING id";
-        return await connection.ExecuteScalarAsync<Guid>(sql, rsvp);
+        return await connection.ExecuteScalarFunctionAsync<Guid>(
+            "public.fn_create_event_rsvp",
+            rsvp,
+            parameterNames: CreateRsvpParams);
     }
 
     public async Task UpdateEventRsvpAsync(EventRsvp rsvp)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
         rsvp.UpdatedAt = DateTimeOffset.UtcNow;
-        var sql = @"
-            UPDATE event_rsvps 
-            SET status = @Status, notes = @Notes, updated_at = @UpdatedAt
-            WHERE id = @Id";
-        await connection.ExecuteAsync(sql, rsvp);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_event_rsvp",
+            rsvp,
+            parameterNames: UpdateRsvpParams);
     }
 
     public async Task<IEnumerable<EventRsvp>> GetEventRsvpsAsync(Guid eventId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QueryAsync<EventRsvp>("SELECT * FROM event_rsvps WHERE event_id = @EventId", new { EventId = eventId });
+        return await connection.QueryFunctionAsync<EventRsvp>(
+            "public.fn_get_event_rsvps",
+            new { EventId = eventId });
     }
 
     public async Task<EventRsvp?> GetEventRsvpAsync(Guid eventId, Guid childId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        return await connection.QuerySingleOrDefaultAsync<EventRsvp>(
-            "SELECT * FROM event_rsvps WHERE event_id = @EventId AND child_id = @ChildId", 
-            new { EventId = eventId, ChildId = childId }
-        );
+        return await connection.QuerySingleFunctionAsync<EventRsvp>(
+            "public.fn_get_event_rsvp",
+            new { EventId = eventId, ChildId = childId });
     }
 }

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_activity_recommendation_request_by_id
+-- Backup generated on 2026-10-25 20:32:58
+
+CREATE OR REPLACE FUNCTION public.fn_get_activity_recommendation_request_by_id(p_tenant_id uuid, p_request_id uuid)  RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, classroom_id uuid, child_id uuid, requested_by_user_id uuid, request_timestamp timestamp with time zone, scope character varying, context_preferences jsonb, evidence_count integer, created_at timestamp with time zone)  LANGUAGE sql  STABLE AS $function$     SELECT id, tenant_id, organization_id, classroom_id, child_id, requested_by_user_id, request_timestamp, scope, context_preferences, evidence_count, created_at     FROM activity_recommendation_requests     WHERE id = p_request_id AND tenant_id = p_tenant_id; $function$ ;

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_child_by_id
+-- Backup generated on 2026-10-25 20:33:07
+
+CREATE OR REPLACE FUNCTION public.fn_get_child_by_id(p_tenant_id uuid, p_id uuid)  RETURNS TABLE(id uuid, tenant_id uuid, first_name character varying, last_name character varying, date_of_birth date, classroom_id uuid, photo_url text, profile_completion_percentage integer, enrollment_status character varying, draft_data text, is_active boolean, created_at timestamp with time zone, updated_at timestamp with time zone)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT c.id, c.tenant_id, c.first_name, c.last_name, c.date_of_birth, c.classroom_id,            c.photo_url, c.profile_completion_percentage, c.enrollment_status, c.draft_data,            c.is_active, c.created_at, c.updated_at     FROM children c     WHERE c.id = p_id AND c.tenant_id = p_tenant_id; END; $function$ ;

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -19,6 +19,28 @@ public class FloorMapRepository : IFloorMapRepository
         _connectionFactory = connectionFactory;
     }
 
+    private static readonly string[] CreateMapParams =
+    [
+        "Id", "TenantId", "OrganizationId", "BranchId", "Name", "BuildingArea",
+        "FloorLevel", "Description", "FileStorageKey", "FileType", "FileSize",
+        "ContentHash", "Version", "Status", "ReviewDueAt", "CreatedBy", "CreatedAt",
+        "PublishedBy", "PublishedAt", "SupersedesMapId", "RowVersion", "EmergencyInstructions"
+    ];
+
+    private static readonly string[] UpdateMapParams =
+    [
+        "Id", "TenantId", "Name", "BuildingArea", "FloorLevel", "Description",
+        "FileStorageKey", "FileType", "FileSize", "ContentHash", "Version",
+        "Status", "ReviewDueAt", "PublishedBy", "PublishedAt", "SupersedesMapId",
+        "EmergencyInstructions"
+    ];
+
+    private static readonly string[] InsertMarkerParams =
+    [
+        "Id", "FloorMapId", "MarkerType", "Label", "Instructions",
+        "NormalizedX", "NormalizedY", "DisplayOrder", "CreatedAt"
+    ];
+
     public async Task<IEnumerable<BranchFloorMap>> GetMapsAsync(
         Guid tenantId,
         Guid? organizationId = null,
@@ -26,32 +48,26 @@ public class FloorMapRepository : IFloorMapRepository
         string? status = null,
         CancellationToken ct = default)
     {
-        const string sql = @"
-            SELECT * FROM branch_floor_maps
-            WHERE tenant_id = @TenantId
-              AND (@OrganizationId IS NULL OR organization_id = @OrganizationId)
-              AND (@BranchId IS NULL OR branch_id = @BranchId)
-              AND (@Status IS NULL OR status = @Status)
-            ORDER BY floor_level ASC, name ASC, version DESC";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var maps = (await conn.QueryAsync<BranchFloorMap>(sql, new
-        {
-            TenantId = tenantId,
-            OrganizationId = organizationId,
-            BranchId = branchId,
-            Status = status
-        })).ToList();
+        var maps = (await conn.QueryFunctionAsync<BranchFloorMap>(
+            "fn_get_branch_floor_maps",
+            new
+            {
+                TenantId = tenantId,
+                OrganizationId = organizationId,
+                BranchId = branchId,
+                Status = status
+            },
+            cancellationToken: ct)).ToList();
 
         if (maps.Count > 0)
         {
-            var mapIds = maps.Select(m => m.Id).ToList();
-            const string markerSql = @"
-                SELECT * FROM floor_map_markers
-                WHERE floor_map_id = ANY(@MapIds)
-                ORDER BY display_order ASC";
+            var mapIds = maps.Select(m => m.Id).ToArray();
+            var markers = (await conn.QueryFunctionAsync<FloorMapMarker>(
+                "fn_get_floor_map_markers_by_map_ids",
+                new { MapIds = mapIds },
+                cancellationToken: ct)).ToList();
 
-            var markers = (await conn.QueryAsync<FloorMapMarker>(markerSql, new { MapIds = mapIds })).ToList();
             var markerLookup = markers.ToLookup(m => m.FloorMapId);
 
             foreach (var map in maps)
@@ -65,18 +81,19 @@ public class FloorMapRepository : IFloorMapRepository
 
     public async Task<BranchFloorMap?> GetMapByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default)
     {
-        const string sql = @"SELECT * FROM branch_floor_maps WHERE tenant_id = @TenantId AND id = @Id";
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var map = await conn.QuerySingleOrDefaultAsync<BranchFloorMap>(sql, new { TenantId = tenantId, Id = id });
+        var map = await conn.QuerySingleFunctionAsync<BranchFloorMap>(
+            "fn_get_branch_floor_map_by_id",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: ct);
 
         if (map != null)
         {
-            const string markerSql = @"
-                SELECT * FROM floor_map_markers
-                WHERE floor_map_id = @FloorMapId
-                ORDER BY display_order ASC";
+            var markers = await conn.QueryFunctionAsync<FloorMapMarker>(
+                "fn_get_floor_map_markers",
+                new { FloorMapId = map.Id },
+                cancellationToken: ct);
 
-            var markers = await conn.QueryAsync<FloorMapMarker>(markerSql, new { FloorMapId = map.Id });
             map.Markers = markers.ToList();
         }
 
@@ -85,21 +102,14 @@ public class FloorMapRepository : IFloorMapRepository
 
     public async Task<BranchFloorMap> CreateMapAsync(BranchFloorMap map, CancellationToken ct = default)
     {
-        const string sql = @"
-            INSERT INTO branch_floor_maps (
-                id, tenant_id, organization_id, branch_id, name, building_area,
-                floor_level, description, file_storage_key, file_type, file_size,
-                content_hash, version, status, review_due_at, created_by, created_at,
-                published_by, published_at, supersedes_map_id, row_version, emergency_instructions
-            ) VALUES (
-                @Id, @TenantId, @OrganizationId, @BranchId, @Name, @BuildingArea,
-                @FloorLevel, @Description, @FileStorageKey, @FileType, @FileSize,
-                @ContentHash, @Version, @Status, @ReviewDueAt, @CreatedBy, @CreatedAt,
-                @PublishedBy, @PublishedAt, @SupersedesMapId, @RowVersion, @EmergencyInstructions
-            )";
+        if (map.Id == Guid.Empty) map.Id = Guid.NewGuid();
 
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        await conn.ExecuteAsync(sql, map);
+        await conn.ExecuteProcedureAsync(
+            "sp_create_branch_floor_map",
+            map,
+            parameterNames: CreateMapParams,
+            cancellationToken: ct);
 
         if (map.Markers.Count > 0)
         {
@@ -111,39 +121,21 @@ public class FloorMapRepository : IFloorMapRepository
 
     public async Task UpdateMapAsync(BranchFloorMap map, CancellationToken ct = default)
     {
-        const string sql = @"
-            UPDATE branch_floor_maps SET
-                name = @Name,
-                building_area = @BuildingArea,
-                floor_level = @FloorLevel,
-                description = @Description,
-                file_storage_key = @FileStorageKey,
-                file_type = @FileType,
-                file_size = @FileSize,
-                content_hash = @ContentHash,
-                version = @Version,
-                status = @Status,
-                review_due_at = @ReviewDueAt,
-                published_by = @PublishedBy,
-                published_at = @PublishedAt,
-                supersedes_map_id = @SupersedesMapId,
-                row_version = row_version + 1,
-                emergency_instructions = @EmergencyInstructions
-            WHERE tenant_id = @TenantId AND id = @Id";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        await conn.ExecuteAsync(sql, map);
+        await conn.ExecuteProcedureAsync(
+            "sp_update_branch_floor_map",
+            map,
+            parameterNames: UpdateMapParams,
+            cancellationToken: ct);
     }
 
     public async Task<IEnumerable<FloorMapMarker>> GetMarkersByMapIdAsync(Guid mapId, CancellationToken ct = default)
     {
-        const string sql = @"
-            SELECT * FROM floor_map_markers
-            WHERE floor_map_id = @FloorMapId
-            ORDER BY display_order ASC, created_at ASC";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        return await conn.QueryAsync<FloorMapMarker>(sql, new { FloorMapId = mapId });
+        return await conn.QueryFunctionAsync<FloorMapMarker>(
+            "fn_get_floor_map_markers",
+            new { FloorMapId = mapId },
+            cancellationToken: ct);
     }
 
     public async Task SaveMarkersAsync(Guid mapId, List<FloorMapMarker> markers, CancellationToken ct = default)
@@ -151,27 +143,25 @@ public class FloorMapRepository : IFloorMapRepository
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         using var tx = conn.BeginTransaction();
 
-        const string deleteSql = @"DELETE FROM floor_map_markers WHERE floor_map_id = @FloorMapId";
-        await conn.ExecuteAsync(deleteSql, new { FloorMapId = mapId }, tx);
+        await conn.ExecuteProcedureAsync(
+            "sp_delete_floor_map_markers",
+            new { FloorMapId = mapId },
+            transaction: tx,
+            cancellationToken: ct);
 
         if (markers.Count > 0)
         {
-            const string insertSql = @"
-                INSERT INTO floor_map_markers (
-                    id, floor_map_id, marker_type, label, instructions,
-                    normalized_x, normalized_y, display_order, created_at
-                ) VALUES (
-                    @Id, @FloorMapId, @MarkerType, @Label, @Instructions,
-                    @NormalizedX, @NormalizedY, @DisplayOrder, @CreatedAt
-                )";
-
             foreach (var m in markers)
             {
                 m.FloorMapId = mapId;
                 if (m.Id == Guid.Empty) m.Id = Guid.NewGuid();
+                await conn.ExecuteProcedureAsync(
+                    "sp_insert_floor_map_marker",
+                    m,
+                    parameterNames: InsertMarkerParams,
+                    transaction: tx,
+                    cancellationToken: ct);
             }
-
-            await conn.ExecuteAsync(insertSql, markers, tx);
         }
 
         tx.Commit();
@@ -183,19 +173,15 @@ public class FloorMapRepository : IFloorMapRepository
         string floorLevel,
         CancellationToken ct = default)
     {
-        const string sql = @"
-            SELECT * FROM branch_floor_maps
-            WHERE tenant_id = @TenantId
-              AND branch_id = @BranchId
-              AND floor_level = @FloorLevel
-            ORDER BY version DESC, created_at DESC";
-
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        return await conn.QueryAsync<BranchFloorMap>(sql, new
-        {
-            TenantId = tenantId,
-            BranchId = branchId,
-            FloorLevel = floorLevel
-        });
+        return await conn.QueryFunctionAsync<BranchFloorMap>(
+            "fn_get_floor_map_history",
+            new
+            {
+                TenantId = tenantId,
+                BranchId = branchId,
+                FloorLevel = floorLevel
+            },
+            cancellationToken: ct);
     }
 }

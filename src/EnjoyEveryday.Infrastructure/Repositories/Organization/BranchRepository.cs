@@ -1,6 +1,7 @@
 using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -16,59 +17,47 @@ public class BranchRepository : IBranchRepository
 
     public async Task<Branch?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, organization_id, name, location, is_active, created_at, updated_at
-            FROM branches
-            WHERE id = @Id AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleOrDefaultAsync<Branch>(sql, new { Id = id, TenantId = tenantId });
+        return await connection.QuerySingleFunctionAsync<Branch>(
+            "public.fn_get_branch_by_id",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<Branch>> GetByOrganizationIdAsync(Guid tenantId, Guid organizationId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, tenant_id, organization_id, name, location, is_active, created_at, updated_at
-            FROM branches
-            WHERE organization_id = @OrganizationId AND tenant_id = @TenantId
-            ORDER BY name";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Branch>(sql, new { OrganizationId = organizationId, TenantId = tenantId });
+        return await connection.QueryFunctionAsync<Branch>(
+            "public.fn_get_branches_by_organization",
+            new { TenantId = tenantId, OrganizationId = organizationId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Branch> AddAsync(Branch branch, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            INSERT INTO branches (id, tenant_id, organization_id, name, location, is_active, created_at, updated_at)
-            VALUES (@Id, @TenantId, @OrganizationId, @Name, @Location, @IsActive, @CreatedAt, @UpdatedAt)
-            RETURNING id, tenant_id, organization_id, name, location, is_active, created_at, updated_at";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleAsync<Branch>(sql, branch);
+        var created = await connection.QuerySingleFunctionAsync<Branch>(
+            "public.fn_create_branch",
+            branch,
+            cancellationToken: cancellationToken);
+        return created ?? branch;
     }
 
     public async Task UpdateAsync(Branch branch, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            UPDATE branches
-            SET name = @Name,
-                location = @Location,
-                is_active = @IsActive,
-                updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(sql, branch);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_branch",
+            branch,
+            cancellationToken: cancellationToken);
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            DELETE FROM branches
-            WHERE id = @Id AND tenant_id = @TenantId";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_branch",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 }

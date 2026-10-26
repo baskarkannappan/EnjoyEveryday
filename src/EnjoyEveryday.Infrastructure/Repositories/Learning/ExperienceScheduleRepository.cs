@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Shared.Tenancy;
 
@@ -20,94 +20,97 @@ public class ExperienceScheduleRepository : IExperienceScheduleRepository
         _tenantContext = tenantContext;
     }
 
+    private static readonly string[] CreateScheduleParams =
+    [
+        "Id", "TenantId", "ExperienceId", "ClassroomId", "ScheduledDate", "TimeOfDay",
+        "Status", "PrimaryTeacherId", "PlannedStartTime", "PlannedEndTime", "PreparationNotes",
+        "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] UpdateScheduleParams =
+    [
+        "Id", "TenantId", "ScheduledDate", "TimeOfDay", "Status",
+        "PrimaryTeacherId", "PlannedStartTime", "PlannedEndTime", "PreparationNotes", "UpdatedAt"
+    ];
+
     public async Task<IEnumerable<ExperienceSchedule>> GetByClassroomAndDateRangeAsync(Guid classroomId, DateOnly startDate, DateOnly endDate)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
-                   scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
-                   primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
-                   planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
-                   created_at as CreatedAt, updated_at as UpdatedAt
-            FROM experience_schedules
-            WHERE tenant_id = @TenantId AND classroom_id = @ClassroomId AND scheduled_date >= @StartDate AND scheduled_date <= @EndDate
-            ORDER BY scheduled_date ASC";
-
-        return await connection.QueryAsync<ExperienceSchedule>(sql, new { TenantId = _tenantContext.TenantId, ClassroomId = classroomId, StartDate = startDate, EndDate = endDate });
+        return await connection.QueryFunctionAsync<ExperienceSchedule>(
+            "public.fn_get_experience_schedules_by_classroom_and_date_range",
+            new
+            {
+                TenantId = _tenantContext.TenantId,
+                ClassroomId = classroomId,
+                StartDate = startDate.ToDateTime(TimeOnly.MinValue),
+                EndDate = endDate.ToDateTime(TimeOnly.MinValue)
+            });
     }
 
     public async Task<IEnumerable<ExperienceSchedule>> GetByDateAsync(DateOnly date)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
-                   scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
-                   primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
-                   planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
-                   created_at as CreatedAt, updated_at as UpdatedAt
-            FROM experience_schedules
-            WHERE tenant_id = @TenantId AND scheduled_date = @Date
-            ORDER BY planned_start_time ASC, time_of_day ASC";
+        return await connection.QueryFunctionAsync<ExperienceSchedule>(
+            "public.fn_get_experience_schedules_by_date",
+            new
+            {
+                TenantId = _tenantContext.TenantId,
+                Date = date.ToDateTime(TimeOnly.MinValue)
+            });
+    }
 
-        return await connection.QueryAsync<ExperienceSchedule>(sql, new { TenantId = _tenantContext.TenantId, Date = date });
+    public async Task<IEnumerable<ExperienceSchedule>> GetFilteredSchedulesAsync(Guid tenantId, DateOnly date, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null)
+    {
+        using var connection = await _dbConnectionFactory.CreateConnectionAsync();
+        return await connection.QueryFunctionAsync<ExperienceSchedule>(
+            "public.fn_get_filtered_experience_schedules",
+            new
+            {
+                TenantId = tenantId,
+                Date = date.ToDateTime(TimeOnly.MinValue),
+                OrgId = organizationId,
+                BranchId = branchId,
+                ClassroomId = classroomId
+            });
     }
 
     public async Task<ExperienceSchedule?> GetByIdAsync(Guid id)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
-                   scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
-                   primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
-                   planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
-                   created_at as CreatedAt, updated_at as UpdatedAt
-            FROM experience_schedules
-            WHERE id = @Id AND tenant_id = @TenantId";
-
-        return await connection.QuerySingleOrDefaultAsync<ExperienceSchedule>(sql, new { Id = id, TenantId = _tenantContext.TenantId });
+        return await connection.QuerySingleFunctionAsync<ExperienceSchedule>(
+            "public.fn_get_experience_schedule_by_id",
+            new { TenantId = _tenantContext.TenantId, Id = id });
     }
 
     public async Task<ExperienceSchedule> CreateAsync(ExperienceSchedule schedule)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
         schedule.TenantId = _tenantContext.TenantId;
-        
-        var sql = @"
-            INSERT INTO experience_schedules (id, tenant_id, experience_id, classroom_id, scheduled_date, time_of_day, status, primary_teacher_id, planned_start_time, planned_end_time, preparation_notes, created_at, updated_at)
-            VALUES (@Id, @TenantId, @ExperienceId, @ClassroomId, @ScheduledDate, @TimeOfDay, @Status, @PrimaryTeacherId, @PlannedStartTime, @PlannedEndTime, @PreparationNotes, @CreatedAt, @UpdatedAt)
-            RETURNING id, tenant_id as TenantId, experience_id as ExperienceId, classroom_id as ClassroomId, 
-                      scheduled_date as ScheduledDate, time_of_day as TimeOfDay, status as Status, 
-                      primary_teacher_id as PrimaryTeacherId, planned_start_time as PlannedStartTime,
-                      planned_end_time as PlannedEndTime, preparation_notes as PreparationNotes,
-                      created_at as CreatedAt, updated_at as UpdatedAt";
 
-        return await connection.QuerySingleAsync<ExperienceSchedule>(sql, schedule);
+        var created = await connection.QuerySingleFunctionAsync<ExperienceSchedule>(
+            "public.fn_create_experience_schedule",
+            schedule,
+            parameterNames: CreateScheduleParams);
+
+        return created ?? schedule;
     }
 
     public async Task UpdateAsync(ExperienceSchedule schedule)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
         schedule.UpdatedAt = DateTime.UtcNow;
-        
-        var sql = @"
-            UPDATE experience_schedules
-            SET scheduled_date = @ScheduledDate,
-                time_of_day = @TimeOfDay,
-                status = @Status,
-                primary_teacher_id = @PrimaryTeacherId,
-                planned_start_time = @PlannedStartTime,
-                planned_end_time = @PlannedEndTime,
-                preparation_notes = @PreparationNotes,
-                updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
 
-        await connection.ExecuteAsync(sql, schedule);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_experience_schedule",
+            schedule,
+            parameterNames: UpdateScheduleParams);
     }
 
     public async Task DeleteAsync(Guid id)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync();
-        var sql = "DELETE FROM experience_schedules WHERE id = @Id AND tenant_id = @TenantId";
-        await connection.ExecuteAsync(sql, new { Id = id, TenantId = _tenantContext.TenantId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_experience_schedule",
+            new { TenantId = _tenantContext.TenantId, Id = id });
     }
 }

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_consent_template_by_id
+-- Backup generated on 2026-10-25 20:33:14
+
+CREATE OR REPLACE FUNCTION public.fn_get_consent_template_by_id(p_tenant_id uuid, p_id uuid)  RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, name character varying, description text, document_type character varying, version character varying, template_content text, required_for_enrollment boolean, is_active boolean, created_by uuid, created_at timestamp with time zone, updated_at timestamp with time zone)  LANGUAGE sql  STABLE AS $function$     SELECT          id, tenant_id, organization_id, name, description, document_type,         version, template_content, required_for_enrollment, is_active,         created_by, created_at, updated_at     FROM consent_templates     WHERE tenant_id = p_tenant_id AND id = p_id; $function$ ;

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_portfolio_milestones
+-- Backup generated on 2026-10-25 20:33:40
+
+CREATE OR REPLACE FUNCTION public.fn_get_portfolio_milestones(p_tenant_id uuid, p_child_id uuid)  RETURNS TABLE(id uuid, milestone_date timestamp with time zone, title character varying, description text, evidence_summary text, parent_visible boolean, status character varying, development_area_id uuid, teacher_name character varying)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT m.id, m.milestone_date, m.title::VARCHAR,            m.description, m.evidence_summary,            m.parent_visible, m.status::VARCHAR,            m.development_area_id,            COALESCE(t.first_name || ' ' || t.last_name, 'Teacher')::VARCHAR AS teacher_name     FROM child_milestones m     LEFT JOIN teachers t ON m.teacher_id = t.id     WHERE m.tenant_id = p_tenant_id AND m.child_id = p_child_id     ORDER BY m.milestone_date DESC; END; $function$ ;

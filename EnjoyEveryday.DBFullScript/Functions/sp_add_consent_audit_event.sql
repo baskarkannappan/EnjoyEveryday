@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_add_consent_audit_event
+-- Backup generated on 2026-10-25 20:33:48
+
+CREATE OR REPLACE PROCEDURE public.sp_add_consent_audit_event(IN p_id uuid, IN p_tenant_id uuid, IN p_organization_id uuid, IN p_consent_document_id uuid, IN p_actor_type character varying, IN p_actor_user_id uuid, IN p_actor_name character varying, IN p_event_type character varying, IN p_timestamp_utc timestamp with time zone, IN p_correlation_id character varying, IN p_safe_metadata text)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO consent_audit_events (         id, tenant_id, organization_id, consent_document_id,         actor_type, actor_user_id, actor_name, event_type,         timestamp_utc, correlation_id, safe_metadata     ) VALUES (         p_id, p_tenant_id, p_organization_id, p_consent_document_id,         p_actor_type, p_actor_user_id, p_actor_name, p_event_type,         p_timestamp_utc, p_correlation_id, p_safe_metadata     ); END; $procedure$ ;

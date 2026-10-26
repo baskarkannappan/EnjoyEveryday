@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_experience_feedback_by_experience_id
+-- Backup generated on 2026-10-25 20:33:19
+
+CREATE OR REPLACE FUNCTION public.fn_get_experience_feedback_by_experience_id(p_tenant_id uuid, p_experience_id uuid)  RETURNS TABLE(id uuid, tenant_id uuid, experience_schedule_id uuid, experience_id uuid, teacher_id uuid, stars integer, rating character varying, notes text, created_at timestamp with time zone)  LANGUAGE plpgsql  STABLE AS $function$ BEGIN     RETURN QUERY     SELECT ef.id, ef.tenant_id, ef.experience_schedule_id, ef.experience_id,            ef.teacher_id, ef.stars, ef.rating::VARCHAR, ef.notes, ef.created_at     FROM experience_feedback ef     WHERE ef.experience_id = p_experience_id AND ef.tenant_id = p_tenant_id     ORDER BY ef.created_at DESC; END; $function$ ;

@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_insert_consent_choice
+-- Backup generated on 2026-10-25 20:34:01
+
+CREATE OR REPLACE PROCEDURE public.sp_insert_consent_choice(IN p_id uuid, IN p_tenant_id uuid, IN p_consent_document_id uuid, IN p_consent_signer_id uuid, IN p_section_key character varying, IN p_section_title character varying, IN p_is_mandatory boolean, IN p_choice character varying, IN p_recorded_at timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO consent_choices (         id, tenant_id, consent_document_id, consent_signer_id,         section_key, section_title, is_mandatory, choice, recorded_at     ) VALUES (         p_id, p_tenant_id, p_consent_document_id, p_consent_signer_id,         p_section_key, p_section_title, p_is_mandatory, p_choice, p_recorded_at     ); END; $procedure$ ;

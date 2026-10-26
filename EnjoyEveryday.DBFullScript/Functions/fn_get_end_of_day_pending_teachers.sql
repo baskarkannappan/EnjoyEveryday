@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_end_of_day_pending_teachers
+-- Backup generated on 2026-10-25 20:33:16
+
+CREATE OR REPLACE FUNCTION public.fn_get_end_of_day_pending_teachers(p_tenant_id uuid, p_date date, p_branch_id uuid DEFAULT NULL::uuid)  RETURNS TABLE(id uuid, name character varying)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT ta.id,            COALESCE(t.display_name, u.display_name, u.first_name || ' ' || u.last_name, 'Educator')::VARCHAR AS name     FROM teacher_attendance ta     LEFT JOIN teachers t ON ta.teacher_id = t.id     LEFT JOIN users u ON t.user_id = u.id OR ta.teacher_id = u.id     WHERE ta.tenant_id = p_tenant_id AND ta.attendance_date = p_date       AND ta.status IN ('Present', 'Late') AND ta.clock_out_time IS NULL       AND (p_branch_id IS NULL OR ta.branch_id = p_branch_id); END; $function$ ;

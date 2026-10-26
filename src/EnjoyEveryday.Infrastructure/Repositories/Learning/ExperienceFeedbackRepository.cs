@@ -1,6 +1,10 @@
-using Dapper;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -14,79 +18,80 @@ public class ExperienceFeedbackRepository : IExperienceFeedbackRepository
         _dbConnectionFactory = dbConnectionFactory;
     }
 
+    private static readonly string[] InsertFeedbackParams =
+    [
+        "Id", "TenantId", "ExperienceScheduleId", "ExperienceId", "TeacherId", "Stars", "Rating", "Notes", "CreatedAt"
+    ];
+
+    private static readonly string[] UpdateFeedbackParams =
+    [
+        "Id", "TenantId", "Stars", "Rating", "Notes"
+    ];
+
     public async Task<ExperienceFeedback?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
-                   teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
-            FROM experience_feedback
-            WHERE id = @Id AND tenant_id = @TenantId";
-        return await connection.QuerySingleOrDefaultAsync<ExperienceFeedback>(sql, new { Id = id, TenantId = tenantId });
+        return await connection.QuerySingleFunctionAsync<ExperienceFeedback>(
+            "public.fn_get_experience_feedback_by_id",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ExperienceFeedback>> GetByScheduleIdAsync(Guid tenantId, Guid scheduleId, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
-                   teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
-            FROM experience_feedback
-            WHERE experience_schedule_id = @ScheduleId AND tenant_id = @TenantId
-            ORDER BY created_at DESC";
-        return await connection.QueryAsync<ExperienceFeedback>(sql, new { ScheduleId = scheduleId, TenantId = tenantId });
+        return await connection.QueryFunctionAsync<ExperienceFeedback>(
+            "public.fn_get_experience_feedback_by_schedule_id",
+            new { TenantId = tenantId, ScheduleId = scheduleId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<ExperienceFeedback>> GetByExperienceIdAsync(Guid tenantId, Guid experienceId, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
-                   teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
-            FROM experience_feedback
-            WHERE experience_id = @ExperienceId AND tenant_id = @TenantId
-            ORDER BY created_at DESC";
-        return await connection.QueryAsync<ExperienceFeedback>(sql, new { ExperienceId = experienceId, TenantId = tenantId });
+        return await connection.QueryFunctionAsync<ExperienceFeedback>(
+            "public.fn_get_experience_feedback_by_experience_id",
+            new { TenantId = tenantId, ExperienceId = experienceId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<ExperienceFeedback> AddAsync(ExperienceFeedback feedback, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = @"
-            INSERT INTO experience_feedback (id, tenant_id, experience_schedule_id, experience_id, teacher_id, stars, rating, notes, created_at)
-            VALUES (@Id, @TenantId, @ExperienceScheduleId, @ExperienceId, @TeacherId, @Stars, @Rating, @Notes, @CreatedAt)";
-        
-        await connection.ExecuteAsync(sql, feedback);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_insert_experience_feedback",
+            feedback,
+            parameterNames: InsertFeedbackParams,
+            cancellationToken: cancellationToken);
+
         return feedback;
     }
 
     public async Task<IEnumerable<ExperienceFeedback>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = @"
-            SELECT id, tenant_id as TenantId, experience_schedule_id as ExperienceScheduleId, experience_id as ExperienceId,
-                   teacher_id as TeacherId, stars as Stars, rating as Rating, notes as Notes, created_at as CreatedAt
-            FROM experience_feedback
-            WHERE tenant_id = @TenantId
-            ORDER BY created_at DESC";
-        return await connection.QueryAsync<ExperienceFeedback>(sql, new { TenantId = tenantId });
+        return await connection.QueryFunctionAsync<ExperienceFeedback>(
+            "public.fn_get_all_experience_feedbacks",
+            new { TenantId = tenantId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task UpdateAsync(ExperienceFeedback feedback, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = @"
-            UPDATE experience_feedback
-            SET stars = @Stars, rating = @Rating, notes = @Notes
-            WHERE id = @Id AND tenant_id = @TenantId";
-        await connection.ExecuteAsync(sql, feedback);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_experience_feedback",
+            feedback,
+            parameterNames: UpdateFeedbackParams,
+            cancellationToken: cancellationToken);
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = await _dbConnectionFactory.CreateConnectionAsync(cancellationToken);
-        var sql = "DELETE FROM experience_feedback WHERE id = @Id AND tenant_id = @TenantId";
-        await connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_experience_feedback",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 }
-

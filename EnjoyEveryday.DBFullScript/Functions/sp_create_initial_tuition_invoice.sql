@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_create_initial_tuition_invoice
+-- Backup generated on 2026-10-25 20:33:53
+
+CREATE OR REPLACE PROCEDURE public.sp_create_initial_tuition_invoice(IN p_invoice_id uuid, IN p_tenant_id uuid, IN p_organization_id uuid, IN p_invoice_num character varying, IN p_total_amount numeric, IN p_desc text, IN p_notes text)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO invoices (         id, tenant_id, organization_id, invoice_number, currency, issue_date, due_date, status,         subtotal, tax_amount, total_amount, amount_paid, description, notes, created_by, created_at, updated_at     ) VALUES (         p_invoice_id, p_tenant_id, p_organization_id, p_invoice_num, 'INR', NOW(), NOW() + INTERVAL '7 days', 'Issued',         p_total_amount, 0, p_total_amount, 0,         p_desc, p_notes, 'Enrollment System', NOW(), NOW()     ); END; $procedure$ ;

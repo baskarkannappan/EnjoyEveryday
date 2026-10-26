@@ -1,16 +1,17 @@
 using System.Security.Claims;
-using Dapper;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace EnjoyEveryday.Daycare.Web.Endpoints;
 
@@ -57,72 +58,34 @@ public static class AuthEndpoints
             }
 
             using var conn = await db.CreateConnectionAsync();
-            dynamic? user = null;
-            if (!string.IsNullOrWhiteSpace(email))
+            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
+                "fn_dev_login",
+                new { Email = email?.Trim() });
+
+            if (syncResult == null || syncResult.out_status != "success" || !syncResult.out_user_id.HasValue)
             {
-                user = await conn.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT id, email, display_name, first_name, last_name, tenant_id FROM users WHERE LOWER(email) = LOWER(@Email) OR normalized_email = UPPER(@Email) LIMIT 1",
-                    new { Email = email.Trim() });
+                return Results.Redirect("/login");
             }
 
-            user ??= await conn.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT id, email, display_name, first_name, last_name, tenant_id FROM users WHERE normalized_email = 'PRIYA@LITTLESTARS.COM' LIMIT 1")
-                ?? await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users LIMIT 1");
-            if (user != null)
+            Guid userId = syncResult.out_user_id.Value;
+            Guid effectiveTenantId = syncResult.out_effective_tenant_id ?? syncResult.out_tenant_id ?? Guid.Empty;
+            Guid? activeOrgId = syncResult.out_active_org_id;
+            string displayName = syncResult.out_display_name ?? syncResult.out_email ?? "Teacher";
+
+            var claims = new List<Claim>
             {
-                string displayName = (string?)user.display_name ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(displayName))
-                    displayName = $"{user.first_name} {user.last_name}".Trim();
-                if (string.IsNullOrWhiteSpace(displayName))
-                    displayName = (string?)user.email ?? "Teacher";
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                new Claim(ClaimTypes.Name, displayName),
+                new Claim("DisplayName", displayName),
+                new Claim(ClaimTypes.Email, syncResult.out_email ?? string.Empty),
+                new Claim("TenantId", effectiveTenantId.ToString())
+            };
 
-                var memberships = (await conn.QueryAsync<Guid>(
-                    "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                    new { UserId = (Guid)user.id })).ToList();
-                var staffOrgId = memberships.Count > 0 ? await conn.ExecuteScalarAsync<Guid?>(@"
-                    SELECT uor.organization_id 
-                    FROM user_organization_roles uor
-                    JOIN roles r ON uor.role_id = r.id
-                    WHERE uor.user_id = @UserId 
-                      AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
-                      AND uor.organization_id = ANY(@OrgIds)
-                    LIMIT 1", new { UserId = (Guid)user.id, OrgIds = memberships.ToArray() }) : null;
+            await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
-                Guid? activeOrgId = staffOrgId ?? (memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault());
-
-                if (!activeOrgId.HasValue)
-                {
-                    activeOrgId = await conn.ExecuteScalarAsync<Guid?>(
-                        "SELECT id FROM organizations WHERE tenant_id = @TenantId LIMIT 1",
-                        new { TenantId = (Guid)user.tenant_id });
-                }
-
-                Guid effectiveTenantId = (Guid)user.tenant_id;
-                if (activeOrgId.HasValue)
-                {
-                    var orgTenant = await conn.ExecuteScalarAsync<Guid?>(
-                        "SELECT tenant_id FROM organizations WHERE id = @OrgId",
-                        new { OrgId = activeOrgId.Value });
-                    if (orgTenant.HasValue) effectiveTenantId = orgTenant.Value;
-                }
-
-                var claims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
-                    new Claim(ClaimTypes.Name, displayName),
-                    new Claim("DisplayName", displayName),
-                    new Claim(ClaimTypes.Email, user.email),
-                    new Claim("TenantId", effectiveTenantId.ToString())
-                };
-
-                await BuildAuthClaimsAsync(conn, claims, (Guid)user.id, activeOrgId);
-
-                var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-                await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
-                return Results.Redirect(returnUrl ?? "/");
-            }
-
-            return Results.Redirect("/login");
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
+            return Results.Redirect(returnUrl ?? "/");
         });
 
         group.MapGet("/callback", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
@@ -137,8 +100,6 @@ public static class AuthEndpoints
             if (string.IsNullOrEmpty(providerKey) || string.IsNullOrEmpty(email))
                 return Results.Redirect("/auth/access-denied?reason=invalid_claims");
 
-            var inviteToken = result.Properties?.Items.ContainsKey("InviteToken") == true ? result.Properties.Items["InviteToken"] : null;
-
             var givenName = result.Principal.FindFirst(ClaimTypes.GivenName)?.Value 
                          ?? result.Principal.FindFirst(ClaimTypes.Name)?.Value 
                          ?? email.Split('@')[0];
@@ -148,144 +109,41 @@ public static class AuthEndpoints
 
             using var conn = await db.CreateConnectionAsync();
 
-            // 1. Check if external login is already linked
-            var userId = await conn.ExecuteScalarAsync<Guid?>(
-                "SELECT user_id FROM user_external_logins WHERE provider = 'Google' AND provider_key = @ProviderKey",
-                new { ProviderKey = providerKey });
-
-            if (userId == null)
-            {
-                // 2. Check if user already exists with matching email
-                var existingUser = await conn.QuerySingleOrDefaultAsync<dynamic>(
-                    "SELECT id, tenant_id, is_active FROM users WHERE normalized_email = UPPER(@Email) LIMIT 1",
-                    new { Email = email });
-
-                if (existingUser == null)
+            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
+                "fn_sync_external_login",
+                new
                 {
-                    // For Daycare Operations, only registered teachers, educators, and administrators are permitted.
-                    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    return Results.Redirect("/access-denied?reason=not_registered");
-                }
+                    Provider = "Google",
+                    ProviderKey = providerKey,
+                    Email = email,
+                    FirstName = givenName,
+                    LastName = surname,
+                    DisplayName = fullName ?? givenName,
+                    Portal = "Daycare"
+                });
 
-                userId = (Guid)existingUser.id;
-            }
-
-            // 3. Verify user has Daycare/Educator/Admin access
-            var hasDaycareAccess = await conn.ExecuteScalarAsync<bool>(@"
-                SELECT EXISTS (
-                    SELECT 1 FROM user_roles ur
-                    JOIN roles r ON ur.role_id = r.id
-                    WHERE ur.user_id = @UserId AND r.name IN ('PlatformAdmin', 'SuperAdmin')
-                    UNION
-                    SELECT 1 FROM user_organization_roles uor
-                    JOIN roles r ON uor.role_id = r.id
-                    WHERE uor.user_id = @UserId AND r.name IN ('DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher', 'AssistantTeacher', 'OrganizationAdmin', 'OrganizationOwner')
-                    UNION
-                    SELECT 1 FROM teachers t
-                    WHERE t.user_id = @UserId
-                )", new { UserId = userId.Value });
-
-            if (!hasDaycareAccess)
+            if (syncResult == null || syncResult.out_status != "success" || !syncResult.out_user_id.HasValue)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/access-denied?reason=insufficient_permissions");
+                var reason = syncResult?.out_status ?? "auth_failed";
+                return Results.Redirect($"/access-denied?reason={reason}");
             }
 
-            // 4. Link Google account to this user if not already linked
-            await conn.ExecuteAsync(@"
-                INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
-                VALUES ('Google', @ProviderKey, @UserId, NOW())
-                ON CONFLICT (provider, provider_key) DO NOTHING;
-                UPDATE users SET email_confirmed = true, updated_at = NOW() WHERE id = @UserId;
-            ", new { ProviderKey = providerKey, UserId = userId.Value });
+            Guid userId = syncResult.out_user_id.Value;
+            Guid effectiveTenantId = syncResult.out_effective_tenant_id ?? syncResult.out_tenant_id ?? Guid.Empty;
+            Guid? activeOrgId = syncResult.out_active_org_id;
+            string displayName = syncResult.out_display_name ?? fullName ?? givenName;
 
-            // 5. Retrieve user profile and verify account is active
-            var user = await conn.QuerySingleOrDefaultAsync<dynamic>(
-                "SELECT id, tenant_id, is_active, display_name, first_name, last_name, email FROM users WHERE id = @UserId", 
-                new { UserId = userId.Value });
-
-            if (user == null || (bool?)user.is_active != true)
-            {
-                await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/access-denied?reason=account_disabled");
-            }
-
-            string displayName = (string?)user.display_name ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(displayName))
-                displayName = $"{user.first_name} {user.last_name}".Trim();
-            if (string.IsNullOrWhiteSpace(displayName))
-                displayName = fullName ?? givenName ?? email ?? (string?)user.email ?? "Teacher";
-
-            // Ensure teacher profile exists
-            await conn.ExecuteAsync(@"
-                INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, display_name, status, created_at, updated_at)
-                SELECT gen_random_uuid(), @TenantId, @UserId, @FirstName, @LastName, @DisplayName, 'Active', NOW(), NOW()
-                WHERE NOT EXISTS (SELECT 1 FROM teachers WHERE user_id = @UserId);
-            ", new { 
-                TenantId = (Guid)user.tenant_id, 
-                UserId = userId.Value, 
-                FirstName = givenName, 
-                LastName = surname, 
-                DisplayName = displayName 
-            });
-
-            var memberships = (await conn.QueryAsync<Guid>(
-                "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                new { UserId = userId.Value })).ToList();
-
-            if (memberships.Count == 0)
-            {
-                var defaultOrgId = await conn.ExecuteScalarAsync<Guid?>(
-                    "SELECT id FROM organizations WHERE tenant_id = @TenantId LIMIT 1",
-                    new { TenantId = (Guid)user.tenant_id });
-                if (defaultOrgId.HasValue)
-                {
-                    await conn.ExecuteAsync(@"
-                        INSERT INTO organization_memberships (user_id, organization_id, status, created_at, updated_at)
-                        VALUES (@UserId, @OrgId, 'Active', NOW(), NOW())
-                        ON CONFLICT DO NOTHING",
-                        new { UserId = userId.Value, OrgId = defaultOrgId.Value });
-                    memberships.Add(defaultOrgId.Value);
-                }
-            }
-
-            if (memberships.Count == 0)
-            {
-                await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/auth/access-denied?reason=no_organizations");
-            }
-
-            var staffOrgId = memberships.Count > 0 ? await conn.ExecuteScalarAsync<Guid?>(@"
-                SELECT uor.organization_id 
-                FROM user_organization_roles uor
-                JOIN roles r ON uor.role_id = r.id
-                WHERE uor.user_id = @UserId 
-                  AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
-                  AND uor.organization_id = ANY(@OrgIds)
-                LIMIT 1", new { UserId = userId.Value, OrgIds = memberships.ToArray() }) : null;
-
-            Guid? activeOrgId = staffOrgId ?? (memberships.Count == 1 ? memberships[0] : memberships.FirstOrDefault());
-
-            Guid effectiveTenantId = (Guid)user.tenant_id;
-            if (activeOrgId.HasValue)
-            {
-                var orgTenant = await conn.ExecuteScalarAsync<Guid?>(
-                    "SELECT tenant_id FROM organizations WHERE id = @OrgId",
-                    new { OrgId = activeOrgId.Value });
-                if (orgTenant.HasValue) effectiveTenantId = orgTenant.Value;
-            }
-
-            // 6. Rebuild the claims explicitly from our trusted DB
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, ((Guid)user.id).ToString()),
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(ClaimTypes.Name, displayName),
                 new Claim("DisplayName", displayName),
-                new Claim(ClaimTypes.Email, email ?? (string)user.email ?? string.Empty),
+                new Claim(ClaimTypes.Email, email ?? syncResult.out_email ?? string.Empty),
                 new Claim("TenantId", effectiveTenantId.ToString())
             };
 
-            await BuildAuthClaimsAsync(conn, claims, userId.Value, activeOrgId);
+            await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var properties = new AuthenticationProperties { IsPersistent = true };
@@ -320,28 +178,16 @@ public static class AuthEndpoints
             }
 
             using var conn = await db.CreateConnectionAsync();
-            
-            if (organizationId.HasValue)
-            {
-                var orgInfo = await conn.QueryFirstOrDefaultAsync<dynamic>(
-                    @"SELECT (om.status = 'Active') as is_active, o.tenant_id 
-                      FROM organization_memberships om 
-                      JOIN organizations o ON om.organization_id = o.id 
-                      WHERE om.user_id = @UserId AND om.organization_id = @OrgId",
-                    new { UserId = userId, OrgId = organizationId.Value });
+            var validation = await conn.QuerySingleFunctionAsync<OrgValidationResult>(
+                "fn_validate_and_set_organization",
+                new { UserId = userId, OrganizationId = organizationId });
 
-                if (orgInfo == null || (bool?)orgInfo.is_active != true) return Results.Redirect("/auth/access-denied?reason=invalid_org");
-                
-                tenantId = ((Guid?)orgInfo.tenant_id)?.ToString() ?? string.Empty;
-            }
-            else
+            if (validation == null || !validation.is_valid)
             {
-                var isParent = await conn.ExecuteScalarAsync<bool>(
-                    "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId)", 
-                    new { UserId = userId });
-                    
-                if (!isParent) return Results.Redirect("/auth/access-denied?reason=invalid_org");
+                return Results.Redirect("/auth/access-denied?reason=invalid_org");
             }
+
+            tenantId = validation.tenant_id?.ToString() ?? tenantId ?? string.Empty;
 
             var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value 
                 ?? context.User.FindFirst("DisplayName")?.Value 
@@ -386,47 +232,43 @@ public static class AuthEndpoints
             claims.Add(new Claim("ActiveOrganizationId", activeOrgId.Value.ToString()));
         }
 
-        var roles = (await conn.QueryAsync<string>(
-            @"SELECT r.name 
-              FROM user_roles ur JOIN roles r ON ur.role_id = r.id 
-              WHERE ur.user_id = @UserId
-              UNION
-              SELECT r.name 
-              FROM user_organization_roles uor JOIN roles r ON uor.role_id = r.id 
-              JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)
-              UNION
-              SELECT 'DaycareTeacher'
-              FROM teachers t
-              WHERE t.user_id = @UserId AND t.status != 'Inactive'",
-            new { UserId = userId, ActiveOrgId = activeOrgId })).Distinct().ToList();
+        var authClaims = await conn.QueryFunctionAsync<AuthClaimRow>(
+            "fn_get_user_auth_claims",
+            new { UserId = userId, ActiveOrgId = activeOrgId });
 
-        foreach (var role in roles)
-            claims.Add(new Claim(ClaimTypes.Role, role));
+        foreach (var row in authClaims)
+        {
+            if (row.claim_type == "role" && !string.IsNullOrWhiteSpace(row.claim_value))
+            {
+                claims.Add(new Claim(ClaimTypes.Role, row.claim_value));
+            }
+            else if (row.claim_type == "permission" && !string.IsNullOrWhiteSpace(row.claim_value))
+            {
+                claims.Add(new Claim("Permission", row.claim_value));
+            }
+        }
+    }
 
-        var permissions = (await conn.QueryAsync<string>(
-            @"SELECT p.name 
-              FROM user_roles ur 
-              JOIN role_permissions rp ON ur.role_id = rp.role_id 
-              JOIN permissions p ON rp.permission_id = p.id 
-              WHERE ur.user_id = @UserId
-              UNION
-              SELECT p.name 
-              FROM user_organization_roles uor 
-              JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-              JOIN role_permissions rp ON uor.role_id = rp.role_id 
-              JOIN permissions p ON rp.permission_id = p.id 
-              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)
-              UNION
-              SELECT p.name
-              FROM teachers t
-              JOIN roles r ON r.name IN ('DaycareTeacher', 'ClassroomTeacher', 'Teacher')
-              JOIN role_permissions rp ON r.id = rp.role_id
-              JOIN permissions p ON rp.permission_id = p.id
-              WHERE t.user_id = @UserId AND t.status != 'Inactive'",
-            new { UserId = userId, ActiveOrgId = activeOrgId })).Distinct().ToList();
+    private sealed class AuthSyncResult
+    {
+        public string? out_status { get; set; }
+        public Guid? out_user_id { get; set; }
+        public Guid? out_tenant_id { get; set; }
+        public Guid? out_effective_tenant_id { get; set; }
+        public Guid? out_active_org_id { get; set; }
+        public string? out_email { get; set; }
+        public string? out_display_name { get; set; }
+    }
 
-        foreach (var perm in permissions)
-            claims.Add(new Claim("Permission", perm));
+    private sealed class OrgValidationResult
+    {
+        public bool is_valid { get; set; }
+        public Guid? tenant_id { get; set; }
+    }
+
+    private sealed class AuthClaimRow
+    {
+        public string? claim_type { get; set; }
+        public string? claim_value { get; set; }
     }
 }

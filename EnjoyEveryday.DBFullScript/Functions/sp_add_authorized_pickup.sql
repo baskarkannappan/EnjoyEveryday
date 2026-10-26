@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_add_authorized_pickup
+-- Backup generated on 2026-10-25 20:33:47
+
+CREATE OR REPLACE PROCEDURE public.sp_add_authorized_pickup(IN p_id uuid, IN p_tenant_id uuid, IN p_child_id uuid, IN p_person_id uuid, IN p_relationship character varying, IN p_pickup_code character varying, IN p_photo_url text, IN p_valid_from timestamp with time zone, IN p_valid_to timestamp with time zone, IN p_is_active boolean, IN p_notes text)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO authorized_pickups (         id, tenant_id, child_id, person_id, relationship, pickup_code, photo_url, valid_from, valid_to, is_active, notes     ) VALUES (         p_id, p_tenant_id, p_child_id, p_person_id, p_relationship, p_pickup_code, p_photo_url, p_valid_from, p_valid_to, p_is_active, p_notes     ); END; $procedure$ ;

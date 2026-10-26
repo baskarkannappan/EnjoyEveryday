@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_child_pickup_header
+-- Backup generated on 2026-10-25 20:33:10
+
+CREATE OR REPLACE FUNCTION public.fn_get_child_pickup_header(p_tenant_id uuid, p_child_id uuid)  RETURNS TABLE(id uuid, first_name character varying, last_name character varying, photo_url text, classroom_name character varying, branch_name character varying, classroom_id uuid, branch_id uuid)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT c.id, c.first_name, c.last_name, c.photo_url,            cr.name::VARCHAR AS classroom_name, b.name::VARCHAR AS branch_name, cr.id AS classroom_id, b.id AS branch_id     FROM children c     LEFT JOIN classrooms cr ON c.classroom_id = cr.id     LEFT JOIN branches b ON cr.branch_id = b.id     WHERE c.tenant_id = p_tenant_id AND c.id = p_child_id; END; $function$ ;

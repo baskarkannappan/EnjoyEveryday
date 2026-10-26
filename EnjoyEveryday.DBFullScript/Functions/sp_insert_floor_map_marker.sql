@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_insert_floor_map_marker
+-- Backup generated on 2026-10-25 20:34:02
+
+CREATE OR REPLACE PROCEDURE public.sp_insert_floor_map_marker(IN p_id uuid, IN p_floor_map_id uuid, IN p_marker_type character varying, IN p_label character varying, IN p_instructions text, IN p_normalized_x double precision, IN p_normalized_y double precision, IN p_display_order integer, IN p_created_at timestamp with time zone)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO floor_map_markers (         id, floor_map_id, marker_type, label, instructions,         normalized_x, normalized_y, display_order, created_at     ) VALUES (         p_id, p_floor_map_id, p_marker_type, p_label, p_instructions,         p_normalized_x, p_normalized_y, p_display_order, p_created_at     ); END; $procedure$ ;

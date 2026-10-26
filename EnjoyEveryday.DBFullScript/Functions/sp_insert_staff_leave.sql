@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_insert_staff_leave
+-- Backup generated on 2026-10-25 20:34:03
+
+CREATE OR REPLACE PROCEDURE public.sp_insert_staff_leave(IN p_id uuid, IN p_tenant_id uuid, IN p_teacher_id uuid, IN p_leave_type character varying, IN p_start_date date, IN p_end_date date, IN p_reason character varying, IN p_status character varying, IN p_coverage_status character varying, IN p_substitute_teacher_id uuid, IN p_reviewed_by_user_id uuid)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO staff_leaves (         id, tenant_id, teacher_id, leave_type, start_date, end_date, reason, status, coverage_status, substitute_teacher_id, reviewed_by_user_id, created_at     )     VALUES (         p_id, p_tenant_id, p_teacher_id, p_leave_type, p_start_date, p_end_date, p_reason, p_status, p_coverage_status, p_substitute_teacher_id, p_reviewed_by_user_id, NOW()     ); END; $procedure$ ;

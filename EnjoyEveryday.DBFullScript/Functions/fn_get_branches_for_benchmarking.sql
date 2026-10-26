@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_branches_for_benchmarking
+-- Backup generated on 2026-10-25 20:33:06
+
+CREATE OR REPLACE FUNCTION public.fn_get_branches_for_benchmarking(p_tenant_id uuid, p_organization_id uuid)  RETURNS TABLE(id uuid, name character varying, location character varying)  LANGUAGE sql  STABLE AS $function$     WITH org_branches AS (         SELECT b.id, b.name, COALESCE(b.location, 'Main Campus')::varchar AS location         FROM branches b         WHERE b.tenant_id = p_tenant_id AND b.organization_id = p_organization_id         ORDER BY b.name     )     SELECT * FROM org_branches     UNION ALL     SELECT b.id, b.name, COALESCE(b.location, 'Main Campus')::varchar AS location     FROM branches b     WHERE b.tenant_id = p_tenant_id       AND NOT EXISTS (SELECT 1 FROM org_branches)     ORDER BY name; $function$ ;

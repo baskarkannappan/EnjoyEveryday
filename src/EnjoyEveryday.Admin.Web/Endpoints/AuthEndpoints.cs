@@ -114,95 +114,39 @@ public static class AuthEndpoints
 
             using var conn = await db.CreateConnectionAsync();
 
-            // 1. Check if external login is already linked
-            var userId = await conn.ExecuteScalarAsync<Guid?>(
-                "SELECT user_id FROM user_external_logins WHERE provider = 'Google' AND provider_key = @ProviderKey",
-                new { ProviderKey = providerKey });
+            var syncResult = await conn.QuerySingleOrDefaultAsync<dynamic>(
+                "SELECT * FROM fn_sync_external_login(@Provider, @ProviderKey, @Email, @FirstName, @LastName, @FullName, 'Admin')",
+                new {
+                    Provider = "Google",
+                    ProviderKey = providerKey,
+                    Email = email,
+                    FirstName = givenName,
+                    LastName = surname,
+                    FullName = fullName
+                });
 
-            if (userId == null)
-            {
-                // 2. Check if user already exists with matching email
-                var existingUser = await conn.QuerySingleOrDefaultAsync<dynamic>(
-                    "SELECT id, tenant_id, is_active FROM users WHERE normalized_email = UPPER(@Email) LIMIT 1",
-                    new { Email = email });
-
-                if (existingUser == null)
-                {
-                    // For Platform Operations, only pre-registered administrators are allowed.
-                    // Unknown external accounts cannot auto-provision administrative access.
-                    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    return Results.Redirect("/access-denied?reason=not_registered");
-                }
-
-                userId = (Guid)existingUser.id;
-            }
-
-            // 3. Verify user has administrative privileges (PlatformAdmin, SuperAdmin, OrganizationAdmin, or OrganizationOwner)
-            var hasAdminRole = await conn.ExecuteScalarAsync<bool>(@"
-                SELECT EXISTS (
-                    SELECT 1 FROM user_roles ur
-                    JOIN roles r ON ur.role_id = r.id
-                    WHERE ur.user_id = @UserId AND r.name IN ('PlatformAdmin', 'SuperAdmin')
-                    UNION
-                    SELECT 1 FROM user_organization_roles uor
-                    JOIN roles r ON uor.role_id = r.id
-                    WHERE uor.user_id = @UserId AND r.name IN ('OrganizationAdmin', 'OrganizationOwner')
-                )", new { UserId = userId.Value });
-
-            if (!hasAdminRole)
+            if (syncResult == null || (string)syncResult.out_status != "success")
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/access-denied?reason=insufficient_permissions");
+                var reason = (string?)syncResult?.out_status ?? "auth_failed";
+                return Results.Redirect($"/access-denied?reason={reason}");
             }
 
-            // 4. Link Google account to this admin user if not already linked
-            await conn.ExecuteAsync(@"
-                INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
-                VALUES ('Google', @ProviderKey, @UserId, NOW())
-                ON CONFLICT (provider, provider_key) DO NOTHING;
-                UPDATE users SET email_confirmed = true, updated_at = NOW() WHERE id = @UserId;
-            ", new { ProviderKey = providerKey, UserId = userId.Value });
+            Guid userId = (Guid)syncResult.out_user_id;
+            Guid effectiveTenantId = (Guid)syncResult.out_effective_tenant_id;
+            Guid? activeOrgId = syncResult.out_active_org_id != null ? (Guid)syncResult.out_active_org_id : null;
+            string displayName = (string)syncResult.out_display_name;
 
-            // 5. We have a linked user ID. Ensure the account is active and retrieve display name.
-            var user = await conn.QuerySingleOrDefaultAsync<dynamic>(
-                "SELECT id, tenant_id, is_active, display_name, first_name, last_name, email FROM users WHERE id = @UserId", 
-                new { UserId = userId.Value });
-
-            if (user == null || (bool?)user.is_active != true)
-            {
-                await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/access-denied?reason=account_disabled");
-            }
-
-            string displayName = (string?)user.display_name ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(displayName))
-                displayName = $"{user.first_name} {user.last_name}".Trim();
-            if (string.IsNullOrWhiteSpace(displayName))
-                displayName = fullName ?? givenName ?? email ?? (string?)user.email ?? "Admin";
-
-            // 6. Rebuild the claims explicitly from our trusted DB
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, ((Guid)user.id).ToString()),
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(ClaimTypes.Name, displayName),
                 new Claim("DisplayName", displayName),
-                new Claim(ClaimTypes.Email, email ?? (string)user.email ?? string.Empty),
-                new Claim("TenantId", ((Guid)user.tenant_id).ToString())
+                new Claim(ClaimTypes.Email, email ?? (string)syncResult.out_email ?? string.Empty),
+                new Claim("TenantId", effectiveTenantId.ToString())
             };
 
-            var memberships = (await conn.QueryAsync<Guid>(
-                "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                new { UserId = userId.Value })).ToList();
-
-            if (memberships.Count == 0)
-            {
-                await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                return Results.Redirect("/auth/access-denied?reason=no_organizations");
-            }
-
-            Guid? activeOrgId = memberships.Count == 1 ? memberships[0] : null;
-
-            await BuildAuthClaimsAsync(conn, claims, userId.Value, activeOrgId);
+            await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var properties = new AuthenticationProperties { IsPersistent = true };
@@ -298,37 +242,22 @@ public static class AuthEndpoints
             claims.Add(new Claim("ActiveOrganizationId", activeOrgId.Value.ToString()));
         }
 
-        var roles = await conn.QueryAsync<string>(
-            @"SELECT r.name 
-              FROM user_roles ur JOIN roles r ON ur.role_id = r.id 
-              WHERE ur.user_id = @UserId
-              UNION
-              SELECT r.name 
-              FROM user_organization_roles uor JOIN roles r ON uor.role_id = r.id 
-              JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)",
+        var authClaims = await conn.QueryAsync<dynamic>(
+            "SELECT * FROM fn_get_user_auth_claims(@UserId, @ActiveOrgId)",
             new { UserId = userId, ActiveOrgId = activeOrgId });
 
-        foreach (var role in roles)
-            claims.Add(new Claim(ClaimTypes.Role, role));
-
-        var permissions = await conn.QueryAsync<string>(
-            @"SELECT p.name 
-              FROM user_roles ur 
-
-              JOIN role_permissions rp ON ur.role_id = rp.role_id 
-              JOIN permissions p ON rp.permission_id = p.id 
-              WHERE ur.user_id = @UserId
-              UNION
-              SELECT p.name 
-              FROM user_organization_roles uor 
-              JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-              JOIN role_permissions rp ON uor.role_id = rp.role_id 
-              JOIN permissions p ON rp.permission_id = p.id 
-              WHERE uor.user_id = @UserId AND (uor.organization_id = @ActiveOrgId OR @ActiveOrgId IS NULL)",
-            new { UserId = userId, ActiveOrgId = activeOrgId });
-
-        foreach (var perm in permissions)
-            claims.Add(new Claim("Permission", perm));
+        foreach (var row in authClaims)
+        {
+            string type = (string)row.claim_type;
+            string val = (string)row.claim_value;
+            if (type == "role")
+            {
+                claims.Add(new Claim(ClaimTypes.Role, val));
+            }
+            else if (type == "permission")
+            {
+                claims.Add(new Claim("Permission", val));
+            }
+        }
     }
 }

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_branch_teachers
+-- Backup generated on 2026-10-25 20:33:06
+
+CREATE OR REPLACE FUNCTION public.fn_get_branch_teachers(p_tenant_id uuid, p_branch_id uuid)  RETURNS TABLE(id uuid, teacher_name character varying, classroom_id uuid, classroom_name character varying)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT t.id, (t.first_name || ' ' || t.last_name)::VARCHAR AS teacher_name,            ct.classroom_id, cr.name::VARCHAR AS classroom_name     FROM teachers t     JOIN user_branch_assignments uba ON t.user_id = uba.user_id     LEFT JOIN classroom_teachers ct ON t.user_id = ct.user_id     LEFT JOIN classrooms cr ON ct.classroom_id = cr.id     WHERE uba.branch_id = p_branch_id AND t.tenant_id = p_tenant_id     ORDER BY t.first_name; END; $function$ ;

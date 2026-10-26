@@ -1,7 +1,10 @@
-using System.Text.Json;
-using Dapper;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
@@ -15,19 +18,25 @@ public class ExperienceRepository : IExperienceRepository
         _connectionFactory = connectionFactory;
     }
 
+    private static readonly string[] AddExperienceParams =
+    [
+        "Id", "TenantId", "OrganizationId", "Title", "Description",
+        "Status", "DnaPayload::jsonb", "CreatedByUserId", "CreatedAt", "UpdatedAt", "VersionId"
+    ];
+
+    private static readonly string[] UpdateExperienceParams =
+    [
+        "Id", "TenantId", "Title", "Description",
+        "Status", "DnaPayload::jsonb", "UpdatedAt", "VersionId", "ChangeReason", "ModifiedByUserId"
+    ];
+
     public async Task<Experience?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
-                   COALESCE(AVG(ef.stars), 0) AS AverageStars
-            FROM experiences e
-            LEFT JOIN experience_schedules es ON e.id = es.experience_id
-            LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
-            WHERE e.id = @Id AND e.tenant_id = @TenantId
-            GROUP BY e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleOrDefaultAsync<Experience>(sql, new { Id = id, TenantId = tenantId });
+        return await connection.QuerySingleFunctionAsync<Experience>(
+            "public.fn_get_experience_by_id",
+            new { TenantId = tenantId, Id = id },
+            cancellationToken: cancellationToken);
     }
 
     public Task<IEnumerable<Experience>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
@@ -35,111 +44,81 @@ public class ExperienceRepository : IExperienceRepository
 
     public async Task<IEnumerable<Experience>> GetAllAsync(Guid tenantId, Guid? organizationId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at,
-                   COALESCE(AVG(ef.stars), 0) AS AverageStars
-            FROM experiences e
-            LEFT JOIN experience_schedules es ON e.id = es.experience_id
-            LEFT JOIN experience_feedback ef ON es.id = ef.experience_schedule_id
-            WHERE e.tenant_id = @TenantId AND e.status != 'Archived'
-              AND (@OrganizationId IS NULL OR e.organization_id = @OrganizationId)
-            GROUP BY e.id, e.tenant_id, e.organization_id, e.title, e.description, e.status, e.dna_payload, e.created_by_user_id, e.created_at, e.updated_at
-            ORDER BY e.created_at DESC";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<Experience>(sql, new { TenantId = tenantId, OrganizationId = organizationId });
+        return await connection.QueryFunctionAsync<Experience>(
+            "public.fn_get_all_experiences",
+            new { TenantId = tenantId, OrganizationId = organizationId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Experience> AddAsync(Experience experience, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            INSERT INTO experiences (id, tenant_id, organization_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at)
-            VALUES (@Id, @TenantId, @OrganizationId, @Title, @Description, @Status, @DnaPayload::jsonb, @CreatedByUserId, @CreatedAt, @UpdatedAt)
-            RETURNING id, tenant_id, organization_id, title, description, status, dna_payload, created_by_user_id, created_at, updated_at";
-
-        const string versionSql = @"
-            INSERT INTO experience_versions (id, experience_id, version_number, title, description, dna_payload, change_reason, modified_by_user_id, created_at)
-            VALUES (@VersionId, @ExperienceId, 1, @Title, @Description, @DnaPayload::jsonb, 'Initial Creation', @ModifiedByUserId, @CreatedAt)";
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        
-        var inserted = await connection.QuerySingleAsync<Experience>(sql, experience);
-        
-        await connection.ExecuteAsync(versionSql, new 
-        {
-            VersionId = Guid.NewGuid(),
-            ExperienceId = inserted.Id,
-            inserted.Title,
-            inserted.Description,
-            inserted.DnaPayload,
-            ModifiedByUserId = inserted.CreatedByUserId,
-            inserted.CreatedAt
-        });
+        var created = await connection.QuerySingleFunctionAsync<Experience>(
+            "public.fn_create_experience",
+            new
+            {
+                experience.Id,
+                experience.TenantId,
+                experience.OrganizationId,
+                experience.Title,
+                experience.Description,
+                experience.Status,
+                DnaPayload = experience.DnaPayload ?? "{}",
+                experience.CreatedByUserId,
+                experience.CreatedAt,
+                experience.UpdatedAt,
+                VersionId = Guid.NewGuid()
+            },
+            parameterNames: AddExperienceParams,
+            cancellationToken: cancellationToken);
 
-        return inserted;
+        return created ?? experience;
     }
 
     public async Task UpdateAsync(Experience experience, string changeReason, Guid modifiedByUserId, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        
-        // Get latest version number
-        var latestVersion = await connection.QuerySingleOrDefaultAsync<int?>(
-            "SELECT MAX(version_number) FROM experience_versions WHERE experience_id = @ExperienceId", 
-            new { ExperienceId = experience.Id }) ?? 0;
-            
-        var nextVersion = latestVersion + 1;
-
-        const string sql = @"
-            UPDATE experiences
-            SET title = @Title,
-                description = @Description,
-                status = @Status,
-                dna_payload = @DnaPayload::jsonb,
-                updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
-
-        await connection.ExecuteAsync(sql, experience);
-
-        const string versionSql = @"
-            INSERT INTO experience_versions (id, experience_id, version_number, title, description, dna_payload, change_reason, modified_by_user_id, created_at)
-            VALUES (@VersionId, @ExperienceId, @VersionNumber, @Title, @Description, @DnaPayload::jsonb, @ChangeReason, @ModifiedByUserId, @CreatedAt)";
-            
-        await connection.ExecuteAsync(versionSql, new 
-        {
-            VersionId = Guid.NewGuid(),
-            ExperienceId = experience.Id,
-            VersionNumber = nextVersion,
-            experience.Title,
-            experience.Description,
-            experience.DnaPayload,
-            ChangeReason = changeReason,
-            ModifiedByUserId = modifiedByUserId,
-            CreatedAt = experience.UpdatedAt
-        });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_update_experience",
+            new
+            {
+                experience.Id,
+                experience.TenantId,
+                experience.Title,
+                experience.Description,
+                experience.Status,
+                DnaPayload = experience.DnaPayload ?? "{}",
+                experience.UpdatedAt,
+                VersionId = Guid.NewGuid(),
+                ChangeReason = changeReason,
+                ModifiedByUserId = modifiedByUserId
+            },
+            parameterNames: UpdateExperienceParams,
+            cancellationToken: cancellationToken);
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-
-        const string sql = @"
-            UPDATE experiences
-            SET status = @Status, updated_at = @UpdatedAt
-            WHERE id = @Id AND tenant_id = @TenantId";
-            
-        await connection.ExecuteAsync(sql, new { Status = ExperienceStatus.Archived.ToString(), UpdatedAt = DateTimeOffset.UtcNow, Id = id, TenantId = tenantId });
+        await connection.ExecuteProcedureAsync(
+            "public.sp_delete_experience",
+            new 
+            { 
+                TenantId = tenantId,
+                Id = id, 
+                Status = ExperienceStatus.Archived.ToString(), 
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            cancellationToken: cancellationToken);
     }
     
     public async Task<IEnumerable<ExperienceVersion>> GetVersionsAsync(Guid experienceId, CancellationToken cancellationToken = default)
     {
-        const string sql = @"
-            SELECT id, experience_id, version_number, title, description, dna_payload, change_reason, modified_by_user_id, created_at
-            FROM experience_versions
-            WHERE experience_id = @ExperienceId
-            ORDER BY version_number DESC";
-            
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<ExperienceVersion>(sql, new { ExperienceId = experienceId });
+        return await connection.QueryFunctionAsync<ExperienceVersion>(
+            "public.fn_get_experience_versions",
+            new { ExperienceId = experienceId },
+            cancellationToken: cancellationToken);
     }
 }

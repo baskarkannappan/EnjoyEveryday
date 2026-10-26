@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_harvest_performance_items
+-- Backup generated on 2026-10-25 20:33:24
+
+CREATE OR REPLACE FUNCTION public.fn_get_harvest_performance_items(p_tenant_id uuid)  RETURNS TABLE(experience_id uuid, title character varying, subtitle text, uses integer, response text)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT          e.id AS experience_id,         e.title,         ('Created by ' || COALESCE((SELECT u.first_name FROM users u WHERE u.id = e.created_by_user_id), 'Educator'))::TEXT AS subtitle,         (SELECT COUNT(*)::INT FROM experience_schedules es WHERE es.experience_id = e.id) AS uses,         ('💬 ' || (SELECT COUNT(1) FROM experience_feedback f JOIN experience_schedules s ON f.experience_schedule_id = s.id WHERE s.experience_id = e.id))::TEXT AS response     FROM experiences e     WHERE e.tenant_id = p_tenant_id AND e.status NOT IN ('Idea', 'Draft', 'Archived')     ORDER BY uses DESC     LIMIT 10; END; $function$ ;

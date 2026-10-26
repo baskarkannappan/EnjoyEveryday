@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_add_platform_experience_version
+-- Backup generated on 2026-10-25 20:32:53
+
+CREATE OR REPLACE FUNCTION public.fn_add_platform_experience_version(p_id uuid, p_platform_experience_id uuid, p_version_number integer, p_title character varying, p_description text, p_dna_payload text, p_change_summary text, p_created_by_user_id uuid, p_created_at timestamp with time zone, p_is_active boolean)  RETURNS SETOF platform_experience_versions  LANGUAGE sql AS $function$     INSERT INTO platform_experience_versions (         id, platform_experience_id, version_number, title, description, dna_payload, change_summary, created_by_user_id, created_at, is_active     ) VALUES (         p_id, p_platform_experience_id, p_version_number, p_title, p_description, p_dna_payload, p_change_summary, p_created_by_user_id, p_created_at, p_is_active     )     RETURNING *; $function$ ;

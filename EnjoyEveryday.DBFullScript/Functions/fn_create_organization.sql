@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_create_organization
+-- Backup generated on 2026-10-25 20:32:56
+
+CREATE OR REPLACE FUNCTION public.fn_create_organization(p_id uuid, p_tenant_id uuid, p_name character varying, p_location character varying, p_is_active boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone)  RETURNS TABLE(id uuid, tenant_id uuid, name character varying, location character varying, is_active boolean, created_at timestamp with time zone, updated_at timestamp with time zone)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     INSERT INTO organizations (id, tenant_id, name, location, is_active, created_at, updated_at)     VALUES (p_id, p_tenant_id, p_name, p_location, p_is_active, p_created_at, p_updated_at)     RETURNING organizations.id, organizations.tenant_id, organizations.name, organizations.location, organizations.is_active, organizations.created_at, organizations.updated_at; END; $function$ ;

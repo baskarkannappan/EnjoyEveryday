@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_activity_recommendation_items
+-- Backup generated on 2026-10-25 20:32:58
+
+CREATE OR REPLACE FUNCTION public.fn_get_activity_recommendation_items(p_tenant_id uuid, p_request_id uuid)  RETURNS TABLE(id uuid, request_id uuid, tenant_id uuid, experience_id uuid, experience_title character varying, suggested_format character varying, estimated_duration_minutes integer, rationale text, supporting_evidence jsonb, materials jsonb, rank_order integer, is_evidence_limited boolean, created_at timestamp with time zone)  LANGUAGE sql  STABLE AS $function$     SELECT id, request_id, tenant_id, experience_id, experience_title, suggested_format, estimated_duration_minutes, rationale, supporting_evidence, materials, rank_order, is_evidence_limited, created_at     FROM activity_recommendation_items     WHERE request_id = p_request_id AND tenant_id = p_tenant_id     ORDER BY rank_order ASC; $function$ ;

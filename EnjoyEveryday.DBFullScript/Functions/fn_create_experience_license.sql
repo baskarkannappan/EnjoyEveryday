@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_create_experience_license
+-- Backup generated on 2026-10-25 20:32:55
+
+CREATE OR REPLACE FUNCTION public.fn_create_experience_license(p_id uuid, p_organization_id uuid, p_experience_id uuid, p_license_type character varying, p_grant_scope character varying, p_granted_by_user_id uuid, p_granted_at timestamp with time zone, p_expires_at timestamp with time zone, p_terms_document_hash character varying, p_is_active boolean)  RETURNS SETOF experience_licenses  LANGUAGE sql AS $function$     INSERT INTO experience_licenses (         id, organization_id, experience_id, license_type, grant_scope, granted_by_user_id, granted_at, expires_at, terms_document_hash, is_active     ) VALUES (         p_id, p_organization_id, p_experience_id, p_license_type, p_grant_scope, p_granted_by_user_id, p_granted_at, p_expires_at, p_terms_document_hash, p_is_active     )     RETURNING *; $function$ ;

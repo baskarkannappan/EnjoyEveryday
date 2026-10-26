@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_platform_marketplace_catalog
+-- Backup generated on 2026-10-25 20:33:38
+
+CREATE OR REPLACE FUNCTION public.fn_get_platform_marketplace_catalog(p_category character varying DEFAULT NULL::character varying, p_pricing_model character varying DEFAULT NULL::character varying, p_search_query character varying DEFAULT NULL::character varying)  RETURNS SETOF platform_experiences  LANGUAGE sql  STABLE AS $function$     SELECT *     FROM platform_experiences     WHERE publication_status = 'Published'       AND (p_category IS NULL OR category = p_category)       AND (p_pricing_model IS NULL OR pricing_model = p_pricing_model)       AND (p_search_query IS NULL OR title ILIKE ('%' || trim(p_search_query) || '%') OR description ILIKE ('%' || trim(p_search_query) || '%'))     ORDER BY created_at DESC; $function$ ;

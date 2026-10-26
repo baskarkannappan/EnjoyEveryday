@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_board_events
+-- Backup generated on 2026-10-25 20:33:02
+
+CREATE OR REPLACE FUNCTION public.fn_get_board_events(p_tenant_id uuid, p_date date)  RETURNS TABLE(id uuid, is_celebration boolean, title character varying, time_display text, scope_display text, status character varying, preparation_notes text)  LANGUAGE sql  STABLE AS $function$     SELECT          ev.id,         true AS is_celebration,         ev.title AS title,         COALESCE(TO_CHAR(ev.start_time, 'HH24:MI'), 'All Day') AS time_display,         CASE WHEN ev.is_organization_wide THEN 'All Campus' ELSE 'Classroom Event' END AS scope_display,         ev.status AS status,         ev.description AS preparation_notes     FROM events ev     WHERE ev.tenant_id = p_tenant_id       AND ev.event_date = p_date     ORDER BY ev.start_time NULLS LAST; $function$ ;
