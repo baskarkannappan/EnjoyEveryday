@@ -67,8 +67,42 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (offering.Id == Guid.Empty) offering.Id = Guid.NewGuid();
         offering.MaterialProductId = product.Id;
 
-        await conn.ExecuteProcedureAsync("sp_create_material_product", product, cancellationToken: ct);
-        await conn.ExecuteProcedureAsync("sp_create_material_offering", offering, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_create_material_product", new
+        {
+            product.Id,
+            product.Sku,
+            product.Name,
+            product.Description,
+            product.Category,
+            product.ImageUrl,
+            product.MaterialType,
+            product.SafetyInstructions,
+            product.AgeMinMonths,
+            product.AgeMaxMonths,
+            product.UsageRestrictions,
+            product.CleaningInstructions,
+            product.ReturnPolicy,
+            product.IsActive,
+            product.CreatedAt,
+            product.UpdatedAt
+        }, cancellationToken: ct);
+
+        await conn.ExecuteProcedureAsync("sp_create_material_offering", new
+        {
+            offering.Id,
+            offering.MaterialProductId,
+            offering.AllowPurchase,
+            offering.PurchasePrice,
+            offering.AllowBorrow,
+            offering.RentalFee,
+            offering.RefundableDeposit,
+            offering.DefaultLoanDurationDays,
+            offering.MaxLoanDurationDays,
+            offering.Currency,
+            offering.IsActive,
+            offering.CreatedAt,
+            offering.UpdatedAt
+        }, cancellationToken: ct);
 
         return product.Id;
     }
@@ -79,10 +113,27 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         product.UpdatedAt = DateTimeOffset.UtcNow;
         offering.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await conn.ExecuteProcedureAsync("sp_update_material_product", product, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_update_material_product", new
+        {
+            product.Id,
+            product.Name,
+            product.Description,
+            product.Category,
+            product.ImageUrl,
+            product.MaterialType,
+            product.SafetyInstructions,
+            product.AgeMinMonths,
+            product.AgeMaxMonths,
+            product.UsageRestrictions,
+            product.CleaningInstructions,
+            product.ReturnPolicy,
+            product.IsActive,
+            product.UpdatedAt
+        }, cancellationToken: ct);
+
         await conn.ExecuteProcedureAsync("sp_update_material_offering", new
         {
-            Id = product.Id,
+            MaterialProductId = product.Id,
             offering.AllowPurchase,
             offering.PurchasePrice,
             offering.AllowBorrow,
@@ -147,7 +198,23 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (entry.Id == Guid.Empty) entry.Id = Guid.NewGuid();
         entry.CreatedAt = entry.CreatedAt.ToUniversalTime();
 
-        await conn.ExecuteProcedureAsync("sp_record_inventory_ledger", entry, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_record_inventory_ledger", new
+        {
+            entry.Id,
+            entry.MaterialProductId,
+            entry.LocationId,
+            entry.TransactionType,
+            entry.QuantityDelta,
+            entry.AvailableDelta,
+            entry.ReservedDelta,
+            entry.OnLoanDelta,
+            entry.ReferenceType,
+            entry.ReferenceId,
+            entry.Notes,
+            entry.PerformedByUserId,
+            entry.PerformedByEmail,
+            entry.CreatedAt
+        }, cancellationToken: ct);
     }
 
     public async Task UpdateInventoryBalanceAtomicAsync(
@@ -197,7 +264,37 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (order.RequiredDeliveryDate.HasValue) order.RequiredDeliveryDate = order.RequiredDeliveryDate.Value.ToUniversalTime();
         if (order.QuotationValidUntil.HasValue) order.QuotationValidUntil = order.QuotationValidUntil.Value.ToUniversalTime();
 
-        await conn.ExecuteProcedureAsync("sp_create_material_order", order, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_create_material_order", new
+        {
+            order.Id,
+            order.OrderNumber,
+            order.TenantId,
+            order.OrganizationId,
+            order.BranchId,
+            order.ClassroomId,
+            order.PlannedExperienceId,
+            order.RequestingUserId,
+            order.RequestingUserEmail,
+            order.OrderType,
+            order.WorkflowStatus,
+            order.PaymentStatus,
+            order.FulfilmentStatus,
+            order.TotalPurchaseAmount,
+            order.TotalRentalFee,
+            order.TotalDeposit,
+            order.ShippingFee,
+            order.TaxAmount,
+            order.TotalAmount,
+            order.Currency,
+            order.QuotationNotes,
+            order.QuotationValidUntil,
+            order.DeliveryAddress,
+            order.DeliveryContactName,
+            order.DeliveryContactPhone,
+            order.RequiredDeliveryDate,
+            order.CreatedAt,
+            order.UpdatedAt
+        }, cancellationToken: ct);
 
         foreach (var item in items)
         {
@@ -206,7 +303,23 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             item.CreatedAt = item.CreatedAt.ToUniversalTime();
             if (item.ReturnDueDate.HasValue) item.ReturnDueDate = item.ReturnDueDate.Value.ToUniversalTime();
 
-            await conn.ExecuteProcedureAsync("sp_create_material_order_item", item, cancellationToken: ct);
+            await conn.ExecuteProcedureAsync("sp_create_material_order_item", new
+            {
+                item.Id,
+                item.OrderId,
+                item.MaterialProductId,
+                item.OfferingId,
+                item.FulfilmentMode,
+                item.Quantity,
+                item.UnitPrice,
+                item.RentalFee,
+                item.Deposit,
+                item.LineTotal,
+                item.LoanDurationDays,
+                item.ReturnDueDate,
+                item.Status,
+                item.CreatedAt
+            }, cancellationToken: ct);
         }
 
         if (initialHistory.Id == Guid.Empty) initialHistory.Id = Guid.NewGuid();
@@ -321,7 +434,21 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (history.Id == Guid.Empty) history.Id = Guid.NewGuid();
         history.CreatedAt = history.CreatedAt.ToUniversalTime();
 
-        await conn.ExecuteProcedureAsync("sp_add_material_order_history", history, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_add_material_order_history", new
+        {
+            history.Id,
+            history.OrderId,
+            history.EventType,
+            history.PreviousStatus,
+            history.NewStatus,
+            history.ActorUserId,
+            history.ActorEmail,
+            history.ActorRole,
+            history.Description,
+            history.Notes,
+            history.IsInternalNote,
+            history.CreatedAt
+        }, cancellationToken: ct);
     }
 
     public async Task<List<MaterialOrderHistory>> GetOrderHistoryAsync(Guid orderId, bool includeInternalNotes = false, CancellationToken ct = default)
@@ -362,7 +489,22 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         if (shipment.EstimatedDeliveryDate.HasValue) shipment.EstimatedDeliveryDate = shipment.EstimatedDeliveryDate.Value.ToUniversalTime();
         if (shipment.ActualDeliveryDate.HasValue) shipment.ActualDeliveryDate = shipment.ActualDeliveryDate.Value.ToUniversalTime();
 
-        await conn.ExecuteProcedureAsync("sp_create_material_shipment", shipment, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_create_material_shipment", new
+        {
+            shipment.Id,
+            shipment.OrderId,
+            shipment.ShipmentNumber,
+            shipment.CarrierName,
+            shipment.TrackingReference,
+            shipment.DispatchDate,
+            shipment.EstimatedDeliveryDate,
+            shipment.ActualDeliveryDate,
+            shipment.DeliveryStatus,
+            shipment.ProofOfDeliveryNotes,
+            shipment.RecordedByUserId,
+            shipment.CreatedAt,
+            shipment.UpdatedAt
+        }, cancellationToken: ct);
         return shipment.Id;
     }
 
@@ -403,7 +545,25 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             loan.DueDate = loan.DueDate.ToUniversalTime();
             if (loan.ActualReturnDate.HasValue) loan.ActualReturnDate = loan.ActualReturnDate.Value.ToUniversalTime();
 
-            await conn.ExecuteProcedureAsync("sp_create_material_loan", loan, cancellationToken: ct);
+            await conn.ExecuteProcedureAsync("sp_create_material_loan", new
+            {
+                loan.Id,
+                loan.OrderId,
+                loan.OrderItemId,
+                loan.MaterialProductId,
+                loan.OrganizationId,
+                loan.ClassroomId,
+                loan.QuantityIssued,
+                loan.IssuedAt,
+                loan.DueDate,
+                loan.ActualReturnDate,
+                loan.ReturnStatus,
+                loan.DepositAmount,
+                loan.DepositStatus,
+                loan.Notes,
+                loan.CreatedAt,
+                loan.UpdatedAt
+            }, cancellationToken: ct);
         }
     }
 
@@ -469,7 +629,27 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         inspection.CreatedAt = inspection.CreatedAt.ToUniversalTime();
         inspection.InspectedAt = inspection.InspectedAt.ToUniversalTime();
 
-        await conn.ExecuteProcedureAsync("sp_record_material_return_inspection", inspection, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_record_material_return_inspection", new
+        {
+            inspection.Id,
+            inspection.LoanId,
+            inspection.OrderId,
+            inspection.MaterialProductId,
+            inspection.ReturnedQuantity,
+            inspection.InspectedAt,
+            inspection.InspectedByUserId,
+            inspection.InspectedByEmail,
+            inspection.Condition,
+            inspection.QuantityApprovedForStock,
+            inspection.QuantityRequiringCleaning,
+            inspection.QuantityDamaged,
+            inspection.QuantityMissing,
+            inspection.InspectionNotes,
+            inspection.DepositDisposition,
+            inspection.DepositDeductionAmount,
+            inspection.ResolutionStatus,
+            inspection.CreatedAt
+        }, cancellationToken: ct);
         return inspection.Id;
     }
 
@@ -495,7 +675,28 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         schedule.NextRunDate = schedule.NextRunDate.ToUniversalTime();
         if (schedule.LastRunDate.HasValue) schedule.LastRunDate = schedule.LastRunDate.Value.ToUniversalTime();
 
-        await conn.ExecuteProcedureAsync("sp_create_material_recurring_schedule", schedule, cancellationToken: ct);
+        await conn.ExecuteProcedureAsync("sp_create_material_recurring_schedule", new
+        {
+            schedule.Id,
+            schedule.TenantId,
+            schedule.OrganizationId,
+            schedule.BranchId,
+            schedule.ClassroomId,
+            schedule.ScheduleType,
+            schedule.Frequency,
+            schedule.MaterialProductId,
+            schedule.OfferingId,
+            schedule.Quantity,
+            schedule.LoanDurationDays,
+            schedule.DeliveryAddress,
+            schedule.NextRunDate,
+            schedule.LastRunDate,
+            schedule.Status,
+            schedule.Notes,
+            schedule.CreatedByUserId,
+            schedule.CreatedAt,
+            schedule.UpdatedAt
+        }, cancellationToken: ct);
         return schedule.Id;
     }
 
