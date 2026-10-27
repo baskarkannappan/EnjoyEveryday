@@ -1096,6 +1096,7 @@ CREATE OR REPLACE PROCEDURE public.sp_create_journey_entry(
     p_experience_participation_id UUID,
     p_little_moment_id UUID,
     p_milestone_id UUID,
+    p_event_id UUID,
     p_journey_type VARCHAR,
     p_title VARCHAR,
     p_observation TEXT,
@@ -1118,14 +1119,14 @@ BEGIN
     INSERT INTO child_journey_entries (
         id, tenant_id, child_id, enrollment_id, classroom_id, teacher_id, 
         experience_id, experience_schedule_id, experience_session_id, experience_participation_id, 
-        little_moment_id, milestone_id, 
+        little_moment_id, milestone_id, event_id,
         journey_type, title, observation, child_voice, teacher_reflection, 
         observation_date, participation_type, is_milestone, is_parent_visible, 
         parent_visibility_status, created_at, created_by, updated_at, updated_by, version
     ) VALUES (
         p_id, p_tenant_id, p_child_id, p_enrollment_id, p_classroom_id, p_teacher_id, 
         p_experience_id, p_experience_schedule_id, p_experience_session_id, p_experience_participation_id, 
-        p_little_moment_id, p_milestone_id, 
+        p_little_moment_id, p_milestone_id, p_event_id,
         p_journey_type, p_title, p_observation, p_child_voice, p_teacher_reflection, 
         p_observation_date, p_participation_type, p_is_milestone, p_is_parent_visible, 
         p_parent_visibility_status, p_created_at, p_created_by, p_updated_at, p_updated_by, p_version
@@ -1181,6 +1182,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.fn_get_all_development_areas();
 DROP FUNCTION IF EXISTS public.fn_get_all_development_areas(UUID);
 CREATE OR REPLACE FUNCTION public.fn_get_all_development_areas(
     p_tenant_id UUID DEFAULT NULL
@@ -1189,21 +1191,18 @@ RETURNS TABLE (
     id UUID,
     tenant_id UUID,
     name VARCHAR,
-    code VARCHAR,
     description TEXT,
     icon VARCHAR,
-    color_hex VARCHAR,
     display_order INT,
-    is_active BOOLEAN,
-    created_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ
+    is_active BOOLEAN
 )
 LANGUAGE plpgsql
+STABLE
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT da.id, da.tenant_id, da.name, da.code, da.description, da.icon, da.color_hex,
-           da.display_order, da.is_active, da.created_at, da.updated_at
+    SELECT da.id, da.tenant_id, da.name::VARCHAR, da.description, da.icon::VARCHAR,
+           da.display_order, da.is_active
     FROM development_areas da
     WHERE (da.tenant_id IS NULL OR da.tenant_id = p_tenant_id) AND da.is_active = TRUE
     ORDER BY da.display_order;

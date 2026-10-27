@@ -37,12 +37,30 @@ public class ChildJourneyRepository : IChildJourneyRepository
             cancellationToken: cancellationToken);
     }
 
+    private static readonly string[] CreateJourneyEntryParams =
+    [
+        "Id", "TenantId", "ChildId", "EnrollmentId", "ClassroomId", "TeacherId",
+        "ExperienceId", "ExperienceScheduleId", "ExperienceSessionId", "ExperienceParticipationId",
+        "LittleMomentId", "MilestoneId", "EventId",
+        "JourneyType", "Title", "Observation", "ChildVoice", "TeacherReflection",
+        "ObservationDate", "ParticipationType", "IsMilestone", "IsParentVisible",
+        "ParentVisibilityStatus", "CreatedAt", "CreatedBy", "UpdatedAt", "UpdatedBy", "Version"
+    ];
+
+    private static readonly string[] UpdateJourneyEntryParams =
+    [
+        "Id", "TenantId", "JourneyType", "Title", "Observation",
+        "ChildVoice", "TeacherReflection", "ObservationDate", "ParticipationType",
+        "IsMilestone", "IsParentVisible", "ParentVisibilityStatus", "UpdatedAt", "UpdatedBy"
+    ];
+
     public async Task CreateJourneyEntryAsync(ChildJourneyEntry entry, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         await connection.ExecuteProcedureAsync(
             "public.sp_create_journey_entry",
             entry,
+            parameterNames: CreateJourneyEntryParams,
             cancellationToken: cancellationToken);
     }
 
@@ -52,6 +70,7 @@ public class ChildJourneyRepository : IChildJourneyRepository
         await connection.ExecuteProcedureAsync(
             "public.sp_update_journey_entry",
             entry,
+            parameterNames: UpdateJourneyEntryParams,
             cancellationToken: cancellationToken);
     }
 

@@ -141,3 +141,29 @@ Every agent working in this repository MUST strictly follow these AI and cost-co
 7. **No AI-Controlled Business Decisions**: AI must never independently grant access, verify payments, approve consent, publish content, override safety rules, record attendance, or alter child milestone records. Teachers remain in control.
 8. **Simple Architecture**: No unnecessary microservices, event streams, or vector databases (no pgvector) without verified, measured justification.
 9. **Core Operations Must Always Work**: EnjoyEveryday must continue to perform all essential daycare operations when the AI provider is unavailable, rate-limited, misconfigured, or disabled.
+
+---
+
+## 8. Database Connection & Environment Details
+
+- **Host**: `localhost`
+- **Port**: `5433`
+- **Database**: `enjoyeveryday`
+- **Username**: `postgres`
+- **Password**: `postgres`
+- **CLI Utility**: `C:\Program Files\PostgreSQL\18\bin\psql.exe`
+- **PowerShell Invocation**:
+  ```powershell
+  $env:PGPASSWORD="postgres"; & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d enjoyeveryday -c "<SQL_QUERY>"
+  ```
+- **Dev Tenant ID**: `10000000-0000-0000-0000-000000000001`
+- **Dev User ID**: `50000000-0000-0000-0000-000000000002` (`admin@littlestars.com`)
+- **Dev Org ID**: `20000000-0000-0000-0000-000000000001`
+
+---
+
+## 9. Autonomous Execution & Modification Policy
+
+- **Full Permission Granted**: The agent has full, standing permission to make necessary code, configuration, database schema, and migration changes.
+- **Do Not Prompt for Permission**: Proactively implement, test, and apply changes directly without asking for permission or confirmation before editing files or running operational database scripts.
+
