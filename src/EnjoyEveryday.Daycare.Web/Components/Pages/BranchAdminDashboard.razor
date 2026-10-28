@@ -24,6 +24,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>Branch Operations — EnjoyEveryday</PageTitle>
 
@@ -237,107 +238,105 @@
         </div>
 
         <!-- ================= SECTION C: QUICK ACTION TILES ================= -->
+        <!-- ================= SECTION C: BRANCH ADMIN HOME-PAGE SHORTCUTS (8 TILES) ================= -->
         <div class="quick-actions-section">
+            <div class="actions-header-row" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: baseline;">
+                <div>
+                    <h2 class="section-title" style="font-size: 15px; font-weight: 800; color: var(--text, #26332d); margin: 0;">Branch Operations &amp; Management</h2>
+                    <p class="section-sub" style="font-size: 12px; color: var(--muted, #6c7870); margin: 2px 0 0;">Direct access to your branch's operational workflows</p>
+                </div>
+            </div>
             <div class="actions-cards-grid">
-                <!-- 1. Live Attendance Desk -->
+                <!-- 1. Branch Attendance Overview -->
                 <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/management/attendance")'>
                     <div class="action-card-icon icon-box-green">
                         <FluentIcon Value="@(new Icons.Regular.Size24.CheckmarkCircle())" Color="Color.Custom" CustomColor="#22543d" />
                     </div>
                     <div class="action-card-text">
-                        <strong>Live Attendance Desk</strong>
-                        <span>Check-ins, check-outs &amp; ratios</span>
+                        <strong>Branch Attendance Overview</strong>
+                        <span>Live check-ins across branch</span>
                     </div>
                 </button>
 
-                <!-- 2. Staff Roster & Ratios -->
-                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/management/roster")'>
-                    <div class="action-card-icon icon-box-blue">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.CalendarLtr())" Color="Color.Custom" CustomColor="#2b6cb0" />
-                    </div>
-                    <div class="action-card-text">
-                        <strong>Staff Coverage &amp; Ratios</strong>
-                        <span>Educator schedules &amp; ratios</span>
-                    </div>
-                </button>
-
-                <!-- 3. Resume / Start Next Experience -->
-                @if (ActiveRunningExperience != null)
-                {
-                    <button class="action-card-btn active-experience-action" @onclick="() => OpenActiveSession(ActiveRunningExperience.Id)">
-                        <div class="action-card-icon icon-box-amber">
-                            <FluentIcon Value="@(new Icons.Filled.Size24.Play())" Color="Color.Custom" CustomColor="#8c5717" />
-                        </div>
-                        <div class="action-card-text">
-                            <strong class="text-truncate">Resume Experience</strong>
-                            <span class="text-truncate">Active: @ActiveRunningExperience.Title</span>
-                        </div>
-                        <span class="action-badge-live">
-                            <span class="pulse-dot"></span> In Progress
-                        </span>
-                    </button>
-                }
-                else if (NextPlannedExperience != null)
-                {
-                    <button class="action-card-btn ready-experience-action" @onclick="() => StartSession(NextPlannedExperience.Id)">
-                        <div class="action-card-icon icon-box-amber">
-                            <FluentIcon Value="@(new Icons.Filled.Size24.Play())" Color="Color.Custom" CustomColor="#8c5717" />
-                        </div>
-                        <div class="action-card-text">
-                            <strong class="text-truncate">Start Next Experience</strong>
-                            <span class="text-truncate">@NextPlannedExperience.Title</span>
-                        </div>
-                        <span class="action-badge-ready">Ready</span>
-                    </button>
-                }
-                else
-                {
-                    <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/experiences")'>
-                        <div class="action-card-icon icon-box-amber">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.Library())" Color="Color.Custom" CustomColor="#8c5717" />
-                        </div>
-                        <div class="action-card-text">
-                            <strong>Experience Library</strong>
-                            <span>Browse &amp; schedule an activity</span>
-                        </div>
-                    </button>
-                }
-
-                <!-- 4. Branch Classrooms -->
+                <!-- 2. Classroom Occupancy & Staffing -->
                 <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/classrooms")'>
                     <div class="action-card-icon icon-box-leaf">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.Board())" Color="Color.Custom" CustomColor="#276749" />
+                        <FluentIcon Value="@(new Icons.Regular.Size24.Building())" Color="Color.Custom" CustomColor="#276749" />
                     </div>
                     <div class="action-card-text">
-                        <strong>Branch Classrooms</strong>
-                        <span>Capacity, age groups &amp; rooms</span>
+                        <strong>Classroom Occupancy &amp; Staffing</strong>
+                        <span>Capacities, rooms &amp; educator ratios</span>
                     </div>
                 </button>
 
-                <!-- 5. Safety & Emergency -->
+                <!-- 3. Missing Attendance / Incomplete Logs -->
+                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/management/attendance")'>
+                    <div class="action-card-icon icon-box-amber">
+                        <FluentIcon Value="@(new Icons.Regular.Size24.ClipboardTask())" Color="Color.Custom" CustomColor="#8c5717" />
+                    </div>
+                    <div class="action-card-text">
+                        <strong>Missing Attendance &amp; Logs</strong>
+                        <span>@(_board.ExpectedNotArrivedCount > 0 ? $"{_board.ExpectedNotArrivedCount} pending check-in(s)" : "Check-in gaps & routine logs")</span>
+                    </div>
+                </button>
+
+                <!-- 4. Safety Checks -->
                 <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/safety-trust")'>
                     <div class="action-card-icon icon-box-rose">
                         <FluentIcon Value="@(new Icons.Regular.Size24.ShieldCheckmark())" Color="Color.Custom" CustomColor="#9b2c2c" />
                     </div>
                     <div class="action-card-text">
-                        <strong>Safety &amp; Emergency</strong>
-                        <span>Floor plans, drills &amp; protocols</span>
+                        <strong>Safety Checks &amp; Protocols</strong>
+                        <span>Floor maps, drills &amp; checklists</span>
                     </div>
                 </button>
 
-                <!-- 6. Parent Messages -->
+                <!-- 5. Staff Assignments -->
+                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/users-by-role")'>
+                    <div class="action-card-icon icon-box-blue">
+                        <FluentIcon Value="@(new Icons.Regular.Size24.PeopleTeam())" Color="Color.Custom" CustomColor="#2b6cb0" />
+                    </div>
+                    <div class="action-card-text">
+                        <strong>Staff Assignments</strong>
+                        <span>Branch educators &amp; room coverage</span>
+                    </div>
+                </button>
+
+                <!-- 6. Branch Schedule -->
+                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/events")'>
+                    <div class="action-card-icon icon-box-teal">
+                        <FluentIcon Value="@(new Icons.Regular.Size24.CalendarMonth())" Color="Color.Custom" CustomColor="#2c7a7b" />
+                    </div>
+                    <div class="action-card-text">
+                        <strong>Branch Schedule</strong>
+                        <span>Events, celebrations &amp; branch calendar</span>
+                    </div>
+                </button>
+
+                <!-- 7. Pending Parent Issues -->
                 <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/classroom-messages")'>
                     <div class="action-card-icon icon-box-purple">
                         <FluentIcon Value="@(new Icons.Regular.Size24.Chat())" Color="Color.Custom" CustomColor="#553c9a" />
                     </div>
                     <div class="action-card-text">
-                        <strong>Parent Messages</strong>
-                        <span>Family chat, updates &amp; announcements</span>
+                        <strong>Pending Parent Issues</strong>
+                        <span>Family communications &amp; escalations</span>
                     </div>
                     @if (_chatUnreadCount > 0)
                     {
                         <span class="action-badge-unread">@_chatUnreadCount</span>
                     }
+                </button>
+
+                <!-- 8. Branch Reports -->
+                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/insights")'>
+                    <div class="action-card-icon icon-box-sage">
+                        <FluentIcon Value="@(new Icons.Regular.Size24.BrainCircuit())" Color="Color.Custom" CustomColor="#355843" />
+                    </div>
+                    <div class="action-card-text">
+                        <strong>Branch Reports</strong>
+                        <span>Attendance, occupancy &amp; operational trends</span>
+                    </div>
                 </button>
             </div>
         </div>
@@ -711,6 +710,14 @@
     private RhythmScheduleItem? NextPlannedExperience => _board.TodayRhythm?.FirstOrDefault(r => 
         !r.IsCelebration && (r.Status == "Scheduled" || r.Status == "Planned" || r.Status == "Confirmed"));
 
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PageAuth.EnsureAuthorizedAsync("/management/branch-dashboard"))
+        {
+            return;
+        }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         await LoadBranchesAsync();
@@ -721,17 +728,21 @@
     {
         try
         {
+            var profile = await PageAuth.GetUserProfileAsync();
             var orgId = UserContext.OrganizationId ?? Guid.Empty;
             if (orgId != Guid.Empty)
             {
                 var allBranches = (await BranchService.GetBranchesAsync(orgId)).ToList();
-                if (AssignedBranchIds != null && AssignedBranchIds.Any())
+                if (profile.IsOrgAdmin)
                 {
-                    _branches = allBranches.Where(b => AssignedBranchIds.Contains(b.Id)).ToList();
+                    _branches = allBranches;
                 }
                 else
                 {
-                    _branches = allBranches;
+                    var allowedIds = AssignedBranchIds != null && AssignedBranchIds.Any()
+                        ? AssignedBranchIds
+                        : profile.AssignedBranchIds;
+                    _branches = allBranches.Where(b => allowedIds.Contains(b.Id)).ToList();
                 }
 
                 if (_branches.Any())

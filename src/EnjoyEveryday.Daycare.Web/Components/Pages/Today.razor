@@ -8,6 +8,7 @@
 @inject IAccessScopeRepository AccessScopeRepo
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @inject NavigationManager Navigation
 @rendermode InteractiveServer
 
@@ -21,9 +22,17 @@
 }
 else
 {
-    @if (_currentView == "Teacher")
+    @if (_currentView == "LeadTeacher")
     {
         <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
+                          IsLeadTeacher="true"
+                          AvailableViews="_availableViews"
+                          OnChangeView="HandleViewChanged" />
+    }
+    else if (_currentView == "Teacher")
+    {
+        <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
+                          IsLeadTeacher="false"
                           AvailableViews="_availableViews"
                           OnChangeView="HandleViewChanged" />
     }
@@ -58,67 +67,23 @@ else
         _initializing = true;
         try
         {
-            var tenantId = TenantContext.TenantId;
-            var orgId = UserContext.OrganizationId ?? Guid.Empty;
-            var userId = UserContext.UserId;
+            var profile = await PageAuth.GetUserProfileAsync();
+            _assignedClassroomIds = profile.AssignedClassroomIds;
+            _assignedBranchIds = profile.AssignedBranchIds;
+            _availableViews = profile.AvailableViews;
 
-            if (tenantId != Guid.Empty && userId != Guid.Empty)
-            {
-                var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
-                _assignedClassroomIds = new HashSet<Guid>(classroomIds);
-
-                if (orgId != Guid.Empty)
-                {
-                    var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId, userId);
-                    _assignedBranchIds = new HashSet<Guid>(branchIds);
-                }
-            }
-
-            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-
-            bool isPlatformAdmin = userRoles.Any(r => 
-                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) || 
-                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
-
-            bool isOrgAdmin = isPlatformAdmin || userRoles.Any(r => 
-                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
-                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
-
-            bool isBranchAdmin = isPlatformAdmin || isOrgAdmin || userRoles.Any(r => 
-                r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase)) ||
-                _assignedBranchIds.Count > 0;
-
-            bool isExplicitTeacher = userRoles.Any(r => 
-                r.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
-                r.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
-
-            bool hasAssignedClassroom = _assignedClassroomIds.Count > 0;
-            bool isTeacher = isPlatformAdmin || isOrgAdmin || isBranchAdmin || isExplicitTeacher || hasAssignedClassroom;
-
-            // Build available authorized views list
-            _availableViews.Clear();
-            if (isTeacher) _availableViews.Add("Teacher");
-            if (isBranchAdmin) _availableViews.Add("BranchAdmin");
-            if (isOrgAdmin) _availableViews.Add("OrgAdmin");
-
-            if (!_availableViews.Any())
-            {
-                _availableViews.Add("Teacher");
-            }
-
-            // Safe authorized default view (Screenshot 3 flowchart):
-            if (isOrgAdmin)
+            // Safe authorized default view (Role Hierarchy):
+            if (profile.IsOrgAdmin)
             {
                 _currentView = "OrgAdmin";
             }
-            else if (isBranchAdmin)
+            else if (profile.IsBranchAdmin)
             {
                 _currentView = "BranchAdmin";
+            }
+            else if (profile.IsLeadTeacher)
+            {
+                _currentView = "LeadTeacher";
             }
             else
             {

@@ -2,24 +2,36 @@
 @using EnjoyEveryday.Domain.Entities
 
 <div class="content">
-    <PageHero Eyebrow="ENVIRONMENT"
-              Title="Classrooms"
-              Subtitle="Experiences begin with the environment.">
+    <PageHero Eyebrow="@(_isTeacherOnly ? "MY CLASSROOM" : (_isBranchAdmin ? "BRANCH ENVIRONMENT" : "ENVIRONMENT"))"
+              Title="@(_isTeacherOnly ? "My Classroom" : (_isBranchAdmin ? "Branch Classrooms" : "Classrooms"))"
+              Subtitle="@(_isTeacherOnly ? "Your assigned learning space, age group and capacity." : (_isBranchAdmin ? "Learning environments, age groups and room occupancy for this branch." : "Experiences begin with the environment."))">
         <RightContent>
-            <button id="addClassroomButton" class="primary" @onclick="HandleAddClassroom">
-                + Add classroom
-            </button>
+            @if (!_isTeacherOnly)
+            {
+                <button id="addClassroomButton" class="primary" @onclick="HandleAddClassroom">
+                    + Add classroom
+                </button>
+            }
         </RightContent>
     </PageHero>
 
-    <div class="search-row" style="margin-bottom: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
-        <select @bind="SelectedBranchId" class="filter" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
-            <option value="@Guid.Empty">All Branches</option>
-            @foreach (var branch in _branches.Values)
-            {
-                <option value="@branch.Id">@branch.Name</option>
-            }
-        </select>
+    <div class="search-row" style="margin-bottom: 24px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+        @if (_isOrgAdmin)
+        {
+            <select @bind="SelectedBranchId" class="filter" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+                <option value="@Guid.Empty">All Branches</option>
+                @foreach (var branch in _branches.Values)
+                {
+                    <option value="@branch.Id">@branch.Name</option>
+                }
+            </select>
+        }
+        else if (_isBranchAdmin)
+        {
+            <div style="padding: 8px 14px; border-radius: 11px; background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; font-weight: 700; font-size: 13px; color: var(--accent-dark, #3e6253); display: inline-flex; align-items: center; gap: 6px;">
+                🏛️ <span>@(_branches.Values.FirstOrDefault()?.Name ?? "Assigned Branch")</span>
+            </div>
+        }
         <input class="search" @bind="_searchQuery" @bind:event="oninput" placeholder="Search classrooms by name or age..." style="padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border, #e4e7df); font-size: 13px; min-width: 250px; background: white;" />
     </div>
 

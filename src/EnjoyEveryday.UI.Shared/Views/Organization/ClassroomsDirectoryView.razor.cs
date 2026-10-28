@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.AspNetCore.Components;
 
@@ -17,12 +18,21 @@ public partial class ClassroomsDirectoryView : ComponentBase
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     [Inject] private IUserContext UserContext { get; set; } = default!;
 
+    [Inject] private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
+    [Inject] private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
+
     [Parameter] public bool UseModalForEdit { get; set; } = true;
 
     private IEnumerable<Classroom>? _classrooms;
     private Dictionary<Guid, Branch> _branches = new();
     private Guid _selectedBranchId = Guid.Empty;
     private string _searchQuery = "";
+
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
+    private bool _isTeacherOnly = false;
+    private HashSet<Guid> _assignedBranchIds = new();
+    private HashSet<Guid> _assignedClassroomIds = new();
 
     // Modal state
     private Classroom _currentClassroom = new();
@@ -51,10 +61,33 @@ public partial class ClassroomsDirectoryView : ComponentBase
 
     protected override async Task OnInitializedAsync()
     {
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        _isOrgAdmin = userRoles.Any(r =>
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
         var orgs = (await OrgService.GetOrganizationsAsync()).ToList();
         var defaultOrg = (UserContext.OrganizationId.HasValue
             ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
             : null) ?? orgs.FirstOrDefault();
+
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
+
+            if (defaultOrg != null)
+            {
+                var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, defaultOrg.Id, userId);
+                _assignedBranchIds = new HashSet<Guid>(branchIds);
+            }
+        }
+
+        _isTeacherOnly = !_isOrgAdmin && !_isBranchAdmin;
 
         if (defaultOrg != null)
         {
@@ -63,12 +96,30 @@ public partial class ClassroomsDirectoryView : ComponentBase
             _defaultBranchId = branchesList.FirstOrDefault()?.Id ?? Guid.Empty;
         }
 
+        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        {
+            _branches = _branches.Where(kvp => _assignedBranchIds.Contains(kvp.Key))
+                                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            _selectedBranchId = _assignedBranchIds.First();
+            _defaultBranchId = _selectedBranchId;
+        }
+
         await LoadClassroomsAsync();
     }
 
     private async Task LoadClassroomsAsync()
     {
-        if (_selectedBranchId != Guid.Empty)
+        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        {
+            var branchId = _selectedBranchId != Guid.Empty ? _selectedBranchId : _assignedBranchIds.First();
+            _classrooms = await ClassroomService.GetClassroomsAsync(branchId);
+        }
+        else if (_isTeacherOnly)
+        {
+            var allClasses = await ClassroomService.GetAllClassroomsAsync();
+            _classrooms = allClasses.Where(c => _assignedClassroomIds.Contains(c.Id)).ToList();
+        }
+        else if (_selectedBranchId != Guid.Empty)
         {
             _classrooms = await ClassroomService.GetClassroomsAsync(_selectedBranchId);
         }

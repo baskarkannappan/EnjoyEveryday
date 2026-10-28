@@ -1,5 +1,6 @@
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Shared.Authorization;
 using Microsoft.AspNetCore.Components;
 
 namespace EnjoyEveryday.Daycare.Web.Components.Pages.Children;
@@ -18,10 +19,26 @@ public partial class EnrollmentPipeline : ComponentBase
     [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
 
+    [Inject]
+    private EnjoyEveryday.Shared.Tenancy.IUserContext UserContext { get; set; } = default!;
+
+    [Inject]
+    private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
+
+    [Inject]
+    private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
+
+    [Inject]
+    private EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth { get; set; } = default!;
+
     private PipelineOverviewDto? _overview;
     private List<EnrollmentPipelineApplicationDto> _filteredApplications = new();
     private List<FamilyBillingContract> _familyContracts = new();
     private List<Classroom> _classrooms = new();
+
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
+    private HashSet<Guid> _assignedBranchIds = new();
 
     private string _activeView = "Pipeline";
     private string? _selectedStage = null;
@@ -44,6 +61,27 @@ public partial class EnrollmentPipeline : ComponentBase
 
     protected override async Task OnInitializedAsync()
     {
+        if (!await PageAuth.EnsureAuthorizedAsync("/enrollment"))
+        {
+            return;
+        }
+
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        _isOrgAdmin = userRoles.Any(r =>
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId, userId);
+            _assignedBranchIds = new HashSet<Guid>(branchIds);
+        }
+
         await LoadDataAsync();
     }
 
@@ -54,7 +92,17 @@ public partial class EnrollmentPipeline : ComponentBase
         {
             _overview = await PipelineService.GetPipelineOverviewAsync();
             _familyContracts = await PipelineService.GetActiveFamilyContractsAsync();
-            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            var allClasses = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+
+            if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+            {
+                _classrooms = allClasses.Where(c => _assignedBranchIds.Contains(c.BranchId)).ToList();
+            }
+            else
+            {
+                _classrooms = allClasses;
+            }
+
             ApplyFilters();
         }
         catch (Exception ex)
@@ -77,6 +125,15 @@ public partial class EnrollmentPipeline : ComponentBase
         }
 
         var list = _overview.Applications.AsEnumerable();
+
+        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        {
+            var branchClassroomIds = _classrooms.Select(c => c.Id).ToHashSet();
+            list = list.Where(a =>
+                (a.BranchId.HasValue && _assignedBranchIds.Contains(a.BranchId.Value)) ||
+                (a.TargetClassroomId.HasValue && branchClassroomIds.Contains(a.TargetClassroomId.Value)) ||
+                (!a.BranchId.HasValue && !a.TargetClassroomId.HasValue));
+        }
 
         if (!string.IsNullOrWhiteSpace(_selectedStage))
         {
@@ -117,7 +174,8 @@ public partial class EnrollmentPipeline : ComponentBase
             DepositAmount = 200m,
             RegistrationFee = 50m,
             PipelineStage = "Enquiry",
-            DesiredStartDate = DateTime.UtcNow.Date.AddDays(14)
+            DesiredStartDate = DateTime.UtcNow.Date.AddDays(14),
+            BranchId = _isBranchAdmin && _assignedBranchIds.Count > 0 ? _assignedBranchIds.First() : null
         };
         _isNewInquiryModalOpen = true;
     }

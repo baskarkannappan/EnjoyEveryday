@@ -2,6 +2,8 @@
 @page "/teachers/edit/{Id:guid}"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Infrastructure.Data
+@using EnjoyEveryday.Shared.Data
 @using EnjoyEveryday.UI.Shared.Components
 
 @inject UserService UserService
@@ -12,6 +14,9 @@
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject SystemProvisioningService SystemProvisioning
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject IDbConnectionFactory DbConnectionFactory
+@inject EnjoyEveryday.Domain.Repositories.IUserRepository UserRepository
 
 <div style="max-width: 900px; margin: 0 auto; padding: 30px 40px;">
     <PageHero 
@@ -39,13 +44,30 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        var route = Id.HasValue ? $"/teachers/edit/{Id}" : "/teachers/new";
+        if (!await PageAuth.EnsureAuthorizedAsync(route))
+        {
+            return;
+        }
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        var allClasses = await ClassroomService.GetAllClassroomsAsync();
         
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
         if (org != null)
         {
-            _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            var allBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            if (profile.IsOrgAdmin)
+            {
+                _branches = allBranches;
+                _classrooms = allClasses.ToList();
+            }
+            else
+            {
+                _branches = allBranches.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+                _classrooms = allClasses.Where(c => profile.AssignedBranchIds.Contains(c.BranchId)).ToList();
+            }
         }
 
         if (Id.HasValue)
@@ -130,6 +152,10 @@
             {
                 user.FirstName = model.FirstName;
                 user.LastName = model.LastName;
+                if (!string.IsNullOrWhiteSpace(model.Email))
+                {
+                    user.Email = model.Email;
+                }
                 await UserService.UpdateUserAsync(user);
 
                 var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId);
@@ -164,6 +190,27 @@
                     };
                     await TeacherService.CreateTeacherAsync(teacher);
                 }
+
+                if (Guid.TryParse(model.AssignedClassroom, out var assignedCid) && assignedCid != Guid.Empty)
+                {
+                    using var conn = await DbConnectionFactory.CreateConnectionAsync();
+                    await conn.ExecuteProcedureAsync("sp_dispatch_teacher_to_classroom", new
+                    {
+                        TenantId = user.TenantId,
+                        ClassroomId = assignedCid,
+                        UserId = user.Id
+                    });
+
+                    if (Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty)
+                    {
+                        var orgs = await OrganizationService.GetOrganizationsAsync();
+                        var org = orgs.FirstOrDefault();
+                        if (org != null)
+                        {
+                            await UserRepository.AssignBranchToUserAsync(user.TenantId, org.Id, branchId, user.Id);
+                        }
+                    }
+                }
             }
         }
         else
@@ -193,6 +240,27 @@
             };
             
             await TeacherService.CreateTeacherAsync(teacher);
+
+            if (Guid.TryParse(model.AssignedClassroom, out var assignedCid) && assignedCid != Guid.Empty)
+            {
+                using var conn = await DbConnectionFactory.CreateConnectionAsync();
+                await conn.ExecuteProcedureAsync("sp_dispatch_teacher_to_classroom", new
+                {
+                    TenantId = user.TenantId,
+                    ClassroomId = assignedCid,
+                    UserId = user.Id
+                });
+
+                if (Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty)
+                {
+                    var orgs = await OrganizationService.GetOrganizationsAsync();
+                    var org = orgs.FirstOrDefault();
+                    if (org != null)
+                    {
+                        await UserRepository.AssignBranchToUserAsync(user.TenantId, org.Id, branchId, user.Id);
+                    }
+                }
+            }
         }
     }
 }

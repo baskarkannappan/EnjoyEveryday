@@ -7,6 +7,7 @@
 @inject EnjoyEveryday.Domain.Repositories.IParentCommunicationRepository CommunicationRepo
 @inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @implements IDisposable
 
 <nav class="custom-nav" style="padding: 10px 8px; height: 100%; display: flex; flex-direction: column;">
@@ -25,6 +26,10 @@
                 {
                     <span>My Classroom</span>
                 }
+                else if (_currentNavView == "LeadTeacher")
+                {
+                    <span>Lead Classroom Coordination</span>
+                }
                 else if (_currentNavView == "BranchAdmin")
                 {
                     <span>Branch Operations</span>
@@ -40,8 +45,37 @@
     @* ========================================================================= *@
     @* 1. TEACHER MENU                                                           *@
     @* ========================================================================= *@
-    @if (_currentNavView == "Teacher")
+    @if (_currentNavView == "Teacher" || _currentNavView == "LeadTeacher")
     {
+        @if (_currentNavView == "LeadTeacher")
+        {
+            <!-- LEAD TEACHER SECTION: CLASSROOM COORDINATION -->
+            <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_leadCoordOpen))">
+                <span class="nav-section-title">COORDINATION</span>
+                <span class="nav-section-chevron">@(_leadCoordOpen ? "▾" : "▸")</span>
+            </div>
+            @if (_leadCoordOpen)
+            {
+                <div class="nav-group">
+                    <NavLink class="nav-item" href="/classrooms" Match="NavLinkMatch.Prefix">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Building())" Color="Color.Custom" CustomColor="#276749" />
+                        <span>Classroom Readiness</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/daily-care" Match="NavLinkMatch.Prefix">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Color="Color.Custom" CustomColor="#3730a3" />
+                        <span>Team Handover &amp; Logs</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/management/roster" Match="NavLinkMatch.Prefix">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.PersonCall())" Color="Color.Custom" CustomColor="#991b1b" />
+                        <span>Request Staff Coverage</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/experiences" Match="NavLinkMatch.Prefix">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#065f46" />
+                        <span>Experience Feedback</span>
+                    </NavLink>
+                </div>
+            }
+        }
         <!-- TEACHER SECTION 1: MY DAY -->
         <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_teacherMyDayOpen))">
             <span class="nav-section-title">MY DAY</span>
@@ -346,8 +380,8 @@
                     <span>Organization Staff &amp; Roles</span>
                 </NavLink>
                 <NavLink class="nav-item" href="/roles" Match="NavLinkMatch.Prefix">
-                    <FluentIcon Value="@(new Icons.Regular.Size20.Key())" Color="Color.Custom" CustomColor="#6c7870" />
-                    <span>Permissions &amp; Access</span>
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Key())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Role &amp; Permission Matrix</span>
                 </NavLink>
             </div>
         }
@@ -507,15 +541,19 @@
                         <span style="color: var(--muted, #6c7870); font-weight: 600;">Dashboard View:</span>
                         <select style="border: 1px solid var(--border, #e4e7df); border-radius: 6px; padding: 2px 6px; font-size: 11px; font-weight: 700; color: var(--accent-dark, #3e5c49); background: var(--surface-soft, #f8f9f5);"
                                 @onchange="HandleSwitchView">
-                            @if (_isTeacher)
+                            @if (_availableViews.Contains("Teacher"))
                             {
                                 <option value="/?view=teacher" selected="@(_currentNavView == "Teacher")">Educator View</option>
                             }
-                            @if (_isBranchAdmin)
+                            @if (_availableViews.Contains("LeadTeacher"))
+                            {
+                                <option value="/?view=leadteacher" selected="@(_currentNavView == "LeadTeacher")">Lead Teacher View</option>
+                            }
+                            @if (_availableViews.Contains("BranchAdmin"))
                             {
                                 <option value="/?view=branchadmin" selected="@(_currentNavView == "BranchAdmin")">Branch View</option>
                             }
-                            @if (_isOrgAdmin)
+                            @if (_availableViews.Contains("OrgAdmin"))
                             {
                                 <option value="/?view=orgadmin" selected="@(_currentNavView == "OrgAdmin")">Org View</option>
                             }
@@ -650,17 +688,21 @@
 
     private int _chatUnreadCount = 0;
 
+    private bool _leadCoordOpen = true;
+
     // Roles and Scopes
     private bool _isOrgAdmin = false;
     private bool _isBranchAdmin = false;
+    private bool _isLeadTeacher = false;
     private bool _isTeacher = false;
+    private List<string> _availableViews = new();
     private int _availableViewsCount = 0;
     private string _currentNavView = "Teacher";
 
     protected override async Task OnInitializedAsync()
     {
         NavigationManager.LocationChanged += HandleLocationChanged;
-        ResolveNavigationScope();
+        await ResolveNavigationScopeAsync();
         AutoExpandCurrentRoute();
 
         NotificationCenter.OnParentMessageReceived += HandleIncomingMessage;
@@ -676,57 +718,41 @@
         }
     }
 
-    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        ResolveNavigationScope();
+        await ResolveNavigationScopeAsync();
         AutoExpandCurrentRoute();
-        InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private void ResolveNavigationScope()
+    private async Task ResolveNavigationScopeAsync()
     {
-        var roles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        var profile = await PageAuth.GetUserProfileAsync();
+        _isOrgAdmin = profile.IsOrgAdmin;
+        _isBranchAdmin = profile.IsBranchAdmin;
+        _isLeadTeacher = profile.IsLeadTeacher;
+        _isTeacher = profile.IsTeacher;
+        _availableViews = profile.AvailableViews;
+        _availableViewsCount = _availableViews.Count;
 
-        bool isPlatformAdmin = roles.Any(r => 
-            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) || 
-            r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
-
-        _isOrgAdmin = isPlatformAdmin || roles.Any(r => 
-            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
-
-        _isBranchAdmin = isPlatformAdmin || _isOrgAdmin || roles.Any(r => 
-            r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
-
-        bool isExplicitTeacher = roles.Any(r => 
-            r.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
-
-        _isTeacher = isPlatformAdmin || _isOrgAdmin || _isBranchAdmin || isExplicitTeacher;
-
-        _availableViewsCount = (_isTeacher ? 1 : 0) + (_isBranchAdmin ? 1 : 0) + (_isOrgAdmin ? 1 : 0);
-
-        // Detect active view from URL query if present
+        // Detect active view from URL query if present and authorized
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
         if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var v))
         {
-            var str = v.ToString();
-            if (str.Equals("branchadmin", StringComparison.OrdinalIgnoreCase)) _currentNavView = "BranchAdmin";
-            else if (str.Equals("teacher", StringComparison.OrdinalIgnoreCase)) _currentNavView = "Teacher";
-            else if (str.Equals("orgadmin", StringComparison.OrdinalIgnoreCase)) _currentNavView = "OrgAdmin";
-            else _currentNavView = "OrgAdmin";
+            var requested = v.ToString();
+            var match = _availableViews.FirstOrDefault(x => x.Equals(requested, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                _currentNavView = match;
+                return;
+            }
         }
-        else
-        {
-            if (_isOrgAdmin) _currentNavView = "OrgAdmin";
-            else if (_isBranchAdmin) _currentNavView = "BranchAdmin";
-            else _currentNavView = "Teacher";
-        }
+
+        // Safe authorized default view
+        if (_isOrgAdmin) _currentNavView = "OrgAdmin";
+        else if (_isBranchAdmin) _currentNavView = "BranchAdmin";
+        else if (_isLeadTeacher) _currentNavView = "LeadTeacher";
+        else _currentNavView = "Teacher";
     }
 
     private void HandleSwitchView(ChangeEventArgs e)

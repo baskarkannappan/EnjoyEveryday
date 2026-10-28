@@ -4,6 +4,7 @@
 @using EnjoyEveryday.Domain.Repositories
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Daycare.Web.Services
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
@@ -12,6 +13,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Nav
+@inject IPageAuthorizationService PageAuth
 @rendermode InteractiveServer
 
 
@@ -50,37 +52,48 @@
     private string SelectedBranchFilter = "all";
     private string SelectedTypeFilter = "both";
     private string SearchQuery = "";
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
     private bool _isTeacherOnly = false;
     private HashSet<Guid> _assignedClassroomIds = new();
+    private HashSet<Guid> _assignedBranchIds = new();
 
     private List<EnjoyEveryday.Domain.Entities.Classroom> AllClassrooms = new();
 
     protected override async Task OnInitializedAsync()
     {
+        var relativePath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0];
+        var routeToCheck = relativePath.StartsWith("management/attendance", StringComparison.OrdinalIgnoreCase)
+            ? "/management/attendance"
+            : "/attendance";
+        var isAuthorized = await PageAuth.EnsureAuthorizedAsync(routeToCheck);
+        if (!isAuthorized) return;
+
         var tenantId = TenantContext.TenantId;
         var userId = UserContext.UserId;
         var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-        bool isOrgAdmin = userRoles.Any(r =>
+        _isOrgAdmin = userRoles.Any(r =>
             r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
             r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
             r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
-        bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
 
         if (tenantId != Guid.Empty && userId != Guid.Empty)
         {
             var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
             _assignedClassroomIds = new HashSet<Guid>(classroomIds);
+
+            if (org != null)
+            {
+                var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, org.Id, userId);
+                _assignedBranchIds = new HashSet<Guid>(branchIds);
+            }
         }
 
-        _isTeacherOnly = !isOrgAdmin && !isBranchAdmin;
-
-        if (!_isTeacherOnly)
-        {
-            await LoadData();
-        }
-
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
+        _isTeacherOnly = !_isOrgAdmin && !_isBranchAdmin;
 
         if (org != null)
         {
@@ -92,7 +105,13 @@
                 AllClassrooms.AddRange(classrooms);
             }
 
-            if (_isTeacherOnly)
+            if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+            {
+                Branches = allBranches.Where(b => _assignedBranchIds.Contains(b.Id)).ToList();
+                AllClassrooms = AllClassrooms.Where(c => _assignedBranchIds.Contains(c.BranchId)).ToList();
+                SelectedBranchFilter = Branches.FirstOrDefault()?.Name ?? "all";
+            }
+            else if (_isTeacherOnly)
             {
                 AllClassrooms = AllClassrooms.Where(c => _assignedClassroomIds.Contains(c.Id)).ToList();
                 Branches = allBranches.Where(b => AllClassrooms.Any(c => c.BranchId == b.Id)).ToList();
@@ -102,11 +121,37 @@
                 Branches = allBranches;
             }
         }
+
+        if (!_isTeacherOnly)
+        {
+            await LoadData();
+        }
     }
 
     private async Task LoadData()
     {
-        Summary = await AttendanceService.GetOrganizationSummaryAsync(SelectedDate);
+        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        {
+            var branchId = _assignedBranchIds.First();
+            var childAtt = (await AttendanceService.GetChildAttendanceAsync(branchId, SelectedDate)).ToList();
+            var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(branchId, SelectedDate)).ToList();
+
+            Summary = new AttendanceSummary
+            {
+                ExpectedChildren = childAtt.Count,
+                PresentChildren = childAtt.Count(c => c.Status == "Present"),
+                AbsentChildren = childAtt.Count(c => c.Status == "Absent"),
+                LateChildren = childAtt.Count(c => c.Status == "Late"),
+                ExpectedTeachers = teacherAtt.Count,
+                PresentTeachers = teacherAtt.Count(t => t.Status == "Present"),
+                AbsentTeachers = teacherAtt.Count(t => t.Status == "Absent"),
+                LateTeachers = teacherAtt.Count(t => t.Status == "Late")
+            };
+        }
+        else
+        {
+            Summary = await AttendanceService.GetOrganizationSummaryAsync(SelectedDate);
+        }
     }
 
     private bool FilterBranch(EnjoyEveryday.Domain.Entities.Branch b)

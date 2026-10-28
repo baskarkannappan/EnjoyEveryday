@@ -56,11 +56,15 @@
     }
     else
     {
-        <!-- ================= SECTION A: HERO GREETING (Exact Screenshot 1 Match) ================= -->
+        <!-- ================= SECTION A: HERO GREETING ================= -->
         <div class="teacher-hero-header">
             <div class="header-top-row">
                 <div class="classroom-eyebrow">
-                    @if (_teacherClassrooms.Count == 1)
+                    @if (IsLeadTeacher)
+                    {
+                        <span class="eyebrow-text">MY CLASSROOM • LEAD TEACHER COORDINATION • @(_activeClassroom?.Name?.ToUpperInvariant() ?? "CLASSROOM")</span>
+                    }
+                    else if (_teacherClassrooms.Count == 1)
                     {
                         <span class="eyebrow-text">MY CLASSROOM • @(_activeClassroom?.Name?.ToUpperInvariant() ?? "CLASSROOM")</span>
                     }
@@ -81,9 +85,8 @@
                 @if (AvailableViews.Count > 1)
                 {
                     <div class="role-override-wrapper">
-                        <select class="role-selector-pill" @onchange="e => OnChangeView.InvokeAsync(e.Value?.ToString() ?? string.Empty)" value="Teacher">
-                            <option value="Teacher">Educator View</option>
-                            @foreach (var v in AvailableViews.Where(v => v != "Teacher"))
+                        <select class="role-selector-pill" @onchange="e => OnChangeView.InvokeAsync(e.Value?.ToString() ?? string.Empty)" value="@(IsLeadTeacher ? "LeadTeacher" : "Teacher")">
+                            @foreach (var v in AvailableViews)
                             {
                                 <option value="@v">@GetViewDisplayName(v) View</option>
                             }
@@ -93,7 +96,7 @@
             </div>
 
             <h1 class="greeting-heading">@GetGreeting()!</h1>
-            <p class="greeting-subtitle">Let's make today a wonderful day for the children.</p>
+            <p class="greeting-subtitle">@(IsLeadTeacher ? $"Classroom coordination & teaching delivery for {(_activeClassroom?.Name ?? "your classroom")}." : "Let's make today a wonderful day for the children.")</p>
         </div>
 
         <!-- ================= SECTION B: THREE STAT CARDS (Screenshot 1 Match) ================= -->
@@ -128,10 +131,82 @@
             </div>
         </div>
 
-        <!-- ================= SECTION C: PRIMARY 2x2 ACTION CARDS (Screenshot 1 Match) ================= -->
-        <!-- ================= SECTION C: PRIMARY 6 ACTION SHORTCUTS ================= -->
+        <!-- ================= SECTION C: LEAD TEACHER COORDINATION SHORTCUTS ================= -->
+        @if (IsLeadTeacher)
+        {
+            <div class="lead-teacher-coordination-section" style="margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);">
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;">
+                    <div>
+                        <h2 style="font-size: 15px; font-weight: 800; color: var(--text, #26332d); margin: 0; display: flex; align-items: center; gap: 8px;">
+                            <span style="background: var(--accent-light); color: var(--accent-dark); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.4px;">LEAD TEACHER</span>
+                            Classroom Delivery &amp; Team Coordination
+                        </h2>
+                        <p style="font-size: 12px; color: var(--muted, #6c7870); margin: 2px 0 0;">Oversee classroom readiness, daily care logs, team tasks and staff coverage</p>
+                    </div>
+                </div>
+
+                <div class="coordination-shortcuts-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                    <!-- 1. Classroom Readiness -->
+                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/classrooms")' style="padding: 12px 14px;">
+                        <div class="action-card-icon" style="background: #e6eee9; color: #276749;">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.Building())" Color="Color.Custom" CustomColor="#276749" />
+                        </div>
+                        <div class="action-card-text">
+                            <div class="action-title" style="font-size: 13px;">Classroom Readiness</div>
+                            <div class="action-subtitle" style="font-size: 11px;">Environment &amp; room setup</div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Team Tasks & Handover -->
+                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")' style="padding: 12px 14px;">
+                        <div class="action-card-icon" style="background: #eef2ff; color: #3730a3;">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.PeopleTeam())" Color="Color.Custom" CustomColor="#3730a3" />
+                        </div>
+                        <div class="action-card-text">
+                            <div class="action-title" style="font-size: 13px;">Team Tasks &amp; Handover</div>
+                            <div class="action-subtitle" style="font-size: 11px;">Classroom shift handover</div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Review Daily Logs -->
+                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")' style="padding: 12px 14px;">
+                        <div class="action-card-icon" style="background: #fef3c7; color: #92400e;">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.ClipboardTask())" Color="Color.Custom" CustomColor="#92400e" />
+                        </div>
+                        <div class="action-card-text">
+                            <div class="action-title" style="font-size: 13px;">Review Daily Logs</div>
+                            <div class="action-subtitle" style="font-size: 11px;">Verify teacher care logs</div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Review Experience Feedback -->
+                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/experiences")' style="padding: 12px 14px;">
+                        <div class="action-card-icon" style="background: #ecfdf5; color: #065f46;">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.Sparkle())" Color="Color.Custom" CustomColor="#065f46" />
+                        </div>
+                        <div class="action-card-text">
+                            <div class="action-title" style="font-size: 13px;">Experience Feedback</div>
+                            <div class="action-subtitle" style="font-size: 11px;">Curriculum &amp; session notes</div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Request Staff Coverage -->
+                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/roster")' style="padding: 12px 14px;">
+                        <div class="action-card-icon" style="background: #fee2e2; color: #991b1b;">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.PersonCall())" Color="Color.Custom" CustomColor="#991b1b" />
+                        </div>
+                        <div class="action-card-text">
+                            <div class="action-title" style="font-size: 13px;">Request Coverage</div>
+                            <div class="action-subtitle" style="font-size: 11px;">Staffing gaps &amp; coverage</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- ================= SECTION D: PRIMARY TEACHING ACTION SHORTCUTS (6 TILES) ================= -->
         <div class="actions-section">
-            <h2 class="section-title">What would you like to do?</h2>
+            <h2 class="section-title">@(IsLeadTeacher ? "Teaching & Daily Care Duties" : "What would you like to do?")</h2>
             <div class="actions-grid-3x2">
                 <!-- 1. Take Attendance (Signature Dark Sage Highlight) -->
                 <div class="action-card action-attendance-featured" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/attendance")'>
@@ -434,6 +509,7 @@
     [Parameter] public IReadOnlySet<Guid> AssignedClassroomIds { get; set; } = new HashSet<Guid>();
     [Parameter] public IReadOnlyList<string> AvailableViews { get; set; } = Array.Empty<string>();
     [Parameter] public EventCallback<string> OnChangeView { get; set; }
+    [Parameter] public bool IsLeadTeacher { get; set; } = false;
 
     private bool _loading = true;
     private OperationsBoardModel _board = new();
@@ -596,7 +672,9 @@
 
     private string GetViewDisplayName(string roleKey) => roleKey switch
     {
-        "BranchAdmin" => "Branch Director",
+        "Teacher" or "ClassroomTeacher" => "Educator",
+        "LeadTeacher" => "Lead Teacher",
+        "BranchAdmin" => "Branch Admin",
         "OrgAdmin" or "OrganizationAdmin" => "Organization Admin",
         _ => roleKey
     };

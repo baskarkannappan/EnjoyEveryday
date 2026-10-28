@@ -72,6 +72,8 @@ builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddEnjoyEverydayUiShared();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.StorybookStorageService>();
+builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IOrganizationPermissionService, EnjoyEveryday.Daycare.Web.Services.OrganizationPermissionService>();
+builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService, EnjoyEveryday.Daycare.Web.Services.PageAuthorizationService>();
 
 var app = builder.Build();
 

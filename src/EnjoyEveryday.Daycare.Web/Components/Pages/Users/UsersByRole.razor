@@ -8,23 +8,28 @@
 @inject EnjoyEveryday.Application.Services.BranchService BranchService
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
+@inject IAccessScopeRepository AccessScopeRepo
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>Users by Role Hierarchy — EnjoyEveryday</PageTitle>
 
 <div class="content">
     <!-- HEADER -->
-    <PageHero Eyebrow="PEOPLE"
-              Title="Users by Role"
-              Subtitle="All daycare team members, educators, administrators, and families organized by role hierarchy.">
+    <PageHero Eyebrow="@(_isBranchAdmin ? "BRANCH OPERATIONS" : "PEOPLE")"
+              Title="@(_isBranchAdmin ? "Branch Staff & Roles" : "Users by Role")"
+              Subtitle="@(_isBranchAdmin ? "Team members, educators, and roles assigned to this branch location." : "All daycare team members, educators, administrators, and families organized by role hierarchy.")">
         <RightContent>
             <button class="btn primary" @onclick="OpenAddUserModal" style="display: inline-flex; align-items: center; gap: 8px;">
                 <FluentIcon Value="@(new Icons.Regular.Size16.Add())" Color="Color.Custom" CustomColor="#ffffff" />
                 <span>+ Add Team Member</span>
             </button>
-            <a href="/management/roles" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
-                <FluentIcon Value="@(new Icons.Regular.Size16.Shield())" Color="Color.Default" />
-                <span>Manage Roles</span>
-            </a>
+            @if (_isOrgAdmin)
+            {
+                <a href="/management/roles" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+                    <FluentIcon Value="@(new Icons.Regular.Size16.Shield())" Color="Color.Default" />
+                    <span>Role Permissions Matrix</span>
+                </a>
+            }
         </RightContent>
     </PageHero>
 
@@ -166,15 +171,19 @@
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Assigned Role <span style="color: #c53030;">*</span></label>
                     <select class="filter" style="width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; font-weight: 600; border-radius: 10px; background: white;" @bind="_newUserRole">
-                        <option value="BranchAdmin">🏛️ Branch Director / Branch Admin</option>
-                        <option value="ClassroomTeacher">🎓 Lead Classroom Educator</option>
-                        <option value="DaycareTeacher">✏️ Daycare Educator &amp; Assistant</option>
-                        <option value="OrganizationAdmin">🏢 Daycare Administrator (Org Level)</option>
+                        @if (_isOrgAdmin)
+                        {
+                            <option value="OrganizationAdmin">🏢 Organization Admin (Org Level)</option>
+                            <option value="BranchAdmin">🏛️ Branch Admin</option>
+                        }
+                        <option value="LeadTeacher">🎓 Lead Teacher</option>
+                        <option value="ClassroomTeacher">✏️ Teacher / Educator</option>
+                        <option value="DaycareTeacher">🧸 Assistant Teacher</option>
                     </select>
                 </div>
 
                 <!-- Branch Assignment -->
-                @if (_newUserRole == "BranchAdmin" || _newUserRole == "ClassroomTeacher" || _newUserRole == "DaycareTeacher")
+                @if (_newUserRole == "BranchAdmin" || _newUserRole == "LeadTeacher" || _newUserRole == "ClassroomTeacher" || _newUserRole == "DaycareTeacher")
                 {
                     <div>
                         <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Assigned Branch Location</label>
@@ -249,10 +258,35 @@
         public List<UserHierarchyRecord> Users { get; set; } = new();
     }
 
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
+    private HashSet<Guid> _assignedBranchIds = new();
+
     protected override async Task OnInitializedAsync()
     {
-        await LoadUsersAndRolesAsync();
+        if (!await PageAuth.EnsureAuthorizedAsync("/users-by-role"))
+        {
+            return;
+        }
+
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        _isOrgAdmin = userRoles.Any(r =>
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId, userId);
+            _assignedBranchIds = new HashSet<Guid>(branchIds);
+        }
+
         await LoadBranchesAsync();
+        await LoadUsersAndRolesAsync();
     }
 
     private async Task LoadBranchesAsync()
@@ -260,8 +294,15 @@
         try
         {
             var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
-            var branches = await BranchService.GetBranchesAsync(orgId);
-            _branches = branches.ToList();
+            var branches = (await BranchService.GetBranchesAsync(orgId)).ToList();
+            if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+            {
+                _branches = branches.Where(b => _assignedBranchIds.Contains(b.Id)).ToList();
+            }
+            else
+            {
+                _branches = branches;
+            }
         }
         catch (Exception ex)
         {
@@ -275,8 +316,26 @@
         try
         {
             var tenantId = TenantContext.TenantId;
-            var users = await UserRepository.GetUsersHierarchyAsync(tenantId);
-            _allUsers = users.ToList();
+            var users = (await UserRepository.GetUsersHierarchyAsync(tenantId)).ToList();
+
+            if (_isBranchAdmin && _branches.Count > 0)
+            {
+                var branchNames = _branches.Select(b => b.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _allUsers = users.Where(u =>
+                    string.IsNullOrEmpty(u.OrganizationName) ||
+                    branchNames.Contains(u.OrganizationName) ||
+                    (u.ClassroomName != null && branchNames.Any(bn => u.ClassroomName.Contains(bn, StringComparison.OrdinalIgnoreCase))) ||
+                    u.CanonicalRoles.Contains("BranchAdmin") ||
+                    u.CanonicalRoles.Contains("LeadTeacher") ||
+                    u.CanonicalRoles.Contains("ClassroomTeacher") ||
+                    u.CanonicalRoles.Contains("DaycareTeacher")
+                ).ToList();
+            }
+            else
+            {
+                _allUsers = users;
+            }
+
             RecomputeGroups();
         }
         finally
@@ -291,7 +350,7 @@
         _newUserFirstName = "";
         _newUserLastName = "";
         _newUserEmail = "";
-        _newUserRole = "BranchAdmin";
+        _newUserRole = _isBranchAdmin ? "ClassroomTeacher" : "BranchAdmin";
         _newUserPassword = "Welcome@123";
         _selectedBranchId = _branches.FirstOrDefault()?.Id.ToString() ?? "";
         _showAddUserModal = true;
@@ -417,15 +476,27 @@
             },
             new RoleGroup
             {
-                RoleKey = RoleTemplates.ClassroomTeacher,
-                RoleDisplayName = "Lead Classroom Educators",
+                RoleKey = RoleTemplates.LeadTeacher,
+                RoleDisplayName = "Lead Teachers",
                 HierarchyRank = 5,
                 HierarchyIcon = "🎓",
                 Scope = "Classroom",
-                Description = "Educators leading daily pedagogical planning, experience delivery, and child journey observations.",
+                Description = "Coordinates classroom delivery, teaching team, readiness checks, and daily handover while teaching.",
                 BgColor = "#eef4f1",
                 BorderColor = "#cbe0d5",
                 TextColor = "#346a54"
+            },
+            new RoleGroup
+            {
+                RoleKey = RoleTemplates.ClassroomTeacher,
+                RoleDisplayName = "Teachers & Educators",
+                HierarchyRank = 6,
+                HierarchyIcon = "✏️",
+                Scope = "Classroom",
+                Description = "Cares for assigned children, conducts activities, records attendance, and logs daily routines.",
+                BgColor = "#f4f6f4",
+                BorderColor = "#d5ded6",
+                TextColor = "#475e50"
             },
             new RoleGroup
             {

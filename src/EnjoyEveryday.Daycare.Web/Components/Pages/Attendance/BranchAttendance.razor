@@ -1,16 +1,50 @@
 @page "/management/attendance/branches/{BranchName}"
 @using EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Daycare.Web.Services
 @inject NavigationManager Nav
+@inject IPageAuthorizationService PageAuth
+@inject BranchService BranchService
 @rendermode InteractiveServer
 
 <PageTitle>@BranchName Attendance — EnjoyEveryday</PageTitle>
 
-<div class="content">
-    <BranchDetailSection BranchName="@BranchName" />
-</div>
+@if (_isAuthorized)
+{
+    <div class="content">
+        <BranchDetailSection BranchName="@BranchName" />
+    </div>
+}
 <ToastNotification />
 
 @code {
     [Parameter]
     public string BranchName { get; set; } = "";
+
+    private bool _isAuthorized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authorized = await PageAuth.EnsureAuthorizedAsync("/management/attendance");
+        if (!authorized) return;
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        if (profile.IsBranchAdmin)
+        {
+            var branches = await BranchService.GetBranchesAsync(profile.OrganizationId);
+            var target = branches.FirstOrDefault(b => b.Name.Equals(BranchName, StringComparison.OrdinalIgnoreCase));
+            if (target == null || !profile.AssignedBranchIds.Contains(target.Id))
+            {
+                Nav.NavigateTo("/access-denied?reason=branch_mismatch", true);
+                return;
+            }
+        }
+        else if (profile.IsTeacher && !profile.IsOrgAdmin && !profile.IsPlatformAdmin)
+        {
+            Nav.NavigateTo("/access-denied?reason=unauthorized_role", true);
+            return;
+        }
+
+        _isAuthorized = true;
+    }
 }

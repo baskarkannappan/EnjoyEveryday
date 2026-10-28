@@ -7,6 +7,7 @@
 @inject IChildDailyCareService DailyCareService
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>Personal Care Supplies — EnjoyEveryday</PageTitle>
 
@@ -42,13 +43,28 @@
 
     private async Task LoadSupplies()
     {
+        var profile = await PageAuth.GetUserProfileAsync();
         var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
         var primaryOrg = orgs.FirstOrDefault();
-        var branches = primaryOrg != null ? (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList() : new List<Branch>();
+        var allBranches = primaryOrg != null ? (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList() : new List<Branch>();
+
+        var branches = profile.IsOrgAdmin
+            ? allBranches
+            : allBranches.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+
         var list = new List<ChildCareSupply>();
-        foreach (var b in branches)
+        var targetBranches = branches.Count > 0 ? branches : allBranches;
+
+        foreach (var b in targetBranches)
         {
-            var overview = await DailyCareService.GetClassroomOverviewAsync(b.Id, null, DateOnly.FromDateTime(DateTime.Today));
+            var overview = (await DailyCareService.GetClassroomOverviewAsync(b.Id, null, DateOnly.FromDateTime(DateTime.Today))).ToList();
+
+            // If educator is teacher/lead teacher, restrict to their assigned classrooms
+            if (!profile.IsOrgAdmin && !profile.IsBranchAdmin)
+            {
+                overview = overview.Where(c => c.ClassroomId.HasValue && profile.AssignedClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+            }
+
             foreach (var child in overview)
             {
                 var supplies = await DailyCareService.GetChildSuppliesAsync(child.ChildId);

@@ -9,6 +9,7 @@
 @inject SystemProvisioningService SystemProvisioning
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <div class="enrollment-container">
     <div class="enrollment-header">
@@ -344,11 +345,27 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var route = Id.HasValue ? $"/children/edit/{Id}" : "/children/add";
+        if (!await PageAuth.EnsureAuthorizedAsync(route))
+        {
+            return;
+        }
+
+        var profile = await PageAuth.GetUserProfileAsync();
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
         if (org != null)
         {
-            _branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            var allBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            if (profile.IsOrgAdmin)
+            {
+                _branches = allBranches;
+            }
+            else
+            {
+                _branches = allBranches.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+            }
+
             foreach (var branch in _branches)
             {
                 var classrooms = await ClassroomService.GetClassroomsAsync(branch.Id);

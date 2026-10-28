@@ -11,6 +11,7 @@
 @inject OrganizationService OrgService
 @inject NavigationManager NavigationManager
 @inject SystemProvisioningService SystemProvisioning
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageHero 
     Eyebrow="ENVIRONMENT" 
@@ -35,11 +36,32 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var route = Id.HasValue ? $"/classrooms/edit/{Id}" : "/classrooms/new";
+        if (!await PageAuth.EnsureAuthorizedAsync(route, Id, "Classroom"))
+        {
+            return;
+        }
+
+        var profile = await PageAuth.GetUserProfileAsync();
         var orgs = await OrgService.GetOrganizationsAsync();
         var defaultOrg = orgs.FirstOrDefault();
         if (defaultOrg != null)
         {
-            _branches = (await BranchService.GetBranchesAsync(defaultOrg.Id)).ToList();
+            var allBranches = (await BranchService.GetBranchesAsync(defaultOrg.Id)).ToList();
+            if (profile.IsOrgAdmin)
+            {
+                _branches = allBranches;
+            }
+            else
+            {
+                _branches = allBranches.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+            }
+        }
+
+        if (BranchId.HasValue && !await PageAuth.CanAccessBranchAsync(BranchId.Value))
+        {
+            NavigationManager.NavigateTo("/access-denied?reason=unauthorized_branch", forceLoad: false);
+            return;
         }
 
         if (BranchId.HasValue)

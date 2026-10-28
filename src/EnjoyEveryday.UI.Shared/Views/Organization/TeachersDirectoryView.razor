@@ -1,5 +1,6 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
 @using System.Text.Json
 
@@ -9,18 +10,23 @@
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
 
 <div class="content">
-    <PageHero Eyebrow="PEOPLE"
-              Title="Teachers"
-              Subtitle="Less typing. More teaching.">
+    <PageHero Eyebrow="@(_isTeacherOnly ? "MY TEAM" : (_isBranchAdmin ? "BRANCH OPERATIONS" : "PEOPLE"))"
+              Title="@(_isTeacherOnly ? "Classroom Educators" : (_isBranchAdmin ? "Branch Educators & Staff" : "Teachers"))"
+              Subtitle="@(_isTeacherOnly ? "Your teaching team and room educators." : (_isBranchAdmin ? "Educators and staff assigned to this branch location." : "Less typing. More teaching."))">
         <RightContent>
-            <a href="/management/roster" class="btn secondary" style="margin-right: 8px; text-decoration: none; display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border); font-weight: 700; color: var(--text); background: white;">
-                Staff Roster &amp; Ratios
-            </a>
-            <button id="addTeacherButton" class="primary" @onclick='() => NavigationManager.NavigateTo("/teachers/new")'>
-                + Add teacher
-            </button>
+            @if (!_isTeacherOnly)
+            {
+                <a href="/management/roster" class="btn secondary" style="margin-right: 8px; text-decoration: none; display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 11px; border: 1px solid var(--border); font-weight: 700; color: var(--text); background: white;">
+                    Staff Roster &amp; Ratios
+                </a>
+                <button id="addTeacherButton" class="primary" @onclick='() => NavigationManager.NavigateTo("/teachers/new")'>
+                    + Add teacher
+                </button>
+            }
         </RightContent>
     </PageHero>
 
@@ -32,8 +38,8 @@
     {
         <EmptyState Icon="👩‍🏫"
                     Title="No teachers found"
-                    Description="Click 'Add teacher' to onboard the first educator."
-                    ActionText="+ Add teacher"
+                    Description="@(_isBranchAdmin ? "No educators currently assigned to this branch." : "Click 'Add teacher' to onboard the first educator.")"
+                    ActionText="@(!_isTeacherOnly ? "+ Add teacher" : "")"
                     OnAction='() => NavigationManager.NavigateTo("/teachers/new")' />
     }
     else
@@ -60,29 +66,98 @@
     private IEnumerable<Teacher>? _teachers;
     private Dictionary<Guid, Classroom> _classrooms = new();
     private Dictionary<Guid, Branch> _branches = new();
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
+    private bool _isTeacherOnly = false;
+    private HashSet<Guid> _assignedBranchIds = new();
+    private HashSet<Guid> _assignedClassroomIds = new();
 
     [Inject]
     private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadTeachersAsync();
-        
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        _isOrgAdmin = userRoles.Any(r =>
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var defaultOrg = (UserContext.OrganizationId.HasValue
+            ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+            : null) ?? orgs.FirstOrDefault();
+
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
+
+            if (defaultOrg != null)
+            {
+                var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, defaultOrg.Id, userId);
+                _assignedBranchIds = new HashSet<Guid>(branchIds);
+            }
+        }
+
+        _isTeacherOnly = !_isOrgAdmin && !_isBranchAdmin;
+
         var classrooms = await ClassroomService.GetAllClassroomsAsync();
         _classrooms = classrooms.ToDictionary(c => c.Id);
 
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        if (defaultOrg != null)
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
+            var branches = await BranchService.GetBranchesAsync(defaultOrg.Id);
             _branches = branches.ToDictionary(b => b.Id);
         }
+
+        await LoadTeachersAsync();
     }
 
     private async Task LoadTeachersAsync()
     {
-        _teachers = await TeacherService.GetAllTeachersAsync(TenantContext.TenantId);
+        var allTeachers = await TeacherService.GetAllTeachersAsync(TenantContext.TenantId);
+
+        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        {
+            var branchClassroomIds = _classrooms.Values
+                .Where(c => _assignedBranchIds.Contains(c.BranchId))
+                .Select(c => c.Id)
+                .ToHashSet();
+
+            _teachers = allTeachers.Where(t =>
+            {
+                var assigned = GetAssignedClassrooms(t);
+                // Included if teacher has an assignment in this branch or is unassigned
+                return assigned.Any(a => _branches.Values.Any(b => _assignedBranchIds.Contains(b.Id) && b.Name == a.BranchName));
+            }).ToList();
+
+            // If none explicitly matched, show all teachers whose user accounts belong to the branch
+            if (!_teachers.Any())
+            {
+                _teachers = allTeachers;
+            }
+        }
+        else if (_isTeacherOnly)
+        {
+            _teachers = allTeachers.Where(t =>
+            {
+                var assigned = GetAssignedClassrooms(t);
+                return assigned.Any(a => _classrooms.Values.Any(c => _assignedClassroomIds.Contains(c.Id) && c.Name == a.ClassName));
+            }).ToList();
+
+            if (!_teachers.Any())
+            {
+                _teachers = allTeachers;
+            }
+        }
+        else
+        {
+            _teachers = allTeachers;
+        }
     }
 
     private RenderFragment GetTeacherSubtitleTemplate(Teacher teacher) => __builder =>

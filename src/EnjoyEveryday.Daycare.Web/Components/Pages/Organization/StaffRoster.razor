@@ -8,6 +8,7 @@
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>Staff Roster &amp; Coverage — EnjoyEveryday</PageTitle>
 
@@ -509,12 +510,26 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!await PageAuth.EnsureAuthorizedAsync("/management/roster"))
+        {
+            return;
+        }
+
+        var profile = await PageAuth.GetUserProfileAsync();
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var defaultOrg = orgs.FirstOrDefault();
         if (defaultOrg != null)
         {
-            var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
-            _branches = branchesList.ToList();
+            var branchesList = (await BranchService.GetBranchesAsync(defaultOrg.Id)).ToList();
+            if (profile.IsOrgAdmin)
+            {
+                _branches = branchesList;
+            }
+            else
+            {
+                _branches = branchesList.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+            }
+
             if (_branches.Any())
             {
                 _selectedBranchId = _branches.First().Id;

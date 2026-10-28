@@ -6,6 +6,8 @@
 @inject OrganizationService OrgService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject TenantSettingsService TenantSettingsService
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+
 <div class="content">
     <PageHero Eyebrow="CONFIGURATION"
               Title="Settings"
@@ -28,6 +30,7 @@
                             OnSave="SaveApiKeyAsync" />
     </div>
 </div>
+
 @code {
     private Organization? _org;
     private string? _aiApiKey;
@@ -35,6 +38,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!await PageAuth.EnsureAuthorizedAsync("/settings"))
+        {
+            return;
+        }
+
         var orgs = await OrgService.GetOrganizationsAsync();
         _org = orgs.FirstOrDefault();
 

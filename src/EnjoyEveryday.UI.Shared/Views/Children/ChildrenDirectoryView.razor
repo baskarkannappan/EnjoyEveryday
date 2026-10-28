@@ -13,9 +13,9 @@
 @inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
 
 <div class="content">
-    <PageHero Eyebrow="@(_isTeacherOnly ? "MY CLASSROOM" : "PEOPLE")"
-              Title="@(_isTeacherOnly ? "Classroom Children" : "Children")"
-              Subtitle="@(_isTeacherOnly ? "Children roster, contacts and profiles in your assigned classroom." : "See the children behind the experiences.")">
+    <PageHero Eyebrow="@(_isTeacherOnly ? "MY CLASSROOM" : (_isBranchAdmin ? "BRANCH OPERATIONS" : "PEOPLE"))"
+              Title="@(_isTeacherOnly ? "Classroom Children" : (_isBranchAdmin ? "Branch Children" : "Children"))"
+              Subtitle="@(_isTeacherOnly ? "Children roster, contacts and profiles in your assigned classroom." : (_isBranchAdmin ? "Children roster, admissions and room placements for your branch." : "See the children behind the experiences."))">
 
         <RightContent>
             @if (!_isTeacherOnly)
@@ -33,18 +33,27 @@
 
     @if (!_isTeacherOnly)
     {
-        <div style="margin-bottom: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
-            <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
-                <option value="@Guid.Empty">All Branches</option>
-                @foreach (var branch in _branches.Values)
-                {
-                    <option value="@branch.Id">@branch.Name</option>
-                }
-            </select>
+        <div style="margin-bottom: 24px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+            @if (_isOrgAdmin)
+            {
+                <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+                    <option value="@Guid.Empty">All Branches</option>
+                    @foreach (var branch in _branches.Values)
+                    {
+                        <option value="@branch.Id">@branch.Name</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <div style="padding: 8px 14px; border-radius: 11px; background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; font-weight: 700; font-size: 13px; color: var(--accent-dark, #3e6253); display: inline-flex; align-items: center; gap: 6px;">
+                    🏛️ <span>@(_branches.Values.FirstOrDefault()?.Name ?? "Assigned Branch")</span>
+                </div>
+            }
             
-            <select @bind="SelectedClassroomId" disabled="@(_selectedBranchId == Guid.Empty)" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
+            <select @bind="SelectedClassroomId" disabled="@(!_classrooms.Any())" style="padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 13px; cursor: pointer;">
                 <option value="@Guid.Empty">All Classrooms</option>
-                @foreach (var cls in _classrooms.Values.Where(c => c.BranchId == _selectedBranchId))
+                @foreach (var cls in _classrooms.Values.Where(c => _selectedBranchId == Guid.Empty || c.BranchId == _selectedBranchId))
                 {
                     <option value="@cls.Id">@cls.Name</option>
                 }
@@ -152,8 +161,11 @@
         }
     }
 
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
     private bool _isTeacherOnly = false;
     private HashSet<Guid> _assignedClassroomIds = new();
+    private HashSet<Guid> _assignedBranchIds = new();
 
     private IEnumerable<Child>? FilteredChildren
     {
@@ -183,24 +195,31 @@
         var tenantId = TenantContext.TenantId;
         var userId = UserContext.UserId;
         var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-        bool isOrgAdmin = userRoles.Any(r =>
+        _isOrgAdmin = userRoles.Any(r =>
             r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
             r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
             r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
-        bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
-
-        if (tenantId != Guid.Empty && userId != Guid.Empty)
-        {
-            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
-            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
-        }
-
-        _isTeacherOnly = !isOrgAdmin && !isBranchAdmin;
+        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
 
         var orgs = await OrgService.GetOrganizationsAsync();
         var defaultOrg = (UserContext.OrganizationId.HasValue
             ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
             : null) ?? orgs.FirstOrDefault();
+
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
+
+            if (defaultOrg != null)
+            {
+                var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, defaultOrg.Id, userId);
+                _assignedBranchIds = new HashSet<Guid>(branchIds);
+            }
+        }
+
+        _isTeacherOnly = !_isOrgAdmin && !_isBranchAdmin;
+
         if (defaultOrg != null)
         {
             var branchesList = await BranchService.GetBranchesAsync(defaultOrg.Id);
@@ -215,7 +234,19 @@
             _classrooms = classList.ToDictionary(c => c.Id);
         }
 
-        if (_isTeacherOnly)
+        if (_isBranchAdmin)
+        {
+            // Scope branches and classrooms strictly to branch admin's assignments
+            if (_assignedBranchIds.Count > 0)
+            {
+                _branches = _branches.Where(kvp => _assignedBranchIds.Contains(kvp.Key))
+                                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                _classrooms = _classrooms.Where(kvp => _assignedBranchIds.Contains(kvp.Value.BranchId))
+                                         .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                _selectedBranchId = _assignedBranchIds.First();
+            }
+        }
+        else if (_isTeacherOnly)
         {
             // Scope classrooms strictly to teacher's assignments
             _classrooms = _classrooms.Where(kvp => _assignedClassroomIds.Contains(kvp.Key))
@@ -237,7 +268,13 @@
     private async Task LoadChildrenAsync()
     {
         var allChildren = await ChildService.GetChildrenAsync();
-        if (_isTeacherOnly)
+        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        {
+            // Boundary enforcement: Branch admins only see children in their branch classrooms
+            var branchClassroomIds = _classrooms.Keys.ToHashSet();
+            _children = allChildren.Where(c => c.ClassroomId.HasValue && branchClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+        }
+        else if (_isTeacherOnly)
         {
             // Boundary enforcement: Teachers only see children in their assigned classrooms
             _children = allChildren.Where(c => c.ClassroomId.HasValue && _assignedClassroomIds.Contains(c.ClassroomId.Value)).ToList();

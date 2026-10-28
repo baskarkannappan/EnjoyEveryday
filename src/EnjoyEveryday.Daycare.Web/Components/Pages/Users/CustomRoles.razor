@@ -1,135 +1,543 @@
 @page "/management/roles"
 @page "/roles"
-@using Microsoft.FluentUI.AspNetCore.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Daycare.Web.Services
+@using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject IPageAuthorizationService PageAuth
+@inject IOrganizationPermissionService OrgPermService
+@inject OrganizationService OrgService
+@inject ITenantContext TenantContext
+@inject NavigationManager Navigation
 
-<PageTitle>Manage Roles - EnjoyEveryday</PageTitle>
+<PageTitle>Role & Permission Matrix — EnjoyEveryday</PageTitle>
 
-<div style="padding: 24px; max-width: 1000px; margin: 0 auto;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-        <div>
-            <h1 style="font-family: 'Inter', sans-serif; font-size: 28px; font-weight: 700; color: var(--neutral-foreground-rest); margin: 0;">
-                Custom Roles
-            </h1>
-            <p style="color: var(--neutral-foreground-hint); margin-top: 8px;">
-                Create and manage sub-roles strictly scoped to your daycare organization and branches.
-            </p>
+<div class="content matrix-page-container">
+    <PageHero Eyebrow="ORGANIZATION GOVERNANCE"
+              Title="Role & Permission Matrix"
+              Subtitle="Dictate which operational roles can access pages and execute functionalities strictly for your daycare organization.">
+        <RightContent>
+            @if (_hasUnsavedChanges)
+            {
+                <span class="unsaved-badge">● Unsaved Changes</span>
+            }
+            <button class="secondary btn-reset" @onclick="HandleResetToDefaults" disabled="@_isSaving">
+                ↺ Reset to Defaults
+            </button>
+            <button class="primary btn-save" @onclick="HandleSavePermissions" disabled="@_isSaving">
+                @if (_isSaving)
+                {
+                    <span>Saving...</span>
+                }
+                else
+                {
+                    <span>✓ Save Permissions</span>
+                }
+            </button>
+        </RightContent>
+    </PageHero>
+
+    @if (_isLoading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading organization permissions...</p>
         </div>
-        <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Add())" OnClick="@( (Microsoft.AspNetCore.Components.Web.MouseEventArgs e) => isDialogOpen = true )">
-            Create Custom Role
-        </FluentButton>
-    </div>
-
-    <!-- Active Custom Roles List -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
-        <!-- Mock Card 1 -->
-        <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Lead Teacher</h3>
-                <span style="padding: 4px 12px; border-radius: 12px; background: #e6f4ea; color: #1e8e3e; font-size: 12px; font-weight: 600;">Active</span>
-            </div>
-            <p style="color: var(--neutral-foreground-hint); font-size: 13px; margin: 8px 0 16px 0;">
-                Full access to experiences and child observations within their assigned classroom.
-            </p>
-            <div style="font-size: 12px; font-weight: 600; color: var(--neutral-foreground-hint); text-transform: uppercase; margin-bottom: 8px;">Included Permissions:</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                <span style="background: #f1f3f4; padding: 2px 8px; border-radius: 12px; font-size: 11px;">experience.execute</span>
-                <span style="background: #f1f3f4; padding: 2px 8px; border-radius: 12px; font-size: 11px;">child.observe</span>
-            </div>
-            <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px;">
-                <FluentButton IconStart="@(new Icons.Regular.Size16.Edit())">Edit</FluentButton>
-            </div>
+    }
+    else if (!_isAuthorized)
+    {
+        <div class="unauthorized-card">
+            <h3>Access Denied</h3>
+            <p>This page is restricted to Organization Administrators. Your current role does not have authorization to configure organization-wide security matrices.</p>
+            <a href="/" class="btn secondary">Return to Home</a>
         </div>
-
-        <!-- Mock Card 2 -->
-        <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: var(--elevation-shadow-16); border: 1px solid var(--neutral-layer-3);">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Branch Assistant</h3>
-                <span style="padding: 4px 12px; border-radius: 12px; background: #e6f4ea; color: #1e8e3e; font-size: 12px; font-weight: 600;">Active</span>
-            </div>
-            <p style="color: var(--neutral-foreground-hint); font-size: 13px; margin: 8px 0 16px 0;">
-                Can view experiences and schedule, but cannot create or approve them.
-            </p>
-            <div style="font-size: 12px; font-weight: 600; color: var(--neutral-foreground-hint); text-transform: uppercase; margin-bottom: 8px;">Included Permissions:</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                <span style="background: #f1f3f4; padding: 2px 8px; border-radius: 12px; font-size: 11px;">experience.view</span>
-                <span style="background: #f1f3f4; padding: 2px 8px; border-radius: 12px; font-size: 11px;">schedule.view</span>
-            </div>
-            <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px;">
-                <FluentButton IconStart="@(new Icons.Regular.Size16.Edit())">Edit</FluentButton>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Create Role Dialog -->
-<FluentDialog Hidden="@(!isDialogOpen)" Modal="true" TrapFocus="true">
-    <div style="padding: 24px; min-width: 500px;">
-        <h2 style="margin-top: 0; font-size: 20px; font-weight: 600;">Create Custom Role</h2>
-        <p style="color: var(--neutral-foreground-hint); font-size: 13px; margin-bottom: 24px;">
-            This role will be created exclusively within your Daycare Organization.
-        </p>
-
-        <div style="display: flex; flex-direction: column; gap: 16px;">
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label>Role Name</label>
-                <input type="text" @bind="newRoleName" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;" placeholder="e.g. Floating Teacher" />
-            </div>
-            
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label>Description</label>
-                <textarea @bind="newRoleDesc" style="padding: 8px; border: 1px solid var(--neutral-layer-3); border-radius: 4px; width: 100%;" rows="3"></textarea>
-            </div>
-
-            <div>
-                <label style="font-size: 14px; font-weight: 600; margin-bottom: 8px; display: block;">Select Permissions</label>
-                <div style="border: 1px solid var(--neutral-layer-3); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; max-height: 200px; overflow-y: auto;">
-                    <label><input type="checkbox" @bind="p_expCreate" /> experience.create (Create new experiences)</label>
-                    <label><input type="checkbox" @bind="p_expApprove" /> experience.approve (Approve experiences for use)</label>
-                    <label><input type="checkbox" @bind="p_expExecute" /> experience.execute (Start and run experiences in classroom)</label>
-                    <label><input type="checkbox" @bind="p_childObserve" /> child.observe (Record child observations and harvest)</label>
-                    <label><input type="checkbox" @bind="p_attendance" /> attendance.manage (Check children in/out)</label>
-                    <label><input type="checkbox" @bind="p_branchManage" /> branch.manage (Manage branch details)</label>
+    }
+    else
+    {
+        <!-- Organization Scope Bar -->
+        <div class="org-scope-bar">
+            <div class="org-info">
+                <div class="org-avatar">🏢</div>
+                <div>
+                    <div class="org-title-row">
+                        <span class="org-label">Current Organization</span>
+                        <span class="org-badge">Strict Isolation</span>
+                    </div>
+                    @if (_availableOrgs.Count > 1)
+                    {
+                        <div class="org-selector-wrapper">
+                            <select class="org-select" value="@_currentOrgId" @onchange="OnOrganizationChanged">
+                                @foreach (var org in _availableOrgs)
+                                {
+                                    <option value="@org.Id">@org.Name (@(org.Location ?? "Main Facility"))</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <h2 class="org-name">@_currentOrgName</h2>
+                        <span class="org-meta">@_currentOrgLocation • ID: @_currentOrgId</span>
+                    }
                 </div>
             </div>
+
+            <div class="scope-alert">
+                <span class="scope-icon">ℹ️</span>
+                <p>
+                    Changes saved here apply <strong>exclusively</strong> to <strong>@_currentOrgName</strong>. Other daycare organizations maintain their own isolated access rules.
+                </p>
+            </div>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 32px;">
-            <FluentButton OnClick="@( (Microsoft.AspNetCore.Components.Web.MouseEventArgs e) => isDialogOpen = false )">Cancel</FluentButton>
-            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="SaveRoleAsync">Create Role</FluentButton>
+        @if (!string.IsNullOrEmpty(_statusMessage))
+        {
+            <div class="status-banner @(_isErrorStatus ? "error" : "success")">
+                <span>@(_isErrorStatus ? "⚠️" : "✅")</span>
+                <span>@_statusMessage</span>
+                <button class="close-status" @onclick="() => _statusMessage = null">✕</button>
+            </div>
+        }
+
+        <!-- Filter & Search Toolbar -->
+        <div class="toolbar-card">
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input class="search-input" 
+                       type="text" 
+                       placeholder="Filter by page name, functionality, route (e.g. /attendance)..." 
+                       @bind="_searchQuery" 
+                       @bind:event="oninput" />
+                @if (!string.IsNullOrEmpty(_searchQuery))
+                {
+                    <button class="clear-search" @onclick="() => _searchQuery = string.Empty">✕</button>
+                }
+            </div>
+
+            <div class="category-tabs">
+                <button class="cat-tab @(_selectedCategory == "All" ? "active" : "")" 
+                        @onclick='() => _selectedCategory = "All"'>
+                    All (@_allFeatures.Count)
+                </button>
+                @foreach (var cat in _categories)
+                {
+                    var count = _allFeatures.Count(f => f.Category == cat);
+                    <button class="cat-tab @(_selectedCategory == cat ? "active" : "")" 
+                            @onclick="() => _selectedCategory = cat">
+                        @cat (@count)
+                    </button>
+                }
+            </div>
         </div>
-    </div>
-</FluentDialog>
+
+        <!-- Role Summary Header Cards -->
+        <div class="role-overview-grid">
+            @foreach (var role in _roles)
+            {
+                var roleName = OrgPermService.GetRoleDisplayName(role);
+                var enabledCount = GetEnabledCountForRole(role);
+                var totalCount = _allFeatures.Count;
+
+                <div class="role-stat-card">
+                    <div class="role-stat-header">
+                        <span class="role-badge-pill @GetRoleCssClass(role)">@roleName</span>
+                        <span class="role-stat-ratio">@enabledCount / @totalCount</span>
+                    </div>
+                    <div class="role-progress-bar">
+                        <div class="role-progress-fill @GetRoleCssClass(role)" 
+                             style="width: @((int)((double)enabledCount / totalCount * 100))%;"></div>
+                    </div>
+                    <div class="role-quick-actions">
+                        <button class="quick-btn" @onclick="() => SetRoleAccessForFiltered(role, true)">Grant All</button>
+                        <span class="sep">•</span>
+                        <button class="quick-btn" @onclick="() => SetRoleAccessForFiltered(role, false)">Revoke All</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Permission Matrix Table -->
+        <div class="matrix-card">
+            <div class="table-responsive">
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th class="col-feature">Page & Functionality</th>
+                            @foreach (var role in _roles)
+                            {
+                                <th class="col-role text-center">
+                                    <div class="role-th-content">
+                                        <span class="role-th-title">@OrgPermService.GetRoleDisplayName(role)</span>
+                                        <span class="role-th-desc">@GetRoleDescription(role)</span>
+                                    </div>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var category in GetVisibleCategories())
+                        {
+                            var catFeatures = GetFeaturesForCategory(category);
+                            if (catFeatures.Count == 0) continue;
+
+                            <tr class="category-header-row">
+                                <td colspan="@(_roles.Count + 1)">
+                                    <div class="category-header-content">
+                                        <span class="cat-icon">@GetCategoryIcon(category)</span>
+                                        <span class="cat-title">@category</span>
+                                        <span class="cat-badge">@catFeatures.Count @(catFeatures.Count == 1 ? "element" : "elements")</span>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            @foreach (var feat in catFeatures)
+                            {
+                                <tr class="feature-row">
+                                    <td class="col-feature-cell">
+                                        <div class="feature-info">
+                                            <div class="feature-title-line">
+                                                <span class="feature-name">@feat.Name</span>
+                                                <span class="feature-cat-tag">@feat.Category</span>
+                                            </div>
+                                            <p class="feature-description">@feat.Description</p>
+                                            @if (feat.Routes.Count > 0)
+                                            {
+                                                <div class="feature-routes">
+                                                    @foreach (var route in feat.Routes)
+                                                    {
+                                                        <span class="route-pill">@route</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </td>
+
+                                    @foreach (var role in _roles)
+                                    {
+                                        var isAllowed = IsPermissionGranted(role, feat.Key);
+                                        var isOrgAdminRole = role == "OrganizationAdmin";
+
+                                        <td class="col-role-cell text-center" 
+                                            @onclick="() => TogglePermission(role, feat.Key)">
+                                            <div class="checkbox-cell-wrapper" @onclick:stopPropagation="true">
+                                                <label class="custom-checkbox-container">
+                                                    <input type="checkbox" 
+                                                           checked="@isAllowed" 
+                                                           @onchange="() => TogglePermission(role, feat.Key)" />
+                                                    <span class="checkmark @(isAllowed ? "checked" : "")">
+                                                        @if (isAllowed)
+                                                        {
+                                                            <span>✓</span>
+                                                        }
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sticky Floating Save Bar when unsaved changes exist -->
+        @if (_hasUnsavedChanges)
+        {
+            <div class="floating-save-bar">
+                <div class="floating-save-content">
+                    <div class="floating-text">
+                        <span class="pulse-dot"></span>
+                        <strong>You have unsaved changes in this organization's matrix.</strong>
+                    </div>
+                    <div class="floating-actions">
+                        <button class="secondary" @onclick="HandleDiscardChanges" disabled="@_isSaving">
+                            Discard
+                        </button>
+                        <button class="primary" @onclick="HandleSavePermissions" disabled="@_isSaving">
+                            @if (_isSaving)
+                            {
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save Changes</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
 
 @code {
-    private bool isDialogOpen = false;
-    private string newRoleName = "";
-    private string newRoleDesc = "";
-    
-    // Checkbox binds
-    private bool p_expCreate;
-    private bool p_expApprove;
-    private bool p_expExecute;
-    private bool p_childObserve;
-    private bool p_attendance;
-    private bool p_branchManage;
+    private bool _isLoading = true;
+    private bool _isAuthorized = false;
+    private bool _isSaving = false;
+    private bool _hasUnsavedChanges = false;
+    private string? _statusMessage;
+    private bool _isErrorStatus = false;
 
-    private async Task SaveRoleAsync()
+    private Guid _currentOrgId;
+    private string _currentOrgName = "Daycare Organization";
+    private string _currentOrgLocation = string.Empty;
+    private List<Organization> _availableOrgs = new();
+
+    private List<string> _roles = new();
+    private List<FeatureDefinition> _allFeatures = new();
+    private List<string> _categories = new();
+    private string _selectedCategory = "All";
+    private string _searchQuery = string.Empty;
+
+    // In-memory working matrix: (RoleName, FeatureKey) -> IsAllowed
+    private Dictionary<(string RoleName, string FeatureKey), bool> _matrix = new();
+    private Dictionary<(string RoleName, string FeatureKey), bool> _originalMatrix = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        // Mock save implementation
-        // In a real scenario, this would inject a RoleService and create an Organization-scoped role in the DB
-        // using the UserContext.OrganizationId and UserContext.TenantId.
-        
-        isDialogOpen = false;
-        
-        // Reset form
-        newRoleName = "";
-        newRoleDesc = "";
-        p_expCreate = false;
-        p_expApprove = false;
-        p_expExecute = false;
-        p_childObserve = false;
-        p_attendance = false;
-        p_branchManage = false;
+        // 1. Authorization check
+        var profile = await PageAuth.GetUserProfileAsync();
+        if (!profile.IsAuthenticated || !profile.IsOrgAdmin)
+        {
+            _isAuthorized = false;
+            _isLoading = false;
+            return;
+        }
+
+        _isAuthorized = true;
+
+        // 2. Load available organizations
+        try
+        {
+            var orgs = (await OrgService.GetOrganizationsAsync(scopeToActiveOrg: false)).ToList();
+            _availableOrgs = orgs;
+
+            var activeOrg = orgs.FirstOrDefault(o => o.Id == profile.OrganizationId) 
+                         ?? orgs.FirstOrDefault();
+
+            if (activeOrg != null)
+            {
+                _currentOrgId = activeOrg.Id;
+                _currentOrgName = activeOrg.Name;
+                _currentOrgLocation = activeOrg.Location ?? "Main Facility";
+            }
+            else
+            {
+                _currentOrgId = profile.OrganizationId;
+                _currentOrgName = "Daycare Organization";
+            }
+        }
+        catch
+        {
+            _currentOrgId = profile.OrganizationId;
+        }
+
+        // 3. Setup feature catalog and roles
+        _roles = OrgPermService.GetConfigurableRoles().ToList();
+        _allFeatures = OrgPermService.GetAllFeatures().ToList();
+        _categories = _allFeatures.Select(f => f.Category).Distinct().ToList();
+
+        // 4. Load permissions for current organization
+        await LoadPermissionsForCurrentOrgAsync();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadPermissionsForCurrentOrgAsync()
+    {
+        _matrix = await OrgPermService.GetPermissionsMatrixAsync(TenantContext.TenantId, _currentOrgId);
+        _originalMatrix = new Dictionary<(string RoleName, string FeatureKey), bool>(_matrix);
+        _hasUnsavedChanges = false;
+    }
+
+    private async Task OnOrganizationChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var newOrgId) && newOrgId != _currentOrgId)
+        {
+            var selectedOrg = _availableOrgs.FirstOrDefault(o => o.Id == newOrgId);
+            if (selectedOrg != null)
+            {
+                _currentOrgId = selectedOrg.Id;
+                _currentOrgName = selectedOrg.Name;
+                _currentOrgLocation = selectedOrg.Location ?? "Facility";
+
+                _isLoading = true;
+                _statusMessage = null;
+                await LoadPermissionsForCurrentOrgAsync();
+                _isLoading = false;
+            }
+        }
+    }
+
+    private bool IsPermissionGranted(string role, string featureKey)
+    {
+        if (_matrix.TryGetValue((role, featureKey), out var allowed))
+        {
+            return allowed;
+        }
+        return false;
+    }
+
+    private void TogglePermission(string role, string featureKey)
+    {
+        var current = IsPermissionGranted(role, featureKey);
+        _matrix[(role, featureKey)] = !current;
+        CheckUnsavedChanges();
+    }
+
+    private void SetRoleAccessForFiltered(string role, bool allow)
+    {
+        var targetFeatures = GetFilteredFeatures();
+        foreach (var feat in targetFeatures)
+        {
+            _matrix[(role, feat.Key)] = allow;
+        }
+        CheckUnsavedChanges();
+    }
+
+    private void CheckUnsavedChanges()
+    {
+        _hasUnsavedChanges = _matrix.Any(kvp => 
+            !_originalMatrix.TryGetValue(kvp.Key, out var orig) || orig != kvp.Value);
+    }
+
+    private void HandleDiscardChanges()
+    {
+        _matrix = new Dictionary<(string RoleName, string FeatureKey), bool>(_originalMatrix);
+        _hasUnsavedChanges = false;
+        _statusMessage = "Changes discarded.";
+        _isErrorStatus = false;
+    }
+
+    private async Task HandleSavePermissions()
+    {
+        _isSaving = true;
+        _statusMessage = null;
+        try
+        {
+            await OrgPermService.SavePermissionsMatrixAsync(
+                TenantContext.TenantId,
+                _currentOrgId,
+                _matrix);
+
+            _originalMatrix = new Dictionary<(string RoleName, string FeatureKey), bool>(_matrix);
+            _hasUnsavedChanges = false;
+            _statusMessage = $"Permissions successfully saved for {_currentOrgName}.";
+            _isErrorStatus = false;
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to save permissions: {ex.Message}";
+            _isErrorStatus = true;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task HandleResetToDefaults()
+    {
+        _isSaving = true;
+        _statusMessage = null;
+        try
+        {
+            await OrgPermService.ResetPermissionsMatrixAsync(TenantContext.TenantId, _currentOrgId);
+            await LoadPermissionsForCurrentOrgAsync();
+            _statusMessage = $"Permissions reset to organization defaults for {_currentOrgName}.";
+            _isErrorStatus = false;
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to reset permissions: {ex.Message}";
+            _isErrorStatus = true;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private IEnumerable<string> GetVisibleCategories()
+    {
+        if (_selectedCategory != "All")
+        {
+            return new[] { _selectedCategory };
+        }
+        return _categories;
+    }
+
+    private List<FeatureDefinition> GetFeaturesForCategory(string category)
+    {
+        return GetFilteredFeatures().Where(f => f.Category == category).ToList();
+    }
+
+    private List<FeatureDefinition> GetFilteredFeatures()
+    {
+        var query = _allFeatures.AsEnumerable();
+
+        if (_selectedCategory != "All")
+        {
+            query = query.Where(f => f.Category == _selectedCategory);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim().ToLowerInvariant();
+            query = query.Where(f =>
+                f.Name.ToLowerInvariant().Contains(q) ||
+                f.Description.ToLowerInvariant().Contains(q) ||
+                f.Key.ToLowerInvariant().Contains(q) ||
+                f.Category.ToLowerInvariant().Contains(q) ||
+                f.Routes.Any(r => r.ToLowerInvariant().Contains(q)));
+        }
+
+        return query.ToList();
+    }
+
+    private int GetEnabledCountForRole(string role)
+    {
+        return _allFeatures.Count(f => IsPermissionGranted(role, f.Key));
+    }
+
+    private static string GetCategoryIcon(string category)
+    {
+        return category switch
+        {
+            "Executive & Governance" => "🏛️",
+            "Branch Operations" => "🏫",
+            "Classrooms & Children" => "👶",
+            "Daily Care & Learning" => "🌱",
+            "Attendance Management" => "📋",
+            "Staff & Educators" => "👥",
+            _ => "📌"
+        };
+    }
+
+    private static string GetRoleCssClass(string role)
+    {
+        return role switch
+        {
+            "OrganizationAdmin" => "role-org-admin",
+            "BranchAdmin" => "role-branch-admin",
+            "LeadTeacher" => "role-lead-teacher",
+            "Teacher" => "role-teacher",
+            _ => "role-default"
+        };
+    }
+
+    private static string GetRoleDescription(string role)
+    {
+        return role switch
+        {
+            "OrganizationAdmin" => "Full organization executive authority",
+            "BranchAdmin" => "Branch facility and staff operations",
+            "LeadTeacher" => "Classroom learning and mentorship",
+            "Teacher" => "Daily child care and activity delivery",
+            _ => "Operational role"
+        };
     }
 }

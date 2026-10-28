@@ -1,13 +1,21 @@
 @page "/management/attendance/classrooms/{ClassroomName}"
 @using EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Daycare.Web.Services
 @inject NavigationManager Nav
+@inject IPageAuthorizationService PageAuth
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
 @rendermode InteractiveServer
 
 <PageTitle>@ClassroomName Attendance — EnjoyEveryday</PageTitle>
 
-<div class="content">
-    <BranchDetailSection BranchName="@BranchName" ClassroomName="@ClassroomName" />
-</div>
+@if (_isAuthorized)
+{
+    <div class="content">
+        <BranchDetailSection BranchName="@BranchName" ClassroomName="@ClassroomName" />
+    </div>
+}
 <ToastNotification />
 
 @code {
@@ -16,4 +24,32 @@
 
     [SupplyParameterFromQuery(Name = "branch")]
     public string BranchName { get; set; } = "Downtown";
+
+    private bool _isAuthorized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authorized = await PageAuth.EnsureAuthorizedAsync("/management/attendance");
+        if (!authorized) return;
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        var allClassrooms = await ClassroomService.GetAllClassroomsAsync();
+        var classroom = allClassrooms.FirstOrDefault(c => c.Name.Equals(ClassroomName, StringComparison.OrdinalIgnoreCase));
+
+        if (classroom != null)
+        {
+            if (profile.IsBranchAdmin && !profile.AssignedBranchIds.Contains(classroom.BranchId))
+            {
+                Nav.NavigateTo("/access-denied?reason=branch_mismatch", true);
+                return;
+            }
+            if (profile.IsTeacher && !profile.IsOrgAdmin && !profile.IsPlatformAdmin && !profile.AssignedClassroomIds.Contains(classroom.Id))
+            {
+                Nav.NavigateTo("/access-denied?reason=classroom_mismatch", true);
+                return;
+            }
+        }
+
+        _isAuthorized = true;
+    }
 }

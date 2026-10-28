@@ -28,6 +28,7 @@ public static class RoleTemplates
     public const string OrganizationOwner = "OrganizationOwner";
     public const string OrganizationAdmin = "OrganizationAdmin";
     public const string BranchAdmin = "BranchAdmin";
+    public const string LeadTeacher = "LeadTeacher";
     public const string DaycareTeacher = "DaycareTeacher";
     public const string ClassroomTeacher = "ClassroomTeacher";
     public const string Parent = "Parent";
@@ -82,6 +83,21 @@ public static class RoleTemplates
         Permissions.MaterialsView
     };
 
+    // Lead Teacher combines full teaching duties with classroom team coordination, readiness, and daily log review.
+    private static readonly string[] LeadTeacherPermissions =
+    {
+        Permissions.ChildView, Permissions.ExperienceView, Permissions.ExperienceSchedule,
+        Permissions.ExperiencePlanSubmit, Permissions.ExperiencePlanApprove, Permissions.ExperienceExecute,
+        Permissions.ChildObserve, Permissions.ObservationApprove, Permissions.AiUse,
+        Permissions.AttendanceView, Permissions.AttendanceRecord,
+        Permissions.CareView, Permissions.CareRecord, Permissions.CarePlanManage, Permissions.CareHandover,
+        Permissions.SafetyMapView, Permissions.SafetyReport,
+        Permissions.ConsentView,
+        Permissions.CommsDraft, Permissions.CommsView,
+        Permissions.MaterialsView,
+        Permissions.StaffRosterView
+    };
+
     // Daycare and classroom teachers share the same default template in the matrix; they differ only
     // by which assignment records (branch work vs classroom) scope them.
     private static readonly string[] TeacherPermissions =
@@ -116,6 +132,7 @@ public static class RoleTemplates
             [OrganizationOwner] = (RoleScope.Organization, Set(OrganizationAdminPermissions)),
             [OrganizationAdmin] = (RoleScope.Organization, Set(OrganizationAdminPermissions)),
             [BranchAdmin] = (RoleScope.Branch, Set(BranchAdminPermissions)),
+            [LeadTeacher] = (RoleScope.Classroom, Set(LeadTeacherPermissions)),
             [DaycareTeacher] = (RoleScope.Classroom, Set(TeacherPermissions)),
             [ClassroomTeacher] = (RoleScope.Classroom, Set(TeacherPermissions)),
             [Parent] = (RoleScope.Family, Set(ParentPermissions))

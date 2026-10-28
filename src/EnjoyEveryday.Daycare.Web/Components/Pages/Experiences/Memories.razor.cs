@@ -8,10 +8,15 @@ using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 
+using EnjoyEveryday.Daycare.Web.Services;
+
 namespace EnjoyEveryday.Daycare.Web.Components.Pages.Experiences;
 
 public partial class Memories : ComponentBase
 {
+    [Inject]
+    private IPageAuthorizationService PageAuth { get; set; } = default!;
+
     [Inject]
     private IMemoryService MemoryService { get; set; } = default!;
 
@@ -118,18 +123,55 @@ public partial class Memories : ComponentBase
     {
         try
         {
+            var isAuthorized = await PageAuth.EnsureAuthorizedAsync("/memories");
+            if (!isAuthorized) return;
+
+            var profile = await PageAuth.GetUserProfileAsync();
             var orgId = UserContext.OrganizationId ?? Guid.Empty;
+
+            List<Branch> branchList = new();
             if (orgId != Guid.Empty)
             {
-                var branchList = await BranchService.GetBranchesAsync(orgId);
-                _branches = branchList.ToList();
+                var fetched = await BranchService.GetBranchesAsync(orgId);
+                branchList = fetched.ToList();
             }
 
-            var classroomList = await ClassroomService.GetAllClassroomsAsync();
-            _classrooms = classroomList.ToList();
+            var classroomList = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            var childList = (await ChildService.GetChildrenAsync()).ToList();
 
-            var childList = await ChildService.GetChildrenAsync();
-            _children = childList.ToList();
+            if (profile.IsOrgAdmin || profile.IsPlatformAdmin)
+            {
+                _branches = branchList;
+                _classrooms = classroomList;
+                _children = childList;
+            }
+            else if (profile.IsBranchAdmin)
+            {
+                _branches = branchList.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+                _classrooms = classroomList.Where(c => profile.AssignedBranchIds.Contains(c.BranchId)).ToList();
+                var allowedClassroomIds = _classrooms.Select(c => c.Id).ToHashSet();
+                _children = childList.Where(ch => ch.ClassroomId.HasValue && allowedClassroomIds.Contains(ch.ClassroomId.Value)).ToList();
+                if (_branches.Count == 1)
+                {
+                    _selectedBranchId = _branches[0].Id;
+                }
+            }
+            else // Teacher / Lead Teacher
+            {
+                _classrooms = classroomList.Where(c => profile.AssignedClassroomIds.Contains(c.Id)).ToList();
+                var allowedBranchIds = _classrooms.Select(c => c.BranchId).ToHashSet();
+                _branches = branchList.Where(b => allowedBranchIds.Contains(b.Id)).ToList();
+                var allowedClassroomIds = _classrooms.Select(c => c.Id).ToHashSet();
+                _children = childList.Where(ch => ch.ClassroomId.HasValue && allowedClassroomIds.Contains(ch.ClassroomId.Value)).ToList();
+                if (_branches.Count == 1)
+                {
+                    _selectedBranchId = _branches[0].Id;
+                }
+                if (_classrooms.Count == 1)
+                {
+                    _selectedClassroomId = _classrooms[0].Id;
+                }
+            }
 
             if (_children.Any())
             {
@@ -145,6 +187,13 @@ public partial class Memories : ComponentBase
     private async Task LoadMemoriesForChildAsync()
     {
         if (_selectedChildId == Guid.Empty)
+        {
+            _memories.Clear();
+            return;
+        }
+
+        // Security check: ensure current user can view memories for this child
+        if (_children.All(c => c.Id != _selectedChildId))
         {
             _memories.Clear();
             return;

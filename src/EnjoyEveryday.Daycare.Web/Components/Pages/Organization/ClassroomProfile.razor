@@ -10,6 +10,7 @@
 @inject ExperienceService ExperienceService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>Classroom Profile — EnjoyEveryday</PageTitle>
 
@@ -21,12 +22,15 @@
         <button class="secondary" @onclick='() => NavigationManager.NavigateTo("/classrooms")'>
             Back to List
         </button>
-        <button class="secondary" style="color: #dc3545; border-color: #dc3545;" @onclick="DeleteClassroom">
-            Delete
-        </button>
-        <button class="primary" @onclick='() => NavigationManager.NavigateTo($"/classrooms/edit/{Id}")'>
-            Edit Profile
-        </button>
+        @if (_canManage)
+        {
+            <button class="secondary" style="color: #dc3545; border-color: #dc3545;" @onclick="DeleteClassroom">
+                Delete
+            </button>
+            <button class="primary" @onclick='() => NavigationManager.NavigateTo($"/classrooms/edit/{Id}")'>
+                Edit Profile
+            </button>
+        }
     </RightContent>
 </PageHero>
 
@@ -57,6 +61,7 @@
     public Guid Id { get; set; }
 
     private bool _isLoading = true;
+    private bool _canManage = false;
     private Classroom? _classroom;
     private ClassroomWizardModel _model = new();
     private List<ExperienceSession>? _experienceHistory;
@@ -64,9 +69,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!await PageAuth.CanAccessClassroomAsync(Id))
+        {
+            NavigationManager.NavigateTo("/access-denied?reason=unauthorized_classroom", forceLoad: false);
+            return;
+        }
+
         try
         {
             _classroom = await ClassroomService.GetClassroomByIdAsync(Id);
+            var profile = await PageAuth.GetUserProfileAsync();
+            _canManage = profile.IsOrgAdmin || (profile.IsBranchAdmin && _classroom != null && profile.AssignedBranchIds.Contains(_classroom.BranchId));
             
             if (_classroom != null && !string.IsNullOrWhiteSpace(_classroom.DraftData))
             {
@@ -107,6 +120,8 @@
 
     private async Task DeleteClassroom()
     {
+        if (!_canManage) return;
+
         bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this classroom? This action cannot be undone.");
         if (confirmed)
         {

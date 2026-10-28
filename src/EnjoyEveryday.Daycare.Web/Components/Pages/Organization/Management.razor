@@ -7,6 +7,7 @@
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 @* <PageTopbar Breadcrumb="@($"Organization · {(OrgMetrics?.TotalBranches ?? 0)} branches")" Title="@(OrgMetrics?.OrganizationName ?? "Loading...")">
     <RightContent>
@@ -30,7 +31,10 @@
             </p>
         </div>
         <div class="header-actions">
-            <button class="btn" @onclick="GoToCreateBranch">＋ Add Branch</button>
+            @if (_isOrgAdmin)
+            {
+                <button class="btn" @onclick="GoToCreateBranch">＋ Add Branch</button>
+            }
             <button class="btn primary" @onclick='() => NavigationManager.NavigateTo("/intelligence")'>✦ Organization Intelligence</button>
         </div>
     </div>
@@ -143,8 +147,18 @@
         new FilterTabs.TabItem { Text = "Quiet this week", Value = "quiet" }
     };
 
+    private bool _isOrgAdmin = false;
+
     protected override async Task OnInitializedAsync()
     {
+        if (!await PageAuth.EnsureAuthorizedAsync("/management"))
+        {
+            return;
+        }
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        _isOrgAdmin = profile.IsOrgAdmin;
+
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = (UserContext.OrganizationId.HasValue 
             ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value) 
@@ -153,7 +167,15 @@
         if (org != null)
         {
             OrgMetrics = await DashboardService.GetOrganizationMetricsAsync(org.Id);
-            Branches = await DashboardService.GetBranchMetricsAsync(org.Id);
+            var allBranches = (await DashboardService.GetBranchMetricsAsync(org.Id)).ToList();
+            if (_isOrgAdmin)
+            {
+                Branches = allBranches;
+            }
+            else
+            {
+                Branches = allBranches.Where(b => profile.AssignedBranchIds.Contains(b.BranchId)).ToList();
+            }
         }
     }
 

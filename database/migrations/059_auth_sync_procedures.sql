@@ -64,14 +64,17 @@ BEGIN
         SELECT EXISTS (
             SELECT 1 FROM user_roles ur
             JOIN roles r ON ur.role_id = r.id
-            WHERE ur.user_id = v_user_id AND r.name IN ('PlatformAdmin', 'SuperAdmin')
+            WHERE ur.user_id = v_user_id AND r.name IN ('PlatformAdmin', 'SuperAdmin', 'OrganizationAdmin', 'OrganizationOwner', 'BranchAdmin')
             UNION
             SELECT 1 FROM user_organization_roles uor
             JOIN roles r ON uor.role_id = r.id
-            WHERE uor.user_id = v_user_id AND r.name IN ('DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher', 'AssistantTeacher', 'OrganizationAdmin', 'OrganizationOwner')
+            WHERE uor.user_id = v_user_id AND r.name IN ('DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher', 'AssistantTeacher', 'OrganizationAdmin', 'OrganizationOwner', 'BranchAdmin')
             UNION
             SELECT 1 FROM teachers t
             WHERE t.user_id = v_user_id
+            UNION
+            SELECT 1 FROM user_branch_assignments uba
+            WHERE uba.user_id = v_user_id AND uba.revoked_at IS NULL
         ) INTO v_has_access;
     ELSIF p_required_portal = 'Admin' THEN
         SELECT EXISTS (
@@ -81,7 +84,7 @@ BEGIN
             UNION
             SELECT 1 FROM user_organization_roles uor
             JOIN roles r ON uor.role_id = r.id
-            WHERE uor.user_id = v_user_id AND r.name IN ('OrganizationAdmin', 'OrganizationOwner')
+            WHERE uor.user_id = v_user_id AND r.name IN ('OrganizationAdmin', 'OrganizationOwner', 'BranchAdmin')
         ) INTO v_has_access;
     ELSE
         v_has_access := TRUE;
@@ -138,6 +141,14 @@ BEGIN
     WHERE uor.user_id = v_user_id 
       AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
     LIMIT 1;
+
+    IF v_active_org_id IS NULL THEN
+        SELECT uba.organization_id INTO v_active_org_id
+        FROM user_branch_assignments uba
+        JOIN organization_memberships om ON om.user_id = uba.user_id AND om.organization_id = uba.organization_id AND om.status = 'Active'
+        WHERE uba.user_id = v_user_id AND uba.revoked_at IS NULL
+        LIMIT 1;
+    END IF;
 
     IF v_active_org_id IS NULL THEN
         SELECT om.organization_id INTO v_active_org_id

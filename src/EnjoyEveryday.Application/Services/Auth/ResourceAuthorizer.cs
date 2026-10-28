@@ -19,6 +19,7 @@ public interface IResourceAuthorizer
     Task RequireBranchAsync(Guid branchId, string permission, CancellationToken ct = default);
     Task<bool> CanAccessBranchAsync(Guid branchId, string permission, CancellationToken ct = default);
     Task RequireClassroomAsync(Guid classroomId, string permission, CancellationToken ct = default);
+    Task<bool> CanAccessClassroomAsync(Guid classroomId, string permission, CancellationToken ct = default) => Task.FromResult(true);
     Task RequireChildAsync(Guid childId, string permission, CancellationToken ct = default);
     Task<bool> CanAccessChildAsync(Guid childId, string permission, CancellationToken ct = default);
     Task<IReadOnlyList<Child>> FilterAccessibleChildrenAsync(IEnumerable<Child> children, string permission, CancellationToken ct = default);
@@ -39,6 +40,7 @@ public class NullResourceAuthorizer : IResourceAuthorizer
     public Task RequireBranchAsync(Guid branchId, string permission, CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> CanAccessBranchAsync(Guid branchId, string permission, CancellationToken ct = default) => Task.FromResult(true);
     public Task RequireClassroomAsync(Guid classroomId, string permission, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<bool> CanAccessClassroomAsync(Guid classroomId, string permission, CancellationToken ct = default) => Task.FromResult(true);
     public Task RequireChildAsync(Guid childId, string permission, CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> CanAccessChildAsync(Guid childId, string permission, CancellationToken ct = default) => Task.FromResult(true);
     public Task<IReadOnlyList<Child>> FilterAccessibleChildrenAsync(IEnumerable<Child> children, string permission, CancellationToken ct = default) =>
@@ -100,6 +102,13 @@ public class ResourceAuthorizer : IResourceAuthorizer
     {
         var scope = IsTenantReady() ? await _scopes.GetClassroomScopeAsync(_tenant.TenantId, classroomId, ct) : null;
         await RequireAsync(scope, permission, "Classroom", classroomId, ct);
+    }
+
+    public async Task<bool> CanAccessClassroomAsync(Guid classroomId, string permission, CancellationToken ct = default)
+    {
+        if (!IsTenantReady()) return false;
+        var scope = await _scopes.GetClassroomScopeAsync(_tenant.TenantId, classroomId, ct);
+        return (await EvaluateAsync(scope, permission, ct)).Allowed;
     }
 
     public async Task RequireChildAsync(Guid childId, string permission, CancellationToken ct = default)
