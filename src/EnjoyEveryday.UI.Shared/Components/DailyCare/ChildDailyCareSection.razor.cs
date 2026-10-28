@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.AspNetCore.Components;
 
@@ -17,6 +18,10 @@ public partial class ChildDailyCareSection : ComponentBase
     [Inject] private OrganizationService OrganizationService { get; set; } = default!;
     [Inject] private ITenantContext TenantContext { get; set; } = default!;
     [Inject] private IUserContext UserContext { get; set; } = default!;
+    [Inject] private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
+
+    private bool _isTeacherOnly = false;
+    private HashSet<Guid> _assignedClassroomIds = new();
 
     private List<Branch> _branches = new();
     private List<Classroom> _classrooms = new();
@@ -69,6 +74,23 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task LoadBranchesAndClassrooms()
     {
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        bool isOrgAdmin = userRoles.Any(r =>
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+        bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
+        }
+
+        _isTeacherOnly = !isOrgAdmin && !isBranchAdmin;
+
         var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
         var primaryOrg = (UserContext.OrganizationId.HasValue
             ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
@@ -83,17 +105,43 @@ public partial class ChildDailyCareSection : ComponentBase
             _branches = new List<Branch>();
         }
 
-        if (_branches.Count > 0 && _selectedBranchId == Guid.Empty)
+        if (_isTeacherOnly)
         {
-            _selectedBranchId = _branches[0].Id;
-        }
+            // Load all classrooms across org branches and filter by teacher assignment
+            var teacherRooms = new List<Classroom>();
+            foreach (var b in _branches)
+            {
+                var rooms = await ClassroomService.GetClassroomsAsync(b.Id);
+                teacherRooms.AddRange(rooms.Where(r => _assignedClassroomIds.Contains(r.Id)));
+            }
+            _classrooms = teacherRooms;
 
-        if (_selectedBranchId != Guid.Empty)
-        {
-            _classrooms = (await ClassroomService.GetClassroomsAsync(_selectedBranchId)).ToList();
-            if (_classrooms.Count > 0 && !_selectedClassroomId.HasValue)
+            if (_classrooms.Count > 0)
             {
                 _selectedClassroomId = _classrooms[0].Id;
+                _selectedBranchId = _classrooms[0].BranchId;
+                _branches = _branches.Where(b => b.Id == _selectedBranchId).ToList();
+            }
+            else
+            {
+                _selectedClassroomId = null;
+                _selectedBranchId = Guid.Empty;
+            }
+        }
+        else
+        {
+            if (_branches.Count > 0 && _selectedBranchId == Guid.Empty)
+            {
+                _selectedBranchId = _branches[0].Id;
+            }
+
+            if (_selectedBranchId != Guid.Empty)
+            {
+                _classrooms = (await ClassroomService.GetClassroomsAsync(_selectedBranchId)).ToList();
+                if (_classrooms.Count > 0 && !_selectedClassroomId.HasValue)
+                {
+                    _selectedClassroomId = _classrooms[0].Id;
+                }
             }
         }
     }

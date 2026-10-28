@@ -2,11 +2,15 @@
 @page "/attendance"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components.Attendance
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject AttendanceService AttendanceService
+@inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Nav
 @rendermode InteractiveServer
 
@@ -20,12 +24,16 @@
             @bind-TypeFilter="SelectedTypeFilter" 
             @bind-SearchQuery="SearchQuery" 
             Branches="Branches" />
-        <AttendanceKpiSection Summary="Summary" />
         
-        <div class="cols">
-            <BranchAttendanceSection Branches="Branches.Where(FilterBranch)" SelectedDate="SelectedDate" />
-            <NeedsAttentionSection />
-        </div>
+        @if (!_isTeacherOnly)
+        {
+            <AttendanceKpiSection Summary="Summary" />
+            
+            <div class="cols">
+                <BranchAttendanceSection Branches="Branches.Where(FilterBranch)" SelectedDate="SelectedDate" />
+                <NeedsAttentionSection />
+            </div>
+        }
         
         <ClassroomAttendanceSection Classrooms="AllClassrooms" Branches="Branches" SelectedDate="SelectedDate" SearchQuery="@SearchQuery" BranchFilter="@SelectedBranchFilter" />
     </section>
@@ -42,24 +50,56 @@
     private string SelectedBranchFilter = "all";
     private string SelectedTypeFilter = "both";
     private string SearchQuery = "";
+    private bool _isTeacherOnly = false;
+    private HashSet<Guid> _assignedClassroomIds = new();
 
     private List<EnjoyEveryday.Domain.Entities.Classroom> AllClassrooms = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        bool isOrgAdmin = userRoles.Any(r =>
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+        bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        if (tenantId != Guid.Empty && userId != Guid.Empty)
+        {
+            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
+        }
+
+        _isTeacherOnly = !isOrgAdmin && !isBranchAdmin;
+
+        if (!_isTeacherOnly)
+        {
+            await LoadData();
+        }
 
         var orgs = await OrganizationService.GetOrganizationsAsync();
         var org = orgs.FirstOrDefault();
 
         if (org != null)
         {
-            Branches = await BranchService.GetBranchesAsync(org.Id);
+            var allBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
             AllClassrooms.Clear();
-            foreach (var b in Branches)
+            foreach (var b in allBranches)
             {
                 var classrooms = await ClassroomService.GetClassroomsAsync(b.Id);
                 AllClassrooms.AddRange(classrooms);
+            }
+
+            if (_isTeacherOnly)
+            {
+                AllClassrooms = AllClassrooms.Where(c => _assignedClassroomIds.Contains(c.Id)).ToList();
+                Branches = allBranches.Where(b => AllClassrooms.Any(c => c.BranchId == b.Id)).ToList();
+            }
+            else
+            {
+                Branches = allBranches;
             }
         }
     }

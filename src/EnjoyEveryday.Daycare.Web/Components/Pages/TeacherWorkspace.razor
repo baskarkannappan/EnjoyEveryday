@@ -447,13 +447,26 @@
             var orgId = UserContext.OrganizationId ?? Guid.Empty;
             var allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
 
+            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+            bool isOrgAdmin = userRoles.Any(r =>
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+            bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
             if (AssignedClassroomIds != null && AssignedClassroomIds.Any())
             {
                 _teacherClassrooms = allClassrooms.Where(c => AssignedClassroomIds.Contains(c.Id)).ToList();
             }
+            else if (isOrgAdmin || isBranchAdmin)
+            {
+                // Administrators previewing educator view may view all classrooms
+                _teacherClassrooms = allClassrooms;
+            }
             else
             {
-                _teacherClassrooms = allClassrooms;
+                // Pure teachers with no assigned classrooms cannot access any classroom data
+                _teacherClassrooms = new List<Classroom>();
             }
 
             if (_teacherClassrooms.Any())
