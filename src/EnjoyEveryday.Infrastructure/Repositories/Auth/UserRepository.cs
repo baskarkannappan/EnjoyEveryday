@@ -113,6 +113,15 @@ public class UserRepository : IUserRepository
             cancellationToken: cancellationToken);
     }
 
+    public async Task AssignBranchToUserAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, Guid? assignedBy = null, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_assign_user_branch",
+            new { TenantId = tenantId, OrganizationId = organizationId, BranchId = branchId, UserId = userId, AssignedBy = assignedBy },
+            cancellationToken: cancellationToken);
+    }
+
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

@@ -5,6 +5,7 @@
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.Shared.Tenancy
 @inject IUserRepository UserRepository
+@inject EnjoyEveryday.Application.Services.BranchService BranchService
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
 
@@ -16,16 +17,28 @@
               Title="Users by Role"
               Subtitle="All daycare team members, educators, administrators, and families organized by role hierarchy.">
         <RightContent>
-            <a href="/profile" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px;">
-                <FluentIcon Value="@(new Icons.Regular.Size16.Person())" Color="Color.Default" />
-                <span>My Profile</span>
-            </a>
-            <a href="/management/roles" class="btn primary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+            <button class="btn primary" @onclick="OpenAddUserModal" style="display: inline-flex; align-items: center; gap: 8px;">
+                <FluentIcon Value="@(new Icons.Regular.Size16.Add())" Color="Color.Custom" CustomColor="#ffffff" />
+                <span>+ Add Team Member</span>
+            </button>
+            <a href="/management/roles" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
                 <FluentIcon Value="@(new Icons.Regular.Size16.Shield())" Color="Color.Default" />
                 <span>Manage Roles</span>
             </a>
         </RightContent>
     </PageHero>
+
+    <!-- SUCCESS NOTIFICATION -->
+    @if (!string.IsNullOrEmpty(_successBanner))
+    {
+        <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #3e6253); padding: 12px 16px; border-radius: 12px; font-size: 13px; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span>✨</span>
+                <span>@_successBanner</span>
+            </div>
+            <button type="button" @onclick="() => _successBanner = null" style="background: none; border: none; font-size: 16px; cursor: pointer; color: var(--accent-dark, #3e6253);">✕</button>
+        </div>
+    }
 
     <!-- SEARCH & FILTER ROW (Native EnjoyEveryday Style) -->
     <div class="search-row" style="margin-bottom: 14px;">
@@ -107,12 +120,120 @@
     }
 </div>
 
+<!-- ================= ADD TEAM MEMBER MODAL ================= -->
+@if (_showAddUserModal)
+{
+    <div class="modal-backdrop" @onclick="CloseAddUserModal" style="position: fixed; inset: 0; background: rgba(38, 51, 45, 0.45); backdrop-filter: blur(4px); display: grid; place-items: center; z-index: 1000; padding: 16px;">
+        <div class="modal-card" @onclick:stopPropagation="true" style="background: var(--surface, #ffffff); border-radius: var(--radius, 18px); border: 1px solid var(--border, #e4e7df); box-shadow: 0 16px 40px rgba(40, 55, 47, 0.16); max-width: 520px; width: 100%; padding: 28px; box-sizing: border-box;">
+            
+            <!-- Modal Header -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.6px; color: var(--accent, #52745e); margin-bottom: 4px;">ORGANIZATION STAFF</div>
+                    <h3 style="margin: 0; font-size: 20px; font-weight: 800; color: var(--text, #26332d); letter-spacing: -0.3px;">Add Team Member</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--muted, #6c7870);">Create a user account and assign organization or branch authority.</p>
+                </div>
+                <button type="button" @onclick="CloseAddUserModal" style="background: none; border: none; font-size: 18px; color: var(--muted, #6c7870); cursor: pointer; padding: 4px;">✕</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 600; margin-bottom: 16px;">
+                    @_errorMessage
+                </div>
+            }
+
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Name Fields -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">First Name</label>
+                        <input type="text" class="search" style="width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 13px;" placeholder="e.g. Vybe" @bind="_newUserFirstName" />
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Last Name</label>
+                        <input type="text" class="search" style="width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 13px;" placeholder="e.g. Media" @bind="_newUserLastName" />
+                    </div>
+                </div>
+
+                <!-- Email -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Email Address <span style="color: #c53030;">*</span></label>
+                    <input type="email" class="search" style="width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 13px;" placeholder="vybe.media26@gmail.com" @bind="_newUserEmail" />
+                </div>
+
+                <!-- Role Selection -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Assigned Role <span style="color: #c53030;">*</span></label>
+                    <select class="filter" style="width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; font-weight: 600; border-radius: 10px; background: white;" @bind="_newUserRole">
+                        <option value="BranchAdmin">🏛️ Branch Director / Branch Admin</option>
+                        <option value="ClassroomTeacher">🎓 Lead Classroom Educator</option>
+                        <option value="DaycareTeacher">✏️ Daycare Educator &amp; Assistant</option>
+                        <option value="OrganizationAdmin">🏢 Daycare Administrator (Org Level)</option>
+                    </select>
+                </div>
+
+                <!-- Branch Assignment -->
+                @if (_newUserRole == "BranchAdmin" || _newUserRole == "ClassroomTeacher" || _newUserRole == "DaycareTeacher")
+                {
+                    <div>
+                        <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Assigned Branch Location</label>
+                        <select class="filter" style="width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; font-weight: 600; border-radius: 10px; background: white;" @bind="_selectedBranchId">
+                            <option value="">-- All Authorized Branches / None --</option>
+                            @foreach (var branch in _branches)
+                            {
+                                <option value="@branch.Id">@branch.Name @(!string.IsNullOrEmpty(branch.Location) ? $"({branch.Location})" : "")</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <!-- Password -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 5px;">Temporary Initial Password</label>
+                    <input type="text" class="search" style="width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 13px;" placeholder="Welcome@123" @bind="_newUserPassword" />
+                    <span style="font-size: 11px; color: var(--muted, #6c7870); margin-top: 3px; display: block;">User can sign in with this password or directly via Google Single Sign-On with their Gmail.</span>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border, #e4e7df);">
+                <button type="button" class="btn secondary" @onclick="CloseAddUserModal" disabled="@_isSaving">Cancel</button>
+                <button type="button" class="btn primary" @onclick="HandleCreateUserAsync" disabled="@_isSaving" style="min-width: 130px;">
+                    @if (_isSaving)
+                    {
+                        <span>Creating...</span>
+                    }
+                    else
+                    {
+                        <span>Create Member</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private bool _isLoading = true;
     private string _searchTerm = "";
     private string _selectedFilter = "All";
     private List<UserHierarchyRecord> _allUsers = new();
     private List<RoleGroup> _groupedRoles = new();
+
+    // Add Member Modal State
+    private bool _showAddUserModal = false;
+    private bool _isSaving = false;
+    private string? _errorMessage;
+    private string? _successBanner;
+
+    private string _newUserFirstName = "";
+    private string _newUserLastName = "";
+    private string _newUserEmail = "";
+    private string _newUserRole = "BranchAdmin";
+    private string _newUserPassword = "Welcome@123";
+    private string _selectedBranchId = "";
+    private List<Branch> _branches = new();
 
     public class RoleGroup
     {
@@ -131,6 +252,21 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadUsersAndRolesAsync();
+        await LoadBranchesAsync();
+    }
+
+    private async Task LoadBranchesAsync()
+    {
+        try
+        {
+            var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+            var branches = await BranchService.GetBranchesAsync(orgId);
+            _branches = branches.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[UsersByRole] Error loading branches: {ex.Message}");
+        }
     }
 
     private async Task LoadUsersAndRolesAsync()
@@ -146,6 +282,83 @@
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    private void OpenAddUserModal()
+    {
+        _errorMessage = null;
+        _newUserFirstName = "";
+        _newUserLastName = "";
+        _newUserEmail = "";
+        _newUserRole = "BranchAdmin";
+        _newUserPassword = "Welcome@123";
+        _selectedBranchId = _branches.FirstOrDefault()?.Id.ToString() ?? "";
+        _showAddUserModal = true;
+    }
+
+    private void CloseAddUserModal()
+    {
+        _showAddUserModal = false;
+        _errorMessage = null;
+    }
+
+    private async Task HandleCreateUserAsync()
+    {
+        _errorMessage = null;
+        if (string.IsNullOrWhiteSpace(_newUserEmail))
+        {
+            _errorMessage = "Please enter an email address.";
+            return;
+        }
+
+        _isSaving = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+
+            var firstName = !string.IsNullOrWhiteSpace(_newUserFirstName) ? _newUserFirstName.Trim() : _newUserEmail.Split('@')[0];
+            var lastName = !string.IsNullOrWhiteSpace(_newUserLastName) ? _newUserLastName.Trim() : "Staff";
+            var displayName = $"{firstName} {lastName}".Trim();
+            var password = !string.IsNullOrWhiteSpace(_newUserPassword) ? _newUserPassword.Trim() : "Welcome@123";
+
+            var newUser = new User
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Email = _newUserEmail.Trim().ToLowerInvariant(),
+                FirstName = firstName,
+                LastName = lastName,
+                DisplayName = displayName,
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            await UserRepository.AddAsync(newUser, password);
+
+            if (!string.IsNullOrEmpty(_newUserRole))
+            {
+                await UserRepository.AssignOrganizationRoleAsync(tenantId, orgId, newUser.Id, _newUserRole);
+            }
+
+            if (Guid.TryParse(_selectedBranchId, out var branchGuid) && branchGuid != Guid.Empty)
+            {
+                await UserRepository.AssignBranchToUserAsync(tenantId, orgId, branchGuid, newUser.Id, UserContext.UserId);
+            }
+
+            _successBanner = $"Team member '{newUser.Email}' successfully added as {_newUserRole}!";
+            CloseAddUserModal();
+            await LoadUsersAndRolesAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to create user: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
         }
     }
 
@@ -248,54 +461,74 @@
                 Description = "Registered team accounts awaiting specific role or classroom assignment.",
                 BgColor = "#f8f9f5",
                 BorderColor = "#e4e7df",
-                TextColor = "#26332d"
+                TextColor = "#6c7870"
             }
         };
 
-        // Filter users
-        var filtered = _allUsers.AsEnumerable();
+        // Filter and distribute users into groups
+        var query = _allUsers.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(_searchTerm))
         {
-            var term = _searchTerm.Trim();
-            filtered = filtered.Where(u => 
-                u.DisplayName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                u.Email.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                u.AssignedRoles.Any(r => r.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            var term = _searchTerm.Trim().ToLowerInvariant();
+            query = query.Where(u =>
+                u.DisplayName.ToLowerInvariant().Contains(term) ||
+                u.Email.ToLowerInvariant().Contains(term) ||
+                (u.OrganizationName != null && u.OrganizationName.ToLowerInvariant().Contains(term)) ||
+                (u.ClassroomName != null && u.ClassroomName.ToLowerInvariant().Contains(term)) ||
+                u.AssignedRoles.Any(r => r.ToLowerInvariant().Contains(term)));
         }
 
+        var filteredUsers = query.ToList();
+
+        foreach (var user in filteredUsers)
+        {
+            // Determine highest rank matching group for this user
+            var assigned = false;
+            foreach (var group in hierarchyDefinitions.OrderBy(g => g.HierarchyRank))
+            {
+                if (group.RoleKey == "Unassigned")
+                {
+                    if (!user.AssignedRoles.Any())
+                    {
+                        group.Users.Add(user);
+                        assigned = true;
+                        break;
+                    }
+                }
+                else if (user.CanonicalRoles.Any(r => r.Equals(group.RoleKey, StringComparison.OrdinalIgnoreCase)))
+                {
+                    group.Users.Add(user);
+                    assigned = true;
+                    break;
+                }
+            }
+
+            if (!assigned)
+            {
+                var unassignedGroup = hierarchyDefinitions.First(g => g.RoleKey == "Unassigned");
+                unassignedGroup.Users.Add(user);
+            }
+        }
+
+        // Apply Tab Filter
         if (_selectedFilter == "Admin")
         {
-            filtered = filtered.Where(u => u.CanonicalRoles.Any(r => 
-                r == RoleTemplates.PlatformAdmin || 
-                r == RoleTemplates.OrganizationOwner || 
-                r == RoleTemplates.OrganizationAdmin || 
-                r == RoleTemplates.BranchAdmin));
+            hierarchyDefinitions = hierarchyDefinitions.Where(g => 
+                g.RoleKey == RoleTemplates.PlatformAdmin ||
+                g.RoleKey == RoleTemplates.OrganizationOwner ||
+                g.RoleKey == RoleTemplates.OrganizationAdmin ||
+                g.RoleKey == RoleTemplates.BranchAdmin).ToList();
         }
         else if (_selectedFilter == "Teacher")
         {
-            filtered = filtered.Where(u => u.CanonicalRoles.Any(r => 
-                r == RoleTemplates.ClassroomTeacher || 
-                r == RoleTemplates.DaycareTeacher));
+            hierarchyDefinitions = hierarchyDefinitions.Where(g => 
+                g.RoleKey == RoleTemplates.ClassroomTeacher ||
+                g.RoleKey == RoleTemplates.DaycareTeacher).ToList();
         }
         else if (_selectedFilter == "Parent")
         {
-            filtered = filtered.Where(u => u.CanonicalRoles.Any(r => r == RoleTemplates.Parent));
-        }
-
-        var userList = filtered.ToList();
-
-        // Assign users into role groups
-        foreach (var group in hierarchyDefinitions)
-        {
-            if (group.RoleKey == "Unassigned")
-            {
-                group.Users = userList.Where(u => !u.CanonicalRoles.Any()).ToList();
-            }
-            else
-            {
-                group.Users = userList.Where(u => u.CanonicalRoles.Contains(group.RoleKey, StringComparer.OrdinalIgnoreCase)).ToList();
-            }
+            hierarchyDefinitions = hierarchyDefinitions.Where(g => g.RoleKey == RoleTemplates.Parent).ToList();
         }
 
         // Only show groups that have members (or all if no search query)

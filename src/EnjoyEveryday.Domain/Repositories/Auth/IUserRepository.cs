@@ -15,6 +15,10 @@ public interface IUserRepository
     /// <summary>Assigns a role inside ONE organization (organization_memberships + user_organization_roles).</summary>
     Task AssignOrganizationRoleAsync(Guid tenantId, Guid organizationId, Guid userId, string roleName, CancellationToken cancellationToken = default);
 
+    /// <summary>Assigns a user to a specific physical branch location (user_branch_assignments).</summary>
+    Task AssignBranchToUserAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, Guid? assignedBy = null, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     /// <summary>Gets all users in a tenant with their resolved role hierarchy, organization assignments, and associations.</summary>
     Task<IEnumerable<UserHierarchyRecord>> GetUsersHierarchyAsync(Guid tenantId, CancellationToken cancellationToken = default)
         => Task.FromResult(Enumerable.Empty<UserHierarchyRecord>());
