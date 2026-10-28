@@ -659,6 +659,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        NavigationManager.LocationChanged += HandleLocationChanged;
         ResolveNavigationScope();
         AutoExpandCurrentRoute();
 
@@ -675,6 +676,13 @@
         }
     }
 
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        ResolveNavigationScope();
+        AutoExpandCurrentRoute();
+        InvokeAsync(StateHasChanged);
+    }
+
     private void ResolveNavigationScope()
     {
         var roles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
@@ -689,7 +697,7 @@
             r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
             r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
 
-        _isBranchAdmin = isPlatformAdmin || roles.Any(r => 
+        _isBranchAdmin = isPlatformAdmin || _isOrgAdmin || roles.Any(r => 
             r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
 
         bool isExplicitTeacher = roles.Any(r => 
@@ -699,7 +707,7 @@
             r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
             r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
 
-        _isTeacher = isPlatformAdmin || isExplicitTeacher;
+        _isTeacher = isPlatformAdmin || _isOrgAdmin || _isBranchAdmin || isExplicitTeacher;
 
         _availableViewsCount = (_isTeacher ? 1 : 0) + (_isBranchAdmin ? 1 : 0) + (_isOrgAdmin ? 1 : 0);
 
@@ -709,13 +717,13 @@
         {
             var str = v.ToString();
             if (str.Equals("branchadmin", StringComparison.OrdinalIgnoreCase)) _currentNavView = "BranchAdmin";
+            else if (str.Equals("teacher", StringComparison.OrdinalIgnoreCase)) _currentNavView = "Teacher";
             else if (str.Equals("orgadmin", StringComparison.OrdinalIgnoreCase)) _currentNavView = "OrgAdmin";
-            else _currentNavView = "Teacher";
+            else _currentNavView = "OrgAdmin";
         }
         else
         {
-            if (isExplicitTeacher && !_isOrgAdmin && !_isBranchAdmin) _currentNavView = "Teacher";
-            else if (_isOrgAdmin) _currentNavView = "OrgAdmin";
+            if (_isOrgAdmin) _currentNavView = "OrgAdmin";
             else if (_isBranchAdmin) _currentNavView = "BranchAdmin";
             else _currentNavView = "Teacher";
         }
@@ -724,7 +732,7 @@
     private void HandleSwitchView(ChangeEventArgs e)
     {
         var targetUrl = e.Value?.ToString() ?? "/";
-        NavigationManager.NavigateTo(targetUrl);
+        NavigationManager.NavigateTo(targetUrl, forceLoad: false);
     }
 
     private async Task HandleIncomingMessage(EnjoyEveryday.Application.Services.ParentMessageNotification notification)
@@ -748,6 +756,7 @@
 
     public void Dispose()
     {
+        NavigationManager.LocationChanged -= HandleLocationChanged;
         NotificationCenter.OnParentMessageReceived -= HandleIncomingMessage;
         NotificationCenter.OnMessagesRead -= HandleMessagesRead;
     }

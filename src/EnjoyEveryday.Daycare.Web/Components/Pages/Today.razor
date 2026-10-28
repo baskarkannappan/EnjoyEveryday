@@ -13,6 +13,8 @@
 
 <PageTitle>Today — EnjoyEveryday</PageTitle>
 
+@implements IDisposable
+
 @if (_initializing)
 {
     <LoadingState Text="Resolving your authorized workspace and classroom context..." />
@@ -47,6 +49,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        Navigation.LocationChanged += HandleLocationChanged;
         await ResolveUserScopeAndDefaultViewAsync();
     }
 
@@ -83,7 +86,7 @@ else
                 r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                 r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
 
-            bool isBranchAdmin = isPlatformAdmin || userRoles.Any(r => 
+            bool isBranchAdmin = isPlatformAdmin || isOrgAdmin || userRoles.Any(r => 
                 r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase)) ||
                 _assignedBranchIds.Count > 0;
 
@@ -95,7 +98,7 @@ else
                 r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
 
             bool hasAssignedClassroom = _assignedClassroomIds.Count > 0;
-            bool isTeacher = isPlatformAdmin || isExplicitTeacher || hasAssignedClassroom;
+            bool isTeacher = isPlatformAdmin || isOrgAdmin || isBranchAdmin || isExplicitTeacher || hasAssignedClassroom;
 
             // Build available authorized views list
             _availableViews.Clear();
@@ -109,16 +112,7 @@ else
             }
 
             // Safe authorized default view (Screenshot 3 flowchart):
-            // 1. If assigned classrooms exist -> Teacher
-            // 2. Else if user is explicitly a Teacher role without Admin -> Teacher
-            // 3. Else if user has Organization Admin / Owner / Platform Admin scope -> OrgAdmin
-            // 4. Else if user has Branch Admin scope -> BranchAdmin
-            // 5. Fallback -> Teacher
-            if (hasAssignedClassroom || (isExplicitTeacher && !isOrgAdmin && !isBranchAdmin))
-            {
-                _currentView = "Teacher";
-            }
-            else if (isOrgAdmin)
+            if (isOrgAdmin)
             {
                 _currentView = "OrgAdmin";
             }
@@ -132,15 +126,7 @@ else
             }
 
             // Check if URL query requested a specific authorized view
-            var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
-            if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var viewParam))
-            {
-                var requestedView = viewParam.ToString();
-                if (_availableViews.Any(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase)))
-                {
-                    _currentView = _availableViews.First(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase));
-                }
-            }
+            ApplyRequestedViewFromUrl();
         }
         catch (Exception ex)
         {
@@ -153,12 +139,36 @@ else
         }
     }
 
+    private void ApplyRequestedViewFromUrl()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var viewParam))
+        {
+            var requestedView = viewParam.ToString();
+            if (_availableViews.Any(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase)))
+            {
+                _currentView = _availableViews.First(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+    }
+
+    private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        ApplyRequestedViewFromUrl();
+        InvokeAsync(StateHasChanged);
+    }
+
     private void HandleViewChanged(string newView)
     {
         if (_availableViews.Contains(newView))
         {
             _currentView = newView;
-            StateHasChanged();
+            Navigation.NavigateTo($"/?view={newView.ToLowerInvariant()}", forceLoad: false);
         }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
     }
 }
