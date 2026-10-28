@@ -1,1185 +1,164 @@
 @page "/"
 @page "/today"
-@using EnjoyEveryday.Application.Services
-@using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Domain.Repositories
 @using EnjoyEveryday.Shared.Authorization
-@using EnjoyEveryday.UI.Shared.Components
-@using EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
-@using EnjoyEveryday.UI.Shared.Components.Attendance
-@using EnjoyEveryday.UI.Shared.Components.OperationsBoard
-@using Microsoft.FluentUI.AspNetCore.Components
-@using Icons = Microsoft.FluentUI.AspNetCore.Components.Icons
+@using EnjoyEveryday.Shared.Tenancy
+@using Microsoft.AspNetCore.WebUtilities
 
-@inject IDaycareOperationsBoardService OperationsBoardService
-@inject ClassroomService ClassroomService
-@inject BranchService BranchService
-@inject ExecutionService ExecutionService
-@inject EventService EventService
-@inject PlannerService PlannerService
-@inject IExperienceSessionRepository SessionRepository
-@inject IParentCommunicationRepository CommunicationRepo
-@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
-@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
-@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject IAccessScopeRepository AccessScopeRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
 @inject NavigationManager Navigation
-@inject TimeProvider TimeProvider
 @rendermode InteractiveServer
 
-<PageTitle>Teacher Workspace — Today's Classroom — EnjoyEveryday</PageTitle>
+<PageTitle>Today — EnjoyEveryday</PageTitle>
 
-<div class="content teacher-workspace-page">
-    @if (_loading)
+@if (_initializing)
+{
+    <LoadingState Text="Resolving your authorized workspace and classroom context..." />
+}
+else
+{
+    @if (_currentView == "Teacher")
     {
-        <LoadingState Text="Preparing today's teaching workspace and classroom rhythm..." />
+        <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
+                          AvailableViews="_availableViews"
+                          OnChangeView="HandleViewChanged" />
+    }
+    else if (_currentView == "BranchAdmin")
+    {
+        <BranchAdminDashboard AssignedBranchIds="_assignedBranchIds"
+                              AvailableViews="_availableViews"
+                              OnChangeView="HandleViewChanged" />
     }
     else
     {
-        <!-- ================= SECTION A: WELCOME & CLASSROOM CONTEXT ================= -->
-        <div class="teacher-hero-card">
-            <div class="hero-left">
-                <div class="hero-eyebrow">
-                    <span class="eyebrow-dot"></span>
-                    <span>TEACHER WORKSPACE • @_board.OrganizationName</span>
-                </div>
-                <h1 class="hero-greeting">
-                    @GetGreeting(), @GetTeacherDisplayName()!
-                </h1>
-                <p class="hero-subtext">
-                    <FluentIcon Value="@(new Icons.Regular.Size16.CalendarMonth())" Color="Color.Custom" CustomColor="#6c7870" />
-                    <span>@TimeProvider.GetLocalNow().ToString("dddd, MMMM d, yyyy")</span>
-                    @if (!string.IsNullOrEmpty(_board.SelectedBranchName))
-                    {
-                        <span class="sub-sep">•</span>
-                        <FluentIcon Value="@(new Icons.Regular.Size16.Location())" Color="Color.Custom" CustomColor="#6c7870" />
-                        <span>@_board.SelectedBranchName</span>
-                    }
-                </p>
-            </div>
-
-            <div class="hero-right">
-                <!-- Classroom Context Selector -->
-                <div class="classroom-scope-box">
-                    <span class="scope-label">
-                        <FluentIcon Value="@(new Icons.Regular.Size16.Door())" Color="Color.Custom" CustomColor="#6c7870" />
-                        ACTIVE CLASSROOM
-                    </span>
-                    <div class="classroom-selector-row">
-                        @if (_teacherClassrooms.Count > 1)
-                        {
-                            <select class="classroom-dropdown" @onchange="HandleClassroomChanged" value="@(_selectedClassroomId?.ToString() ?? "")">
-                                <option value="">All Assigned Classrooms</option>
-                                @foreach (var c in _teacherClassrooms)
-                                {
-                                    <option value="@c.Id">@c.Name (@(string.IsNullOrEmpty(c.AgeGroup) ? "General" : c.AgeGroup))</option>
-                                }
-                            </select>
-                        }
-                        else if (_teacherClassrooms.Count == 1)
-                        {
-                            <div class="single-classroom-chip">
-                                <strong>@_teacherClassrooms[0].Name</strong>
-                                <span class="chip-age">@(_teacherClassrooms[0].AgeGroup ?? "Classroom")</span>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="single-classroom-chip">
-                                <strong>@(_board.SelectedClassroomName ?? "Classroom")</strong>
-                            </div>
-                        }
-                    </div>
-                </div>
-
-                @if (_availableRoles.Count > 1)
-                {
-                    <div class="role-override-wrapper">
-                        <select class="role-selector-pill" @onchange="e => HandleRoleChanged(e.Value?.ToString() ?? string.Empty)" value="@_selectedRoleOverride">
-                            @foreach (var r in _availableRoles)
-                            {
-                                <option value="@r.RoleKey">@r.DisplayName View</option>
-                            }
-                        </select>
-                    </div>
-                }
-            </div>
-        </div>
-
-        <!-- ================= SECTION B: TODAY'S CLASSROOM SNAPSHOT ================= -->
-        <div class="snapshot-metrics-grid">
-            <!-- 1. Children Present vs Expected -->
-            <div class="snapshot-card" @onclick='() => Navigation.NavigateTo("/attendance")' title="Open Attendance Desk">
-                <div class="snapshot-header">
-                    <span class="snapshot-lbl">Children In Room</span>
-                    <span class="snapshot-icon icon-sage">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.PersonAvailable())" Color="Color.Custom" CustomColor="#355843" />
-                    </span>
-                </div>
-                <div class="snapshot-val">
-                    <span class="num-large">@_board.CheckedInChildrenCount</span>
-                    <span class="num-denom">/ @_board.ExpectedChildrenCount</span>
-                </div>
-                <div class="snapshot-footer">
-                    @if (_board.ExpectedNotArrivedCount > 0)
-                    {
-                        <span class="status-alert">@_board.ExpectedNotArrivedCount not yet arrived</span>
-                    }
-                    else
-                    {
-                        <span class="status-ok">✓ All expected checked in</span>
-                    }
-                </div>
-            </div>
-
-            <!-- 2. Attendance Status -->
-            <div class="snapshot-card" @onclick='() => Navigation.NavigateTo("/attendance")' title="Review Attendance">
-                <div class="snapshot-header">
-                    <span class="snapshot-lbl">Attendance Action</span>
-                    <span class="snapshot-icon icon-teal">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Custom" CustomColor="#22543d" />
-                    </span>
-                </div>
-                <div class="snapshot-val">
-                    @if (_board.ExpectedNotArrivedCount > 0)
-                    {
-                        <span class="num-large text-amber">@_board.ExpectedNotArrivedCount</span>
-                        <span class="num-denom">pending</span>
-                    }
-                    else
-                    {
-                        <span class="num-large text-green">100%</span>
-                        <span class="num-denom">confirmed</span>
-                    }
-                </div>
-                <div class="snapshot-footer">
-                    @if (_board.ExpectedNotArrivedCount > 0)
-                    {
-                        <span class="status-alert">Needs confirmation</span>
-                    }
-                    else
-                    {
-                        <span class="status-ok">Attendance up to date</span>
-                    }
-                </div>
-            </div>
-
-            <!-- 3. Scheduled Experiences -->
-            <div class="snapshot-card" @onclick='() => Navigation.NavigateTo("/planning")' title="Open Experience Planning">
-                <div class="snapshot-header">
-                    <span class="snapshot-lbl">Daily Experiences</span>
-                    <span class="snapshot-icon icon-amber">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#8c5717" />
-                    </span>
-                </div>
-                <div class="snapshot-val">
-                    <span class="num-large">@_board.PlannedExperiencesCount</span>
-                    <span class="num-denom">planned</span>
-                </div>
-                <div class="snapshot-footer">
-                    @if (ActiveRunningExperience != null)
-                    {
-                        <span class="status-live"><span class="pulse-dot"></span> Active Now</span>
-                    }
-                    else if (_board.CompletedExperiencesCount > 0)
-                    {
-                        <span class="status-ok">@_board.CompletedExperiencesCount finished</span>
-                    }
-                    else
-                    {
-                        <span>Ready to begin</span>
-                    }
-                </div>
-            </div>
-
-            <!-- 4. Classroom Care Tracking -->
-            <div class="snapshot-card" @onclick='() => Navigation.NavigateTo("/daily-care")' title="Open Daily Care Logs">
-                <div class="snapshot-header">
-                    <span class="snapshot-lbl">Care &amp; Routine Logs</span>
-                    <span class="snapshot-icon icon-rose">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#b85d43" />
-                    </span>
-                </div>
-                <div class="snapshot-val">
-                    @{
-                        int totalChildrenInCare = _board.TeacherChildrenCareStatus?.Count ?? 0;
-                        int pendingCareChildren = _board.TeacherChildrenCareStatus?.Count(c => c.NeedsAttention) ?? 0;
-                    }
-                    <span class="num-large">@(totalChildrenInCare - pendingCareChildren)</span>
-                    <span class="num-denom">/ @totalChildrenInCare logged</span>
-                </div>
-                <div class="snapshot-footer">
-                    @if (pendingCareChildren > 0)
-                    {
-                        <span class="status-alert">@pendingCareChildren need routine entry</span>
-                    }
-                    else
-                    {
-                        <span class="status-ok">All current logs recorded</span>
-                    }
-                </div>
-            </div>
-
-            <!-- 5. Parent Messages -->
-            <div class="snapshot-card" @onclick='() => Navigation.NavigateTo("/classroom-messages")' title="Open Parent Messages">
-                <div class="snapshot-header">
-                    <span class="snapshot-lbl">Family Communication</span>
-                    <span class="snapshot-icon icon-purple">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Color="Color.Custom" CustomColor="#553c9a" />
-                    </span>
-                </div>
-                <div class="snapshot-val">
-                    @if (_chatUnreadCount > 0)
-                    {
-                        <span class="num-large text-danger">@_chatUnreadCount</span>
-                        <span class="num-denom">unread</span>
-                    }
-                    else
-                    {
-                        <span class="num-large text-green">0</span>
-                        <span class="num-denom">new</span>
-                    }
-                </div>
-                <div class="snapshot-footer">
-                    @if (_chatUnreadCount > 0)
-                    {
-                        <span class="status-alert">Unread parent message</span>
-                    }
-                    else
-                    {
-                        <span class="status-ok">Inbox all caught up</span>
-                    }
-                </div>
-            </div>
-        </div>
-
-        <!-- ================= SECTION C: PROMINENT QUICK ACTIONS ================= -->
-        <div class="quick-actions-section">
-            <div class="actions-section-header">
-                <h2 class="actions-title">
-                    <FluentIcon Value="@(new Icons.Filled.Size20.Flash())" Color="Color.Custom" CustomColor="#52745e" />
-                    Frequent Teacher Actions
-                </h2>
-                <span class="actions-sub">One-click shortcuts to complete your core classroom responsibilities</span>
-            </div>
-
-            <div class="actions-cards-grid">
-                <!-- 1. Take Attendance (High Priority) -->
-                <button class="action-card-btn @(_board.ExpectedNotArrivedCount > 0 ? "highlight-action" : "")" @onclick='() => Navigation.NavigateTo("/attendance")'>
-                    <div class="action-card-icon icon-box-sage">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.ClipboardTask())" Color="Color.Custom" CustomColor="#355843" />
-                    </div>
-                    <div class="action-card-text">
-                        <strong>Take Attendance</strong>
-                        <span>Check in arrivals &amp; record departures</span>
-                    </div>
-                    @if (_board.ExpectedNotArrivedCount > 0)
-                    {
-                        <span class="action-badge-alert">@_board.ExpectedNotArrivedCount Pending</span>
-                    }
-                </button>
-
-                <!-- 2. Today's Activities -->
-                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/planning")'>
-                    <div class="action-card-icon icon-box-teal">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.CalendarMonth())" Color="Color.Custom" CustomColor="#22543d" />
-                    </div>
-                    <div class="action-card-text">
-                        <strong>Today's Activities</strong>
-                        <span>View scheduled experiences &amp; timing</span>
-                    </div>
-                    <span class="action-badge-neutral">@_board.PlannedExperiencesCount Planned</span>
-                </button>
-
-                <!-- 3. Start or Resume Experience (Contextual Dynamic Action) -->
-                @if (ActiveRunningExperience != null)
-                {
-                    <button class="action-card-btn active-experience-action" @onclick="() => OpenActiveSession(ActiveRunningExperience.Id)">
-                        <div class="action-card-icon icon-box-emerald">
-                            <FluentIcon Value="@(new Icons.Filled.Size24.PlayCircle())" Color="Color.Custom" CustomColor="#ffffff" />
-                        </div>
-                        <div class="action-card-text">
-                            <strong class="text-truncate">Resume Experience</strong>
-                            <span class="text-truncate">Active: @ActiveRunningExperience.Title</span>
-                        </div>
-                        <span class="action-badge-live">
-                            <span class="pulse-dot"></span> In Progress
-                        </span>
-                    </button>
-                }
-                else if (NextPlannedExperience != null)
-                {
-                    <button class="action-card-btn ready-experience-action" @onclick="() => StartSession(NextPlannedExperience.Id)">
-                        <div class="action-card-icon icon-box-amber">
-                            <FluentIcon Value="@(new Icons.Filled.Size24.Play())" Color="Color.Custom" CustomColor="#8c5717" />
-                        </div>
-                        <div class="action-card-text">
-                            <strong class="text-truncate">Start Next Experience</strong>
-                            <span class="text-truncate">@NextPlannedExperience.Title</span>
-                        </div>
-                        <span class="action-badge-ready">Ready</span>
-                    </button>
-                }
-                else
-                {
-                    <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/experiences")'>
-                        <div class="action-card-icon icon-box-amber">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.Library())" Color="Color.Custom" CustomColor="#8c5717" />
-                        </div>
-                        <div class="action-card-text">
-                            <strong>Experience Library</strong>
-                            <span>Browse &amp; schedule an activity</span>
-                        </div>
-                    </button>
-                }
-
-                <!-- 4. Classroom Children Roster -->
-                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/children")'>
-                    <div class="action-card-icon icon-box-blue">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.PeopleTeam())" Color="Color.Custom" CustomColor="#2b6cb0" />
-                    </div>
-                    <div class="action-card-text">
-                        <strong>Classroom Children</strong>
-                        <span>Profiles, emergency contacts &amp; notes</span>
-                    </div>
-                </button>
-
-                <!-- 5. Capture Child Moment / Observation -->
-                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/journey")'>
-                    <div class="action-card-icon icon-box-leaf">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.LeafOne())" Color="Color.Custom" CustomColor="#276749" />
-                    </div>
-                    <div class="action-card-text">
-                        <strong>Capture Child Moment</strong>
-                        <span>Log observation, voice &amp; milestones</span>
-                    </div>
-                </button>
-
-                <!-- 6. Parent Messages -->
-                <button class="action-card-btn" @onclick='() => Navigation.NavigateTo("/classroom-messages")'>
-                    <div class="action-card-icon icon-box-purple">
-                        <FluentIcon Value="@(new Icons.Regular.Size24.Chat())" Color="Color.Custom" CustomColor="#553c9a" />
-                    </div>
-                    <div class="action-card-text">
-                        <strong>Parent Messages</strong>
-                        <span>Family chat, updates &amp; announcements</span>
-                    </div>
-                    @if (_chatUnreadCount > 0)
-                    {
-                        <span class="action-badge-unread">@_chatUnreadCount</span>
-                    }
-                </button>
-            </div>
-        </div>
-
-        <!-- ================= SECTION E: NEEDS ATTENTION (ACTIONABLE TASKS) ================= -->
-        @if (GetAttentionItems().Any())
-        {
-            <div class="needs-attention-box">
-                <div class="attention-header">
-                    <span class="attention-badge">
-                        <FluentIcon Value="@(new Icons.Filled.Size16.Alert())" Color="Color.Custom" CustomColor="#8c5717" />
-                        Needs Attention Today
-                    </span>
-                    <span class="attention-count">@GetAttentionItems().Count Action Item(s)</span>
-                </div>
-                <div class="attention-items-list">
-                    @foreach (var item in GetAttentionItems())
-                    {
-                        <div class="attention-row @item.SeverityClass">
-                            <span class="attention-icon">@item.Icon</span>
-                            <div class="attention-desc">
-                                <strong>@item.Title</strong>
-                                <span>@item.Description</span>
-                            </div>
-                            <a href="@item.ActionUrl" class="btn secondary btn-sm attention-btn">
-                                @item.ActionText &rarr;
-                            </a>
-                        </div>
-                    }
-                </div>
-            </div>
-        }
-
-        <!-- ================= MAIN TWO-COLUMN WORKSPACE GRID ================= -->
-        <div class="workspace-layout-grid">
-            <!-- LEFT COLUMN: TODAY'S RHYTHM & SCHEDULE -->
-            <div class="workspace-main-col">
-                <!-- SECTION D: TODAY'S CLASSROOM RHYTHM -->
-                <div class="workspace-card">
-                    <div class="card-header-row">
-                        <div>
-                            <h2 class="card-title">
-                                <FluentIcon Value="@(new Icons.Regular.Size20.Clock())" Color="Color.Custom" CustomColor="#52745e" />
-                                Today's Classroom Rhythm
-                            </h2>
-                            <p class="card-subtitle">Scheduled pedagogical experiences, routines, and celebrations</p>
-                        </div>
-                        <div class="card-header-actions">
-                            <a href="/planning" class="btn secondary btn-xs" style="display: inline-flex; align-items: center; gap: 5px;">
-                                <FluentIcon Value="@(new Icons.Regular.Size16.CalendarAdd())" Color="Color.Custom" CustomColor="#52745e" />
-                                <span>Planning Calendar</span>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="rhythm-timeline-list">
-                        @if (_board.TodayRhythm != null && _board.TodayRhythm.Any())
-                        {
-                            @foreach (var item in _board.TodayRhythm)
-                            {
-                                bool isRunning = item.Status == "Started" || item.Status == "Active" || item.Status == "InProgress";
-                                bool isPlanned = item.Status == "Scheduled" || item.Status == "Planned" || item.Status == "Confirmed";
-                                bool isDone = item.Status == "Completed" || item.Status == "Finished";
-
-                                <div class="rhythm-entry-card @(isRunning ? "is-running" : (isDone ? "is-done" : ""))">
-                                    <div class="entry-time-col">
-                                        <span class="time-badge">@item.TimeDisplay</span>
-                                        <div class="timeline-indicator-dot @(isRunning ? "dot-pulse" : (isDone ? "dot-done" : "dot-planned"))"></div>
-                                    </div>
-
-                                    <div class="entry-content-col">
-                                        <div class="entry-title-row">
-                                            <div>
-                                                @if (item.IsCelebration)
-                                                {
-                                                    <span class="celebration-pill">🎉 Celebration</span>
-                                                }
-                                                <h3 class="entry-title">@item.Title</h3>
-                                                <span class="entry-room">
-                                                    <FluentIcon Value="@(new Icons.Regular.Size16.Door())" Color="Color.Custom" CustomColor="#6c7870" />
-                                                    @(string.IsNullOrEmpty(item.ClassroomName) ? "Whole Branch" : item.ClassroomName)
-                                                </span>
-                                            </div>
-                                            <span class="status-pill status-@item.Status.ToLowerInvariant()">@item.Status</span>
-                                        </div>
-
-                                        @if (!string.IsNullOrEmpty(item.PreparationNotes))
-                                        {
-                                            <div class="entry-notes">
-                                                <FluentIcon Value="@(new Icons.Regular.Size16.ClipboardTask())" Color="Color.Custom" CustomColor="#6c7870" />
-                                                <span>@item.PreparationNotes</span>
-                                            </div>
-                                        }
-
-                                        <!-- Direct Experience Actions -->
-                                        <div class="entry-actions-row">
-                                            @if (!item.IsCelebration)
-                                            {
-                                                @if (isPlanned)
-                                                {
-                                                    <button class="primary btn-sm" @onclick="() => StartSession(item.Id)">
-                                                        ▶ Start Experience
-                                                    </button>
-                                                    <button class="btn secondary btn-sm" @onclick="() => OpenActiveSession(item.Id)">
-                                                        👁️ View Session Plan
-                                                    </button>
-                                                }
-                                                else if (isRunning)
-                                                {
-                                                    <button class="primary btn-sm btn-emerald" @onclick="() => OpenActiveSession(item.Id)">
-                                                        ⚡ Resume Session
-                                                    </button>
-                                                    <button class="btn secondary btn-sm" @onclick="() => OpenSessionPhotoModal(item)">
-                                                        📸 Photos (@(item.PhotoUrls?.Length ?? 0))
-                                                    </button>
-                                                    <button class="btn secondary btn-sm" @onclick="() => CloseSession(item.Id)">
-                                                        ✓ Complete
-                                                    </button>
-                                                }
-                                                else if (isDone)
-                                                {
-                                                    <button class="btn secondary btn-sm" @onclick="() => OpenActiveSession(item.Id)">
-                                                        👁️ View Storybook
-                                                    </button>
-                                                    <button class="btn secondary btn-sm" @onclick="() => OpenSessionPhotoModal(item)">
-                                                        📸 Photos (@(item.PhotoUrls?.Length ?? 0))
-                                                    </button>
-                                                    <a href="/journey" class="btn secondary btn-sm">
-                                                        + Add Child Moments
-                                                    </a>
-                                                }
-                                            }
-                                            else
-                                            {
-                                                @if (item.Status == "Planned" || item.Status == "Approved")
-                                                {
-                                                    <button class="primary btn-sm" @onclick="() => StartCelebration(item.Id)">▶️ Start Event</button>
-                                                }
-                                                else if (item.Status == "InProgress")
-                                                {
-                                                    <button class="btn secondary btn-sm" @onclick="() => FinishCelebration(item.Id)">🏁 Complete Event</button>
-                                                }
-                                                <button class="btn secondary btn-sm" @onclick="() => OpenEventPhotoModal(item.Id)">📸 Photos</button>
-                                            }
-                                        </div>
-
-                                        @if (item.PhotoUrls != null && item.PhotoUrls.Length > 0)
-                                        {
-                                            <div class="entry-photos-strip">
-                                                @foreach (var photo in item.PhotoUrls)
-                                                {
-                                                    <img src="@photo" alt="Session Photo" class="thumb-photo" @onclick="() => _previewPhoto = photo" />
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                        }
-                        else
-                        {
-                            <div class="empty-rhythm-box">
-                                <div class="empty-icon">🌱</div>
-                                <h4>No Experiences Scheduled Today</h4>
-                                <p>Plan your daily pedagogical activities from the Experience Library or Calendar.</p>
-                                <div class="empty-buttons">
-                                    <a href="/planning" class="btn secondary btn-sm">Open Experience Planner</a>
-                                    <a href="/experiences" class="primary btn-sm">Browse Experience Library</a>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                </div>
-
-                <!-- CLASSROOM DAILY CARE & NUTRITION TRACKER -->
-                @if (_board.TeacherChildrenCareStatus != null && _board.TeacherChildrenCareStatus.Any())
-                {
-                    <div class="workspace-card">
-                        <div class="card-header-row">
-                            <div>
-                                <h2 class="card-title">
-                                    <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#52745e" />
-                                    Classroom Care &amp; Routine Logs
-                                </h2>
-                                <p class="card-subtitle">Meals, diaper/potty checks, nap times, and health notes for children on site</p>
-                            </div>
-                            <a href="/daily-care" class="btn secondary btn-xs">Full Care Desk &rarr;</a>
-                        </div>
-
-                        <div class="care-children-grid">
-                            @foreach (var child in _board.TeacherChildrenCareStatus)
-                            {
-                                <div class="child-care-card @(child.NeedsAttention ? "care-unlogged" : "care-recorded")">
-                                    <div class="child-card-header">
-                                        <div class="child-avatar">@child.FullName.FirstOrDefault()</div>
-                                        <div class="child-name-col">
-                                            <strong>@child.FullName</strong>
-                                            <span class="child-arr-time">
-                                                Arrived @(child.ArrivalTime?.ToString(@"hh\:mm") ?? "Present")
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    @if (!string.IsNullOrEmpty(child.DietaryOrAllergyNote))
-                                    {
-                                        <div class="allergy-tag">
-                                            ⚠️ @child.DietaryOrAllergyNote
-                                        </div>
-                                    }
-
-                                    <div class="child-care-footer">
-                                        @if (child.NeedsAttention)
-                                        {
-                                            <span class="care-badge-warn">Needs Care Log</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="care-badge-ok">✓ @child.CareEventsCount logged</span>
-                                        }
-                                        <a href="/daily-care" class="btn secondary btn-xs log-btn">+ Log</a>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
-
-            <!-- RIGHT COLUMN: CLASSROOM READINESS & LEARNING SHORTCUTS -->
-            <div class="workspace-side-col">
-                <!-- CLASSROOM READINESS CHECKLIST -->
-                @if (_board.ReadinessChecklist != null && _board.ReadinessChecklist.Any())
-                {
-                    <div class="workspace-card">
-                        <div class="card-header-row">
-                            <div>
-                                <h3 class="card-title-sm">
-                                    <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Custom" CustomColor="#52745e" />
-                                    Opening &amp; Safety Checks
-                                </h3>
-                                <p class="card-subtitle">Daily classroom environmental standards</p>
-                            </div>
-                        </div>
-
-                        <div class="readiness-items-list">
-                            @foreach (var item in _board.ReadinessChecklist)
-                            {
-                                <div class="readiness-item-row @(item.IsCompleted ? "is-completed" : "")" @onclick="() => ToggleChecklistItem(item)">
-                                    <input type="checkbox" class="readiness-chk" checked="@item.IsCompleted" @onchange="() => ToggleChecklistItem(item)" />
-                                    <div class="readiness-text">
-                                        <strong>@item.Label</strong>
-                                        <span>@item.Description</span>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
-
-                <!-- SECTION F: TEACHING & LEARNING SHORTCUTS -->
-                <div class="workspace-card">
-                    <div class="card-header-row">
-                        <h3 class="card-title-sm">
-                            <FluentIcon Value="@(new Icons.Regular.Size20.CompassNorthwest())" Color="Color.Custom" CustomColor="#52745e" />
-                            Pedagogical Shortcuts
-                        </h3>
-                    </div>
-
-                    <div class="learning-shortcuts-list">
-                        <a href="/experiences" class="learning-shortcut-item">
-                            <span class="shortcut-icon icon-sage">
-                                <FluentIcon Value="@(new Icons.Regular.Size20.Library())" Color="Color.Custom" CustomColor="#355843" />
-                            </span>
-                            <div>
-                                <strong>Experience Library</strong>
-                                <span>Browse ready-to-teach curriculum</span>
-                            </div>
-                            <span class="arrow-glyph">&rarr;</span>
-                        </a>
-
-                        <a href="/planning" class="learning-shortcut-item">
-                            <span class="shortcut-icon icon-teal">
-                                <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#22543d" />
-                            </span>
-                            <div>
-                                <strong>Experience Planning</strong>
-                                <span>Stagger schedules &amp; classrooms</span>
-                            </div>
-                            <span class="arrow-glyph">&rarr;</span>
-                        </a>
-
-                        <a href="/journey" class="learning-shortcut-item">
-                            <span class="shortcut-icon icon-leaf">
-                                <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#276749" />
-                            </span>
-                            <div>
-                                <strong>Child Journey &amp; Milestones</strong>
-                                <span>Developmental domain portfolios</span>
-                            </div>
-                            <span class="arrow-glyph">&rarr;</span>
-                        </a>
-
-                        <a href="/memories" class="learning-shortcut-item">
-                            <span class="shortcut-icon icon-amber">
-                                <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#8c5717" />
-                            </span>
-                            <div>
-                                <strong>Memories Timeline</strong>
-                                <span>Photo moments &amp; parent shares</span>
-                            </div>
-                            <span class="arrow-glyph">&rarr;</span>
-                        </a>
-
-                        @if (UserContext.HasPermission("experience.curate") || UserContext.HasPermission("experience.manage"))
-                        {
-                            <a href="/studio" class="learning-shortcut-item">
-                                <span class="shortcut-icon icon-purple">
-                                    <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#553c9a" />
-                                </span>
-                                <div>
-                                    <strong>Experience Studio</strong>
-                                    <span>Draft &amp; craft child-led experiences</span>
-                                </div>
-                                <span class="arrow-glyph">&rarr;</span>
-                            </a>
-                        }
-
-                        <a href="/management/roster" class="learning-shortcut-item">
-                            <span class="shortcut-icon icon-blue">
-                                <FluentIcon Value="@(new Icons.Regular.Size20.ShieldCheckmark())" Color="Color.Custom" CustomColor="#2b6cb0" />
-                            </span>
-                            <div>
-                                <strong>Staff Roster &amp; Ratios</strong>
-                                <span>Educator coverage &amp; statutory ratios</span>
-                            </div>
-                            <span class="arrow-glyph">&rarr;</span>
-                        </a>
-                    </div>
-                </div>
-
-                <!-- PARENT INQUIRIES & CHAT CARD -->
-                <div class="workspace-card family-card">
-                    <div class="family-card-top">
-                        <div class="family-icon">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.Chat())" Color="Color.Custom" CustomColor="#553c9a" />
-                        </div>
-                        <div>
-                            <h4 class="family-title">Family Communications</h4>
-                            <p class="family-desc">
-                                @if (_chatUnreadCount > 0)
-                                {
-                                    <span class="text-alert font-bold">@_chatUnreadCount unread message(s) from parents</span>
-                                }
-                                else
-                                {
-                                    <span>All parent messages answered</span>
-                                }
-                            </p>
-                        </div>
-                    </div>
-                    <a href="/classroom-messages" class="btn primary btn-sm w-100">
-                        Open Classroom Messages
-                    </a>
-                </div>
-            </div>
-        </div>
+        <OrgAdminDashboard AvailableViews="_availableViews"
+                           OnChangeView="HandleViewChanged" />
     }
-</div>
-
-@* PHOTO LIGHTBOX PREVIEW *@
-<PhotoLightboxModal PhotoUrl="@_previewPhoto" OnClose="() => _previewPhoto = null" />
-
-@* ACTIVE SESSION MODAL *@
-@if (_isSessionModalOpen)
-{
-    <ActiveSessionModal ScheduleId="@_activeSessionScheduleId"
-                        OnSessionEnded="OnSessionEnded"
-                        OnClose="() => _isSessionModalOpen = false" />
 }
 
-@* EVENT PHOTO MODAL *@
-<EventPhotoModal 
-    IsOpen="_isPhotoModalOpen"
-    Title="@_photoModalEventTitle"
-    Photos="@_photoModalEventPhotos"
-    MaxPhotos="3"
-    PhotosChanged="OnEventPhotosSaved"
-    OnClose="() => _isPhotoModalOpen = false" />
-
-@* SESSION PHOTO MODAL *@
-<SessionPhotoModal 
-    IsOpen="_isSessionPhotoModalOpen"
-    ScheduleId="@_sessionPhotoScheduleId"
-    Title="@_sessionPhotoTitle"
-    Photos="@_sessionPhotoUrls"
-    MaxPhotos="5"
-    PhotosChanged="OnSessionPhotosSaved"
-    OnOpenFullSession="OpenActiveSession"
-    OnClose="() => _isSessionPhotoModalOpen = false" />
-
-@* END OF DAY PROCESS MODAL *@
-<EndOfDayProcessModal 
-    IsOpen="_isEndOfDayModalOpen"
-    BranchId="@(Guid.TryParse(_selectedBranchId, out var bId) ? bId : null)"
-    Date="DateTime.Today"
-    OnClose="() => _isEndOfDayModalOpen = false"
-    OnCompleted="HandleEndOfDayCompleted" />
-
 @code {
-    private bool _loading = true;
-    private OperationsBoardModel _board = new();
-    private List<Branch> _branches = new();
-    private List<Classroom> _teacherClassrooms = new();
-    private Guid? _selectedClassroomId;
-    private string _selectedRoleOverride = "";
-    private string _selectedBranchId = "";
-    private string? _previewPhoto;
-    private int _chatUnreadCount = 0;
-
-    private List<OperationsBoardHeroControls.RoleOptionModel> _availableRoles = new();
-
-    // Modals
-    private bool _isEndOfDayModalOpen = false;
-    private bool _isSessionModalOpen = false;
-    private Guid _activeSessionScheduleId;
-    private bool _isPhotoModalOpen = false;
-    private Guid _photoModalEventId;
-    private string _photoModalEventTitle = "";
-    private string[] _photoModalEventPhotos = Array.Empty<string>();
-
-    private bool _isSessionPhotoModalOpen = false;
-    private Guid _sessionPhotoScheduleId;
-    private string _sessionPhotoTitle = "";
-    private string[] _sessionPhotoUrls = Array.Empty<string>();
-    private static readonly Dictionary<Guid, string[]> _sessionPhotoStore = new();
-
-    private RhythmScheduleItem? ActiveRunningExperience => _board.TodayRhythm?.FirstOrDefault(r => 
-        !r.IsCelebration && (r.Status == "Started" || r.Status == "Active" || r.Status == "InProgress"));
-
-    private RhythmScheduleItem? NextPlannedExperience => _board.TodayRhythm?.FirstOrDefault(r => 
-        !r.IsCelebration && (r.Status == "Scheduled" || r.Status == "Planned" || r.Status == "Confirmed"));
+    private bool _initializing = true;
+    private string _currentView = "Teacher";
+    private List<string> _availableViews = new();
+    private HashSet<Guid> _assignedClassroomIds = new();
+    private HashSet<Guid> _assignedBranchIds = new();
 
     protected override async Task OnInitializedAsync()
     {
-        InitializeAvailableRoles();
-        await LoadBranchesAndClassroomsAsync();
-        await RefreshBoardAsync();
+        await ResolveUserScopeAndDefaultViewAsync();
     }
 
-    private void InitializeAvailableRoles()
+    private async Task ResolveUserScopeAndDefaultViewAsync()
     {
-        _availableRoles = ResolveAvailableRoles();
-        var highestRole = _availableRoles.FirstOrDefault()?.RoleKey;
-        if (!string.IsNullOrEmpty(highestRole) && string.IsNullOrEmpty(_selectedRoleOverride))
-        {
-            _selectedRoleOverride = highestRole;
-        }
-    }
-
-    private List<OperationsBoardHeroControls.RoleOptionModel> ResolveAvailableRoles()
-    {
-        var options = new List<OperationsBoardHeroControls.RoleOptionModel>();
-        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-
-        bool isPlatformAdmin = userRoles.Any(r => 
-            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) || 
-            r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
-
-        bool isOrgAdmin = isPlatformAdmin || userRoles.Any(r => 
-            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
-
-        bool isBranchAdmin = isPlatformAdmin || userRoles.Any(r => 
-            r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
-
-        bool isTeacher = isPlatformAdmin || userRoles.Any(r => 
-            r.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
-            r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
-
-        if (isPlatformAdmin)
-            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.PlatformAdmin, "Platform Admin", 1));
-
-        if (isOrgAdmin)
-            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.OrganizationAdmin, "Org Admin", 2));
-
-        if (isBranchAdmin || isOrgAdmin)
-            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.BranchAdmin, "Branch Manager", 3));
-
-        if (isTeacher || isOrgAdmin || isBranchAdmin)
-            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.ClassroomTeacher, "Teacher", 4));
-
-        if (!options.Any())
-            options.Add(new OperationsBoardHeroControls.RoleOptionModel(RoleTemplates.ClassroomTeacher, "Teacher", 4));
-
-        return options.OrderBy(o => o.Rank).ToList();
-    }
-
-    private async Task LoadBranchesAndClassroomsAsync()
-    {
+        _initializing = true;
         try
         {
+            var tenantId = TenantContext.TenantId;
             var orgId = UserContext.OrganizationId ?? Guid.Empty;
-            if (orgId != Guid.Empty)
-            {
-                _branches = (await BranchService.GetBranchesAsync(orgId)).ToList();
-            }
+            var userId = UserContext.UserId;
 
-            var allClassrooms = await ClassroomService.GetAllClassroomsAsync();
-            _teacherClassrooms = allClassrooms.ToList();
-
-            if (_teacherClassrooms.Any() && !_selectedClassroomId.HasValue)
+            if (tenantId != Guid.Empty && userId != Guid.Empty)
             {
-                _selectedClassroomId = _teacherClassrooms.First().Id;
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading branches/classrooms: {ex.Message}");
-        }
-    }
+                var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+                _assignedClassroomIds = new HashSet<Guid>(classroomIds);
 
-    private async Task RefreshBoardAsync()
-    {
-        _loading = true;
-        try
-        {
-            Guid? branchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null;
-            var filter = new OperationsBoardFilter
-            {
-                OrganizationId = UserContext.OrganizationId,
-                BranchId = branchId,
-                ClassroomId = _selectedClassroomId,
-                RoleOverride = string.IsNullOrWhiteSpace(_selectedRoleOverride) ? null : _selectedRoleOverride,
-                Date = DateTime.Today
-            };
-
-            _board = await OperationsBoardService.GetOperationsBoardAsync(filter);
-            if (_board.TodayRhythm != null)
-            {
-                foreach (var r in _board.TodayRhythm)
+                if (orgId != Guid.Empty)
                 {
-                    if (_sessionPhotoStore.TryGetValue(r.Id, out var photos) && photos.Length > 0)
-                    {
-                        r.PhotoUrls = photos;
-                    }
+                    var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId, userId);
+                    _assignedBranchIds = new HashSet<Guid>(branchIds);
                 }
             }
 
-            if (string.IsNullOrEmpty(_selectedRoleOverride))
+            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+
+            bool isPlatformAdmin = userRoles.Any(r => 
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) || 
+                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+
+            bool isOrgAdmin = isPlatformAdmin || userRoles.Any(r => 
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
+
+            bool isBranchAdmin = isPlatformAdmin || userRoles.Any(r => 
+                r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase)) ||
+                _assignedBranchIds.Count > 0;
+
+            bool isExplicitTeacher = userRoles.Any(r => 
+                r.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
+
+            bool hasAssignedClassroom = _assignedClassroomIds.Count > 0;
+            bool isTeacher = isPlatformAdmin || isExplicitTeacher || hasAssignedClassroom;
+
+            // Build available authorized views list
+            _availableViews.Clear();
+            if (isTeacher) _availableViews.Add("Teacher");
+            if (isBranchAdmin) _availableViews.Add("BranchAdmin");
+            if (isOrgAdmin) _availableViews.Add("OrgAdmin");
+
+            if (!_availableViews.Any())
             {
-                _selectedRoleOverride = _board.EffectiveRole;
+                _availableViews.Add("Teacher");
             }
 
-            // Real parent message unread count
-            try
+            // Safe authorized default view (Screenshot 3 flowchart):
+            // 1. If assigned classrooms exist -> Teacher
+            // 2. Else if user is explicitly a Teacher role without Admin -> Teacher
+            // 3. Else if user has Organization Admin / Owner / Platform Admin scope -> OrgAdmin
+            // 4. Else if user has Branch Admin scope -> BranchAdmin
+            // 5. Fallback -> Teacher
+            if (hasAssignedClassroom || (isExplicitTeacher && !isOrgAdmin && !isBranchAdmin))
             {
-                _chatUnreadCount = await CommunicationRepo.GetUnreadCountForEducatorAsync(TenantContext.TenantId);
+                _currentView = "Teacher";
             }
-            catch
+            else if (isOrgAdmin)
             {
-                _chatUnreadCount = 0;
+                _currentView = "OrgAdmin";
+            }
+            else if (isBranchAdmin)
+            {
+                _currentView = "BranchAdmin";
+            }
+            else
+            {
+                _currentView = "Teacher";
+            }
+
+            // Check if URL query requested a specific authorized view
+            var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+            if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var viewParam))
+            {
+                var requestedView = viewParam.ToString();
+                if (_availableViews.Any(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _currentView = _availableViews.First(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase));
+                }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading teacher workspace: {ex.Message}");
+            Console.WriteLine($"Error resolving dashboard scope: {ex.Message}");
+            _currentView = "Teacher";
         }
         finally
         {
-            _loading = false;
+            _initializing = false;
         }
     }
 
-    private string GetGreeting()
+    private void HandleViewChanged(string newView)
     {
-        int hour = TimeProvider.GetLocalNow().Hour;
-        if (hour < 12) return "Good morning";
-        if (hour < 17) return "Good afternoon";
-        return "Good evening";
-    }
-
-    private string GetTeacherDisplayName()
-    {
-        if (!string.IsNullOrWhiteSpace(UserContext.Email))
+        if (_availableViews.Contains(newView))
         {
-            var name = UserContext.Email.Split('@')[0];
-            return char.ToUpper(name[0]) + name.Substring(1);
-        }
-        return "Teacher";
-    }
-
-    private async Task HandleClassroomChanged(ChangeEventArgs e)
-    {
-        var val = e.Value?.ToString();
-        if (Guid.TryParse(val, out var cId))
-        {
-            _selectedClassroomId = cId;
-        }
-        else
-        {
-            _selectedClassroomId = null;
-        }
-        await RefreshBoardAsync();
-    }
-
-    private async Task HandleRoleChanged(string role)
-    {
-        _selectedRoleOverride = role;
-        await RefreshBoardAsync();
-    }
-
-    private void ToggleChecklistItem(ReadinessChecklistItem item)
-    {
-        item.IsCompleted = !item.IsCompleted;
-    }
-
-    private List<AttentionItem> GetAttentionItems()
-    {
-        var items = new List<AttentionItem>();
-
-        if (_board.ExpectedNotArrivedCount > 0)
-        {
-            items.Add(new AttentionItem
-            {
-                Icon = "📋",
-                Title = "Attendance Incomplete",
-                Description = $"{_board.ExpectedNotArrivedCount} expected children have not yet arrived or been marked.",
-                ActionText = "Confirm Attendance",
-                ActionUrl = "/attendance",
-                SeverityClass = "attention-amber"
-            });
-        }
-
-        if (_chatUnreadCount > 0)
-        {
-            items.Add(new AttentionItem
-            {
-                Icon = "💬",
-                Title = "Unread Parent Messages",
-                Description = $"You have {_chatUnreadCount} unread parent inquiry awaiting response.",
-                ActionText = "View Messages",
-                ActionUrl = "/classroom-messages",
-                SeverityClass = "attention-purple"
-            });
-        }
-
-        if (_board.TeacherChildrenCareStatus != null)
-        {
-            int pendingCare = _board.TeacherChildrenCareStatus.Count(c => c.NeedsAttention);
-            if (pendingCare > 0)
-            {
-                items.Add(new AttentionItem
-                {
-                    Icon = "🍼",
-                    Title = "Routine Care Logs Needed",
-                    Description = $"{pendingCare} child(ren) currently in the room have no meal/nap logs entered today.",
-                    ActionText = "Log Daily Care",
-                    ActionUrl = "/daily-care",
-                    SeverityClass = "attention-rose"
-                });
-            }
-        }
-
-        if (ActiveRunningExperience != null)
-        {
-            items.Add(new AttentionItem
-            {
-                Icon = "⚡",
-                Title = "Live Experience In Progress",
-                Description = $"'{ActiveRunningExperience.Title}' is currently running. Close when concluded.",
-                ActionText = "Resume Session",
-                ActionUrl = "/today",
-                SeverityClass = "attention-emerald"
-            });
-        }
-
-        return items;
-    }
-
-    private class AttentionItem
-    {
-        public string Icon { get; set; } = "";
-        public string Title { get; set; } = "";
-        public string Description { get; set; } = "";
-        public string ActionText { get; set; } = "";
-        public string ActionUrl { get; set; } = "";
-        public string SeverityClass { get; set; } = "";
-    }
-
-    private async Task StartSession(Guid scheduleId)
-    {
-        try
-        {
-            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
-            await ExecutionService.StartExperienceAsync(scheduleId, teacherId);
-            await RefreshBoardAsync();
-            OpenActiveSession(scheduleId);
-        }
-        catch (Exception ex)
-        {
-            await NotificationService.HandleExceptionAsync(ex);
-        }
-    }
-
-    private async Task CloseSession(Guid scheduleId)
-    {
-        try
-        {
-            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
-            await ExecutionService.CompleteExperienceAsync(scheduleId, teacherId, 5, "Completed", "Closed from Teacher Workspace");
-            await RefreshBoardAsync();
-            await NotificationService.ShowSuccessAsync("Experience session completed and closed.");
-        }
-        catch (Exception ex)
-        {
-            await NotificationService.HandleExceptionAsync(ex);
-        }
-    }
-
-    private void OpenActiveSession(Guid scheduleId)
-    {
-        _activeSessionScheduleId = scheduleId;
-        _isSessionModalOpen = true;
-    }
-
-    private async Task OnSessionEnded()
-    {
-        _isSessionModalOpen = false;
-        await RefreshBoardAsync();
-    }
-
-    private void OpenSessionPhotoModal(RhythmScheduleItem item)
-    {
-        _sessionPhotoScheduleId = item.Id;
-        _sessionPhotoTitle = item.Title;
-        if (!_sessionPhotoStore.TryGetValue(item.Id, out var photos))
-        {
-            photos = item.PhotoUrls ?? Array.Empty<string>();
-        }
-        _sessionPhotoUrls = photos;
-        _isSessionPhotoModalOpen = true;
-    }
-
-    private async Task OnSessionPhotosSaved(string[] newPhotos)
-    {
-        _sessionPhotoUrls = newPhotos;
-        _sessionPhotoStore[_sessionPhotoScheduleId] = newPhotos;
-
-        var target = _board.TodayRhythm.FirstOrDefault(r => r.Id == _sessionPhotoScheduleId);
-        if (target != null)
-        {
-            target.PhotoUrls = newPhotos;
-        }
-
-        await NotificationService.ShowSuccessAsync("Session photos saved.");
-        StateHasChanged();
-    }
-
-    private async Task StartCelebration(Guid eventId)
-    {
-        try
-        {
-            await EventService.UpdateStatusAsync(eventId, "InProgress");
-            await RefreshBoardAsync();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error starting celebration: {ex.Message}");
-        }
-    }
-
-    private async Task FinishCelebration(Guid eventId)
-    {
-        try
-        {
-            await EventService.UpdateStatusAsync(eventId, "Completed");
-            await RefreshBoardAsync();
-            await OpenEventPhotoModal(eventId);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error finishing celebration: {ex.Message}");
-        }
-    }
-
-    private async Task OpenEventPhotoModal(Guid eventId)
-    {
-        var ev = await EventService.GetEventByIdAsync(eventId);
-        if (ev != null)
-        {
-            _photoModalEventId = ev.Id;
-            _photoModalEventTitle = ev.Title;
-            _photoModalEventPhotos = ev.PhotoUrls ?? Array.Empty<string>();
-            _isPhotoModalOpen = true;
+            _currentView = newView;
             StateHasChanged();
         }
-    }
-
-    private async Task OnEventPhotosSaved(string[] newPhotos)
-    {
-        _photoModalEventPhotos = newPhotos;
-        await EventService.UpdateEventPhotosAsync(_photoModalEventId, newPhotos);
-        await RefreshBoardAsync();
-    }
-
-    private async Task HandleEndOfDayCompleted(EndOfDayProcessReport report)
-    {
-        await RefreshBoardAsync();
-        await NotificationService.ShowSuccessAsync($"Day closed successfully. Autoclosed {report.TeachersCheckedOutCount} educators and {report.ChildrenCheckedOutCount} children.");
     }
 }

@@ -1,9 +1,11 @@
 @* Streamlined Daycare Workflow Navigation Menu *@
 @using Microsoft.AspNetCore.Components.Authorization
+@using EnjoyEveryday.Shared.Authorization
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject EnjoyEveryday.Daycare.Web.Services.DaycareRealtimeNotificationCenter NotificationCenter
 @inject EnjoyEveryday.Domain.Repositories.IParentCommunicationRepository CommunicationRepo
+@inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @implements IDisposable
 
@@ -18,13 +20,15 @@
         </div>
         <div>
             <div style="font-weight: 800; font-size: 14px; letter-spacing: -0.3px; color: var(--text, #26332d); line-height: 1.2;">EnjoyEveryday</div>
-            <div style="font-size: 10px; color: var(--muted, #6c7870); font-weight: 500;">Daycare Management</div>
+            <div style="font-size: 10px; color: var(--muted, #6c7870); font-weight: 500;">
+                @(_isTeacherOnly ? "Educator Workspace" : (_isBranchOnly ? "Branch Operations" : "Daycare Management"))
+            </div>
         </div>
     </a>
 
     @* ================= SECTION 1: DAILY CARE & ATTENDANCE ================= *@
     <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_dailyOpen))">
-        <span class="nav-section-title">DAILY CARE</span>
+        <span class="nav-section-title">@(_isBranchOnly ? "OPERATIONS" : "DAILY CARE")</span>
         <span class="nav-section-chevron">@(_dailyOpen ? "▾" : "▸")</span>
     </div>
 
@@ -33,20 +37,30 @@
         <div class="nav-group">
             <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
                 <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Color="Color.Custom" CustomColor="#b47836" />
-                <span>Today's Overview</span>
+                <span>@(_isTeacherOnly ? "My Classroom Today" : (_isBranchOnly ? "Branch Dashboard" : "Today's Overview"))</span>
             </NavLink>
-            <NavLink class="nav-item" href="/daily-care" Match="NavLinkMatch.Prefix">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#b85d43" />
-                <span>Child Daily Care</span>
-            </NavLink>
+            
+            @if (_isTeacher || _isOrgAdmin)
+            {
+                <NavLink class="nav-item" href="/daily-care" Match="NavLinkMatch.Prefix">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#b85d43" />
+                    <span>Child Daily Care</span>
+                </NavLink>
+            }
+
             <NavLink class="nav-item" href="/management/attendance" Match="NavLinkMatch.Prefix">
                 <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Custom" CustomColor="#52745e" />
                 <span>Live Attendance</span>
             </NavLink>
-            <NavLink class="nav-item" href="/rhythm-history">
-                <FluentIcon Value="@(new Icons.Regular.Size20.History())" Color="Color.Custom" CustomColor="#6c7870" />
-                <span>Past Rhythm &amp; Logs</span>
-            </NavLink>
+
+            @if (_isBranchAdmin || _isOrgAdmin)
+            {
+                <NavLink class="nav-item" href="/rhythm-history">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.History())" Color="Color.Custom" CustomColor="#6c7870" />
+                    <span>Past Rhythm &amp; Logs</span>
+                </NavLink>
+            }
+
             <NavLink class="nav-item nav-chat-item" href="/classroom-messages" Match="NavLinkMatch.Prefix">
                 <div style="position: relative; display: flex; align-items: center;">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Color="Color.Custom" CustomColor="#4a7863" />
@@ -64,9 +78,9 @@
         </div>
     }
 
-    @* ================= SECTION 2: DAYCARE DIRECTORY ================= *@
+    @* ================= SECTION 2: DAYCARE DIRECTORY / CLASSROOM CHILDREN ================= *@
     <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_directoryOpen))">
-        <span class="nav-section-title">DIRECTORY</span>
+        <span class="nav-section-title">@(_isTeacherOnly ? "CLASSROOM" : "DIRECTORY")</span>
         <span class="nav-section-chevron">@(_directoryOpen ? "▾" : "▸")</span>
     </div>
 
@@ -75,45 +89,77 @@
         <div class="nav-group">
             <NavLink class="nav-item" href="/children">
                 <FluentIcon Value="@(new Icons.Regular.Size20.PersonAvailable())" Color="Color.Custom" CustomColor="#52745e" />
-                <span>Children</span>
+                <span>@(_isTeacherOnly ? "My Classroom Children" : "Children")</span>
             </NavLink>
-            <NavLink class="nav-item" href="/classrooms">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Board())" Color="Color.Custom" CustomColor="#b47836" />
-                <span>Classrooms</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/teachers">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Person())" Color="Color.Custom" CustomColor="#4a7863" />
-                <span>Teachers &amp; Educators</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/users-by-role">
-                <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Color="Color.Custom" CustomColor="#5a6e63" />
-                <span>Staff &amp; Users by Role</span>
-            </NavLink>
+
+            @if (!_isTeacherOnly)
+            {
+                <NavLink class="nav-item" href="/classrooms">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Board())" Color="Color.Custom" CustomColor="#b47836" />
+                    <span>Classrooms</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/teachers">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Person())" Color="Color.Custom" CustomColor="#4a7863" />
+                    <span>Teachers &amp; Educators</span>
+                </NavLink>
+            }
+
+            @if (_isOrgAdmin)
+            {
+                <NavLink class="nav-item" href="/users-by-role">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Color="Color.Custom" CustomColor="#5a6e63" />
+                    <span>Staff &amp; Users by Role</span>
+                </NavLink>
+            }
         </div>
     }
 
-    @* ================= SECTION 3: ADMISSIONS & ENROLLMENT ================= *@
-    <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_admissionsOpen))">
-        <span class="nav-section-title">ADMISSIONS &amp; GROWTH</span>
-        <span class="nav-section-chevron">@(_admissionsOpen ? "▾" : "▸")</span>
-    </div>
-
-    @if (_admissionsOpen)
+    @* ================= SECTION 3: JOURNEY & MEMORIES / ADMISSIONS ================= *@
+    @if (_isTeacherOnly)
     {
-        <div class="nav-group">
-            <NavLink class="nav-item" href="/enrollment">
-                <FluentIcon Value="@(new Icons.Regular.Size20.CalendarAdd())" Color="Color.Custom" CustomColor="#b47836" />
-                <span>Admissions &amp; Pipeline</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/journey">
-                <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#52745e" />
-                <span>Child Journey &amp; Milestones</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/memories">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#b85d43" />
-                <span>Memories Timeline</span>
-            </NavLink>
+        <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_admissionsOpen))">
+            <span class="nav-section-title">PORTFOLIO &amp; JOURNEY</span>
+            <span class="nav-section-chevron">@(_admissionsOpen ? "▾" : "▸")</span>
         </div>
+
+        @if (_admissionsOpen)
+        {
+            <div class="nav-group">
+                <NavLink class="nav-item" href="/journey">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Child Journey &amp; Milestones</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/memories">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#b85d43" />
+                    <span>Memories Timeline</span>
+                </NavLink>
+            </div>
+        }
+    }
+    else if (_isOrgAdmin)
+    {
+        <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_admissionsOpen))">
+            <span class="nav-section-title">ADMISSIONS &amp; GROWTH</span>
+            <span class="nav-section-chevron">@(_admissionsOpen ? "▾" : "▸")</span>
+        </div>
+
+        @if (_admissionsOpen)
+        {
+            <div class="nav-group">
+                <NavLink class="nav-item" href="/enrollment">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.CalendarAdd())" Color="Color.Custom" CustomColor="#b47836" />
+                    <span>Admissions &amp; Pipeline</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/journey">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Child Journey &amp; Milestones</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/memories">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#b85d43" />
+                    <span>Memories Timeline</span>
+                </NavLink>
+            </div>
+        }
     }
 
     @* ================= SECTION 4: EXPERIENCES & CURRICULUM ================= *@
@@ -125,104 +171,135 @@
     @if (_experiencesOpen)
     {
         <div class="nav-group">
-            <NavLink class="nav-item" href="/planning">
-                <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#b47836" />
-                <span>Experience Planning</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/experiences">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Library())" Color="Color.Custom" CustomColor="#52745e" />
-                <span>Experience Library</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/events">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Gift())" Color="Color.Custom" CustomColor="#ab7c38" />
-                <span>Celebrations &amp; Events</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/studio">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#4a7863" />
-                <span>Experience Studio</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/marketplace">
-                <FluentIcon Value="@(new Icons.Regular.Size20.BuildingShop())" Color="Color.Custom" CustomColor="#637d4e" />
-                <span>Experience Marketplace</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/harvest">
-                <FluentIcon Value="@(new Icons.Regular.Size20.LeafTwo())" Color="Color.Custom" CustomColor="#52745e" />
-                <span>Harvest &amp; Insights</span>
-            </NavLink>
+            @if (_isTeacherOnly)
+            {
+                <NavLink class="nav-item" href="/today">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#b47836" />
+                    <span>Today's Activities</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/experiences">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Library())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Storybooks &amp; Experiences</span>
+                </NavLink>
+            }
+            else
+            {
+                <NavLink class="nav-item" href="/planning">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#b47836" />
+                    <span>Experience Planning</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/experiences">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Library())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Experience Library</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/events">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Gift())" Color="Color.Custom" CustomColor="#ab7c38" />
+                    <span>Celebrations &amp; Events</span>
+                </NavLink>
+                
+                @if (_isOrgAdmin)
+                {
+                    <NavLink class="nav-item" href="/studio">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#4a7863" />
+                        <span>Experience Studio</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/marketplace">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.BuildingShop())" Color="Color.Custom" CustomColor="#637d4e" />
+                        <span>Experience Marketplace</span>
+                    </NavLink>
+                    <NavLink class="nav-item" href="/harvest">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.LeafTwo())" Color="Color.Custom" CustomColor="#52745e" />
+                        <span>Harvest &amp; Insights</span>
+                    </NavLink>
+                }
+            }
         </div>
     }
 
-    @* ================= SECTION 5: MATERIALS & SUPPLIES ================= *@
-    <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_suppliesOpen))">
-        <span class="nav-section-title">MATERIALS &amp; SUPPLIES</span>
-        <span class="nav-section-chevron">@(_suppliesOpen ? "▾" : "▸")</span>
-    </div>
-
-    @if (_suppliesOpen)
+    @* ================= SECTION 5: MATERIALS & SUPPLIES (Org Admin only) ================= *@
+    @if (_isOrgAdmin)
     {
-        <div class="nav-group">
-            <NavLink class="nav-item" href="/materials-marketplace">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Box())" Color="Color.Custom" CustomColor="#b47836" />
-                <span>Materials Marketplace</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/materials-orders">
-                <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Color="Color.Custom" CustomColor="#6c7870" />
-                <span>Orders &amp; Loans</span>
-            </NavLink>
+        <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_suppliesOpen))">
+            <span class="nav-section-title">MATERIALS &amp; SUPPLIES</span>
+            <span class="nav-section-chevron">@(_suppliesOpen ? "▾" : "▸")</span>
         </div>
+
+        @if (_suppliesOpen)
+        {
+            <div class="nav-group">
+                <NavLink class="nav-item" href="/materials-marketplace">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Box())" Color="Color.Custom" CustomColor="#b47836" />
+                    <span>Materials Marketplace</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/materials-orders">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Color="Color.Custom" CustomColor="#6c7870" />
+                    <span>Orders &amp; Loans</span>
+                </NavLink>
+            </div>
+        }
     }
 
-    @* ================= SECTION 6: FINANCE & BILLING ================= *@
-    <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_financeOpen))">
-        <span class="nav-section-title">FINANCE &amp; BILLING</span>
-        <span class="nav-section-chevron">@(_financeOpen ? "▾" : "▸")</span>
-    </div>
-
-    @if (_financeOpen)
+    @* ================= SECTION 6: FINANCE & BILLING (Org Admin only) ================= *@
+    @if (_isOrgAdmin)
     {
-        <div class="nav-group">
-            <NavLink class="nav-item" href="/management/billing" Match="NavLinkMatch.Prefix">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Receipt())" Color="Color.Custom" CustomColor="#52745e" />
-                <span>Billing &amp; Invoices</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/management" Match="NavLinkMatch.All">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Board())" Color="Color.Custom" CustomColor="#3e5c49" />
-                <span>Financial Overview</span>
-            </NavLink>
+        <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_financeOpen))">
+            <span class="nav-section-title">FINANCE &amp; BILLING</span>
+            <span class="nav-section-chevron">@(_financeOpen ? "▾" : "▸")</span>
         </div>
+
+        @if (_financeOpen)
+        {
+            <div class="nav-group">
+                <NavLink class="nav-item" href="/management/billing" Match="NavLinkMatch.Prefix">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Receipt())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Billing &amp; Invoices</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/management" Match="NavLinkMatch.All">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Board())" Color="Color.Custom" CustomColor="#3e5c49" />
+                    <span>Financial Overview</span>
+                </NavLink>
+            </div>
+        }
     }
 
     @* ================= SECTION 7: OPERATIONS & SETTINGS ================= *@
-    <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_adminOpen))">
-        <span class="nav-section-title">OPERATIONS &amp; SETTINGS</span>
-        <span class="nav-section-chevron">@(_adminOpen ? "▾" : "▸")</span>
-    </div>
-
-    @if (_adminOpen)
+    @if (!_isTeacherOnly)
     {
-        <div class="nav-group">
-            <NavLink class="nav-item" href="/management/roster" Match="NavLinkMatch.Prefix">
-                <FluentIcon Value="@(new Icons.Regular.Size20.CalendarLtr())" Color="Color.Custom" CustomColor="#52745e" />
-                <span>Staff Roster &amp; Ratios</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/safety-trust" Match="NavLinkMatch.All">
-                <FluentIcon Value="@(new Icons.Regular.Size20.ShieldCheckmark())" Color="Color.Custom" CustomColor="#b85d43" />
-                <span>Safety &amp; Emergency</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/intelligence">
-                <FluentIcon Value="@(new Icons.Regular.Size20.BrainCircuit())" Color="Color.Custom" CustomColor="#4a7863" />
-                <span>Daycare Intelligence</span>
-            </NavLink>
-            <NavLink class="nav-item" href="/settings">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Settings())" Color="Color.Custom" CustomColor="#6c7870" />
-                <span>Organization Settings</span>
-            </NavLink>
+        <div class="nav-section-header" @onclick="() => ToggleSection(nameof(_adminOpen))">
+            <span class="nav-section-title">OPERATIONS &amp; SETTINGS</span>
+            <span class="nav-section-chevron">@(_adminOpen ? "▾" : "▸")</span>
         </div>
+
+        @if (_adminOpen)
+        {
+            <div class="nav-group">
+                <NavLink class="nav-item" href="/management/roster" Match="NavLinkMatch.Prefix">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.CalendarLtr())" Color="Color.Custom" CustomColor="#52745e" />
+                    <span>Staff Roster &amp; Ratios</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/safety-trust" Match="NavLinkMatch.All">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.ShieldCheckmark())" Color="Color.Custom" CustomColor="#b85d43" />
+                    <span>Safety &amp; Emergency</span>
+                </NavLink>
+                <NavLink class="nav-item" href="/intelligence">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.BrainCircuit())" Color="Color.Custom" CustomColor="#4a7863" />
+                    <span>@(_isBranchOnly ? "Branch Intelligence" : "Daycare Intelligence")</span>
+                </NavLink>
+
+                @if (_isOrgAdmin)
+                {
+                    <NavLink class="nav-item" href="/settings">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Settings())" Color="Color.Custom" CustomColor="#6c7870" />
+                        <span>Organization Settings</span>
+                    </NavLink>
+                }
+            </div>
+        }
     }
 
     </div>
     
-    <!-- USER PROFILE SECTION -->
+    <!-- USER PROFILE SECTION WITH VIEW SWITCHER -->
     <AuthorizeView>
         <Authorized>
             @{
@@ -249,6 +326,28 @@
                     </a>
                     <a href="/auth/logout" data-enhance-nav="false" style="font-size: 12px; color: #b55a5a; text-decoration: none; padding-left: 8px; border-left: 1px solid var(--border, #e4e7df); flex-shrink: 0; font-weight: 600;">Sign Out</a>
                 </div>
+
+                @if (_availableViewsCount > 1)
+                {
+                    <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border, #e4e7df); display: flex; align-items: center; justify-content: space-between; font-size: 11px;">
+                        <span style="color: var(--muted, #6c7870); font-weight: 600;">Dashboard View:</span>
+                        <select style="border: 1px solid var(--border, #e4e7df); border-radius: 6px; padding: 2px 6px; font-size: 11px; font-weight: 700; color: var(--accent-dark, #3e5c49); background: var(--surface-soft, #f8f9f5);"
+                                @onchange="HandleSwitchView">
+                            @if (_isTeacher)
+                            {
+                                <option value="/?view=teacher" selected="@(_currentNavView == "Teacher")">Educator View</option>
+                            }
+                            @if (_isBranchAdmin)
+                            {
+                                <option value="/?view=branchadmin" selected="@(_currentNavView == "BranchAdmin")">Branch View</option>
+                            }
+                            @if (_isOrgAdmin)
+                            {
+                                <option value="/?view=orgadmin" selected="@(_currentNavView == "OrgAdmin")">Org View</option>
+                            }
+                        </select>
+                    </div>
+                }
             </div>
         </Authorized>
     </AuthorizeView>
@@ -362,9 +461,20 @@
     private bool _adminOpen = false;
     private int _chatUnreadCount = 0;
 
+    // Roles and Scopes
+    private bool _isOrgAdmin = false;
+    private bool _isBranchAdmin = false;
+    private bool _isTeacher = false;
+    private bool _isTeacherOnly => _isTeacher && !_isOrgAdmin && !_isBranchAdmin;
+    private bool _isBranchOnly => _isBranchAdmin && !_isOrgAdmin;
+    private int _availableViewsCount = 0;
+    private string _currentNavView = "Teacher";
+
     protected override async Task OnInitializedAsync()
     {
         AutoExpandCurrentRoute();
+        ResolveNavigationScope();
+
         NotificationCenter.OnParentMessageReceived += HandleIncomingMessage;
         NotificationCenter.OnMessagesRead += HandleMessagesRead;
 
@@ -376,6 +486,58 @@
         {
             Console.WriteLine($"[NavMenu] Error loading unread count: {ex.Message}");
         }
+    }
+
+    private void ResolveNavigationScope()
+    {
+        var roles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+
+        bool isPlatformAdmin = roles.Any(r => 
+            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) || 
+            r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+
+        _isOrgAdmin = isPlatformAdmin || roles.Any(r => 
+            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase));
+
+        _isBranchAdmin = isPlatformAdmin || roles.Any(r => 
+            r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+        bool isExplicitTeacher = roles.Any(r => 
+            r.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("LeadTeacher", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("AssistantTeacher", StringComparison.OrdinalIgnoreCase));
+
+        _isTeacher = isPlatformAdmin || isExplicitTeacher;
+
+        _availableViewsCount = (_isTeacher ? 1 : 0) + (_isBranchAdmin ? 1 : 0) + (_isOrgAdmin ? 1 : 0);
+
+        // Detect active view from URL query if present
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var v))
+        {
+            var str = v.ToString();
+            if (str.Equals("branchadmin", StringComparison.OrdinalIgnoreCase)) _currentNavView = "BranchAdmin";
+            else if (str.Equals("orgadmin", StringComparison.OrdinalIgnoreCase)) _currentNavView = "OrgAdmin";
+            else _currentNavView = "Teacher";
+        }
+        else
+        {
+            if (isExplicitTeacher && !_isOrgAdmin && !_isBranchAdmin) _currentNavView = "Teacher";
+            else if (_isOrgAdmin) _currentNavView = "OrgAdmin";
+            else if (_isBranchAdmin) _currentNavView = "BranchAdmin";
+            else _currentNavView = "Teacher";
+        }
+    }
+
+    private void HandleSwitchView(ChangeEventArgs e)
+    {
+        var targetUrl = e.Value?.ToString() ?? "/";
+        NavigationManager.NavigateTo(targetUrl);
     }
 
     private async Task HandleIncomingMessage(EnjoyEveryday.Application.Services.ParentMessageNotification notification)
