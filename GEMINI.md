@@ -195,3 +195,21 @@ Every agent working in this repository MUST follow these performance and UI rule
 4. **Live DOM Verification**:
    - When diagnosing layout or CSS issues, use the `browser_subagent` tool on `http://localhost:7003` to inspect computed styles and layout bounds directly in the DOM instead of trial-and-error edits.
 
+---
+
+## 11. Fast Data Diagnosis & Fix Workflow
+
+When diagnosing and fixing data/database issues (especially when instructed not to modify UI):
+
+1. **Batch SQL Diagnostics in a Single Execution**:
+   - Do NOT run multiple single-statement `psql` queries one-by-one.
+   - Batch all diagnostic checks into a single multi-query SQL execution to avoid PowerShell/psql connection overhead.
+2. **Hypothesis-First Root Cause Pattern**:
+   - For `0/0` metrics or phantom rows, immediately check:
+     1. Date mismatches (`attendance_date` vs current calendar date).
+     2. Inactive duplicates (`is_active = false` missing from stored function filters).
+     3. System dummy records (e.g., virtual pool classrooms with 999 capacity).
+3. **No Rebuilds for Database-Only Changes**:
+   - PostgreSQL schema changes, stored functions, and row updates take effect instantly in the running application.
+   - Do NOT run `dotnet build` unless C# code or Razor files have been modified.
+
