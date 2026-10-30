@@ -126,7 +126,7 @@ public static class DbRoutineExtensions
             dynParams.Add("cur", cursorName);
 
             var paramList = ResolveParameterList(param, parameterNames);
-            var callParams = string.IsNullOrEmpty(paramList) ? "@cur" : $"{paramList}, @cur";
+            var callParams = string.IsNullOrEmpty(paramList) ? "@cur::refcursor" : $"{paramList}, @cur::refcursor";
             var callSql = $"CALL {procedureName}({callParams});";
 
             await connection.ExecuteAsync(new CommandDefinition(

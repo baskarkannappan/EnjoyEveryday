@@ -664,6 +664,7 @@
     private string _selectedBranchId = "";
     private string? _previewPhoto;
     private int _chatUnreadCount = 0;
+    private string? _adminDisplayName;
 
     // Modals
     private bool _isEndOfDayModalOpen = false;
@@ -692,6 +693,16 @@
         {
             return;
         }
+
+        try
+        {
+            var profile = await PageAuth.GetUserProfileAsync();
+            if (!string.IsNullOrWhiteSpace(profile?.DisplayName))
+            {
+                _adminDisplayName = profile.DisplayName;
+            }
+        }
+        catch { }
 
         await LoadBranchesAsync();
         await RefreshBoardAsync();
@@ -774,10 +785,21 @@
 
     private string GetAdminDisplayName()
     {
+        if (!string.IsNullOrWhiteSpace(_adminDisplayName))
+        {
+            return _adminDisplayName;
+        }
+
         if (!string.IsNullOrWhiteSpace(UserContext.Email))
         {
-            var name = UserContext.Email.Split('@')[0];
-            return char.ToUpper(name[0]) + name.Substring(1);
+            var raw = UserContext.Email.Split('@')[0];
+            // Clean up dot notation like "sandhya.vijayabasker.1" -> "Sandhya"
+            var parts = raw.Split(new[] { '.', '_', '-' }, StringSplitOptions.RemoveEmptyEntries);
+            var firstWord = parts.FirstOrDefault(p => !int.TryParse(p, out _));
+            if (!string.IsNullOrEmpty(firstWord))
+            {
+                return char.ToUpper(firstWord[0]) + firstWord.Substring(1);
+            }
         }
         return "Administrator";
     }
