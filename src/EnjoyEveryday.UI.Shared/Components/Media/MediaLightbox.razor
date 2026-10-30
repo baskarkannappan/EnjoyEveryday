@@ -1,0 +1,212 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+
+@if (IsOpen && !string.IsNullOrEmpty(ImageUrl))
+{
+    <div class="media-lightbox-backdrop"
+         @onclick="HandleClose"
+         @onkeydown="HandleKeyDown"
+         tabindex="0"
+         role="dialog"
+         aria-modal="true"
+         aria-label="@(Title ?? "Photo lightbox")">
+
+        <div class="media-lightbox-container" @onclick:stopPropagation>
+            <!-- Top bar -->
+            <div class="media-lightbox-topbar">
+                <div class="media-lightbox-header-info">
+                    @if (!string.IsNullOrEmpty(BadgeText))
+                    {
+                        <span class="media-lightbox-badge">@BadgeText</span>
+                    }
+                    @if (!string.IsNullOrEmpty(Title))
+                    {
+                        <h4 class="media-lightbox-title">@Title</h4>
+                    }
+                    @if (!string.IsNullOrEmpty(Subtitle))
+                    {
+                        <span class="media-lightbox-sub">@Subtitle</span>
+                    }
+                </div>
+                <button class="media-lightbox-close-btn" @onclick="HandleClose" aria-label="Close" title="Close (Esc)">
+                    ✕
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="media-lightbox-content">
+                <img src="@ImageUrl"
+                     alt="@(Title ?? "Photo")"
+                     class="media-lightbox-image" />
+            </div>
+
+            <!-- Bottom Caption / Notes -->
+            @if (!string.IsNullOrEmpty(Caption))
+            {
+                <div class="media-lightbox-caption">
+                    <p>@Caption</p>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .media-lightbox-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(22, 33, 27, 0.85);
+        backdrop-filter: blur(8px);
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+        outline: none;
+    }
+
+    .media-lightbox-container {
+        max-width: 960px;
+        width: 100%;
+        max-height: 92vh;
+        background: #1c2b22;
+        border-radius: var(--radius, 18px);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .media-lightbox-topbar {
+        padding: 14px 20px;
+        background: rgba(28, 43, 34, 0.95);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 12px;
+    }
+
+    .media-lightbox-header-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .media-lightbox-badge {
+        font-size: 10px;
+        font-weight: 750;
+        background: var(--accent, #557c6c);
+        color: #ffffff;
+        padding: 2px 7px;
+        border-radius: 4px;
+        display: inline-block;
+        width: fit-content;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+
+    .media-lightbox-title {
+        margin: 0;
+        color: #ffffff;
+        font-weight: 750;
+        font-size: 15px;
+    }
+
+    .media-lightbox-sub {
+        color: #a4b7ab;
+        font-size: 12px;
+    }
+
+    .media-lightbox-close-btn {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    .media-lightbox-close-btn:hover {
+        background: rgba(255, 255, 255, 0.25);
+        transform: scale(1.05);
+    }
+
+    .media-lightbox-content {
+        position: relative;
+        flex: 1;
+        min-height: 240px;
+        max-height: 72vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #141f18;
+        padding: 16px;
+        overflow: hidden;
+    }
+
+    .media-lightbox-image {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .media-lightbox-caption {
+        padding: 14px 20px;
+        background: rgba(28, 43, 34, 0.95);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .media-lightbox-caption p {
+        margin: 0;
+        font-size: 13.5px;
+        color: #e2ece5;
+        line-height: 1.5;
+    }
+
+    @@media (max-width: 640px) {
+        .media-lightbox-backdrop {
+            padding: 0;
+        }
+
+        .media-lightbox-container {
+            max-height: 100vh;
+            height: 100vh;
+            border-radius: 0;
+        }
+
+        .media-lightbox-image {
+            max-height: 75vh;
+        }
+    }
+</style>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string? ImageUrl { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? Caption { get; set; }
+    [Parameter] public string? BadgeText { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private async Task HandleClose() => await OnClose.InvokeAsync();
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await HandleClose();
+        }
+    }
+}

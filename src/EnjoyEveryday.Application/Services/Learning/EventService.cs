@@ -79,9 +79,20 @@ public class EventService
             throw new UnauthorizedAccessException("Requires event.manage permission.");
 
         evt.TenantId = _tenantContext.TenantId;
-        await ValidateEventConflictsAsync(evt, excludeEventId: evt.Id);
+        // Cancelling always frees the slot, so it must never be blocked by a conflict check.
+        if (!string.Equals(evt.Status, "Cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            await ValidateEventConflictsAsync(evt, excludeEventId: evt.Id);
+        }
 
-        await _eventRepository.UpdateAsync(evt);
+        try
+        {
+            await _eventRepository.UpdateAsync(evt);
+        }
+        catch (Exception ex) when (SchedulingRuleException.TryTranslate(ex, out var rule))
+        {
+            throw new InvalidOperationException(rule.Message, ex);
+        }
         await _auditService.LogAsync(new AuditEntry
         {
             TenantId = evt.TenantId,
@@ -242,7 +253,15 @@ public class EventService
     public async Task AddClassroomToEventAsync(Guid eventId, Guid classroomId)
     {
         if (!_userContext.HasPermission("event.manage")) throw new UnauthorizedAccessException();
-        await _eventRepository.AddEventClassroomAsync(new EventClassroom { EventId = eventId, ClassroomId = classroomId });
+        try
+        {
+            // DB trigger enforces: one non-cancelled activity per classroom at any point in time.
+            await _eventRepository.AddEventClassroomAsync(new EventClassroom { EventId = eventId, ClassroomId = classroomId });
+        }
+        catch (Exception ex) when (SchedulingRuleException.TryTranslate(ex, out var rule))
+        {
+            throw new InvalidOperationException(rule.Message, ex);
+        }
     }
 
     public async Task AddExperienceToEventAsync(Guid eventId, Guid experienceId, Guid? scheduleId, Guid? sessionId)

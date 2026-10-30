@@ -1,77 +1,95 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.Domain.Entities
 
-<article class="marketplace-item-card" data-status="@(Item.IsPurchasedOrEntitled ? "entitled" : "available")">
-    <!-- Header matching branch-head -->
-    <div class="card-head">
-        <div class="card-title-row">
-            <div class="card-icon" title="@Item.Category">
-                @GetCategoryIcon(Item.Category)
-            </div>
-            <div class="card-headings">
-                <span class="category-eyebrow">@Item.Category</span>
-                <h3 class="item-title" title="@Item.Title">@Item.Title</h3>
-            </div>
-        </div>
+<article class="marketplace-item-card cat-@CategoryKey" data-status="@(Item.IsPurchasedOrEntitled ? "entitled" : "available")">
+    <!-- Top Row: Category Chip & Pricing/Entitlement Badge -->
+    <div class="card-top-row">
+        <span class="category-chip @CategoryKey">
+            <span class="category-icon">@GetCategoryIcon(Item.Category)</span>
+            <span>@Item.Category</span>
+        </span>
         <div class="status-wrapper">
             @if (Item.IsPurchasedOrEntitled)
             {
-                <span class="status-badge entitled">✓ Entitled</span>
+                <span class="status-badge entitled" title="Added to Organization Library">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Entitled</span>
+                </span>
             }
             else if (Item.PricingModel == ExperiencePricingModel.IncludedInSubscription)
             {
-                <span class="status-badge plan-included">Plan Included</span>
+                <span class="status-badge plan-included">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                    <span>Plan Included</span>
+                </span>
             }
             else
             {
-                <span class="status-badge price">₹@Item.PriceAmount.ToString("N2")</span>
+                <span class="status-badge price">
+                    ₹@Item.PriceAmount.ToString("N2")
+                </span>
             }
         </div>
     </div>
 
-    <!-- 3 Stat Metric Boxes matching branch-stats -->
-    <div class="card-stats">
-        <div class="stat-box">
-            <div class="stat-number">@FormatAgeRange()</div>
-            <div class="stat-label">AGE GROUP</div>
+    <!-- Title & Description Section -->
+    <div class="card-main-content">
+        <h3 class="item-title" title="@Item.Title">@Item.Title</h3>
+        <p class="item-desc" title="@Item.Description">
+            @Item.Description
+        </p>
+    </div>
+
+    <!-- Metadata Ribbon: Age Group, Duration, Version -->
+    <div class="attributes-ribbon">
+        <div class="attr-pill" title="Target Age Range">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="7" r="4"></circle>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            </svg>
+            <span class="attr-val">@FormatAgeRange()</span>
         </div>
-        <div class="stat-box">
-            <div class="stat-number">@(Item.DurationMinutes.HasValue ? $"{Item.DurationMinutes}m" : "20–30m")</div>
-            <div class="stat-label">DURATION</div>
+        <div class="attr-pill" title="Activity Duration">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span class="attr-val">@(Item.DurationMinutes.HasValue ? $"{Item.DurationMinutes}m" : "20–30m")</span>
         </div>
-        <div class="stat-box">
-            <div class="stat-number">v@(Item.CurrentVersion)</div>
-            <div class="stat-label">VERSION</div>
+        <div class="attr-pill" title="Curated Canonical Version">
+            <span class="version-label">v@(Item.CurrentVersion)</span>
         </div>
     </div>
 
-    <!-- Description in styled note box with green left accent border matching branch-note -->
-    <div class="card-note">
-        @Item.Description
-    </div>
-
-    <!-- Footer matching branch-footer -->
+    <!-- Footer Row: Attribution & Actions -->
     <div class="card-footer">
         <div class="attribution-info">
             @if (!string.IsNullOrWhiteSpace(Item.CreatorAttribution))
             {
-                <span class="curator-text" title="Curated from @Item.CreatorAttribution">
-                    By @Item.CreatorAttribution
+                <span class="curator-text" title="Created by @Item.CreatorAttribution">
+                    <span class="curator-dot">🌿</span> @Item.CreatorAttribution
                 </span>
             }
             else
             {
                 <span class="curator-text">
-                    🌿 Platform Curriculum
+                    <span class="curator-dot">🌿</span> Platform Curriculum
                 </span>
             }
         </div>
 
         <div class="action-buttons-group">
+            <button class="btn-action secondary" @onclick="() => OnViewDetails.InvokeAsync(Item)">
+                Details
+            </button>
             @if (Item.IsPurchasedOrEntitled)
             {
                 <button class="btn-action primary" @onclick="() => OnAddToLibrary.InvokeAsync(Item)">
-                    + Add to My Library
+                    + Add to Library
                 </button>
             }
             else
@@ -80,9 +98,6 @@
                     @(Item.PricingModel == ExperiencePricingModel.IncludedInSubscription ? "Redeem Access" : $"Acquire (₹{Item.PriceAmount:0.00})")
                 </button>
             }
-            <button class="btn-action secondary" @onclick="() => OnViewDetails.InvokeAsync(Item)">
-                Details
-            </button>
         </div>
     </div>
 </article>
@@ -92,6 +107,17 @@
     [Parameter] public EventCallback<PlatformExperience> OnAddToLibrary { get; set; }
     [Parameter] public EventCallback<PlatformExperience> OnAcquire { get; set; }
     [Parameter] public EventCallback<PlatformExperience> OnViewDetails { get; set; }
+
+    private string CategoryKey => Item.Category?.ToLowerInvariant() switch
+    {
+        "art" or "creative arts" => "art",
+        "nature" or "nature & outdoors" => "nature",
+        "sensory" or "sensory & tactile" => "sensory",
+        "stem" or "science" => "stem",
+        "social" or "social-emotional" => "social",
+        "early childhood" or "early" => "early",
+        _ => "general"
+    };
 
     private string GetCategoryIcon(string? category) => category?.ToLowerInvariant() switch
     {

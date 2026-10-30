@@ -62,14 +62,14 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
             },
             parameterNames: new[]
             {
-                "Id", "TenantId", "OrganizationId", "ClassroomId", "ChildId",
-                "RecipientPersonId", "RecipientUserId", "RecipientEmail", "RecipientName", "RecipientRelationship",
-                "CommunicationType", "ReportingDateStart", "ReportingDateEnd",
-                "Title", "ContentDraft", "ContentFinal", "FamilyConversationStarter",
-                "EvidenceSummaryJson::jsonb", "ConsentVerified", "ConsentNotes",
-                "Status", "TeacherId", "TeacherName", "ApprovedByUserId", "ApprovedAt", "SentAt",
-                "DeliveryChannel", "DeliveryStatus", "DeliveryError", "IdempotencyKey",
-                "CreatedAt", "UpdatedAt"
+                "Id::uuid", "TenantId::uuid", "OrganizationId::uuid", "ClassroomId::uuid", "ChildId::uuid",
+                "RecipientPersonId::uuid", "RecipientUserId::uuid", "RecipientEmail::varchar", "RecipientName::varchar", "RecipientRelationship::varchar",
+                "CommunicationType::varchar", "ReportingDateStart::date", "ReportingDateEnd::date",
+                "Title::varchar", "ContentDraft::text", "ContentFinal::text", "FamilyConversationStarter::text",
+                "EvidenceSummaryJson::jsonb", "ConsentVerified::boolean", "ConsentNotes::varchar",
+                "Status::varchar", "TeacherId::uuid", "TeacherName::varchar", "ApprovedByUserId::uuid", "ApprovedAt::timestamptz", "SentAt::timestamptz",
+                "DeliveryChannel::varchar", "DeliveryStatus::varchar", "DeliveryError::text", "IdempotencyKey::varchar",
+                "CreatedAt::timestamptz", "UpdatedAt::timestamptz"
             },
             cancellationToken: cancellationToken);
 
@@ -103,10 +103,10 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
             },
             parameterNames: new[]
             {
-                "Id", "TenantId", "Title", "ContentFinal", "FamilyConversationStarter",
-                "EvidenceSummaryJson::jsonb", "ConsentVerified", "ConsentNotes",
-                "Status", "TeacherName", "ApprovedByUserId", "ApprovedAt", "SentAt",
-                "DeliveryChannel", "DeliveryStatus", "DeliveryError", "UpdatedAt"
+                "Id::uuid", "TenantId::uuid", "Title::varchar", "ContentFinal::text", "FamilyConversationStarter::text",
+                "EvidenceSummaryJson::jsonb", "ConsentVerified::boolean", "ConsentNotes::varchar",
+                "Status::varchar", "TeacherName::varchar", "ApprovedByUserId::uuid", "ApprovedAt::timestamptz", "SentAt::timestamptz",
+                "DeliveryChannel::varchar", "DeliveryStatus::varchar", "DeliveryError::text", "UpdatedAt::timestamptz"
             },
             cancellationToken: cancellationToken);
     }

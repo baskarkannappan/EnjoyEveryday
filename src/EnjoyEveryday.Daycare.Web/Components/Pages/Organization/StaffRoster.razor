@@ -392,8 +392,111 @@
                 </div>
             }
         </div>
+
+        <!-- Section 4: Activity Coverage (activities led by absent teachers) -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-arrow-left-right"></i> Activity Coverage
+                    </h2>
+                    <p class="section-subtitle">Planned activities in the next 7 days whose lead teacher is on approved leave. Reassign each to a free teacher.</p>
+                </div>
+                @if (_coverageNeeds.Any())
+                {
+                    <span class="coverage-pill uncovered">@_coverageNeeds.Count need cover</span>
+                }
+            </div>
+
+            @if (_coverageNeeds.Any())
+            {
+                <div class="cov-grid">
+                    @foreach (var n in _coverageNeeds)
+                    {
+                        <div class="cov-card">
+                            <div class="cov-card-top">
+                                <div class="cov-card-text">
+                                    <h3>@n.Title</h3>
+                                    <p>@n.EventDate.ToString("ddd, MMM d") · @FormatSlot(n.StartTime, n.EndTime)</p>
+                                </div>
+                                <span class="leave-pill">@n.ClassroomName</span>
+                            </div>
+                            <div class="cov-card-lead">
+                                <div class="teacher-avatar-sm">@((n.OrganizerName ?? "?").FirstOrDefault())</div>
+                                <span><strong>@n.OrganizerName</strong> · on @n.LeaveType leave</span>
+                            </div>
+                            <button class="primary cov-btn" @onclick="() => OpenReassignModal(n)">Find free teacher</button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-leaves">
+                    <i class="bi bi-check-circle" style="font-size: 28px; color: var(--accent, #52745e);"></i>
+                    <p style="margin: 8px 0 2px; font-weight: 750; color: var(--text, #26332d);">All activities have a teacher</p>
+                    <span style="font-size: 12px; color: var(--muted, #6c7870);">No upcoming activities are led by an absent teacher.</span>
+                </div>
+            }
+        </div>
     }
 </div>
+
+<!-- Modal: Reassign Activity -->
+@if (_reassignTarget != null)
+{
+    <div class="modal-backdrop-roster" @onclick="CloseReassignModal">
+        <div class="modal-card-roster cov-modal" @onclick:stopPropagation="true">
+            <div class="modal-top">
+                <h3>Reassign “@_reassignTarget.Title”</h3>
+                <button class="close-x" @onclick="CloseReassignModal">✕</button>
+            </div>
+            <p class="modal-helper-text">
+                @_reassignTarget.ClassroomName · @_reassignTarget.EventDate.ToString("ddd, MMM d") · @FormatSlot(_reassignTarget.StartTime, _reassignTarget.EndTime).
+                Teachers are ranked: free first, then co-teachers of this room, then fewest covers this week.
+            </p>
+
+            @if (_candidatesLoading)
+            {
+                <LoadingState Message="Checking teacher availability..." />
+            }
+            else if (!_candidates.Any())
+            {
+                <p class="substitute-none">No other teachers are assigned to this branch.</p>
+            }
+            else
+            {
+                <div class="cov-candidates">
+                    @foreach (var c in _candidates)
+                    {
+                        <div class="cov-candidate @(c.IsAvailable ? "" : "is-busy") @(_selectedCandidate == c.UserId ? "selected" : "")"
+                             role="button" tabindex="0"
+                             @onclick="() => { if (c.IsAvailable) _selectedCandidate = c.UserId; }">
+                            <div class="teacher-avatar-sm">@((c.DisplayName ?? "?").FirstOrDefault())</div>
+                            <div class="cov-card-text">
+                                <strong>@c.DisplayName</strong>
+                                <span>@c.Reason · @c.CoversThisWeek cover(s) this week</span>
+                            </div>
+                            <span class="cov-status @(c.IsAvailable ? "free" : "busy")">@(c.IsAvailable ? "Free" : "Unavailable")</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_reassignError))
+            {
+                <div class="cov-error">@_reassignError</div>
+            }
+
+            <div class="modal-bottom">
+                <button class="btn secondary" @onclick="CloseReassignModal">Cancel</button>
+                <button class="primary" @onclick="ConfirmReassign" disabled="@(_selectedCandidate == Guid.Empty || _reassigning)">
+                    @(_reassigning ? "Assigning..." : "Confirm Reassignment")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 <!-- Modal: Log Staff Leave -->
 @if (_isLeaveModalOpen)
@@ -508,6 +611,64 @@
     private StaffLeaveItem? _selectedLeaveForSub;
     private Guid _selectedSubTeacherId = Guid.Empty;
 
+    // Activity coverage
+    private List<EnjoyEveryday.Domain.Repositories.ActivityCoverageNeedRecord> _coverageNeeds = new();
+    private EnjoyEveryday.Domain.Repositories.ActivityCoverageNeedRecord? _reassignTarget;
+    private List<EnjoyEveryday.Domain.Repositories.CoverCandidateRecord> _candidates = new();
+    private Guid _selectedCandidate = Guid.Empty;
+    private bool _candidatesLoading;
+    private bool _reassigning;
+    private string? _reassignError;
+
+    private static string FormatSlot(TimeSpan? start, TimeSpan? end) =>
+        start.HasValue ? $"{start.Value:hh\\:mm}–{(end.HasValue ? end.Value.ToString(@"hh\:mm") : "end of day")}" : "All day";
+
+    private async Task OpenReassignModal(EnjoyEveryday.Domain.Repositories.ActivityCoverageNeedRecord need)
+    {
+        _reassignTarget = need;
+        _selectedCandidate = Guid.Empty;
+        _reassignError = null;
+        _candidatesLoading = true;
+        try
+        {
+            _candidates = await RosterService.GetCoverCandidatesAsync(_selectedBranchId, need.EventId);
+        }
+        finally
+        {
+            _candidatesLoading = false;
+        }
+    }
+
+    private void CloseReassignModal()
+    {
+        _reassignTarget = null;
+        _candidates = new();
+    }
+
+    private async Task ConfirmReassign()
+    {
+        if (_reassignTarget == null || _selectedCandidate == Guid.Empty) return;
+        _reassigning = true;
+        _reassignError = null;
+        try
+        {
+            await RosterService.ReassignActivityAsync(_selectedBranchId, _reassignTarget.EventId, _selectedCandidate);
+            CloseReassignModal();
+            await LoadRosterAsync();
+        }
+        catch (SchedulingRuleException ex)
+        {
+            // Someone else may have booked this teacher meanwhile — refresh the ranked list.
+            _reassignError = ex.Message;
+            _candidates = await RosterService.GetCoverCandidatesAsync(_selectedBranchId, _reassignTarget.EventId);
+            _selectedCandidate = Guid.Empty;
+        }
+        finally
+        {
+            _reassigning = false;
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         if (!await PageAuth.EnsureAuthorizedAsync("/management/roster"))
@@ -571,6 +732,7 @@
         try
         {
             _overview = await RosterService.GetRosterOverviewAsync(_selectedBranchId, _selectedDate);
+            _coverageNeeds = await RosterService.GetActivityCoverageNeedsAsync(_selectedBranchId, _selectedDate, _selectedDate.AddDays(7));
         }
         finally
         {

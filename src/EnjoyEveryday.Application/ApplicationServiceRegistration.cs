@@ -55,6 +55,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ChildDailyCareService>();
         services.AddScoped<IEndOfDayService, EndOfDayService>();
         services.AddScoped<EndOfDayService>();
+        services.AddScoped<IMediaService, MediaService>();
+        services.AddScoped<MediaService>();
         Action<IServiceProvider, HttpClient> configureAiClient = (sp, client) =>
         {
             var config = sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();

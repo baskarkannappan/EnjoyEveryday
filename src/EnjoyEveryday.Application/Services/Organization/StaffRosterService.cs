@@ -83,6 +83,30 @@ public interface IStaffRosterService
     Task<Guid> SubmitStaffLeaveAsync(StaffLeave leave, CancellationToken ct = default);
     Task AssignSubstituteCoverageAsync(Guid leaveId, Guid substituteTeacherId, CancellationToken ct = default);
     Task DispatchFloatTeacherAsync(Guid teacherId, Guid classroomId, CancellationToken ct = default);
+    Task<List<ActivityCoverageNeedRecord>> GetActivityCoverageNeedsAsync(Guid branchId, DateTime from, DateTime to, CancellationToken ct = default);
+    Task<List<CoverCandidateRecord>> GetCoverCandidatesAsync(Guid branchId, Guid eventId, CancellationToken ct = default);
+    Task ReassignActivityAsync(Guid branchId, Guid eventId, Guid newTeacherUserId, CancellationToken ct = default);
+}
+
+/// <summary>Raised when a scheduling/coverage rule rejects a change (classroom conflict, teacher unavailable).</summary>
+public class SchedulingRuleException : Exception
+{
+    public SchedulingRuleException(string message, Exception? inner = null) : base(message, inner) { }
+
+    public static bool TryTranslate(Exception ex, out SchedulingRuleException translated)
+    {
+        translated = null!;
+        if (ex is System.Data.Common.DbException db && db.SqlState is { } state && state.StartsWith("EE", StringComparison.Ordinal))
+        {
+            var msg = db.Message;
+            var idx = msg.IndexOf(": ", StringComparison.Ordinal);
+            if (idx >= 0 && idx < 8) msg = msg[(idx + 2)..];
+            msg = msg.Replace("CLASSROOM_CONFLICT: ", string.Empty);
+            translated = new SchedulingRuleException(msg, ex);
+            return true;
+        }
+        return false;
+    }
 }
 
 public class StaffRosterService : IStaffRosterService
@@ -341,5 +365,24 @@ public class StaffRosterService : IStaffRosterService
             EntityId = classroomId,
             Details = new { TeacherId = teacherId, ClassroomId = classroomId }
         }, ct);
+    }
+
+    public Task<List<ActivityCoverageNeedRecord>> GetActivityCoverageNeedsAsync(Guid branchId, DateTime from, DateTime to, CancellationToken ct = default)
+        => _rosterRepository.GetActivityCoverageNeedsAsync(_tenantContext.TenantId, branchId, from, to, ct);
+
+    public Task<List<CoverCandidateRecord>> GetCoverCandidatesAsync(Guid branchId, Guid eventId, CancellationToken ct = default)
+        => _rosterRepository.GetCoverCandidatesAsync(_tenantContext.TenantId, branchId, eventId, ct);
+
+    public async Task ReassignActivityAsync(Guid branchId, Guid eventId, Guid newTeacherUserId, CancellationToken ct = default)
+    {
+        try
+        {
+            // Availability is re-validated inside the DB function under a per-teacher lock; audit row written there too.
+            await _rosterRepository.ReassignEventOrganizerAsync(_tenantContext.TenantId, branchId, eventId, newTeacherUserId, _userContext?.UserId, ct);
+        }
+        catch (Exception ex) when (SchedulingRuleException.TryTranslate(ex, out var rule))
+        {
+            throw rule;
+        }
     }
 }

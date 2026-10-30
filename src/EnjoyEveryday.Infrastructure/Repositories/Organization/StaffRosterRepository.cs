@@ -130,4 +130,33 @@ public class StaffRosterRepository : IStaffRosterRepository
             new { TenantId = tenantId, ClassroomId = classroomId, UserId = userId },
             cancellationToken: ct);
     }
+
+    public async Task<List<ActivityCoverageNeedRecord>> GetActivityCoverageNeedsAsync(Guid tenantId, Guid branchId, DateTime from, DateTime to, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var rows = await conn.QueryFunctionAsync<ActivityCoverageNeedRecord>(
+            "public.fn_get_coverage_needs",
+            new { TenantId = tenantId, BranchId = branchId, From = from.Date, To = to.Date },
+            cancellationToken: ct);
+        return rows.ToList();
+    }
+
+    public async Task<List<CoverCandidateRecord>> GetCoverCandidatesAsync(Guid tenantId, Guid branchId, Guid eventId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var rows = await conn.QueryFunctionAsync<CoverCandidateRecord>(
+            "public.fn_get_cover_candidates_for_event",
+            new { TenantId = tenantId, BranchId = branchId, EventId = eventId },
+            cancellationToken: ct);
+        return rows.ToList();
+    }
+
+    public async Task ReassignEventOrganizerAsync(Guid tenantId, Guid branchId, Guid eventId, Guid newUserId, Guid? reassignedBy, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteScalarFunctionAsync<object>(
+            "public.fn_reassign_event_organizer",
+            new { TenantId = tenantId, EventId = eventId, NewUserId = newUserId, ReassignedBy = reassignedBy, BranchId = branchId },
+            cancellationToken: ct);
+    }
 }

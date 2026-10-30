@@ -123,6 +123,7 @@ app.MapStaticAssets();
 app.MapAppHealthChecks();
 app.MapAuthEndpoints();
 app.MapFloorMapEndpoints();
+app.MapMediaEndpoints();
 app.MapStorybookEndpoints();
 app.MapBillingEndpoints();
 app.MapHub<EnjoyEveryday.Daycare.Web.Hubs.ClassroomChatHub>("/hubs/classroom-chat").RequireCors("AllowParentPortal");

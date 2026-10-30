@@ -171,4 +171,101 @@ public class ObservabilityAndStorageTests
             }
         }
     }
+
+    [Test]
+    public void MediaService_Upload_WhenInvalidSignature_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var repoMock = new Mock<EnjoyEveryday.Domain.Repositories.IMediaRepository>();
+        var storageMock = new Mock<EnjoyEveryday.Domain.Storage.IObjectStorageRegistry>();
+        var tenantMock = new Mock<EnjoyEveryday.Shared.Tenancy.ITenantContext>();
+        tenantMock.Setup(t => t.TenantId).Returns(Guid.NewGuid());
+        var auditMock = new Mock<EnjoyEveryday.Shared.Audit.IAuditService>();
+        var loggerMock = new Mock<ILogger<EnjoyEveryday.Application.Services.MediaService>>();
+
+        var service = new EnjoyEveryday.Application.Services.MediaService(
+            repoMock.Object,
+            storageMock.Object,
+            tenantMock.Object,
+            auditMock.Object,
+            loggerMock.Object);
+
+        var badRequest = new EnjoyEveryday.Application.Services.UploadMediaVariantRequest
+        {
+            DisplayBytes = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 }, // Not an image
+            ThumbnailBytes = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 }
+        };
+
+        // Act & Assert
+        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await service.UploadMediaVariantsAsync(badRequest);
+        });
+    }
+
+    [Test]
+    public async Task MediaService_Upload_WhenValidWebpAndJpeg_SuccessfullyStoresAndLogsAudit()
+    {
+        // Arrange
+        var repoMock = new Mock<EnjoyEveryday.Domain.Repositories.IMediaRepository>();
+        var storageMock = new Mock<EnjoyEveryday.Domain.Storage.IObjectStorageRegistry>();
+        var storageProviderMock = new Mock<EnjoyEveryday.Domain.Storage.IObjectStorage>();
+        storageProviderMock.Setup(p => p.ProviderId).Returns("Local");
+        storageProviderMock.Setup(p => p.UploadAsync(
+            It.IsAny<EnjoyEveryday.Domain.Storage.ObjectUploadRequest>(),
+            It.IsAny<Stream>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new EnjoyEveryday.Domain.Storage.StoredObject(
+                "Local", "media", "testkey", "image/webp", 100, "hash", DateTimeOffset.UtcNow));
+
+        storageMock.Setup(s => s.Default).Returns(storageProviderMock.Object);
+
+        var tenantId = Guid.NewGuid();
+        var tenantMock = new Mock<EnjoyEveryday.Shared.Tenancy.ITenantContext>();
+        tenantMock.Setup(t => t.TenantId).Returns(tenantId);
+        var auditMock = new Mock<EnjoyEveryday.Shared.Audit.IAuditService>();
+        var loggerMock = new Mock<ILogger<EnjoyEveryday.Application.Services.MediaService>>();
+
+        var service = new EnjoyEveryday.Application.Services.MediaService(
+            repoMock.Object,
+            storageMock.Object,
+            tenantMock.Object,
+            auditMock.Object,
+            loggerMock.Object);
+
+        // Valid WebP header: RIFF....WEBP
+        var webpBytes = new byte[] {
+            0x52, 0x49, 0x46, 0x46, // RIFF
+            0x24, 0x00, 0x00, 0x00,
+            0x57, 0x45, 0x42, 0x50, // WEBP
+            0x56, 0x50, 0x38, 0x20
+        };
+
+        // Valid JPEG header: FF D8 FF
+        var jpegBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46 };
+
+        var validRequest = new EnjoyEveryday.Application.Services.UploadMediaVariantRequest
+        {
+            DisplayBytes = webpBytes,
+            ThumbnailBytes = jpegBytes,
+            DisplayWidth = 1280,
+            DisplayHeight = 720,
+            ThumbnailWidth = 320,
+            ThumbnailHeight = 180,
+            EntityType = "ChildJourney"
+        };
+
+        // Act
+        var result = await service.UploadMediaVariantsAsync(validRequest);
+
+        // Assert
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result.TenantId, Is.EqualTo(tenantId));
+        Assert.That(result.DisplayContentType, Is.EqualTo("image/webp"));
+        Assert.That(result.ThumbnailContentType, Is.EqualTo("image/jpeg"));
+        Assert.That(result.ContentHash, Is.Not.Null.And.Not.Empty);
+
+        repoMock.Verify(r => r.CreateAsync(It.IsAny<EnjoyEveryday.Domain.Entities.MediaAsset>(), It.IsAny<CancellationToken>()), Times.Once);
+        auditMock.Verify(a => a.LogAsync(It.Is<EnjoyEveryday.Shared.Audit.AuditEntry>(e => e.Action == "Media.Uploaded"), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }
