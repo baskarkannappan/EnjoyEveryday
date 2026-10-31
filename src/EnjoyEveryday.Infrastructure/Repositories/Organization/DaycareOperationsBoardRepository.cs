@@ -202,4 +202,56 @@ public class DaycareOperationsBoardRepository : IDaycareOperationsBoardRepositor
             return new List<PendingTeacherHandoverRecord>();
         }
     }
+
+    public async Task<Dictionary<string, bool>> GetDailyReadinessLogsAsync(Guid tenantId, Guid orgId, DateTime date, CancellationToken ct = default)
+    {
+        try
+        {
+            using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+            var results = await conn.QueryFunctionAsync<dynamic>(
+                "fn_get_daily_readiness_logs",
+                new
+                {
+                    TenantId = tenantId,
+                    OrganizationId = orgId,
+                    CheckDate = date.Date
+                },
+                cancellationToken: ct);
+
+            var dict = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in results)
+            {
+                string itemId = Convert.ToString(r.item_id);
+                bool isCompleted = Convert.ToBoolean(r.is_completed);
+                if (!string.IsNullOrEmpty(itemId))
+                {
+                    dict[itemId] = isCompleted;
+                }
+            }
+            return dict;
+        }
+        catch (Exception)
+        {
+            return new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    public async Task SetDailyReadinessLogAsync(Guid tenantId, Guid orgId, Guid? branchId, Guid? classroomId, DateTime date, string itemId, bool isCompleted, Guid? userId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteProcedureAsync(
+            "sp_upsert_daily_readiness_log",
+            new
+            {
+                TenantId = tenantId,
+                OrganizationId = orgId,
+                BranchId = branchId,
+                ClassroomId = classroomId,
+                CheckDate = date.Date,
+                ItemId = itemId,
+                IsCompleted = isCompleted,
+                UserId = userId
+            },
+            cancellationToken: ct);
+    }
 }

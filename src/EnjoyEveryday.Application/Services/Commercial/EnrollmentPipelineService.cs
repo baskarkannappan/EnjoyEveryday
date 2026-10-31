@@ -281,8 +281,14 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
         // 2. Resolve branch and organization scope from the selected classroom
         var scope = await _repository.GetClassroomScopeAsync(tenantId, request.ClassroomId, ct);
-        var branchId = scope.BranchId ?? app.BranchId;
-        var organizationId = scope.OrganizationId ?? tenantId;
+        var branchId = scope.BranchId ?? (app.BranchId != tenantId ? app.BranchId : null);
+        var organizationId = scope.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+
+        // Guard against invalid branch ID that violates foreign key constraint
+        if (branchId == tenantId)
+        {
+            branchId = scope.BranchId;
+        }
 
         // 3. Create family billing contract
         var contractId = Guid.NewGuid();

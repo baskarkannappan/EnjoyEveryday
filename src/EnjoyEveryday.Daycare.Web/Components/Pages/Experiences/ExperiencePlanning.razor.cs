@@ -43,6 +43,9 @@ public partial class ExperiencePlanning : ComponentBase
     [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
 
+    [Inject]
+    private EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService { get; set; } = default!;
+
     private bool _isMaterialReadinessModalOpen = false;
     private ExperienceSchedule? _selectedReadinessSchedule;
     private Experience? _selectedReadinessExperience;
@@ -439,6 +442,13 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void OpenPlanWizardForDate(DateOnly date)
     {
+        var today = DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
+        if (date < today)
+        {
+            _ = NotificationService.ShowWarningAsync("Cannot create or modify experiences for past dates.");
+            return;
+        }
+
         _wizardDefaultDate = date;
         _wizardScheduleId = null;
         _isPlanWizardOpen = true;
@@ -446,9 +456,31 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void EditSchedule(ExperienceSchedule schedule)
     {
+        var today = DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
+        if (schedule.ScheduledDate < today)
+        {
+            _ = NotificationService.ShowWarningAsync(
+                $"Historical experiences ({schedule.ScheduledDate:MMM d}) are locked and cannot be edited.");
+            return;
+        }
+
         _wizardDefaultDate = schedule.ScheduledDate;
         _wizardScheduleId = schedule.Id;
         _isPlanWizardOpen = true;
+    }
+
+    private void DraftPlanAroundAiSuggestion()
+    {
+        if (SelectedClassroomId.HasValue)
+        {
+            _isWeeklyAssistantOpen = true;
+            _ = NotificationService.ShowInfoAsync(
+                $"AI Weekly Assistant opened with focus on '{_commonMaterial}'. Click '✦ Generate Weekly Draft' to build experiences around this interest.");
+        }
+        else
+        {
+            OpenPlanWizard();
+        }
     }
 
     private DateOnly GetDefaultPlanDate()

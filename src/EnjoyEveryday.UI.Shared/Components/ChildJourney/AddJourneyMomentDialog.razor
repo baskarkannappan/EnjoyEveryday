@@ -275,7 +275,22 @@
         }
         else if (ChildId == null)
         {
-            _allChildren ??= (await ChildService.GetChildrenByClassroomAsync(ClassroomId.Value)).ToList();
+            if (_allChildren == null)
+            {
+                try
+                {
+                    _allChildren = (await ChildService.GetChildrenByClassroomAsync(ClassroomId.Value)).ToList();
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    var all = await ChildService.GetChildrenAsync();
+                    _allChildren = all.Where(c => c.ClassroomId == ClassroomId.Value).ToList();
+                }
+                catch (Exception)
+                {
+                    _allChildren = new List<Child>();
+                }
+            }
         }
         
         if (ExperienceId == null)

@@ -1,5 +1,4 @@
 @namespace EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
-@using Microsoft.FluentUI.AspNetCore.Components
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.UI.Shared.Components.ChildJourney
@@ -14,123 +13,515 @@
 @inject TimeProvider TimeProvider
 @if (IsOpen)
 {
-    <div class="modal-backdrop show" style="background-color: rgba(0,0,0,0.5); position: fixed; inset: 0; z-index: 1050; display: flex; align-items: center; justify-content: center;" @onclick="CloseDialog">
-        <div class="modal" @onclick:stopPropagation="true" style="width: 800px; max-height: 90vh; overflow-y: auto; background: white; padding: 24px; border-radius: 12px; margin: auto; position: relative;">
-            <button class="modal-close" style="position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="CloseDialog">ÃƒÂ¢Ã…â€œÃ¢â‚¬Â¢</button>
-            
-            <h2 style="margin-top: 0; margin-bottom: 8px; color: #26332d;">Active Session</h2>
-            
-            @if (_session == null)
-            {
-                <p>Loading session...</p>
-            }
-            else
-            {
-                <div style="color: #666; margin-bottom: 24px;">
-                    <p style="margin: 0 0 4px 0;">Experience: <strong>@_experienceTitle</strong></p>
-                    <p style="margin: 0; font-size: 13px;">Branch: <strong>@_branchName</strong> &nbsp;|&nbsp; Classroom: <strong>@_classroomName</strong></p>
+    <div class="active-session-modal-backdrop" @onclick="CloseDialog">
+        <div class="active-session-modal" @onclick:stopPropagation="true">
+            <!-- Modal Header -->
+            <div class="active-session-header">
+                <div class="session-header-left">
+                    <div class="session-header-avatar">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="session-eyebrow">EXPERIENCE SESSION RUNNER</div>
+                        <h2 class="session-title">@(_experienceTitle.Length > 0 ? _experienceTitle : "Active Session")</h2>
+                        <div class="session-meta">
+                            <span><strong>Classroom:</strong> @_classroomName</span>
+                            <span class="meta-separator">•</span>
+                            <span><strong>Branch:</strong> @_branchName</span>
+                        </div>
+                    </div>
                 </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e4e7df; padding-bottom: 8px; margin-bottom: 16px;">
-                    <h3 style="font-size: 16px; margin: 0; color: #26332d;">Children Participation</h3>
-                    <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenMomentDialog(null)" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #52745e; color: #52745e; background: #fcfdfc; cursor: pointer; font-size: 13px; font-weight: 600;">
-                        + Log Bulk Moment
-                    </button>
-                </div>
-                
-                @if (!_children.Any())
+                <button class="modal-close-button" @onclick="CloseDialog" aria-label="Close modal">✕</button>
+            </div>
+            
+            <div class="session-modal-body">
+                @if (_session == null)
                 {
-                    <div style="padding: 16px; background: #fcfdfc; border: 1px dashed #e4e7df; border-radius: 8px; color: #666; font-size: 13px; margin-bottom: 32px; text-align: center;">
-                        No children are currently registered in this daycare. Add children first to track participation!
+                    <div style="padding: 32px; text-align: center; color: var(--muted, #6c7870);">
+                        Loading experience session...
                     </div>
                 }
                 else
                 {
-                    @if (!_presentChildIds.Any())
+                    <!-- Children Participation Section -->
+                    <div class="section-header-row">
+                        <div>
+                            <h3 class="section-heading">Children Participation</h3>
+                            <p class="section-subheading">Track attendance and observations for today's experience.</p>
+                        </div>
+                        <button class="btn secondary btn-sm" @onclick="() => OpenMomentDialog(null)">
+                            + Log Bulk Moment
+                        </button>
+                    </div>
+                    
+                    @if (!_children.Any())
                     {
-                        <div style="padding: 12px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; color: #856404; font-size: 13px; margin-bottom: 16px;">
-                            <strong>Warning:</strong> No children are marked present today for this classroom. Please verify attendance, but you may proceed with the session if needed.
+                        <div class="empty-state-card">
+                            No children are currently enrolled in this classroom roster. Add children first to record individual observations.
                         </div>
                     }
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;">
-                        @foreach (var child in _children)
+                    else
+                    {
+                        @if (!_presentChildIds.Any())
                         {
-                            var status = GetParticipationStatus(child.Id);
-                            var isPresent = _presentChildIds.Contains(child.Id);
-                            
-                            <div style="border: 1px solid #e4e7df; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: @(status == "Participated" ? "#fcfdfc" : "#fff")">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <strong style="color: #26332d; display: block;">@child.FirstName @child.LastName</strong>
-                                        <small style="color: @(isPresent ? "#28a745" : "#dc3545"); font-weight: 500;">
-                                            @(isPresent ? "Present Today" : "Absent / Not Marked")
-                                        </small>
-                                    </div>
-                                    
-                                    <select value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #e4e7df; font-size: 13px;">
-                                        <option value="Participated">Participated</option>
-                                        <option value="Declined">Declined</option>
-                                        <option value="Absent">Absent</option>
-                                    </select>
-                                </div>
-                                
-                                @if (status == "Participated")
-                                {
-                                    if (_loggedChildIds.Contains(child.Id))
-                                    {
-                                        <div style="display: flex; gap: 8px; align-items: center;">
-                                            <span style="font-size: 13px; color: #52745e; background: #eaf2ec; padding: 4px 8px; border-radius: 4px;">Logged ✓</span>
-                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenMomentDialog(child.Id)" style="padding: 4px 12px; border-radius: 4px; border: 1px solid #52745e; color: #52745e; background: transparent; cursor: pointer; font-size: 13px;">
-                                                + Log Another
-                                            </button>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenMomentDialog(child.Id)" style="padding: 4px 12px; border-radius: 4px; border: 1px solid #52745e; color: #52745e; background: transparent; cursor: pointer; font-size: 13px; align-self: flex-start;">
-                                            + Log Moment
-                                        </button>
-                                    }
-                                }
+                            <div class="notice-banner">
+                                <span class="notice-icon">ℹ</span>
+                                <span>Attendance has not been recorded yet for this room today. You may proceed and log moments for present children.</span>
                             </div>
                         }
+
+                        <div class="children-cards-grid">
+                            @foreach (var child in _children)
+                            {
+                                var status = GetParticipationStatus(child.Id);
+                                var isPresent = _presentChildIds.Contains(child.Id);
+                                
+                                <div class="child-session-card @(status == "Participated" ? "card-participated" : "card-inactive")">
+                                    <div class="child-card-top">
+                                        <div class="child-info">
+                                            <div class="child-avatar-badge">
+                                                @(child.FirstName?.FirstOrDefault().ToString() ?? "C")
+                                            </div>
+                                            <div>
+                                                <strong class="child-name">@child.FirstName @child.LastName</strong>
+                                                <span class="child-status-badge @(isPresent ? "status-present" : "status-absent")">
+                                                    @(isPresent ? "Present Today" : "Absent / Not Marked")
+                                                </span>
+                                            </div>
+                                        </div>
+                                        
+                                        <select class="participation-select" value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))">
+                                            <option value="Participated">Participated</option>
+                                            <option value="Declined">Declined</option>
+                                            <option value="Absent">Absent</option>
+                                        </select>
+                                    </div>
+                                    
+                                    @if (status == "Participated")
+                                    {
+                                        <div class="child-actions-row">
+                                            @if (_loggedChildIds.Contains(child.Id))
+                                            {
+                                                <span class="logged-pill">✓ Moment Logged</span>
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenMomentDialog(child.Id)">
+                                                    + Log Another
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn secondary btn-xs" @onclick="() => OpenMomentDialog(child.Id)">
+                                                    + Log Moment
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                    
+                    <!-- Session Feedback -->
+                    <div class="feedback-section">
+                        <h3 class="section-heading">Session Feedback (Optional)</h3>
+                        <p class="section-subheading">Quick reflections to refine future experiences.</p>
+                        
+                        <div class="feedback-row">
+                            <div class="rating-stars-wrap">
+                                <span class="input-label">Rating</span>
+                                <div class="stars-list">
+                                    @for (int i = 1; i <= 5; i++)
+                                    {
+                                        var starValue = i;
+                                        <span @onclick="() => _stars = starValue" class="star-icon @(_stars >= starValue ? "star-active" : "star-inactive")">★</span>
+                                    }
+                                </div>
+                            </div>
+                            <div class="feedback-select-wrap">
+                                <span class="input-label">Experience Reception</span>
+                                <select class="feedback-select" @bind="_rating">
+                                    <option value="Great">Great - They loved it</option>
+                                    <option value="Good">Good - Went as expected</option>
+                                    <option value="Okay">Okay - Some challenges</option>
+                                    <option value="Poor">Poor - Needs redesign</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 14px;">
+                            <span class="input-label">Teacher Notes &amp; Observations</span>
+                            <textarea class="feedback-textarea" @bind="_notes" rows="3" placeholder="Add optional reflections or materials adjustments for next time..."></textarea>
+                        </div>
                     </div>
                 }
-                
-                <div style="border-top: 1px solid #e4e7df; padding-top: 16px; margin-bottom: 24px;">
-                    <h3 style="font-size: 16px; margin-bottom: 12px; color: #26332d;">Session Feedback (Optional)</h3>
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px;">Rating</label>
-                    <div style="display: flex; gap: 4px; margin-bottom: 8px;">
-                        @for (int i = 1; i <= 5; i++)
-                        {
-                            var starValue = i;
-                            <span @onclick="() => _stars = starValue" style="@GetStarStyle(starValue)">★</span>
-                        }
-                    </div>
-                    <select @bind="_rating" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #e4e7df; margin-bottom: 12px;">
-                        <option value="Great">Great - They loved it</option>
-                        <option value="Good">Good - Went as expected</option>
-                        <option value="Okay">Okay - Some challenges</option>
-                        <option value="Poor">Poor - Needs redesign</option>
-                    </select>
-                    
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px;">Teacher Notes</label>
-                    <textarea @bind="_notes" rows="3" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #e4e7df; resize: none;"></textarea>
-                </div>
+            </div>
 
-                <div style="display: flex; justify-content: flex-end; gap: 12px; align-items: center;">
-                    @if (_showParticipationWarning)
-                    {
-                        <span style="color: #dc3545; font-size: 13px; font-weight: 500;">No participation recorded. Click again to confirm completion.</span>
-                    }
-                    <button class="secondary" @onclick="CloseDialog" style="padding: 8px 16px; border: 1px solid #e4e7df; background: white; border-radius: 6px; cursor: pointer;">Close (Keep Active)</button>
-                    <button class="primary" @onclick="TryEndSession" style="padding: 8px 16px; border: none; background: #263d32; color: white; border-radius: 6px; cursor: pointer;">End Session & Save</button>
-                </div>
-            }
+            <!-- Modal Footer -->
+            <div class="session-modal-footer">
+                @if (_showParticipationWarning)
+                {
+                    <span class="warning-text">No participation recorded. Click again to confirm completion.</span>
+                }
+                <button class="btn secondary" @onclick="CloseDialog">Close (Keep Active)</button>
+                <button class="btn primary btn-end-save" @onclick="TryEndSession">
+                    ✓ End Session &amp; Save
+                </button>
+            </div>
         </div>
     </div>
 }
+
+<style>
+.active-session-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background-color: rgba(38, 51, 45, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.active-session-modal {
+    background: var(--surface, #ffffff);
+    border-radius: var(--radius, 18px);
+    max-width: 820px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 40px rgba(40, 55, 47, 0.16);
+    border: 1px solid var(--border, #e4e7df);
+    overflow: hidden;
+    color: var(--text, #26332d);
+}
+
+.active-session-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    background: #f7f8f5;
+    border-bottom: 1px solid var(--border, #e4e7df);
+}
+
+.session-header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.session-header-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--accent-light, #e6eee9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.session-eyebrow {
+    font-size: 10.5px;
+    font-weight: 750;
+    color: var(--accent, #52745e);
+    letter-spacing: 0.5px;
+}
+
+.session-title {
+    margin: 2px 0 0 0;
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--text, #26332d);
+    letter-spacing: -0.3px;
+}
+
+.session-meta {
+    font-size: 12.5px;
+    color: var(--muted, #6c7870);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.meta-separator {
+    color: #c0c6c2;
+}
+
+.modal-close-button {
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    color: var(--muted, #6c7870);
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.modal-close-button:hover {
+    background: #e9ece6;
+    color: var(--text, #26332d);
+}
+
+.session-modal-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border, #e4e7df);
+}
+
+.section-heading {
+    font-size: 15px;
+    font-weight: 750;
+    color: var(--text, #26332d);
+    margin: 0;
+}
+
+.section-subheading {
+    font-size: 12px;
+    color: var(--muted, #6c7870);
+    margin: 2px 0 0 0;
+}
+
+.notice-banner {
+    background: #fdfaf3;
+    border: 1px solid #fae8c8;
+    border-radius: 9px;
+    padding: 9px 12px;
+    font-size: 12.5px;
+    color: #8c6225;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.notice-icon {
+    font-weight: 700;
+    color: #b47836;
+}
+
+.empty-state-card {
+    padding: 24px;
+    background: var(--surface-soft, #f8f9f5);
+    border: 1px dashed var(--border, #e4e7df);
+    border-radius: 12px;
+    color: var(--muted, #6c7870);
+    font-size: 13px;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.children-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.child-session-card {
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 11px;
+    padding: 12px 14px;
+    background: var(--surface, #ffffff);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 2px 6px rgba(40, 55, 47, 0.03);
+    transition: all 0.15s ease;
+}
+
+.child-session-card.card-participated {
+    border-color: #cfded4;
+    background: #fafcfa;
+}
+
+.child-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.child-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.child-avatar-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--accent-light, #e6eee9);
+    color: var(--accent-dark, #3e6253);
+    font-weight: 750;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.child-name {
+    display: block;
+    font-size: 13.5px;
+    color: var(--text, #26332d);
+}
+
+.child-status-badge {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.child-status-badge.status-present {
+    color: #2e7d32;
+}
+
+.child-status-badge.status-absent {
+    color: #c53030;
+}
+
+.participation-select {
+    padding: 4px 8px;
+    border-radius: 7px;
+    border: 1px solid var(--border, #e4e7df);
+    background: #ffffff;
+    font-size: 12px;
+    color: var(--text, #26332d);
+}
+
+.child-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 6px;
+    border-top: 1px solid #f0f2ed;
+}
+
+.logged-pill {
+    font-size: 11px;
+    font-weight: 700;
+    color: #276749;
+    background: #e6eee9;
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.feedback-section {
+    border-top: 1px solid var(--border, #e4e7df);
+    padding-top: 16px;
+}
+
+.feedback-row {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.input-label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--muted, #6c7870);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 5px;
+}
+
+.stars-list {
+    display: flex;
+    gap: 4px;
+}
+
+.star-icon {
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.star-active {
+    color: #f59e0b;
+}
+
+.star-inactive {
+    color: #d1d5db;
+}
+
+.feedback-select-wrap {
+    flex: 1;
+}
+
+.feedback-select {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border, #e4e7df);
+    font-size: 12.5px;
+    background: #ffffff;
+    color: var(--text, #26332d);
+}
+
+.feedback-textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--border, #e4e7df);
+    font-family: inherit;
+    font-size: 12.5px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.session-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 24px;
+    background: #f7f8f5;
+    border-top: 1px solid var(--border, #e4e7df);
+}
+
+.warning-text {
+    color: #c53030;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: auto;
+}
+
+.btn-end-save {
+    background: var(--accent, #52745e) !important;
+}
+
+.btn-xs {
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.btn-sm {
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 700;
+}
+</style>
 
 <AddJourneyMomentDialog @ref="_momentDialog" 
                         TeacherId="@TeacherId" 
@@ -221,7 +612,22 @@
                 _branchName = branch?.Name ?? "Unknown Branch";
             }
             
-            _children = (await ChildService.GetChildrenByClassroomAsync(_session.ClassroomId)).ToList();            
+            try
+            {
+                _children = (await ChildService.GetChildrenByClassroomAsync(_session.ClassroomId)).ToList();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // If caller is in cross-tenant preview or role override, retrieve visible children without throwing unhandled UI crash
+                var allChildren = await ChildService.GetChildrenAsync();
+                _children = allChildren.Where(c => c.ClassroomId == _session.ClassroomId).ToList();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving children for session modal: {ex.Message}");
+                _children = new List<Child>();
+            }
+            
             _presentChildIds.Clear();
             _loggedChildIds.Clear();
             

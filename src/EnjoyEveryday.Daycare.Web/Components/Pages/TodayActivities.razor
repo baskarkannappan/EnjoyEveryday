@@ -1,0 +1,940 @@
+@page "/today-activities"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Icons = Microsoft.FluentUI.AspNetCore.Components.Icons
+@using System.Text.Json
+
+@inject PlannerService PlannerService
+@inject ExperienceService ExperienceService
+@inject ClassroomService ClassroomService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject ITeacherService TeacherService
+@inject ExecutionService ExecutionService
+@inject IAccessScopeRepository AccessScopeRepo
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager Navigation
+@inject TimeProvider TimeProvider
+
+<PageTitle>Today's Activities — EnjoyEveryday</PageTitle>
+
+<div class="content today-activities-page">
+    <PageHero Eyebrow="EDUCATOR TIMELINE"
+              Title="Today's Activities"
+              Subtitle="Vertical chronological rhythm of planned experiences. Start and complete activities with your classroom.">
+        <RightContent>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="date" class="control date-picker" value="@_selectedDate.ToString("yyyy-MM-dd")" @onchange="OnDateChanged" />
+                @if (_selectedDate != DateOnly.FromDateTime(DateTime.Today))
+                {
+                    <button class="btn secondary" @onclick="GoToToday">Today</button>
+                }
+                <a href="/planning" class="btn secondary">Planning Calendar →</a>
+            </div>
+        </RightContent>
+    </PageHero>
+
+    @if (_loading)
+    {
+        <LoadingState Text="Loading today's assigned activities and classroom rhythm..." />
+    }
+    else
+    {
+        <!-- Summary Stats Strip -->
+        <div class="stats-strip">
+            <div class="stat-pill">
+                <span class="stat-pill-label">Total Planned</span>
+                <span class="stat-pill-num">@_activities.Count</span>
+            </div>
+            <div class="stat-pill active-stat">
+                <span class="stat-pill-label">In Progress</span>
+                <span class="stat-pill-num">@_activities.Count(a => a.IsRunning)</span>
+            </div>
+            <div class="stat-pill completed-stat">
+                <span class="stat-pill-label">Completed</span>
+                <span class="stat-pill-num">@_activities.Count(a => a.IsCompleted)</span>
+            </div>
+            <div class="stat-pill pending-stat">
+                <span class="stat-pill-label">Upcoming</span>
+                <span class="stat-pill-num">@_activities.Count(a => a.IsPending)</span>
+            </div>
+        </div>
+
+        @if (!_activities.Any())
+        {
+            <div class="empty-activities-card">
+                <div class="empty-icon-pill">
+                    <FluentIcon Value="@(new Icons.Regular.Size32.CalendarEmpty())" Color="Color.Custom" CustomColor="#52745e" />
+                </div>
+                <h3 class="empty-title">No activities scheduled for @(_selectedDate == DateOnly.FromDateTime(DateTime.Today) ? "today" : _selectedDate.ToString("MMMM dd, yyyy"))</h3>
+                <p class="empty-text">
+                    There are no planned experiences mapped to your assigned classroom(s) for this day. You can draft plans in the Activity Planner.
+                </p>
+                <div class="empty-actions">
+                    <a href="/planning" class="btn primary">+ Plan Experience for Today</a>
+                    <a href="/experiences" class="btn secondary">Explore Experience Library</a>
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Vertical Chronological Timeline Sequence -->
+            <div class="timeline-container">
+                <div class="timeline-line"></div>
+                <div class="timeline-list">
+                    @foreach (var act in _activities)
+                    {
+                        <div class="timeline-row @(act.IsRunning ? "row-running" : act.IsCompleted ? "row-completed" : "row-pending")">
+                            
+                            <!-- Left: Time Sequence Hour-to-Hour Badge -->
+                            <div class="timeline-time-col">
+                                <div class="time-range-badge @(act.IsRunning ? "time-badge-running" : act.IsCompleted ? "time-badge-done" : "")">
+                                    <FluentIcon Value="@(new Icons.Regular.Size16.Clock())" Color="Color.Custom" CustomColor="@(act.IsRunning ? "#25603a" : act.IsCompleted ? "#6c7870" : "#52745e")" />
+                                    <span class="time-range-text">@act.TimeRangeDisplay</span>
+                                </div>
+                                <div class="timeline-marker @(act.IsRunning ? "marker-running" : act.IsCompleted ? "marker-done" : "marker-pending")">
+                                    @if (act.IsCompleted)
+                                    {
+                                        <span>✓</span>
+                                    }
+                                    else if (act.IsRunning)
+                                    {
+                                        <span class="pulse-marker"></span>
+                                    }
+                                    else
+                                    {
+                                        <span class="marker-dot"></span>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Right: Activity Detail Card adhering strictly to GEMINI.md -->
+                            <div class="activity-card @(act.IsRunning ? "card-running-active" : act.IsCompleted ? "card-completed" : "")">
+                                
+                                <div class="activity-card-header">
+                                    <div class="classroom-pill">
+                                        <FluentIcon Value="@(new Icons.Regular.Size16.Building())" Color="Color.Custom" CustomColor="#52745e" />
+                                        <span>@act.ClassroomName</span>
+                                        @if (!string.IsNullOrEmpty(act.BranchName))
+                                        {
+                                            <span class="branch-tag">· @act.BranchName</span>
+                                        }
+                                    </div>
+
+                                    <div class="status-container">
+                                        @if (act.IsRunning)
+                                        {
+                                            <span class="pill green live-badge">
+                                                <span class="pulse-dot"></span> In Progress
+                                            </span>
+                                        }
+                                        else if (act.IsCompleted)
+                                        {
+                                            <span class="pill green">✓ Completed</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="pill amber">Scheduled</span>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="activity-body">
+                                    <h3 class="activity-title">@act.Title</h3>
+                                    
+                                    @if (!string.IsNullOrEmpty(act.Description))
+                                    {
+                                        <p class="activity-desc">@act.Description</p>
+                                    }
+
+                                    <div class="activity-meta-tags">
+                                        <span class="meta-tag">
+                                            <strong>Period:</strong> @act.TimeOfDay
+                                        </span>
+                                        @if (!string.IsNullOrEmpty(act.Domain))
+                                        {
+                                            <span class="meta-tag domain-tag">
+                                                <strong>Domain:</strong> @act.Domain
+                                            </span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(act.AgeGroup))
+                                        {
+                                            <span class="meta-tag">
+                                                <strong>Age:</strong> @act.AgeGroup
+                                            </span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(act.TeacherName))
+                                        {
+                                            <span class="meta-tag teacher-tag">
+                                                <strong>Teacher:</strong> @act.TeacherName
+                                            </span>
+                                        }
+                                    </div>
+
+                                    @if (!string.IsNullOrEmpty(act.PreparationNotes))
+                                    {
+                                        <div class="preparation-box">
+                                            <div class="prep-label">
+                                                <FluentIcon Value="@(new Icons.Regular.Size16.Note())" Color="Color.Custom" CustomColor="#6c7870" />
+                                                <span>Preparation &amp; Materials Notes</span>
+                                            </div>
+                                            <div class="prep-content">@act.PreparationNotes</div>
+                                        </div>
+                                    }
+                                </div>
+
+                                <!-- Card Footer: Simple, Clean Action Controls -->
+                                <div class="activity-card-footer">
+                                    @if (act.IsPending)
+                                    {
+                                        <button class="btn primary btn-start" @onclick="() => StartActivity(act)" disabled="@_isOperating">
+                                            <FluentIcon Value="@(new Icons.Filled.Size16.Play())" Color="Color.Custom" CustomColor="#ffffff" />
+                                            <span>Start Activity</span>
+                                        </button>
+                                        <button class="btn secondary" @onclick="() => OpenSessionDetails(act)">
+                                            <span>View Details</span>
+                                        </button>
+                                    }
+                                    else if (act.IsRunning)
+                                    {
+                                        <button class="btn primary btn-complete" @onclick="() => EndActivity(act)" disabled="@_isOperating">
+                                            <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
+                                            <span>End Activity</span>
+                                        </button>
+                                        <button class="btn secondary" @onclick="() => OpenActiveSessionModal(act)">
+                                            <span>Children Moments &amp; Session →</span>
+                                        </button>
+                                    }
+                                    else if (act.IsCompleted)
+                                    {
+                                        <div class="completed-msg">
+                                            <span class="checkmark-icon">✓</span>
+                                            <span>Activity successfully executed and logged.</span>
+                                        </div>
+                                        <button class="btn secondary" @onclick="() => OpenActiveSessionModal(act)">
+                                            <span>Review Session</span>
+                                        </button>
+                                    }
+                                </div>
+
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (_isActiveSessionOpen)
+{
+    <ActiveSessionModal 
+        IsOpen="_isActiveSessionOpen"
+        ScheduleId="_activeScheduleId"
+        OnClose="HandleSessionClosed" />
+}
+
+<style>
+.today-activities-page {
+    max-width: 960px !important;
+    margin: 0 auto !important;
+    padding: 24px 20px 60px 20px;
+    color: var(--text, #26332d);
+}
+
+.date-picker {
+    padding: 8px 12px;
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 9px;
+    font-size: 13px;
+    background: #ffffff;
+    color: var(--text, #26332d);
+    font-family: inherit;
+}
+
+/* Stats Strip */
+.stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.stat-pill {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 2px 6px rgba(40, 55, 47, 0.03);
+}
+
+.stat-pill-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted, #6c7870);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.stat-pill-num {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--text, #26332d);
+    margin-top: 4px;
+}
+
+.stat-pill.active-stat .stat-pill-num {
+    color: #2e7d32;
+}
+
+.stat-pill.completed-stat .stat-pill-num {
+    color: var(--accent, #52745e);
+}
+
+/* Timeline Layout */
+.timeline-container {
+    position: relative;
+    padding-left: 20px;
+}
+
+.timeline-line {
+    position: absolute;
+    left: 140px;
+    top: 20px;
+    bottom: 20px;
+    width: 2px;
+    background: var(--border, #e4e7df);
+    z-index: 1;
+}
+
+.timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.timeline-row {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    position: relative;
+    z-index: 2;
+}
+
+/* Time Column */
+.timeline-time-col {
+    width: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 14px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.time-range-badge {
+    background: #ffffff;
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 8px;
+    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text, #26332d);
+    box-shadow: 0 2px 4px rgba(40, 55, 47, 0.03);
+}
+
+.time-range-badge.time-badge-running {
+    background: #e6eee9;
+    border-color: #52745e;
+    color: #1f422e;
+}
+
+.time-range-badge.time-badge-done {
+    background: #f8f9f5;
+    color: var(--muted, #6c7870);
+}
+
+.timeline-marker {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--border, #e4e7df);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    right: -13px;
+    z-index: 3;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.timeline-marker.marker-running {
+    border-color: #2e7d32;
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.timeline-marker.marker-done {
+    border-color: #52745e;
+    background: #52745e;
+    color: #ffffff;
+}
+
+.marker-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a0aba4;
+}
+
+.pulse-marker {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #2e7d32;
+    box-shadow: 0 0 0 4px rgba(46, 125, 50, 0.25);
+    animation: markerPulse 1.8s infinite;
+}
+
+@@keyframes markerPulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.5); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(46, 125, 50, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 125, 50, 0); }
+}
+
+/* Activity Card */
+.activity-card {
+    flex: 1;
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: var(--radius, 18px);
+    box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    padding: 20px 24px;
+    transition: all 0.2s ease;
+}
+
+.activity-card.card-running-active {
+    border-color: #52745e;
+    box-shadow: 0 8px 30px rgba(82, 116, 94, 0.15);
+    background: #ffffff;
+}
+
+.activity-card.card-completed {
+    background: #fbfcfb;
+    border-color: #e4e7df;
+    opacity: 0.95;
+}
+
+.activity-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.classroom-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface-soft, #f8f9f5);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text, #26332d);
+}
+
+.branch-tag {
+    color: var(--muted, #6c7870);
+    font-weight: 500;
+}
+
+.activity-title {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--text, #26332d);
+    margin: 0 0 8px 0;
+    letter-spacing: -0.3px;
+}
+
+.activity-desc {
+    font-size: 14px;
+    color: var(--muted, #6c7870);
+    line-height: 1.5;
+    margin: 0 0 14px 0;
+}
+
+.activity-meta-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.meta-tag {
+    font-size: 12px;
+    background: #f5f6f2;
+    border: 1px solid #e1e6e0;
+    border-radius: 6px;
+    padding: 3px 8px;
+    color: #3b4941;
+}
+
+.meta-tag.domain-tag {
+    background: #eef5f1;
+    border-color: #cde2d6;
+    color: #24573b;
+}
+
+.meta-tag.teacher-tag {
+    background: #fbf5eb;
+    border-color: #f1dfc3;
+    color: #7d5218;
+}
+
+.preparation-box {
+    background: var(--surface-soft, #f8f9f5);
+    border-left: 3px solid var(--accent, #52745e);
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+}
+
+.prep-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted, #6c7870);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+.prep-content {
+    font-size: 13px;
+    color: var(--text, #26332d);
+    white-space: pre-line;
+}
+
+.activity-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border, #e4e7df);
+}
+
+.btn-start {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent, #52745e) !important;
+}
+
+.btn-complete {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #2e7d32 !important;
+}
+
+.live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    padding: 4px 10px;
+    background: #e8f5e9 !important;
+    color: #1b5e20 !important;
+    border: 1px solid #c8e6c9 !important;
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2e7d32;
+    animation: dotPulse 1.5s infinite;
+}
+
+@@keyframes dotPulse {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    50% { transform: scale(1.3); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.7; }
+}
+
+.completed-msg {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent, #52745e);
+}
+
+.empty-activities-card {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: var(--radius, 18px);
+    padding: 48px 32px;
+    text-align: center;
+    box-shadow: var(--shadow);
+}
+
+.empty-icon-pill {
+    width: 64px;
+    height: 64px;
+    background: var(--accent-light, #e6eee9);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px auto;
+}
+
+.empty-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text, #26332d);
+    margin: 0 0 8px 0;
+}
+
+.empty-text {
+    font-size: 14px;
+    color: var(--muted, #6c7870);
+    max-width: 460px;
+    margin: 0 auto 24px auto;
+}
+
+.empty-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+@@media (max-width: 768px) {
+    .stats-strip {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .timeline-container {
+        padding-left: 0;
+    }
+    .timeline-line {
+        display: none;
+    }
+    .timeline-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+    .timeline-time-col {
+        width: 100%;
+        padding-top: 0;
+        justify-content: flex-start;
+        gap: 12px;
+    }
+    .timeline-marker {
+        display: none;
+    }
+}
+</style>
+
+@code {
+    private bool _loading = true;
+    private bool _isOperating = false;
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private List<TodayActivityModel> _activities = new();
+
+    private bool _isActiveSessionOpen = false;
+    private Guid _activeScheduleId = Guid.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadActivitiesAsync();
+    }
+
+    private async Task OnDateChanged(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            _selectedDate = parsed;
+            await LoadActivitiesAsync();
+        }
+    }
+
+    private async Task GoToToday()
+    {
+        _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+        await LoadActivitiesAsync();
+    }
+
+    private async Task LoadActivitiesAsync()
+    {
+        _loading = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+            var orgs = await OrganizationService.GetOrganizationsAsync();
+            var org = orgs.FirstOrDefault();
+            var orgId = org?.Id ?? UserContext.OrganizationId ?? Guid.Empty;
+
+            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+            bool isAdmin = userRoles.Any(r =>
+                r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+
+            // Fetch assigned classrooms for the logged in user
+            var assignedClassroomIds = new HashSet<Guid>();
+            if (tenantId != Guid.Empty && userId != Guid.Empty)
+            {
+                var assigned = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+                foreach (var cId in assigned) assignedClassroomIds.Add(cId);
+            }
+
+            // Also check teacher profiles
+            var teacherProfiles = (await TeacherService.GetAllTeachersAsync(tenantId)).ToList();
+            var currentProfile = teacherProfiles.FirstOrDefault(t => t.UserId == userId || t.Id == userId);
+            if (currentProfile != null && !string.IsNullOrWhiteSpace(currentProfile.DraftData))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(currentProfile.DraftData);
+                    if (doc.RootElement.TryGetProperty("AssignedClassroom", out var cToken) || doc.RootElement.TryGetProperty("assignedClassroom", out cToken))
+                    {
+                        if (Guid.TryParse(cToken.GetString(), out var cId)) assignedClassroomIds.Add(cId);
+                    }
+                }
+                catch { }
+            }
+
+            var allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            var classroomLookup = allClassrooms.ToDictionary(c => c.Id);
+
+            var branches = orgId != Guid.Empty ? (await BranchService.GetBranchesAsync(orgId)).ToList() : new List<Branch>();
+            var branchLookup = branches.ToDictionary(b => b.Id);
+
+            // Fetch schedules for selected date
+            var schedules = (await PlannerService.GetSchedulesForDateAsync(_selectedDate)).ToList();
+
+            // Filter schedules: If not admin and user has assigned classrooms, filter to user's assigned classrooms or teacher ID
+            if (!isAdmin && assignedClassroomIds.Any())
+            {
+                schedules = schedules.Where(s => 
+                    assignedClassroomIds.Contains(s.ClassroomId) || 
+                    (currentProfile != null && s.PrimaryTeacherId == currentProfile.Id) ||
+                    s.PrimaryTeacherId == userId
+                ).ToList();
+            }
+
+            var experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+            var experienceLookup = experiences.ToDictionary(e => e.Id);
+
+            var list = new List<TodayActivityModel>();
+            foreach (var s in schedules)
+            {
+                experienceLookup.TryGetValue(s.ExperienceId, out var exp);
+                classroomLookup.TryGetValue(s.ClassroomId, out var cls);
+                string branchName = "";
+                if (cls != null && branchLookup.TryGetValue(cls.BranchId, out var br))
+                {
+                    branchName = br.Name;
+                }
+
+                string teacherName = "";
+                if (s.PrimaryTeacherId.HasValue)
+                {
+                    var tProf = teacherProfiles.FirstOrDefault(t => t.Id == s.PrimaryTeacherId.Value || t.UserId == s.PrimaryTeacherId.Value);
+                    teacherName = tProf?.FullName ?? "";
+                }
+
+                string domain = "";
+                string ageGroup = cls?.AgeGroup ?? "";
+                if (exp != null && !string.IsNullOrWhiteSpace(exp.DnaPayload))
+                {
+                    try
+                    {
+                        using var dnaDoc = JsonDocument.Parse(exp.DnaPayload);
+                        if (dnaDoc.RootElement.TryGetProperty("Domain", out var dToken) || dnaDoc.RootElement.TryGetProperty("domain", out dToken))
+                        {
+                            domain = dToken.GetString() ?? "";
+                        }
+                        if (string.IsNullOrEmpty(ageGroup) && (dnaDoc.RootElement.TryGetProperty("AgeGroup", out var agToken) || dnaDoc.RootElement.TryGetProperty("ageGroup", out agToken)))
+                        {
+                            ageGroup = agToken.GetString() ?? "";
+                        }
+                    }
+                    catch { }
+                }
+
+                // Format time range string
+                string timeRange;
+                if (s.PlannedStartTime.HasValue && s.PlannedEndTime.HasValue)
+                {
+                    var startDt = DateTime.Today.Add(s.PlannedStartTime.Value);
+                    var endDt = DateTime.Today.Add(s.PlannedEndTime.Value);
+                    timeRange = $"{startDt:hh:mm tt} – {endDt:hh:mm tt}";
+                }
+                else if (s.PlannedStartTime.HasValue)
+                {
+                    var startDt = DateTime.Today.Add(s.PlannedStartTime.Value);
+                    timeRange = $"{startDt:hh:mm tt}";
+                }
+                else
+                {
+                    timeRange = s.TimeOfDay switch
+                    {
+                        "Morning" => "09:00 AM – 10:30 AM",
+                        "Mid-Day" => "11:00 AM – 12:30 PM",
+                        "Afternoon" => "02:00 PM – 03:30 PM",
+                        _ => s.TimeOfDay
+                    };
+                }
+
+                list.Add(new TodayActivityModel
+                {
+                    ScheduleId = s.Id,
+                    ExperienceId = s.ExperienceId,
+                    ClassroomId = s.ClassroomId,
+                    ClassroomName = cls?.Name ?? "Classroom",
+                    BranchName = branchName,
+                    Title = exp?.Title ?? "Assigned Experience",
+                    Description = exp?.Description ?? "",
+                    TimeOfDay = s.TimeOfDay,
+                    PlannedStartTime = s.PlannedStartTime,
+                    PlannedEndTime = s.PlannedEndTime,
+                    TimeRangeDisplay = timeRange,
+                    Status = s.Status,
+                    PreparationNotes = s.PreparationNotes,
+                    Domain = domain,
+                    AgeGroup = ageGroup,
+                    TeacherName = teacherName
+                });
+            }
+
+            // Sequence vertically by planned start time, then time of day
+            _activities = list.OrderBy(a => a.GetSortOrderTime()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading today's activities: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task StartActivity(TodayActivityModel act)
+    {
+        _isOperating = true;
+        try
+        {
+            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
+            await ExecutionService.StartExperienceAsync(act.ScheduleId, teacherId);
+            await NotificationService.ShowSuccessAsync($"Started '{act.Title}' for {act.ClassroomName}.");
+            await LoadActivitiesAsync();
+            OpenActiveSessionModal(act);
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+        finally
+        {
+            _isOperating = false;
+        }
+    }
+
+    private async Task EndActivity(TodayActivityModel act)
+    {
+        _isOperating = true;
+        try
+        {
+            var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
+            await ExecutionService.CompleteExperienceAsync(act.ScheduleId, teacherId, 5, "Completed", "Completed successfully from Today's Activities");
+            await NotificationService.ShowSuccessAsync($"Completed '{act.Title}' for {act.ClassroomName}.");
+            await LoadActivitiesAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+        finally
+        {
+            _isOperating = false;
+        }
+    }
+
+    private void OpenActiveSessionModal(TodayActivityModel act)
+    {
+        _activeScheduleId = act.ScheduleId;
+        _isActiveSessionOpen = true;
+    }
+
+    private void OpenSessionDetails(TodayActivityModel act)
+    {
+        Navigation.NavigateTo($"/storybook/{act.ExperienceId}");
+    }
+
+    private async Task HandleSessionClosed()
+    {
+        _isActiveSessionOpen = false;
+        await LoadActivitiesAsync();
+    }
+
+    public class TodayActivityModel
+    {
+        public Guid ScheduleId { get; set; }
+        public Guid ExperienceId { get; set; }
+        public Guid ClassroomId { get; set; }
+        public string ClassroomName { get; set; } = "";
+        public string BranchName { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string TimeOfDay { get; set; } = "";
+        public TimeSpan? PlannedStartTime { get; set; }
+        public TimeSpan? PlannedEndTime { get; set; }
+        public string TimeRangeDisplay { get; set; } = "";
+        public string Status { get; set; } = "Scheduled";
+        public string? PreparationNotes { get; set; }
+        public string Domain { get; set; } = "";
+        public string AgeGroup { get; set; } = "";
+        public string TeacherName { get; set; } = "";
+
+        public bool IsRunning => Status == "Started" || Status == "Active" || Status == "InProgress";
+        public bool IsCompleted => Status == "Completed" || Status == "Finished";
+        public bool IsPending => !IsRunning && !IsCompleted;
+
+        public TimeSpan GetSortOrderTime()
+        {
+            if (PlannedStartTime.HasValue) return PlannedStartTime.Value;
+            return TimeOfDay.ToLowerInvariant() switch
+            {
+                "morning" => new TimeSpan(9, 0, 0),
+                "mid-day" => new TimeSpan(11, 30, 0),
+                "afternoon" => new TimeSpan(14, 0, 0),
+                _ => new TimeSpan(16, 0, 0)
+            };
+        }
+    }
+}

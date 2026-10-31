@@ -90,4 +90,6 @@ public interface IDaycareOperationsBoardRepository
     Task<int> GetPendingEnrollmentsCountAsync(Guid tenantId, Guid orgId, CancellationToken ct = default);
     Task<BoardFinancialSummaryRecord> GetFinancialSummaryAsync(Guid tenantId, Guid orgId, CancellationToken ct = default);
     Task<List<PendingTeacherHandoverRecord>> GetPendingTeacherHandoversAsync(Guid tenantId, Guid orgId, Guid? branchId, Guid? classroomId, CancellationToken ct = default);
+    Task<Dictionary<string, bool>> GetDailyReadinessLogsAsync(Guid tenantId, Guid orgId, DateTime date, CancellationToken ct = default);
+    Task SetDailyReadinessLogAsync(Guid tenantId, Guid orgId, Guid? branchId, Guid? classroomId, DateTime date, string itemId, bool isCompleted, Guid? userId, CancellationToken ct = default);
 }

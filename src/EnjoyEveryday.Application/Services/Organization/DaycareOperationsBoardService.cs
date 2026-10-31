@@ -142,6 +142,7 @@ public class ReadinessChecklistItem
 public interface IDaycareOperationsBoardService
 {
     Task<OperationsBoardModel> GetOperationsBoardAsync(OperationsBoardFilter filter, CancellationToken ct = default);
+    Task SetReadinessChecklistItemAsync(string itemId, bool isCompleted, Guid? branchId = null, Guid? classroomId = null, DateTime? date = null, CancellationToken ct = default);
 }
 
 public class DaycareOperationsBoardService : IDaycareOperationsBoardService
@@ -384,9 +385,38 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         GenerateActionableAlerts(model);
 
         // 12. Generate Classroom Readiness Checklist
-        GenerateReadinessChecklist(model);
+        var savedLogs = orgId.HasValue 
+            ? await _boardRepository.GetDailyReadinessLogsAsync(tenantId, orgId.Value, date, ct)
+            : new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        GenerateReadinessChecklist(model, savedLogs);
 
         return model;
+    }
+
+    public async Task SetReadinessChecklistItemAsync(string itemId, bool isCompleted, Guid? branchId = null, Guid? classroomId = null, DateTime? date = null, CancellationToken ct = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var checkDate = date?.Date ?? _timeProvider.GetLocalNow().Date;
+        var orgId = _userContext.OrganizationId;
+        if (!orgId.HasValue || orgId == Guid.Empty)
+        {
+            orgId = await _boardRepository.GetDefaultOrganizationIdAsync(tenantId, ct);
+        }
+
+        if (orgId.HasValue)
+        {
+            await _boardRepository.SetDailyReadinessLogAsync(
+                tenantId,
+                orgId.Value,
+                branchId,
+                classroomId,
+                checkDate,
+                itemId,
+                isCompleted,
+                _userContext.UserId,
+                ct);
+        }
     }
 
     private string ResolveEffectiveRole(string? overrideRole)
@@ -523,7 +553,7 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         }
     }
 
-    private void GenerateReadinessChecklist(OperationsBoardModel model)
+    private void GenerateReadinessChecklist(OperationsBoardModel model, Dictionary<string, bool> overrides)
     {
         model.ReadinessChecklist = new List<ReadinessChecklistItem>
         {
@@ -532,7 +562,9 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
                 Id = "check-kiosk",
                 Label = "Arrival Sign-In Active",
                 Description = "Attendance kiosk and parent check-in station verified online.",
-                IsCompleted = model.CheckedInChildrenCount > 0,
+                IsCompleted = overrides.TryGetValue("check-kiosk", out var kioskDone)
+                    ? kioskDone
+                    : (model.CheckedInChildrenCount > 0),
                 Category = "Opening"
             },
             new ReadinessChecklistItem
@@ -540,7 +572,9 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
                 Id = "check-ratios",
                 Label = "Classroom Ratios Met",
                 Description = "Every operating classroom meets staff-to-child ratio requirements.",
-                IsCompleted = model.UnderstaffedClassroomsCount == 0 && model.PresentStaffCount > 0,
+                IsCompleted = overrides.TryGetValue("check-ratios", out var ratiosDone)
+                    ? ratiosDone
+                    : (model.UnderstaffedClassroomsCount == 0 && model.PresentStaffCount > 0),
                 Category = "Safety"
             },
             new ReadinessChecklistItem
@@ -548,7 +582,9 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
                 Id = "check-experiences",
                 Label = "Today's Materials Prepared",
                 Description = "Materials and learning zones set up for today's scheduled experiences.",
-                IsCompleted = model.TodayRhythm.Any(r => r.Status == "InProgress" || r.Status == "Completed"),
+                IsCompleted = overrides.TryGetValue("check-experiences", out var expDone)
+                    ? expDone
+                    : (model.TodayRhythm.Any(r => r.Status == "InProgress" || r.Status == "Completed")),
                 Category = "Material"
             },
             new ReadinessChecklistItem
@@ -556,7 +592,9 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
                 Id = "check-care-sync",
                 Label = "Care Timeline Initiated",
                 Description = "First morning comfort check, snack, and hydration logged.",
-                IsCompleted = model.MissingCareRecordsCount < model.CheckedInChildrenCount && model.CheckedInChildrenCount > 0,
+                IsCompleted = overrides.TryGetValue("check-care-sync", out var careDone)
+                    ? careDone
+                    : (model.MissingCareRecordsCount < model.CheckedInChildrenCount && model.CheckedInChildrenCount > 0),
                 Category = "Care"
             }
         };

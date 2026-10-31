@@ -117,11 +117,13 @@
                     var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
                     var dailySchedules = _schedules.Where(s => s.ScheduledDate == currentDate).OrderBy(s => s.TimeOfDay).ToList();
                     <div class="day">
-                        <div class="day-number @(currentDate == DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date) ? "today" : "")">
-                            @iterDay
+                        <div class="day-header">
+                            <span class="day-number @(currentDate == DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date) ? "today" : "")">
+                                @iterDay
+                            </span>
                             @if (currentDate >= DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date))
                             {
-                                <button class="add-plan-btn" @onclick='() => OpenPlanWizardForDate(currentDate)'>+</button>
+                                <button class="add-plan-btn" @onclick='() => OpenPlanWizardForDate(currentDate)' title="Plan experience for @currentDate.ToString("MMM d")" aria-label="Add plan">+</button>
                             }
                         </div>
                         @* Planned and Completed Celebrations & Events *@
@@ -143,9 +145,19 @@
                             var experience = _experiences.ContainsKey(schedule.ExperienceId) ? _experiences[schedule.ExperienceId] : null;
                             if (experience != null)
                             {
-                                <div class="scheduled @(schedule.Status == "Suggested" ? "suggested" : "") @(schedule.Status == "Completed" || schedule.Status == "Closed" ? "completed" : "")" style="cursor: pointer; position: relative;" @onclick="() => EditSchedule(schedule)">
+                                var isPast = schedule.ScheduledDate < DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
+                                <div class="scheduled @(isPast ? "historical-locked" : "") @(schedule.Status == "Suggested" ? "suggested" : "") @(schedule.Status == "Completed" || schedule.Status == "Closed" ? "completed" : "")" 
+                                     style="@(isPast ? "cursor: not-allowed; opacity: 0.85;" : "cursor: pointer; position: relative;")" 
+                                     @onclick="() => EditSchedule(schedule)"
+                                     title="@(isPast ? "Historical experience (Locked - cannot edit)" : "Click to view or edit")">
                                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;">
-                                        <strong style="flex: 1;">@experience.Title</strong>
+                                        <strong style="flex: 1;">
+                                            @if (isPast)
+                                            {
+                                                <span title="Locked" style="font-size: 11px; margin-right: 3px;">🔒</span>
+                                            }
+                                            @experience.Title
+                                        </strong>
                                         <span @onclick:stopPropagation="true" @onclick="() => OpenMaterialReadiness(schedule, experience)" title="Check Material Readiness" style="display: inline-flex; align-items: center; justify-content: center; background: #eef4f0; color: #3d604e; border-radius: 6px; padding: 2px 6px; font-size: 10px; font-weight: 750; cursor: pointer; border: 1px solid #d5e2d8;">
                                             📦 Kit
                                         </span>
@@ -201,7 +213,8 @@
                     Title="Build on recent interests"
                     Text="@($"Children have been engaging with {_commonMaterial} recently.")"
                     ListItems="@_aiSuggestionsList"
-                    ButtonText="Draft a plan around this" />
+                    ButtonText="Draft a plan around this" 
+                    OnButtonClick="DraftPlanAroundAiSuggestion" />
             </SidePanel>
 
             <SidePanel Title="Rhythm Balance" Subtitle="Current monthly mix">

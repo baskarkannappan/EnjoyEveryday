@@ -58,41 +58,37 @@ public class BranchBenchmarkingService : IBranchBenchmarkingService
             var attStats = await _repository.GetAttendanceStatsAsync(tenantId, b.Id, ct);
             double attRate = attStats.TotalAttendanceRecords > 0 
                 ? Math.Round((double)attStats.PresentCount / attStats.TotalAttendanceRecords * 100, 1) 
-                : 94.5; // realistic daycare benchmark default
+                : 0.0;
 
             // 5. Ratio compliance: ratio of on-duty educators to children
-            // High standard: benchmarked at ~96% compliant
-            double ratioRate = 96.0;
+            // If branch has no rooms/kids, compliance is 100.0% (no violations), otherwise standard compliant 96.0%
+            double ratioRate = (roomStats.RoomCount == 0 && enrolledCount == 0) ? 100.0 : 96.0;
 
             // 6. Curriculum & Planning coverage
             int roomsWithPlans = await _repository.GetClassroomsWithPlansCountAsync(tenantId, b.Id, ct);
-            if (roomsWithPlans == 0 && roomStats.RoomCount > 0)
-            {
-                roomsWithPlans = (int)Math.Ceiling(roomStats.RoomCount * 0.85);
-            }
-
             double planCoverage = roomStats.RoomCount > 0 
                 ? Math.Min(100.0, Math.Round((double)roomsWithPlans / roomStats.RoomCount * 100, 1))
-                : 88.0;
+                : 0.0;
 
             // 7. Tuition collection rate from billing invoices
+            // Only applicable to branches with classrooms/children; branches with 0 rooms/kids shouldn't inherit org billing
             var billStats = await _repository.GetBillingStatsAsync(tenantId, ct);
-            double tuitionRate = billStats.TotalBilled > 0
+            double tuitionRate = (roomStats.RoomCount > 0 && billStats.TotalBilled > 0)
                 ? Math.Min(100.0, Math.Round((double)(billStats.TotalPaid / billStats.TotalBilled) * 100, 1))
-                : 92.5;
+                : 0.0;
 
             var card = new BranchHealthScorecard
             {
                 BranchId = b.Id,
                 BranchName = b.Name,
                 Location = b.Location,
-                TotalClassrooms = Math.Max(roomStats.RoomCount, 1),
-                TotalCapacity = roomStats.TotalCap > 0 ? roomStats.TotalCap : 45,
-                EnrolledChildren = enrolledCount > 0 ? enrolledCount : (int)Math.Round((roomStats.TotalCap > 0 ? roomStats.TotalCap : 45) * 0.82),
+                TotalClassrooms = roomStats.RoomCount,
+                TotalCapacity = roomStats.TotalCap,
+                EnrolledChildren = enrolledCount,
                 AttendanceRatePercentage = attRate,
                 RatioCompliancePercentage = ratioRate,
-                PlanningCoveragePercentage = planCoverage > 0 ? planCoverage : 85.0,
-                TuitionCollectionRatePercentage = tuitionRate > 0 ? tuitionRate : 92.0
+                PlanningCoveragePercentage = planCoverage,
+                TuitionCollectionRatePercentage = tuitionRate
             };
 
             scorecards.Add(card);

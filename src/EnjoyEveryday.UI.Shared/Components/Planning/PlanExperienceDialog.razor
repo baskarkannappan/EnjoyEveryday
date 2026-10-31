@@ -26,6 +26,14 @@
                 </div>
             }
 
+            @if (_isReadOnly)
+            {
+                <div style="background: #f4eee1; color: #5a4b2a; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5dac4; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">🔒</span>
+                    <span><strong>Read-Only Mode:</strong> Historical experiences cannot be edited or modified. Only today and future experiences can be planned or changed.</span>
+                </div>
+            }
+
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 
                 <div>
@@ -243,7 +251,7 @@
                 _endTime = s.PlannedEndTime.HasValue ? DateTime.Today.Add(s.PlannedEndTime.Value) : null;
                 _notes = s.PreparationNotes ?? "";
                 
-                _isReadOnly = s.Status == "Completed" || (s.ScheduledDate < DateOnly.FromDateTime(DateTime.Today) && s.Status != "Started" && s.Status != "Active");
+                _isReadOnly = s.Status == "Completed" || s.ScheduledDate < DateOnly.FromDateTime(DateTime.Today);
             }
         }
         else
@@ -297,6 +305,12 @@
         if (!_classroomId.HasValue)
         {
             _errorMessage = "Please select a Classroom.";
+            return;
+        }
+
+        if (_date.Date < DateTime.Today)
+        {
+            _errorMessage = "Cannot schedule or modify an experience for a past date.";
             return;
         }
 

@@ -15,11 +15,11 @@
         <div>
             <div class="crumb">Attendance / @BranchName @(IsRoomView ? " / Classroom" : "")</div>
             <h1 style="font-size:27px;margin:3px 0">@(IsRoomView ? ClassroomName : BranchName + " Branch")</h1>
-            <div class="sub">@(IsRoomView ? $"Classroom attendance · {ClassroomName}" : "Attendance across classrooms, children and teachers · 2026-10-09")</div>
+            <div class="sub">@(IsRoomView ? $"Classroom attendance · {ClassroomName} · {_filterDate:yyyy-MM-dd}" : $"Attendance across classrooms, children and teachers · {_filterDate:yyyy-MM-dd}")</div>
         </div>
     </div>
     <div class="filters">
-        <input class="control" type="date" value="2026-10-09">
+        <input class="control" type="date" value="@_filterDate.ToString("yyyy-MM-dd")" @onchange="OnDateFilterChanged">
         <select class="control" @bind="typeFilter" @bind:event="oninput">
             <option value="both">Children &amp; teachers</option>
             <option value="children">Children only</option>
@@ -66,7 +66,7 @@
         else
         {
             <div id="peoplePanel">
-                <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px">
+                <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px;align-items:center;">
                     <select class="control" @bind="statusFilter" @bind:event="oninput">
                         <option value="all">All statuses</option>
                         <option>Present</option>
@@ -74,8 +74,19 @@
                         <option>Absent</option>
                         <option>Not marked</option>
                     </select>
-                    <button class="btn primary" @onclick="MarkSelectedPresent">Mark selected present</button>
-                    <button class="btn" @onclick="() => ShowToast()">Save changes</button>
+
+                    @if (currentTab == "teachers" && !CanEditTeacherAttendance)
+                    {
+                        <span class="pill blue" style="padding: 6px 12px; font-weight: 700;">
+                            👁 Read-Only Teacher Attendance (Branch: @BranchName)
+                        </span>
+                    }
+                    else
+                    {
+                        <button class="btn primary" @onclick="MarkSelectedPresent">Mark selected present</button>
+                        <button class="btn" @onclick="() => ShowToast()">Save changes</button>
+                    }
+
                     <button class="btn secondary" style="margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-weight:700;" @onclick="() => _isEndOfDayModalOpen = true">
                         <span>🌙</span>
                         <span>End of Day Process</span>
@@ -83,22 +94,53 @@
                 </div>
                 <div class="tablewrap">
                     <table>
-                        <thead><tr><th><input type="checkbox" @onchange="ToggleSelectAll" aria-label="Select all"></th><th>Person</th><th>Classroom / Role</th><th>Status</th><th>Arrival / Clock-in</th><th>Departure / Clock-out</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>
+                                    @if (currentTab != "teachers" || CanEditTeacherAttendance)
+                                    {
+                                        <input type="checkbox" @onchange="ToggleSelectAll" aria-label="Select all">
+                                    }
+                                </th>
+                                <th>Person</th>
+                                <th>Classroom / Role</th>
+                                <th>Status</th>
+                                <th>Arrival / Clock-in</th>
+                                <th>Departure / Clock-out</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             @foreach(var p in GetPeople())
                             {
+                                bool isTeacher = p.Type == "teachers";
+                                bool isReadOnlyRow = isTeacher && !CanEditTeacherAttendance;
+
                                 <tr>
-                                    <td><input type="checkbox" @bind="p.IsSelected" aria-label="Select @p.Name"></td>
+                                    <td>
+                                        @if (!isReadOnlyRow)
+                                        {
+                                            <input type="checkbox" @bind="p.IsSelected" aria-label="Select @p.Name">
+                                        }
+                                    </td>
                                     <td><div class="person"><span class="personicon">@p.Initials</span>@p.Name</div></td>
                                     <td>@p.Room</td>
                                     <td>
-                                        <select class="statusselect" @bind="p.Status" @bind:event="oninput">
-                                            <option value="Present">Present</option>
-                                            <option value="Late">Late</option>
-                                            <option value="Absent">Absent</option>
-                                            <option value="Excused">Excused</option>
-                                            <option value="Not marked">Not marked</option>
-                                        </select>
+                                        @if (isReadOnlyRow)
+                                        {
+                                            <span class="pill @(p.Status == "Present" ? "green" : p.Status == "Late" ? "amber" : p.Status == "Absent" ? "red" : "blue")" style="font-weight: 700;">
+                                                @p.Status
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <select class="statusselect" @bind="p.Status" @bind:event="oninput">
+                                                <option value="Present">Present</option>
+                                                <option value="Late">Late</option>
+                                                <option value="Absent">Absent</option>
+                                                <option value="Excused">Excused</option>
+                                                <option value="Not marked">Not marked</option>
+                                            </select>
+                                        }
                                     </td>
                                     <td>@p.In</td>
                                     <td>
@@ -143,11 +185,15 @@
                                                     }
                                                 </div>
                                             }
-                                            else
+                                            else if (!isReadOnlyRow)
                                             {
                                                 <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => CheckOutTeacher(p)">
                                                     Check Out
                                                 </button>
+                                            }
+                                            else
+                                            {
+                                                <span style="color: #6c7870;">—</span>
                                             }
                                         }
                                         else
@@ -293,6 +339,29 @@
         await ShowToast();
     }
 
+    private bool CanEditTeacherAttendance
+    {
+        get
+        {
+            var roles = UserContext.Roles ?? Enumerable.Empty<string>();
+            return roles.Any(r =>
+                r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task OnDateFilterChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var parsedDate))
+        {
+            _filterDate = parsedDate;
+            await LoadDataAsync();
+        }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         if (IsRoomView && currentTab == "classrooms") currentTab = "children";
@@ -312,10 +381,12 @@
         _branchId = branch.Id;
 
         var classrooms = (await ClassroomService.GetClassroomsAsync(_branchId)).ToList();
+        var classroomMap = classrooms.ToDictionary(c => c.Id);
         var allChildren = (await ChildService.GetChildrenAsync()).ToList(); 
         var allUsers = (await UserService.GetTeachersAsync()).ToList();
         var teacherProfiles = (await TeacherService.GetAllTeachersAsync(org.TenantId)).ToList();
         var teacherUserMap = teacherProfiles.Where(t => t.UserId.HasValue).ToDictionary(t => t.UserId!.Value, t => t.Id);
+        var userTeacherMap = teacherProfiles.Where(t => t.UserId.HasValue).ToDictionary(t => t.Id, t => t.UserId!.Value);
 
         var childAtt = (await AttendanceService.GetChildAttendanceAsync(_branchId, _filterDate)).ToList();
         var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(_branchId, _filterDate)).ToList();
@@ -376,15 +447,59 @@
             });
         }
         
-        foreach(var teacher in allUsers)
+        // Filter teachers to this branch only
+        foreach(var profile in teacherProfiles)
         {
-            var teacherId = teacherUserMap.TryGetValue(teacher.Id, out var tId) ? tId : teacher.Id;
-            var att = teacherAtt.FirstOrDefault(a => a.TeacherId == teacherId || a.TeacherId == teacher.Id);
+            Guid? assignedBranchId = null;
+            Guid? assignedClassroomId = null;
+
+            if (!string.IsNullOrWhiteSpace(profile.DraftData))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(profile.DraftData);
+                    if (doc.RootElement.TryGetProperty("AssignedBranch", out var bToken) || doc.RootElement.TryGetProperty("assignedBranch", out bToken))
+                    {
+                        if (Guid.TryParse(bToken.GetString(), out var parsedBranch)) assignedBranchId = parsedBranch;
+                    }
+                    if (doc.RootElement.TryGetProperty("AssignedClassroom", out var cToken) || doc.RootElement.TryGetProperty("assignedClassroom", out cToken))
+                    {
+                        if (Guid.TryParse(cToken.GetString(), out var parsedClassroom)) assignedClassroomId = parsedClassroom;
+                    }
+                }
+                catch { }
+            }
+
+            // If teacher is assigned to classroom in this branch
+            if (!assignedBranchId.HasValue && assignedClassroomId.HasValue && classroomMap.TryGetValue(assignedClassroomId.Value, out var cRoom))
+            {
+                assignedBranchId = cRoom.BranchId;
+            }
+
+            // Check if teacher belongs to current branch
+            bool belongsToBranch = assignedBranchId.HasValue && assignedBranchId.Value == _branchId;
+            
+            // Or if teacher has attendance recorded in this branch today
+            var att = teacherAtt.FirstOrDefault(a => a.TeacherId == profile.Id || (profile.UserId.HasValue && a.TeacherId == profile.UserId.Value));
+            if (!belongsToBranch && att != null)
+            {
+                belongsToBranch = true;
+            }
+
+            if (!belongsToBranch) continue;
+
+            string roomDisplay = "Teacher";
+            if (assignedClassroomId.HasValue && classroomMap.TryGetValue(assignedClassroomId.Value, out var mappedRoom))
+            {
+                roomDisplay = mappedRoom.Name;
+            }
+
             _personRows.Add(new PersonRow {
-                Id = teacherId,
-                Name = $"{teacher.FirstName} {teacher.LastName}",
-                Initials = $"{teacher.FirstName.FirstOrDefault()}{teacher.LastName.FirstOrDefault()}",
-                Room = "Teacher",
+                Id = profile.Id,
+                Name = profile.FullName,
+                Initials = $"{profile.FirstName.FirstOrDefault()}{profile.LastName.FirstOrDefault()}",
+                Room = roomDisplay,
+                ClassroomId = assignedClassroomId ?? Guid.Empty,
                 Status = att?.Status ?? "Not marked",
                 In = att?.ClockInTime?.ToString(@"hh\:mm") ?? "—",
                 Out = att?.ClockOutTime?.ToString(@"hh\:mm") ?? "—",
@@ -413,7 +528,17 @@
             result = result.Where(p => p.Status.Equals(statusFilter, StringComparison.OrdinalIgnoreCase));
             
         if (IsRoomView)
-            result = result.Where(p => p.Room.Contains(ClassroomName, StringComparison.OrdinalIgnoreCase));
+        {
+            if (currentTab == "teachers")
+            {
+                // In classroom view, show teachers assigned to this classroom OR general teachers for this branch
+                result = result.Where(p => p.Room.Equals(ClassroomName, StringComparison.OrdinalIgnoreCase) || p.Room == "Teacher");
+            }
+            else
+            {
+                result = result.Where(p => p.Room.Contains(ClassroomName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
 
         return result;
     }

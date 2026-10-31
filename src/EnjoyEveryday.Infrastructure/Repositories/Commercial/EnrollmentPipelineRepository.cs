@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Data;
@@ -165,14 +166,37 @@ public class EnrollmentPipelineRepository : IEnrollmentPipelineRepository
         return results.ToList();
     }
 
+    private sealed class ClassroomScopeRow
+    {
+        public Guid? Branch_Id { get; set; }
+        public Guid? BranchId { get => Branch_Id; set => Branch_Id = value; }
+        public Guid? Organization_Id { get; set; }
+        public Guid? OrganizationId { get => Organization_Id; set => Organization_Id = value; }
+    }
+
     public async Task<(Guid? BranchId, Guid? OrganizationId)> GetClassroomScopeAsync(Guid tenantId, Guid classroomId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        var res = await conn.QuerySingleFunctionAsync<(Guid? BranchId, Guid? OrganizationId)>(
+        var row = await conn.QuerySingleFunctionAsync<ClassroomScopeRow>(
             "fn_get_classroom_scope",
-            new { TenantId = tenantId, ClassroomId = classroomId },
+            new { p_tenant_id = tenantId, p_classroom_id = classroomId },
             cancellationToken: ct);
 
-        return res;
+        if (row != null && (row.BranchId.HasValue || row.OrganizationId.HasValue))
+        {
+            return (row.BranchId, row.OrganizationId);
+        }
+
+        // Direct fallback query if function returns null or empty
+        var fallback = await conn.QueryFirstOrDefaultAsync<ClassroomScopeRow>(
+            new Dapper.CommandDefinition(
+                @"SELECT cl.branch_id AS Branch_Id, b.organization_id AS Organization_Id
+                  FROM classrooms cl
+                  LEFT JOIN branches b ON cl.branch_id = b.id
+                  WHERE cl.id = @ClassroomId AND cl.tenant_id = @TenantId;",
+                new { ClassroomId = classroomId, TenantId = tenantId },
+                cancellationToken: ct));
+
+        return (fallback?.BranchId, fallback?.OrganizationId);
     }
 }
