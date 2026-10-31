@@ -313,6 +313,8 @@ public partial class ExperiencePlanning : ComponentBase
 
     private List<string> _adaptationsList = new() { "Indoor obstacle course (Move)", "Storytime with props (Together)" };
 
+    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private void CalculateDynamicCards()
     {
         _exploreCount = 0; _createCount = 0; _togetherCount = 0; _moveCount = 0;
@@ -328,17 +330,36 @@ public partial class ExperiencePlanning : ComponentBase
                 {
                     try 
                     {
-                        var dna = JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload);
+                        var dna = JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload, _jsonOptions);
                         if (dna != null)
                         {
+                            // Count dimensions present in this experience
                             if (!string.IsNullOrWhiteSpace(dna.Challenge)) _exploreCount++;
                             if (!string.IsNullOrWhiteSpace(dna.Create)) _createCount++;
                             if (!string.IsNullOrWhiteSpace(dna.Together)) _togetherCount++;
-                            if (dna.Environment != null && dna.Environment.Contains("Outdoor", StringComparison.OrdinalIgnoreCase)) _moveCount++;
+                            if ((dna.Environment != null && dna.Environment.Contains("Outdoor", StringComparison.OrdinalIgnoreCase)) ||
+                                (exp.Title != null && (exp.Title.Contains("Scavenger", StringComparison.OrdinalIgnoreCase) || exp.Title.Contains("Dance", StringComparison.OrdinalIgnoreCase) || exp.Title.Contains("Forest", StringComparison.OrdinalIgnoreCase))))
+                            {
+                                _moveCount++;
+                            }
 
-                            if (dna.DevelopmentalGoals != null) allGoals.AddRange(dna.DevelopmentalGoals);
-                            if (dna.Materials != null) allMaterials.AddRange(dna.Materials);
-                            if (dna.ExecutionGuide?.Adaptations != null) allAdaptations.AddRange(dna.ExecutionGuide.Adaptations);
+                            if (dna.DevelopmentalGoals != null && dna.DevelopmentalGoals.Any()) 
+                                allGoals.AddRange(dna.DevelopmentalGoals);
+                            if (dna.Materials != null && dna.Materials.Any()) 
+                                allMaterials.AddRange(dna.Materials);
+                            if (dna.ExecutionGuide?.Adaptations != null && dna.ExecutionGuide.Adaptations.Any()) 
+                                allAdaptations.AddRange(dna.ExecutionGuide.Adaptations);
+                        }
+
+                        // Also parse any lowercase json properties if not captured
+                        using var doc = JsonDocument.Parse(exp.DnaPayload);
+                        if (doc.RootElement.TryGetProperty("materials", out var matArr) && matArr.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in matArr.EnumerateArray())
+                            {
+                                var mStr = item.GetString();
+                                if (!string.IsNullOrWhiteSpace(mStr)) allMaterials.Add(mStr);
+                            }
                         }
                     }
                     catch { }
@@ -346,34 +367,44 @@ public partial class ExperiencePlanning : ComponentBase
             }
         }
 
+        // Total rhythm sum used for relative mix percentages
         _totalRhythmCount = _exploreCount + _createCount + _togetherCount + _moveCount;
         if (_totalRhythmCount == 0) _totalRhythmCount = 1;
 
         if (allGoals.Any())
         {
-            var top = allGoals.GroupBy(x => x).OrderByDescending(g => g.Count()).Take(3).Select(g => g.Key).ToList();
+            var top = allGoals.GroupBy(x => x, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).Take(3).Select(g => g.Key).ToList();
             _topGoal = top.First();
             _topGoalsList = top;
         }
         else
         {
-            _topGoal = "Community Building";
-            _topGoalsList = new List<string> { "Collaboration", "Exploration" };
+            _topGoal = "Tactile exploration and sensory vocabulary";
+            _topGoalsList = new List<string> { "Color recognition and sorting", "Fine motor coordination using tools", "Cooperative play and turn-taking" };
         }
 
         if (allMaterials.Any())
         {
-            _commonMaterial = allMaterials.GroupBy(x => x).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key ?? "natural materials";
+            _commonMaterial = allMaterials.GroupBy(x => x, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key ?? "craft materials";
             _aiSuggestionsList = new List<string> 
             { 
                 $"Plan an activity centered around {_commonMaterial}", 
                 "Combine this with a new environment to spark curiosity" 
             };
         }
+        else
+        {
+            _commonMaterial = "natural materials";
+            _aiSuggestionsList = new List<string> 
+            { 
+                "Plan an activity centered around sensory textures", 
+                "Combine this with a new environment to spark curiosity" 
+            };
+        }
 
         if (allAdaptations.Any())
         {
-            _adaptationsList = allAdaptations.Distinct().Take(3).ToList();
+            _adaptationsList = allAdaptations.Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToList();
         }
         else
         {

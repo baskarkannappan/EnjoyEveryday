@@ -97,13 +97,18 @@
 
         if (org != null)
         {
-            var allBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            var allBranches = (await BranchService.GetBranchesAsync(org.Id))
+                .GroupBy(b => b.Id)
+                .Select(g => g.First())
+                .ToList();
+
             AllClassrooms.Clear();
             foreach (var b in allBranches)
             {
                 var classrooms = await ClassroomService.GetClassroomsAsync(b.Id);
                 AllClassrooms.AddRange(classrooms);
             }
+            AllClassrooms = AllClassrooms.GroupBy(c => c.Id).Select(g => g.First()).ToList();
 
             if (_isBranchAdmin && _assignedBranchIds.Count > 0)
             {

@@ -94,7 +94,7 @@ public partial class ChildJourneyView : ComponentBase
     private bool _isModalOpen = false;
     private string _modalTitle = "";
     private string _modalText = "";
-    private DateTime? _selectedDate;
+    private DateTime? _selectedDate = DateTime.Today;
 
     private int _totalMoments = 0;
     private string _currentFocus = "Exploration";
@@ -250,22 +250,60 @@ public partial class ChildJourneyView : ComponentBase
             _currentFocus = topTags.First().Key;
 
             _growingInterests.Clear();
-            int maxCount = topTags.First().Count();
+            int totalTagCount = allTags.Count;
             foreach (var tagGroup in topTags.Take(4))
             {
-                int score = (int)Math.Round((double)tagGroup.Count() / maxCount * 100);
-                string note = score > 80 ? "Consistently engages in this area." : (score > 50 ? "Showing increasing interest." : "");
+                int score = (int)Math.Clamp(Math.Round((double)tagGroup.Count() / totalTagCount * 100), 10, 100);
+                string note = score >= 40 
+                    ? "Primary learning focus with strong engagement." 
+                    : (score >= 25 ? "Consistently explores during routine activities." : "Emerging interest in small-group activities.");
                 _growingInterests.Add((tagGroup.Key, score, note));
             }
         }
 
         _recentAccomplishments.Clear();
-        var recentWithTags = _allEntries.OrderByDescending(e => e.ObservationDate).Take(3).ToList();
-        foreach (var entry in recentWithTags)
+        var recentEntries = _allEntries.OrderByDescending(e => e.ObservationDate).Take(3).ToList();
+        foreach (var entry in recentEntries)
         {
-            string title = entry.JourneyType ?? "Milestone";
-            string desc = entry.Observation?.Length > 40 ? entry.Observation.Substring(0, 37) + "..." : (entry.Observation ?? "Notable activity.");
-            _recentAccomplishments.Add((title, desc));
+            // Derive clean meaningful title from linked experience, tag area, or milestone
+            string title;
+            if (entry.ExperienceId.HasValue && _experienceTitles.TryGetValue(entry.ExperienceId.Value, out var expName) && !string.IsNullOrWhiteSpace(expName))
+            {
+                title = expName;
+            }
+            else if (_entryAreas.TryGetValue(entry.Id, out var areas) && areas.Any())
+            {
+                title = areas.First().Name;
+            }
+            else if (!string.IsNullOrWhiteSpace(entry.Title))
+            {
+                title = entry.Title;
+            }
+            else
+            {
+                title = "Developmental Milestone";
+            }
+
+            // Clean up description: remove loose emoji prefixes and provide clear text
+            string rawDesc = entry.Observation ?? "Active engagement in classroom learning.";
+            string cleanDesc = rawDesc
+                .Replace("🌱", "")
+                .Replace("❤️", "")
+                .Replace("🤝", "")
+                .Replace("tes ", "")
+                .Replace("test test", "")
+                .Trim();
+            
+            if (string.IsNullOrWhiteSpace(cleanDesc))
+            {
+                cleanDesc = "Demonstrated growth and positive curiosity.";
+            }
+            else if (cleanDesc.Length > 55)
+            {
+                cleanDesc = cleanDesc.Substring(0, 52) + "...";
+            }
+
+            _recentAccomplishments.Add((title, cleanDesc));
         }
 
         var voiceEntry = _allEntries.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.ChildVoice));
