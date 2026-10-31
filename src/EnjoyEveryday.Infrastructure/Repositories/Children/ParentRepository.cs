@@ -42,7 +42,7 @@ public class ParentRepository : IParentRepository
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         return await connection.QuerySingleFunctionAsync<ChildAttendance>(
             "fn_get_child_attendance_for_date",
-            new { ChildId = childId, Date = date.Date },
+            new { ChildId = childId, Date = DateOnly.FromDateTime(date) },
             cancellationToken: cancellationToken);
     }
 

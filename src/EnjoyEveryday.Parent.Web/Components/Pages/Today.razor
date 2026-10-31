@@ -37,7 +37,16 @@ else
             <div class="attendance-badge-card">
                 <div class="attendance-badge-label">Attendance Status</div>
                 <div class="attendance-badge-status">
-                    @if (_summary?.Attendance?.Status == "Present")
+                    @if (_summary?.Attendance?.DepartureTime.HasValue == true || _summary?.Attendance?.Status == "Departed")
+                    {
+                        <span class="attendance-dot departed"></span>
+                        <strong class="attendance-text departed">Picked Up</strong>
+                        @if (_summary.Attendance.DepartureTime.HasValue)
+                        {
+                            <span class="attendance-time">(@DateTime.Today.Add(_summary.Attendance.DepartureTime.Value).ToString("h:mm tt"))</span>
+                        }
+                    }
+                    else if (_summary?.Attendance?.Status == "Present")
                     {
                         <span class="attendance-dot present"></span>
                         <strong class="attendance-text present">Checked In</strong>
@@ -45,11 +54,6 @@ else
                         {
                             <span class="attendance-time">(@DateTime.Today.Add(_summary.Attendance.ArrivalTime.Value).ToString("h:mm tt"))</span>
                         }
-                    }
-                    else if (_summary?.Attendance?.Status == "Departed")
-                    {
-                        <span class="attendance-dot departed"></span>
-                        <strong class="attendance-text departed">Picked Up</strong>
                     }
                     else if (_summary?.Attendance?.Status == "Absent")
                     {
@@ -554,6 +558,17 @@ else
     {
         SessionState.OnChildChanged += OnChildSelectionChanged;
         Localization.OnLanguageChanged += StateHasChanged;
+
+        if (SessionState.SelectedChild == null)
+        {
+            try
+            {
+                var children = (await ParentService.GetAuthorizedChildrenAsync()).ToList();
+                SessionState.SetAuthorizedChildren(children);
+            }
+            catch { }
+        }
+
         await LoadSummaryAsync();
     }
 
@@ -576,8 +591,9 @@ else
             _loading = true;
             _summary = await ParentService.GetChildDailySummaryAsync(SessionState.SelectedChild.ChildId, DateTime.Today);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Console.WriteLine($"[ERROR LoadSummaryAsync] {ex}");
             _summary = null;
         }
         finally

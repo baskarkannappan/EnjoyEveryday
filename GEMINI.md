@@ -152,10 +152,12 @@ Every agent working in this repository MUST strictly follow these AI and cost-co
 - **Username**: `postgres`
 - **Password**: `postgres`
 - **CLI Utility**: `C:\Program Files\PostgreSQL\18\bin\psql.exe`
+- **Environment Variable**: `PGPASSWORD=postgres` (set in User environment)
 - **PowerShell Invocation**:
   ```powershell
-  $env:PGPASSWORD="postgres"; & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d enjoyeveryday -c "<SQL_QUERY>"
+  & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d enjoyeveryday -c "<SQL_QUERY>"
   ```
+  *(Or `$env:PGPASSWORD="postgres"; & "C:\Program Files\PostgreSQL\18\bin\psql.exe" ...` when running in shells that haven't refreshed environment variables)*
 - **Dev Tenant ID**: `10000000-0000-0000-0000-000000000001`
 - **Dev User ID**: `50000000-0000-0000-0000-000000000002` (`admin@littlestars.com`)
 - **Dev Org ID**: `20000000-0000-0000-0000-000000000001`

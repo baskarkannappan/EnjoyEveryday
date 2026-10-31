@@ -142,13 +142,19 @@ public class ParentService : IParentService
         var child = children.FirstOrDefault(c => c.ChildId == childId)
             ?? throw new InvalidOperationException("Child not found.");
 
-        var attendance = await _parentRepository.GetChildAttendanceForDateAsync(_tenantContext.TenantId, childId, date, cancellationToken);
-        var approvedMoments = (await _parentRepository.GetApprovedJourneyEntriesAsync(_tenantContext.TenantId, childId, cancellationToken))
-            .Where(m => m.ObservationDate.Date == date.Date)
+        var effectiveTenantId = (child.TenantId != Guid.Empty) ? child.TenantId : _tenantContext.TenantId;
+        var targetDate = DateOnly.FromDateTime(date);
+
+        var attendance = await _parentRepository.GetChildAttendanceForDateAsync(effectiveTenantId, childId, date, cancellationToken);
+        var allApprovedMoments = await _parentRepository.GetApprovedJourneyEntriesAsync(effectiveTenantId, childId, cancellationToken);
+        var approvedMoments = allApprovedMoments
+            .Where(m => DateOnly.FromDateTime(m.ObservationDate.Date) == targetDate
+                     || DateOnly.FromDateTime(m.ObservationDate.LocalDateTime) == targetDate
+                     || DateOnly.FromDateTime(m.ObservationDate.UtcDateTime) == targetDate)
             .ToList();
 
-        var upcomingEvents = (await _parentRepository.GetApprovedEventsForChildAsync(_tenantContext.TenantId, childId, cancellationToken))
-            .Where(e => e.EventDate >= DateOnly.FromDateTime(date.Date))
+        var upcomingEvents = (await _parentRepository.GetApprovedEventsForChildAsync(effectiveTenantId, childId, cancellationToken))
+            .Where(e => e.EventDate >= targetDate)
             .Take(3)
             .ToList();
 
@@ -176,11 +182,10 @@ public class ParentService : IParentService
         // 2. Scheduled Classroom Experiences
         if (child.ClassroomId.HasValue)
         {
-            var dateOnly = DateOnly.FromDateTime(date.Date);
-            var schedules = await _scheduleRepository.GetByClassroomAndDateRangeAsync(child.ClassroomId.Value, dateOnly, dateOnly);
+            var schedules = await _scheduleRepository.GetByClassroomAndDateRangeAsync(child.ClassroomId.Value, targetDate, targetDate);
             foreach (var sch in schedules)
             {
-                var exp = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, sch.ExperienceId, cancellationToken);
+                var exp = await _experienceRepository.GetByIdAsync(effectiveTenantId, sch.ExperienceId, cancellationToken);
                 var isCompleted = string.Equals(sch.Status, "Completed", StringComparison.OrdinalIgnoreCase);
                 timelineItems.Add(new ChildDailyTimelineItem
                 {
@@ -204,7 +209,8 @@ public class ParentService : IParentService
                 Description = moment.Observation,
                 Category = "Moment",
                 Status = "Approved",
-                IsCompleted = true
+                IsCompleted = true,
+                PhotoUrl = moment.Photos?.FirstOrDefault()
             });
         }
 
@@ -263,7 +269,6 @@ public class ParentService : IParentService
         {
             try
             {
-                var effectiveTenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
                 var messages = await _communicationRepository.GetByChildIdAsync(effectiveTenantId, childId, cancellationToken);
                 unreadMessages = messages.Count(m => m.Status != ParentCommunicationStatus.Approved && m.TeacherId != Guid.Empty && m.DeliveryStatus != "Read");
             }
@@ -309,30 +314,41 @@ public class ParentService : IParentService
         };
     }
 
+    private async Task<Guid> ResolveEffectiveTenantIdAsync(Guid childId, CancellationToken cancellationToken)
+    {
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId);
+        return (child != null && child.TenantId != Guid.Empty) ? child.TenantId : _tenantContext.TenantId;
+    }
+
     public async Task<IEnumerable<ChildJourneyEntry>> GetApprovedChildJourneyAsync(Guid childId, CancellationToken cancellationToken = default)
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
-        return await _parentRepository.GetApprovedJourneyEntriesAsync(_tenantContext.TenantId, childId, cancellationToken);
+        var effectiveTenantId = await ResolveEffectiveTenantIdAsync(childId, cancellationToken);
+        return await _parentRepository.GetApprovedJourneyEntriesAsync(effectiveTenantId, childId, cancellationToken);
     }
 
     public async Task<IEnumerable<ChildMilestone>> GetApprovedMilestonesAsync(Guid childId, CancellationToken cancellationToken = default)
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
-        return await _parentRepository.GetApprovedMilestonesAsync(_tenantContext.TenantId, childId, cancellationToken);
+        var effectiveTenantId = await ResolveEffectiveTenantIdAsync(childId, cancellationToken);
+        return await _parentRepository.GetApprovedMilestonesAsync(effectiveTenantId, childId, cancellationToken);
     }
 
     public async Task<IEnumerable<Event>> GetApprovedEventsAsync(Guid childId, CancellationToken cancellationToken = default)
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
-        return await _parentRepository.GetApprovedEventsForChildAsync(_tenantContext.TenantId, childId, cancellationToken);
+        var effectiveTenantId = await ResolveEffectiveTenantIdAsync(childId, cancellationToken);
+        return await _parentRepository.GetApprovedEventsForChildAsync(effectiveTenantId, childId, cancellationToken);
     }
 
     public async Task SubmitEventRsvpAsync(Guid eventId, Guid childId, string status, string? notes, CancellationToken cancellationToken = default)
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
+        var effectiveTenantId = await ResolveEffectiveTenantIdAsync(childId, cancellationToken);
 
         // Security Validation: Verify the event is published and in scope for the child's organization/classroom
-        var approvedEvents = await _parentRepository.GetApprovedEventsForChildAsync(_tenantContext.TenantId, childId, cancellationToken);
+        var approvedEvents = await _parentRepository.GetApprovedEventsForChildAsync(effectiveTenantId, childId, cancellationToken);
         var targetEvent = approvedEvents.FirstOrDefault(e => e.Id == eventId);
         if (targetEvent == null)
         {
@@ -365,7 +381,7 @@ public class ParentService : IParentService
 
         await _auditService.LogAsync(new AuditEntry
         {
-            TenantId = _tenantContext.TenantId,
+            TenantId = effectiveTenantId,
             UserId = _userContext.UserId,
             Action = "EventRsvpSubmitted",
             EntityType = "EventRsvp",
@@ -412,11 +428,12 @@ public class ParentService : IParentService
     public async Task<IEnumerable<ParentMediaItem>> GetChildMemoriesAsync(Guid childId, CancellationToken cancellationToken = default)
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
+        var effectiveTenantId = await ResolveEffectiveTenantIdAsync(childId, cancellationToken);
 
         var mediaList = new List<ParentMediaItem>();
 
         // 1. Photos from approved classroom events & celebrations
-        var events = await _parentRepository.GetApprovedEventsForChildAsync(_tenantContext.TenantId, childId, cancellationToken);
+        var events = await _parentRepository.GetApprovedEventsForChildAsync(effectiveTenantId, childId, cancellationToken);
         foreach (var evt in events)
         {
             if (evt.PhotoUrls != null && evt.PhotoUrls.Length > 0)
@@ -443,7 +460,7 @@ public class ParentService : IParentService
         }
 
         // 2. Photos and media from approved child journey entries
-        var journeyEntries = await _parentRepository.GetApprovedJourneyEntriesAsync(_tenantContext.TenantId, childId, cancellationToken);
+        var journeyEntries = await _parentRepository.GetApprovedJourneyEntriesAsync(effectiveTenantId, childId, cancellationToken);
         foreach (var entry in journeyEntries)
         {
             if (entry.Photos != null && entry.Photos.Count > 0)
