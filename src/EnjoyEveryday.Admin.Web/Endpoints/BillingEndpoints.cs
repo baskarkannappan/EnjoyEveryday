@@ -99,7 +99,7 @@ public static class BillingEndpoints
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
         sb.AppendLine($"<title>Payment Receipt {payment.ReceiptNumber ?? payment.PaymentReference} — EnjoyEveryday</title>");
         sb.AppendLine("<style>");
-        sb.AppendLine("body { font-family: 'Figtree', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5ef; color: #26332d; padding: 40px 20px; margin: 0; }");
+        sb.AppendLine("body { font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5ef; color: #26332d; padding: 40px 20px; margin: 0; }");
         sb.AppendLine(".receipt-box { max-width: 680px; margin: auto; padding: 36px; background: #ffffff; border: 1px solid #e4e7df; border-radius: 16px; box-shadow: 0 8px 30px rgba(40, 55, 47, .06); position: relative; }");
         sb.AppendLine(".header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #557c6c; padding-bottom: 18px; margin-bottom: 24px; }");
         sb.AppendLine(".brand { font-size: 22px; font-weight: 800; color: #26332d; }");
@@ -187,7 +187,7 @@ public static class BillingEndpoints
         sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
         sb.AppendLine($"<title>Invoice {invoice.InvoiceNumber} — EnjoyEveryday</title>");
         sb.AppendLine("<style>");
-        sb.AppendLine("body { font-family: 'Figtree', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5ef; color: #26332d; padding: 40px 20px; margin: 0; }");
+        sb.AppendLine("body { font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5ef; color: #26332d; padding: 40px 20px; margin: 0; }");
         sb.AppendLine(".invoice-box { max-width: 800px; margin: auto; padding: 36px; background: #ffffff; border: 1px solid #e4e7df; border-radius: 16px; box-shadow: 0 8px 30px rgba(40, 55, 47, .06); }");
         sb.AppendLine(".header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #557c6c; padding-bottom: 20px; margin-bottom: 28px; }");
         sb.AppendLine(".brand { font-size: 24px; font-weight: 800; color: #26332d; }");

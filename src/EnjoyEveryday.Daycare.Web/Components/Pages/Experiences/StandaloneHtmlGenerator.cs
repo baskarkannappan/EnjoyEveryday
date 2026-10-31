@@ -282,7 +282,7 @@ public static class StandaloneHtmlGenerator
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: ""Figtree"", Inter, -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, ""Helvetica Neue"", Arial, sans-serif;
+      font-family: ""Roboto"", -apple-system, BlinkMacSystemFont, ""Segoe UI"", ""Helvetica Neue"", Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
@@ -1230,7 +1230,7 @@ public static class StandaloneHtmlGenerator
 
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
-  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 1 · SENSORY INVITATION SETUP</text>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 1 · SENSORY INVITATION SETUP</text>
 
   <!-- Sparkles of curiosity -->
   <polygon points=""400,210 404,220 415,222 406,228 408,238 400,232 392,238 394,228 385,222 396,220"" fill=""#e9b65e""/>
@@ -1281,14 +1281,14 @@ public static class StandaloneHtmlGenerator
   <circle cx=""561"" cy=""195"" r=""9"" fill=""#df9b3a""/>
 
   <!-- Wonder Question & Spark Constellations -->
-  <text x=""225"" y=""120"" font-size=""44"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#557c6c"">?</text>
-  <text x=""550"" y=""115"" font-size=""38"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#df9b3a"">?</text>
+  <text x=""225"" y=""120"" font-size=""44"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#557c6c"">?</text>
+  <text x=""550"" y=""115"" font-size=""38"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#df9b3a"">?</text>
   <polygon points=""300,90 304,98 312,100 305,106 307,114 300,109 293,114 295,106 288,100 296,98"" fill=""#e9b65e""/>
   <polygon points=""510,80 513,87 520,89 514,94 516,101 510,96 504,101 506,94 500,89 507,87"" fill=""#557c6c""/>
 
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
-  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 2 · THE WONDER INQUIRY</text>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 2 · THE WONDER INQUIRY</text>
 </svg>",
 
             "explore" => @"
@@ -1345,7 +1345,7 @@ public static class StandaloneHtmlGenerator
 
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
-  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 3 · ACTIVE HANDS-ON FLOW</text>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 3 · ACTIVE HANDS-ON FLOW</text>
 </svg>",
 
             "magic" => @"
@@ -1388,11 +1388,11 @@ public static class StandaloneHtmlGenerator
 
   <!-- Pedestal of Discovery -->
   <ellipse cx=""400"" cy=""250"" rx=""110"" ry=""18"" fill=""#e2ebe4"" stroke=""#557c6c"" stroke-width=""2.5""/>
-  <text x=""400"" y=""295"" text-anchor=""middle"" font-size=""16"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#3e6253"" letter-spacing=""2"">A MOMENT OF PURE DISCOVERY</text>
+  <text x=""400"" y=""295"" text-anchor=""middle"" font-size=""16"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#3e6253"" letter-spacing=""2"">A MOMENT OF PURE DISCOVERY</text>
 
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
-  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 4 · THE DISCOVERY SPARK</text>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">PHASE 4 · THE DISCOVERY SPARK</text>
 </svg>",
 
             "reef" or "ocean" => @"
@@ -1433,7 +1433,7 @@ public static class StandaloneHtmlGenerator
   <circle cx=""490"" cy=""100"" r=""6"" stroke=""white"" stroke-width=""2"" fill=""rgba(255,255,255,0.4)""/>
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""320"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
-  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">OCEAN EXPLORATION REEF BLUEPRINT</text>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">OCEAN EXPLORATION REEF BLUEPRINT</text>
 </svg>",
 
             "reflection" or _ => @"
@@ -1481,11 +1481,11 @@ public static class StandaloneHtmlGenerator
 
   <!-- Closing Reflection Circle Rug -->
   <ellipse cx=""400"" cy=""285"" rx=""290"" ry=""48"" fill=""#eef5f1"" stroke=""#557c6c"" stroke-width=""2.5""/>
-  <text x=""400"" y=""292"" text-anchor=""middle"" font-size=""16"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.5"">Stories Shared · Little Hands, Big Minds · Memories Made</text>
+  <text x=""400"" y=""292"" text-anchor=""middle"" font-size=""16"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.5"">Stories Shared · Little Hands, Big Minds · Memories Made</text>
 
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
-  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Figtree, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">FINAL PHASE · CIRCLE SHARING &amp; REFLECTION</text>
+  <text x=""45"" y=""45"" font-size=""11.5"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#26332d"" letter-spacing=""0.8"">FINAL PHASE · CIRCLE SHARING &amp; REFLECTION</text>
 </svg>"
         };
     }
