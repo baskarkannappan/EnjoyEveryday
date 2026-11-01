@@ -26,6 +26,8 @@
 
         <ApiIntegrationCard ApiKey="@_aiApiKey"
                             ApiKeyChanged="@(val => _aiApiKey = val)"
+                            Provider="@_aiProvider"
+                            ProviderChanged="@(val => _aiProvider = val)"
                             SaveMessage="@_saveMessage"
                             OnSave="SaveApiKeyAsync" />
     </div>
@@ -34,6 +36,7 @@
 @code {
     private Organization? _org;
     private string? _aiApiKey;
+    private string _aiProvider = "GoogleGemini";
     private string? _saveMessage;
 
     protected override async Task OnInitializedAsync()
@@ -46,11 +49,15 @@
         var orgs = await OrgService.GetOrganizationsAsync();
         _org = orgs.FirstOrDefault();
 
-        // Load the existing key if it exists
-        var existingKey = await TenantSettingsService.GetAiApiKeyAsync(TenantContext.TenantId);
-        if (!string.IsNullOrEmpty(existingKey))
+        // Load existing AI settings
+        var settings = await TenantSettingsService.GetAiSettingsAsync(TenantContext.TenantId);
+        if (!string.IsNullOrEmpty(settings.ApiKey))
         {
-            _aiApiKey = existingKey;
+            _aiApiKey = settings.ApiKey;
+        }
+        if (!string.IsNullOrEmpty(settings.Provider))
+        {
+            _aiProvider = settings.Provider;
         }
     }
 
@@ -58,8 +65,8 @@
     {
         if (!string.IsNullOrWhiteSpace(_aiApiKey))
         {
-            await TenantSettingsService.SetAiApiKeyAsync(TenantContext.TenantId, _aiApiKey);
-            _saveMessage = "API Key saved successfully.";
+            await TenantSettingsService.SetAiSettingsAsync(TenantContext.TenantId, _aiApiKey, _aiProvider);
+            _saveMessage = $"{_aiProvider} settings saved successfully.";
 
             // Clear message after 3 seconds
             _ = Task.Run(async () =>

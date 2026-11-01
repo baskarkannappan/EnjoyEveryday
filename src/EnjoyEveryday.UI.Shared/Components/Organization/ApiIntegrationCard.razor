@@ -7,32 +7,96 @@
     </div>
 
     <div class="card-body">
-        <label class="field-label">@KeyLabel</label>
-        <div class="input-row">
-            <input type="password" 
-                   value="@ApiKey" 
-                   @oninput="HandleInput" 
-                   placeholder="@Placeholder" 
-                   class="api-input" />
-            <button class="primary" @onclick="OnSave">@ButtonText</button>
+        <!-- AI Provider Selector -->
+        <label class="field-label">Preferred AI Generation Provider</label>
+        <div class="provider-pills-row">
+            <button type="button" 
+                    class="provider-pill @(Provider == "GoogleGemini" ? "active" : "")" 
+                    @onclick='() => SetProviderAsync("GoogleGemini")'>
+                <span class="provider-icon">✨</span>
+                <span>Google Gemini</span>
+            </button>
+            <button type="button" 
+                    class="provider-pill @(Provider == "OpenAI" ? "active" : "")" 
+                    @onclick='() => SetProviderAsync("OpenAI")'>
+                <span class="provider-icon">🧠</span>
+                <span>OpenAI (GPT-4o)</span>
+            </button>
+            <button type="button" 
+                    class="provider-pill @(Provider == "Anthropic" ? "active" : "")" 
+                    @onclick='() => SetProviderAsync("Anthropic")'>
+                <span class="provider-icon">⚡</span>
+                <span>Anthropic Claude</span>
+            </button>
         </div>
+
+        <div class="key-input-section">
+            <label class="field-label">@ComputedKeyLabel</label>
+            <div class="input-row">
+                <input type="password" 
+                       value="@ApiKey" 
+                       @oninput="HandleInput" 
+                       placeholder="@ComputedPlaceholder" 
+                       class="api-input" />
+                <button class="primary" @onclick="OnSave">@ButtonText</button>
+            </div>
+            <span class="provider-hint">@ComputedHint</span>
+        </div>
+
         @if (!string.IsNullOrEmpty(SaveMessage))
         {
             <div class="save-status-msg">@SaveMessage</div>
         }
+
+        <!-- Cross-link to External Agent / MCP Management -->
+        <div class="external-agents-banner">
+            <span class="banner-icon">🤖</span>
+            <div class="banner-text">
+                <strong>Connecting external agents (Claude Desktop, ChatGPT, LangChain)?</strong>
+                <p>Generate Personal Access Tokens and configure MCP tools or webhooks instead of entering external keys.</p>
+            </div>
+            <a href="/settings/ai-agents" class="btn-link">Agent Keys &amp; MCP ➔</a>
+        </div>
     </div>
 </div>
 
 @code {
     [Parameter] public string Title { get; set; } = "Integrations & API Keys";
     [Parameter] public string Description { get; set; } = "Configure third-party services and AI provider credentials for your daycare.";
-    [Parameter] public string KeyLabel { get; set; } = "Google Gemini API Key";
-    [Parameter] public string Placeholder { get; set; } = "Enter your Gemini API Key";
-    [Parameter] public string ButtonText { get; set; } = "Save Key";
+    [Parameter] public string ButtonText { get; set; } = "Save Settings";
     [Parameter] public string? ApiKey { get; set; }
     [Parameter] public EventCallback<string?> ApiKeyChanged { get; set; }
+    [Parameter] public string Provider { get; set; } = "GoogleGemini";
+    [Parameter] public EventCallback<string> ProviderChanged { get; set; }
     [Parameter] public string? SaveMessage { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
+
+    private string ComputedKeyLabel => Provider switch
+    {
+        "OpenAI" => "OpenAI API Key",
+        "Anthropic" => "Anthropic Claude API Key",
+        _ => "Google Gemini API Key"
+    };
+
+    private string ComputedPlaceholder => Provider switch
+    {
+        "OpenAI" => "sk-proj-...",
+        "Anthropic" => "sk-ant-...",
+        _ => "AIzaSy..."
+    };
+
+    private string ComputedHint => Provider switch
+    {
+        "OpenAI" => "Used for OpenAI GPT-4o models for activity recommendations and child observation drafts.",
+        "Anthropic" => "Used for Anthropic Claude 3.5 Sonnet models for activity recommendations and observation summaries.",
+        _ => "Used by Google ADK / Gemini models for activity planning and child observation summaries."
+    };
+
+    private async Task SetProviderAsync(string provider)
+    {
+        Provider = provider;
+        await ProviderChanged.InvokeAsync(provider);
+    }
 
     private async Task HandleInput(ChangeEventArgs e)
     {

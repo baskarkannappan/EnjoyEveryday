@@ -4,6 +4,8 @@ using EnjoyEveryday.Domain.Repositories;
 
 namespace EnjoyEveryday.Application.Services;
 
+public record TenantAiSettingsDto(string? ApiKey, string Provider);
+
 public class TenantSettingsService
 {
     private readonly ITenantSettingsRepository _repository;
@@ -17,14 +19,25 @@ public class TenantSettingsService
 
     public async Task<string?> GetAiApiKeyAsync(Guid tenantId)
     {
-        var encrypted = await _repository.GetEncryptedAiApiKeyAsync(tenantId);
-        if (string.IsNullOrEmpty(encrypted)) return null;
-        return _encryptionService.Decrypt(encrypted);
+        var settings = await GetAiSettingsAsync(tenantId);
+        return settings.ApiKey;
     }
 
     public async Task SetAiApiKeyAsync(Guid tenantId, string apiKey)
     {
+        await SetAiSettingsAsync(tenantId, apiKey, "GoogleGemini");
+    }
+
+    public async Task<TenantAiSettingsDto> GetAiSettingsAsync(Guid tenantId)
+    {
+        var (encrypted, provider) = await _repository.GetAiSettingsAsync(tenantId);
+        var decrypted = string.IsNullOrEmpty(encrypted) ? null : _encryptionService.Decrypt(encrypted);
+        return new TenantAiSettingsDto(decrypted, !string.IsNullOrWhiteSpace(provider) ? provider : "GoogleGemini");
+    }
+
+    public async Task SetAiSettingsAsync(Guid tenantId, string apiKey, string provider)
+    {
         var encrypted = _encryptionService.Encrypt(apiKey);
-        await _repository.SetEncryptedAiApiKeyAsync(tenantId, encrypted);
+        await _repository.SetAiSettingsAsync(tenantId, encrypted, !string.IsNullOrWhiteSpace(provider) ? provider : "GoogleGemini");
     }
 }
