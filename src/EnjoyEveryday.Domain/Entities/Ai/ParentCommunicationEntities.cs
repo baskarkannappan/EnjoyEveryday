@@ -65,6 +65,10 @@ public class ParentCommunication
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    // Agent Draft & AI Governance
+    public bool IsAgentDraft { get; set; }
+    public Guid? AgentTokenId { get; set; }
+
     // Helper navigation / display properties
     public string? ChildName { get; set; }
     public string? ClassroomName { get; set; }

@@ -176,21 +176,46 @@
                     {
                         @foreach (var msg in _messages)
                         {
-                            <div class="message-row @(msg.IsFromParent ? "from-parent" : "from-educator")">
-                                <div class="message-bubble">
-                                    <div class="bubble-sender">
-                                        @(msg.IsFromParent ? msg.SenderName : $"{msg.SenderName} (Educator)")
-                                    </div>
-                                    <div class="bubble-content">@msg.Content</div>
-                                    <div class="bubble-footer">
-                                        <span class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("h:mm tt")</span>
-                                        @if (!msg.IsFromParent)
-                                        {
-                                            <span class="bubble-status">✓ @msg.DeliveryStatus</span>
-                                        }
+                            @if (msg.IsAgentDraft)
+                            {
+                                <div class="message-row agent-draft-row">
+                                    <div class="agent-draft-card">
+                                        <div class="draft-header">
+                                            <div class="draft-title-badge">
+                                                <span class="draft-icon">🤖</span>
+                                                <span class="draft-badge-text">AI Agent Draft</span>
+                                            </div>
+                                            <span class="draft-sub">Needs Educator Approval</span>
+                                        </div>
+                                        <div class="draft-body">@msg.Content</div>
+                                        <div class="draft-footer">
+                                            <span class="draft-time">@msg.Timestamp.ToLocalTime().ToString("h:mm tt")</span>
+                                            <div class="draft-actions">
+                                                <button class="approve-btn" @onclick="() => HandleApproveDraftAsync(msg.Id)">✓ Approve &amp; Send</button>
+                                                <button class="discard-btn" @onclick="() => HandleDiscardDraftAsync(msg.Id)">✕ Discard</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            }
+                            else
+                            {
+                                <div class="message-row @(msg.IsFromParent ? "from-parent" : "from-educator")">
+                                    <div class="message-bubble">
+                                        <div class="bubble-sender">
+                                            @(msg.IsFromParent ? msg.SenderName : $"{msg.SenderName} (Educator)")
+                                        </div>
+                                        <div class="bubble-content">@msg.Content</div>
+                                        <div class="bubble-footer">
+                                            <span class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("h:mm tt")</span>
+                                            @if (!msg.IsFromParent)
+                                            {
+                                                <span class="bubble-status">✓ @msg.DeliveryStatus</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
                         }
                     }
                 </div>
@@ -637,6 +662,106 @@
 
     .from-educator .bubble-footer {
         color: #d1fae5;
+    }
+
+    /* AI Agent Draft Approval Card (Scandinavian Theme) */
+    .agent-draft-row {
+        justify-content: center !important;
+        margin: 10px 0;
+    }
+
+    .agent-draft-card {
+        background: #fdfaf3;
+        border: 1.5px dashed #d1c7b7;
+        border-radius: 14px;
+        padding: 14px 18px;
+        max-width: 82%;
+        width: 100%;
+        box-shadow: 0 4px 16px rgba(40, 55, 47, 0.05);
+    }
+
+    .draft-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #ebd8c0;
+    }
+
+    .draft-title-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-size: 11.5px;
+        font-weight: 750;
+    }
+
+    .draft-sub {
+        font-size: 11px;
+        color: #8b6e4e;
+        font-weight: 600;
+    }
+
+    .draft-body {
+        font-size: 13.5px;
+        line-height: 1.5;
+        color: var(--text, #26332d);
+        margin-bottom: 10px;
+    }
+
+    .draft-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .draft-time {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .draft-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .approve-btn {
+        background: var(--accent, #557c6c);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .approve-btn:hover {
+        background: var(--accent-dark, #3e6253);
+    }
+
+    .discard-btn {
+        background: #ffffff;
+        color: #9b2c2c;
+        border: 1px solid #fed7d7;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .discard-btn:hover {
+        background: #fff5f5;
     }
 
     .quick-replies-bar {
@@ -1247,6 +1372,27 @@
             ");
         }
         catch { }
+    }
+
+    private async Task HandleApproveDraftAsync(Guid messageId)
+    {
+        var approved = await CommunicationService.ApproveAgentDraftAsync(messageId);
+        if (approved && _selectedChildId.HasValue)
+        {
+            _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
+            StateHasChanged();
+            await ScrollToBottomAsync();
+        }
+    }
+
+    private async Task HandleDiscardDraftAsync(Guid messageId)
+    {
+        var discarded = await CommunicationService.DiscardAgentDraftAsync(messageId);
+        if (discarded && _selectedChildId.HasValue)
+        {
+            _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
+            StateHasChanged();
+        }
     }
 
     public void Dispose()

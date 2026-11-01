@@ -1,0 +1,1032 @@
+@page "/settings/ai-agents"
+@page "/settings/agent-access"
+@using System.Security.Cryptography
+@using EnjoyEveryday.Domain.Entities.Security
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@inject IAgentTokenRepository TokenRepo
+@inject IAgentWebhookRepository WebhookRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject IJSRuntime JSRuntime
+
+<PageTitle>AI Agent Access &amp; Webhooks — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="AI AGENTS &amp; MCP INTEGRATIONS"
+              Title="AI Agent Access &amp; Webhooks"
+              Subtitle="Connect external AI agents (Claude, ChatGPT, LangChain, Python SDK) via MCP and manage secure access tokens and real-time domain event webhooks.">
+        <RightContent>
+            <button class="primary" @onclick="() => _showCreateTokenModal = true">+ Create Agent Token</button>
+            <button class="secondary" @onclick="() => _showCreateWebhookModal = true">+ Register Webhook</button>
+        </RightContent>
+    </PageHero>
+
+    <!-- Navigation Tabs -->
+    <div class="agent-tabs-row">
+        <button class="agent-tab @(_activeTab == "tokens" ? "active" : "")" @onclick='() => _activeTab = "tokens"'>
+            🔑 Personal Access Tokens (@_tokens.Count)
+        </button>
+        <button class="agent-tab @(_activeTab == "webhooks" ? "active" : "")" @onclick='() => _activeTab = "webhooks"'>
+            ⚡ Outbound Webhooks (@_webhooks.Count)
+        </button>
+        <button class="agent-tab @(_activeTab == "guides" ? "active" : "")" @onclick='() => _activeTab = "guides"'>
+            📖 MCP &amp; Integration Guides
+        </button>
+    </div>
+
+    <!-- Alert Banner for Newly Generated Token -->
+    @if (!string.IsNullOrEmpty(_newlyCreatedRawToken))
+    {
+        <div class="new-token-alert">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-content">
+                <strong>New Personal Access Token Generated</strong>
+                <p>Copy your token now. For security purposes, this token will never be displayed again.</p>
+                <div class="token-copy-box">
+                    <input type="text" readonly value="@_newlyCreatedRawToken" class="token-value-input" />
+                    <button class="primary copy-btn" @onclick="CopyRawTokenAsync">
+                        @(_copiedToken ? "✓ Copied!" : "Copy Token")
+                    </button>
+                </div>
+            </div>
+            <button class="alert-close" @onclick="() => _newlyCreatedRawToken = null">✕</button>
+        </div>
+    }
+
+    <!-- Alert Banner for Newly Registered Webhook Secret -->
+    @if (!string.IsNullOrEmpty(_newlyCreatedWebhookSecret))
+    {
+        <div class="new-token-alert">
+            <div class="alert-icon">🔐</div>
+            <div class="alert-content">
+                <strong>Webhook Secret Key</strong>
+                <p>Use this HMAC secret to verify the <code>X-EnjoyEveryday-Signature</code> header on incoming webhook deliveries.</p>
+                <div class="token-copy-box">
+                    <input type="text" readonly value="@_newlyCreatedWebhookSecret" class="token-value-input" />
+                    <button class="primary copy-btn" @onclick="CopyWebhookSecretAsync">
+                        @(_copiedSecret ? "✓ Copied!" : "Copy Secret")
+                    </button>
+                </div>
+            </div>
+            <button class="alert-close" @onclick="() => _newlyCreatedWebhookSecret = null">✕</button>
+        </div>
+    }
+
+    <!-- TAB 1: TOKENS -->
+    @if (_activeTab == "tokens")
+    {
+        <div class="section-card">
+            <div class="card-title-row">
+                <div>
+                    <h2>Active Agent Tokens</h2>
+                    <p class="section-desc">Personal access tokens grant scoped read/write access to external AI agents acting on behalf of a user persona.</p>
+                </div>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="loading-state">Loading access tokens...</div>
+            }
+            else if (!_tokens.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-icon">🤖</div>
+                    <h3>No agent tokens created yet</h3>
+                    <p>Create a token to allow Claude, ChatGPT, or custom Python agents to connect to this daycare.</p>
+                    <button class="primary" @onclick="() => _showCreateTokenModal = true">+ Create First Token</button>
+                </div>
+            }
+            else
+            {
+                <div class="tokens-table-container">
+                    <table class="agent-table">
+                        <thead>
+                            <tr>
+                                <th>Token Name</th>
+                                <th>Token Prefix</th>
+                                <th>Role</th>
+                                <th>Scopes</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Last Used</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var token in _tokens)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="token-name">@token.TokenName</div>
+                                    </td>
+                                    <td><code>@token.TokenPrefix</code></td>
+                                    <td>
+                                        <span class="role-badge">@token.Role</span>
+                                    </td>
+                                    <td>
+                                        <div class="scopes-list">
+                                            @foreach (var scope in token.Scopes.Take(3))
+                                            {
+                                                <span class="scope-pill">@scope</span>
+                                            }
+                                            @if (token.Scopes.Count > 3)
+                                            {
+                                                <span class="scope-pill more">+@(token.Scopes.Count - 3) more</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if (token.IsRevoked)
+                                        {
+                                            <span class="status-badge inactive">Revoked</span>
+                                        }
+                                        else if (token.ExpiresAt.HasValue && token.ExpiresAt.Value < DateTime.UtcNow)
+                                        {
+                                            <span class="status-badge inactive">Expired</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge active">Active</span>
+                                        }
+                                    </td>
+                                    <td>@token.CreatedAt.ToString("MMM d, yyyy")</td>
+                                    <td>@(token.LastUsedAt?.ToString("MMM d, HH:mm") ?? "Never")</td>
+                                    <td>
+                                        @if (!token.IsRevoked)
+                                        {
+                                            <button class="revoke-btn" @onclick="() => RevokeTokenAsync(token.Id)">Revoke</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- TAB 2: WEBHOOKS -->
+    @if (_activeTab == "webhooks")
+    {
+        <div class="section-card">
+            <div class="card-title-row">
+                <div>
+                    <h2>Outbound Webhook Subscriptions</h2>
+                    <p class="section-desc">Real-time HTTP push events sent to your agents when daycare domain events occur (e.g., classroom message sent, attendance recorded).</p>
+                </div>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="loading-state">Loading webhooks...</div>
+            }
+            else if (!_webhooks.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-icon">⚡</div>
+                    <h3>No webhook subscriptions yet</h3>
+                    <p>Register a webhook to have EnjoyEveryday push events to your AI agent endpoints automatically.</p>
+                    <button class="secondary" @onclick="() => _showCreateWebhookModal = true">+ Register Webhook</button>
+                </div>
+            }
+            else
+            {
+                <div class="tokens-table-container">
+                    <table class="agent-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Target URL</th>
+                                <th>Events</th>
+                                <th>Status</th>
+                                <th>Last Triggered</th>
+                                <th>Failures</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var sub in _webhooks)
+                            {
+                                <tr>
+                                    <td><strong>@sub.Name</strong></td>
+                                    <td><code>@sub.WebhookUrl</code></td>
+                                    <td>
+                                        <div class="scopes-list">
+                                            @foreach (var ev in sub.SubscribedEvents)
+                                            {
+                                                <span class="scope-pill">@ev</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if (sub.IsActive)
+                                        {
+                                            <span class="status-badge active">Healthy</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge inactive">Disabled</span>
+                                        }
+                                    </td>
+                                    <td>@(sub.LastTriggeredAt?.ToString("MMM d, HH:mm") ?? "Never")</td>
+                                    <td>@sub.FailureCount</td>
+                                    <td>
+                                        <button class="revoke-btn" @onclick="() => DeleteWebhookAsync(sub.Id)">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- TAB 3: GUIDES -->
+    @if (_activeTab == "guides")
+    {
+        <div class="guides-grid">
+            <!-- Card 1: MCP Model Context Protocol -->
+            <div class="guide-card">
+                <div class="guide-header">
+                    <span class="guide-pill">PROTOCOL</span>
+                    <h3>Model Context Protocol (MCP)</h3>
+                    <p>Connect Claude Desktop, Claude Code, ChatGPT Developer Mode, or LangChain to the standard MCP endpoint.</p>
+                </div>
+                <div class="guide-snippet">
+                    <label>MCP Endpoint URL:</label>
+                    <pre><code>POST https://api.enjoyeveryday.com/mcp</code></pre>
+                    <label>Claude Desktop Config (<code>claude_desktop_config.json</code>):</label>
+                    <pre><code>{
+  "mcpServers": {
+    "enjoyeveryday": {
+      "command": "npx",
+      "args": ["-y", "mcp-proxy", "https://api.enjoyeveryday.com/mcp"],
+      "env": {
+        "AUTHORIZATION": "Bearer YOUR_PAT_TOKEN_HERE"
+      }
+    }
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <!-- Card 2: OpenAPI Function Calling Spec -->
+            <div class="guide-card">
+                <div class="guide-header">
+                    <span class="guide-pill">SPECIFICATION</span>
+                    <h3>Semantic OpenAPI 3.1 &amp; Function Calling</h3>
+                    <p>Dynamically fetch persona-tailored function schemas for OpenAI Tools, Gemini Tools, or Anthropic Tools.</p>
+                </div>
+                <div class="guide-snippet">
+                    <label>Tools Declaration Spec URL:</label>
+                    <pre><code>GET https://api.enjoyeveryday.com/api/v1/agent/tools.json</code></pre>
+                    <label>Python Agent Execution Snippet:</label>
+                    <pre><code>import requests
+
+headers = {"Authorization": "Bearer eed_pat_..."}
+tools = requests.get(
+    "https://api.enjoyeveryday.com/api/v1/agent/tools.json",
+    headers=headers
+).json()
+
+# Feed 'tools' directly into client.chat.completions.create(tools=...)</code></pre>
+                </div>
+            </div>
+
+            <!-- Card 3: Human Approval Safety Flow -->
+            <div class="guide-card">
+                <div class="guide-header">
+                    <span class="guide-pill">SAFETY &amp; GOVERNANCE</span>
+                    <h3>Human-in-the-Loop Safeguards</h3>
+                    <p>EnjoyEveryday enforces strict deterministic business guardrails for all autonomous agent actions.</p>
+                </div>
+                <ul class="safety-points">
+                    <li><strong>Draft-Only Communications:</strong> Outbound messages drafted by AI agents are flagged as drafts and require explicit human teacher approval before delivering to parents.</li>
+                    <li><strong>Tenancy Isolation:</strong> Token claims enforce database-level tenant isolation, guaranteeing agents cannot access out-of-tenant records.</li>
+                    <li><strong>Role Scopes:</strong> Parent agents can only access their authorized children; educators only their assigned classrooms.</li>
+                </ul>
+            </div>
+        </div>
+    }
+
+    <!-- MODAL: Create Token -->
+    @if (_showCreateTokenModal)
+    {
+        <div class="modal-backdrop" @onclick="() => _showCreateTokenModal = false">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Generate New Agent Access Token</h3>
+                    <button class="modal-close-btn" @onclick="() => _showCreateTokenModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Token Name</label>
+                        <input type="text" class="input-text" @bind="_newTokenName" placeholder="e.g. Claude Desktop Assistant" />
+                        <span class="input-hint">A recognizable label for what this agent does.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Agent Role Persona</label>
+                        <select class="input-select" @bind="_newTokenRole">
+                            <option value="@RoleTemplates.ClassroomTeacher">Classroom Teacher (Classroom access &amp; care records)</option>
+                            <option value="@RoleTemplates.Parent">Parent (Child timeline &amp; communications)</option>
+                            <option value="@RoleTemplates.BranchAdmin">Branch Admin (Roster, operations, classrooms)</option>
+                            <option value="@RoleTemplates.OrganizationAdmin">Organization Admin (Full tenant insights)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Expiration</label>
+                        <select class="input-select" @bind="_newTokenExpirationDays">
+                            <option value="30">30 days</option>
+                            <option value="60">60 days</option>
+                            <option value="90">90 days (Recommended)</option>
+                            <option value="365">1 year</option>
+                            <option value="0">Never (Requires manual revocation)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="secondary" @onclick="() => _showCreateTokenModal = false">Cancel</button>
+                    <button class="primary" @onclick="CreateTokenAsync" disabled="@(string.IsNullOrWhiteSpace(_newTokenName) || _isSubmitting)">
+                        @(_isSubmitting ? "Generating..." : "Generate Token")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- MODAL: Register Webhook -->
+    @if (_showCreateWebhookModal)
+    {
+        <div class="modal-backdrop" @onclick="() => _showCreateWebhookModal = false">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Register Outbound Webhook</h3>
+                    <button class="modal-close-btn" @onclick="() => _showCreateWebhookModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Webhook Name</label>
+                        <input type="text" class="input-text" @bind="_newWebhookName" placeholder="e.g. Parent Bot Notification Relay" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Payload Endpoint URL</label>
+                        <input type="text" class="input-text" @bind="_newWebhookUrl" placeholder="https://agent.mydaycare.org/events" />
+                        <span class="input-hint">Must be an accessible HTTP or HTTPS URL.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Event Triggers</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="_subscribeMessages" />
+                                <span><code>classroom.message.sent</code> (Parent &amp; educator communications)</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="_subscribeAttendance" />
+                                <span><code>attendance.recorded</code> (Check-in, check-out, absence updates)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="secondary" @onclick="() => _showCreateWebhookModal = false">Cancel</button>
+                    <button class="primary" @onclick="RegisterWebhookAsync" disabled="@(string.IsNullOrWhiteSpace(_newWebhookName) || string.IsNullOrWhiteSpace(_newWebhookUrl) || _isSubmitting)">
+                        @(_isSubmitting ? "Registering..." : "Register Webhook")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .agent-tabs-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        padding-bottom: 12px;
+    }
+
+    .agent-tab {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 10px;
+        padding: 8px 16px;
+        font-size: 13.5px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .agent-tab.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border-color: #c8dacd;
+    }
+
+    .new-token-alert {
+        background: #fdfaf3;
+        border: 1.5px solid #ebd8c0;
+        border-radius: 14px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 18px rgba(40, 55, 47, 0.05);
+    }
+
+    .alert-icon {
+        font-size: 24px;
+        line-height: 1;
+    }
+
+    .alert-content {
+        flex: 1;
+    }
+
+    .alert-content strong {
+        font-size: 14px;
+        color: #8b6e4e;
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    .alert-content p {
+        font-size: 13px;
+        color: var(--text, #26332d);
+        margin: 0 0 10px;
+    }
+
+    .token-copy-box {
+        display: flex;
+        gap: 8px;
+        max-width: 680px;
+    }
+
+    .token-value-input {
+        flex: 1;
+        font-family: monospace;
+        font-size: 13px;
+        padding: 8px 12px;
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .copy-btn {
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-size: 13px;
+    }
+
+    .alert-close {
+        background: none;
+        border: none;
+        font-size: 16px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+    }
+
+    .section-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 24px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .card-title-row {
+        margin-bottom: 20px;
+    }
+
+    .card-title-row h2 {
+        font-size: 18px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0 0 4px;
+    }
+
+    .section-desc {
+        font-size: 13px;
+        color: var(--muted, #6c7870);
+        margin: 0;
+    }
+
+    .tokens-table-container {
+        overflow-x: auto;
+    }
+
+    .agent-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .agent-table th {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 2px solid var(--border, #e4e7df);
+        color: var(--muted, #6c7870);
+        font-weight: 750;
+        font-size: 11.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .agent-table td {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        vertical-align: middle;
+    }
+
+    .agent-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .token-name {
+        font-weight: 700;
+        color: var(--text, #26332d);
+    }
+
+    .role-badge {
+        display: inline-block;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .scopes-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .scope-pill {
+        background: #f0f4f1;
+        color: #3e6253;
+        font-size: 10.5px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+    }
+
+    .scope-pill.more {
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+        font-family: inherit;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+    .status-badge.active {
+        background: #e6f7ec;
+        color: #2e7d32;
+        border: 1px solid #c8e6c9;
+    }
+
+    .status-badge.inactive {
+        background: #fff5f5;
+        color: #9b2c2c;
+        border: 1px solid #fed7d7;
+    }
+
+    .revoke-btn {
+        background: #ffffff;
+        color: #c53030;
+        border: 1px solid #fed7d7;
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .revoke-btn:hover {
+        background: #fff5f5;
+    }
+
+    .empty-state, .loading-state {
+        text-align: center;
+        padding: 48px 20px;
+        color: var(--muted, #6c7870);
+    }
+
+    .empty-icon {
+        font-size: 38px;
+        margin-bottom: 10px;
+    }
+
+    .empty-state h3 {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0 0 6px;
+    }
+
+    .empty-state p {
+        font-size: 13px;
+        margin: 0 0 16px;
+    }
+
+    /* Guides */
+    .guides-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 18px;
+    }
+
+    .guide-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 22px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .guide-pill {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.6px;
+        color: var(--accent, #557c6c);
+        margin-bottom: 6px;
+    }
+
+    .guide-header h3 {
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0 0 6px;
+    }
+
+    .guide-header p {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+        margin: 0 0 14px;
+        line-height: 1.45;
+    }
+
+    .guide-snippet label {
+        display: block;
+        font-size: 11px;
+        font-weight: 750;
+        color: var(--muted, #6c7870);
+        margin: 10px 0 4px;
+    }
+
+    .guide-snippet pre {
+        background: #232c27;
+        color: #e5eee8;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        overflow-x: auto;
+        margin: 0;
+    }
+
+    .safety-points {
+        padding-left: 20px;
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--text, #26332d);
+        line-height: 1.55;
+    }
+
+    .safety-points li {
+        margin-bottom: 8px;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        backdrop-filter: blur(2px);
+    }
+
+    .modal-card {
+        background: #ffffff;
+        border-radius: var(--radius, 18px);
+        width: 100%;
+        max-width: 520px;
+        box-shadow: 0 16px 48px rgba(40, 55, 47, 0.16);
+        overflow: hidden;
+    }
+
+    .modal-header {
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .modal-header h3 {
+        font-size: 17px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0;
+    }
+
+    .modal-close-btn {
+        background: none;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        color: var(--muted, #6c7870);
+    }
+
+    .modal-body {
+        padding: 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .form-group label {
+        font-size: 12.5px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .input-text, .input-select {
+        padding: 9px 12px;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 9px;
+        font-size: 13.5px;
+        outline: none;
+        background: #ffffff;
+    }
+
+    .input-text:focus, .input-select:focus {
+        border-color: var(--accent, #557c6c);
+    }
+
+    .input-hint {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .checkbox-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12.5px;
+        cursor: pointer;
+    }
+
+    .modal-footer {
+        padding: 16px 24px;
+        background: var(--surface-soft, #f8f9f5);
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+</style>
+
+@code {
+    private string _activeTab = "tokens";
+    private bool _loading = true;
+    private bool _isSubmitting = false;
+
+    private List<AgentAccessToken> _tokens = new();
+    private List<AgentWebhookSubscription> _webhooks = new();
+
+    private bool _showCreateTokenModal = false;
+    private string _newTokenName = "";
+    private string _newTokenRole = RoleTemplates.ClassroomTeacher;
+    private int _newTokenExpirationDays = 90;
+    private string? _newlyCreatedRawToken;
+    private bool _copiedToken = false;
+
+    private bool _showCreateWebhookModal = false;
+    private string _newWebhookName = "";
+    private string _newWebhookUrl = "";
+    private bool _subscribeMessages = true;
+    private bool _subscribeAttendance = true;
+    private string? _newlyCreatedWebhookSecret;
+    private bool _copiedSecret = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await PageAuth.EnsureAuthorizedAsync("/settings/ai-agents"))
+        {
+            return;
+        }
+
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+
+            var tokensTask = TokenRepo.GetUserTokensAsync(tenantId, userId);
+            var webhooksTask = WebhookRepo.GetTenantSubscriptionsAsync(tenantId);
+
+            await Task.WhenAll(tokensTask, webhooksTask);
+
+            _tokens = (await tokensTask).ToList();
+            _webhooks = (await webhooksTask).ToList();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CreateTokenAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newTokenName)) return;
+
+        _isSubmitting = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+
+            // Generate cryptographically secure random token bytes
+            var randomBytes = new byte[32];
+            RandomNumberGenerator.Fill(randomBytes);
+            var base64Random = Convert.ToBase64String(randomBytes)
+                .Replace("+", "-")
+                .Replace("/", "_")
+                .TrimEnd('=');
+
+            var rawToken = $"eed_pat_{base64Random}";
+            var tokenPrefix = $"{rawToken[..Math.Min(14, rawToken.Length)]}...";
+
+            // Hash token with SHA-256 for database storage
+            using var sha = SHA256.Create();
+            var hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawToken));
+            var tokenHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+
+            var scopes = AgentTokenScopes.GetDefaultScopesForRole(_newTokenRole);
+            DateTime? expiresAt = _newTokenExpirationDays > 0 ? DateTime.UtcNow.AddDays(_newTokenExpirationDays) : null;
+
+            var token = new AgentAccessToken
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                UserId = userId,
+                TokenName = _newTokenName.Trim(),
+                TokenPrefix = tokenPrefix,
+                TokenHash = tokenHash,
+                Role = _newTokenRole,
+                Scopes = scopes,
+                ExpiresAt = expiresAt,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await TokenRepo.CreateTokenAsync(token);
+
+            _newlyCreatedRawToken = rawToken;
+            _copiedToken = false;
+            _showCreateTokenModal = false;
+            _newTokenName = "";
+
+            await LoadDataAsync();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task RevokeTokenAsync(Guid tokenId)
+    {
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var revoked = await TokenRepo.RevokeTokenAsync(tenantId, tokenId, userId);
+        if (revoked)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task RegisterWebhookAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newWebhookName) || string.IsNullOrWhiteSpace(_newWebhookUrl)) return;
+
+        _isSubmitting = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+
+            var secretBytes = new byte[32];
+            RandomNumberGenerator.Fill(secretBytes);
+            var secretKey = Convert.ToHexString(secretBytes).ToLowerInvariant();
+
+            var events = new List<string>();
+            if (_subscribeMessages) events.Add("classroom.message.sent");
+            if (_subscribeAttendance) events.Add("attendance.recorded");
+            if (!events.Any()) events.Add("*");
+
+            var subscription = new AgentWebhookSubscription
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                UserId = userId,
+                Name = _newWebhookName.Trim(),
+                WebhookUrl = _newWebhookUrl.Trim(),
+                SecretKey = secretKey,
+                SubscribedEvents = events,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await WebhookRepo.CreateSubscriptionAsync(subscription);
+
+            _newlyCreatedWebhookSecret = secretKey;
+            _copiedSecret = false;
+            _showCreateWebhookModal = false;
+            _newWebhookName = "";
+            _newWebhookUrl = "";
+
+            await LoadDataAsync();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task DeleteWebhookAsync(Guid subscriptionId)
+    {
+        var tenantId = TenantContext.TenantId;
+        var deleted = await WebhookRepo.DeleteSubscriptionAsync(tenantId, subscriptionId);
+        if (deleted)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task CopyRawTokenAsync()
+    {
+        if (!string.IsNullOrEmpty(_newlyCreatedRawToken))
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _newlyCreatedRawToken);
+            _copiedToken = true;
+        }
+    }
+
+    private async Task CopyWebhookSecretAsync()
+    {
+        if (!string.IsNullOrEmpty(_newlyCreatedWebhookSecret))
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _newlyCreatedWebhookSecret);
+            _copiedSecret = true;
+        }
+    }
+}

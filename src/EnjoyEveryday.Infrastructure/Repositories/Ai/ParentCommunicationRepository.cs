@@ -6,6 +6,7 @@ using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
+using Dapper;
 
 namespace EnjoyEveryday.Infrastructure.Repositories;
 
@@ -192,5 +193,40 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
             "sp_mark_parent_communications_as_read",
             new { TenantId = tenantId, ChildId = childId },
             cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> ApproveDraftAsync(Guid tenantId, Guid id, Guid approvedByUserId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            UPDATE parent_communications
+            SET is_agent_draft = FALSE,
+                status = 'Sent',
+                sent_at = NOW(),
+                approved_by_user_id = @approvedByUserId,
+                approved_at = NOW(),
+                delivery_status = 'Sent',
+                updated_at = NOW()
+            WHERE id = @id AND tenant_id = @tenantId;
+            """;
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        var rows = await connection.ExecuteAsync(
+            new Dapper.CommandDefinition(sql, new { tenantId, id, approvedByUserId }, cancellationToken: cancellationToken));
+        return rows > 0;
+    }
+
+    public async Task<bool> DiscardDraftAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            UPDATE parent_communications
+            SET status = 'Archived',
+                updated_at = NOW()
+            WHERE id = @id AND tenant_id = @tenantId;
+            """;
+
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        var rows = await connection.ExecuteAsync(
+            new Dapper.CommandDefinition(sql, new { tenantId, id }, cancellationToken: cancellationToken));
+        return rows > 0;
     }
 }

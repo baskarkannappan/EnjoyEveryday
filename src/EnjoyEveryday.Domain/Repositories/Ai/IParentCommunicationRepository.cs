@@ -17,4 +17,6 @@ public interface IParentCommunicationRepository
     Task<IEnumerable<ParentCommunication>> GetRecentCommunicationsAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null, int limit = 50, CancellationToken cancellationToken = default);
     Task<int> GetUnreadCountForEducatorAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, Guid? classroomId = null, CancellationToken cancellationToken = default);
     Task MarkAsReadByEducatorAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default);
+    Task<bool> ApproveDraftAsync(Guid tenantId, Guid id, Guid approvedByUserId, CancellationToken cancellationToken = default);
+    Task<bool> DiscardDraftAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
 }

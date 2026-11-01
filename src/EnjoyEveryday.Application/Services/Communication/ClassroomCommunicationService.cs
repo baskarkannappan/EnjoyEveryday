@@ -29,6 +29,10 @@ public interface IClassroomCommunicationService
         CancellationToken ct = default);
 
     Task MarkConversationAsReadByEducatorAsync(Guid childId, CancellationToken ct = default);
+
+    Task<bool> ApproveAgentDraftAsync(Guid messageId, CancellationToken ct = default);
+
+    Task<bool> DiscardAgentDraftAsync(Guid messageId, CancellationToken ct = default);
 }
 
 public class ClassroomCommunicationService : IClassroomCommunicationService
@@ -178,7 +182,9 @@ public class ClassroomCommunicationService : IClassroomCommunicationService
                     Content = content,
                     Timestamp = c.SentAt ?? c.CreatedAt,
                     IsFromParent = isFromParent,
-                    DeliveryStatus = c.DeliveryStatus ?? "Delivered"
+                    DeliveryStatus = c.DeliveryStatus ?? "Delivered",
+                    IsAgentDraft = c.IsAgentDraft,
+                    AgentTokenId = c.AgentTokenId
                 });
             }
         }
@@ -266,5 +272,45 @@ public class ClassroomCommunicationService : IClassroomCommunicationService
     {
         var tenantId = _tenantContext.TenantId;
         await _communicationRepo.MarkAsReadByEducatorAsync(tenantId, childId, ct);
+    }
+
+    public async Task<bool> ApproveAgentDraftAsync(Guid messageId, CancellationToken ct = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var userId = _userContext.UserId;
+
+        var comm = await _communicationRepo.GetByIdAsync(tenantId, messageId, ct);
+        if (comm == null) return false;
+
+        var approved = await _communicationRepo.ApproveDraftAsync(tenantId, messageId, userId, ct);
+        if (approved && _realtimeNotificationService != null)
+        {
+            try
+            {
+                var content = !string.IsNullOrWhiteSpace(comm.ContentFinal) ? comm.ContentFinal : comm.ContentDraft;
+                await _realtimeNotificationService.NotifyEducatorMessageSentAsync(new ParentMessageNotification
+                {
+                    MessageId = comm.Id,
+                    TenantId = tenantId,
+                    ChildId = comm.ChildId,
+                    ChildName = comm.ChildName ?? string.Empty,
+                    ClassroomId = comm.ClassroomId,
+                    ClassroomName = comm.ClassroomName ?? string.Empty,
+                    SenderName = comm.TeacherName ?? "Educator",
+                    Content = content,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    IsFromParent = false
+                }, ct);
+            }
+            catch { }
+        }
+
+        return approved;
+    }
+
+    public async Task<bool> DiscardAgentDraftAsync(Guid messageId, CancellationToken ct = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _communicationRepo.DiscardDraftAsync(tenantId, messageId, ct);
     }
 }

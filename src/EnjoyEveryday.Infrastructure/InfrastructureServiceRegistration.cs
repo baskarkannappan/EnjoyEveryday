@@ -87,6 +87,8 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IBranchBenchmarkingRepository, BranchBenchmarkingRepository>();
         services.AddScoped<IChildDevelopmentPortfolioRepository, ChildDevelopmentPortfolioRepository>();
         services.AddScoped<IPlatformAdminRepository, PlatformAdminRepository>();
+        services.AddScoped<IAgentTokenRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentTokenRepository>();
+        services.AddScoped<IAgentWebhookRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentWebhookRepository>();
 
         // Razorpay Payment Gateway
         services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(
@@ -135,6 +137,11 @@ public static class InfrastructureServiceRegistration
         services.AddHostedService<EnjoyEveryday.Infrastructure.Events.DomainEventChannelProcessor>();
         services.AddScoped<EnjoyEveryday.Shared.Events.IDomainEventHandler<EnjoyEveryday.Shared.Events.ClassroomMessageSentEvent>,
             EnjoyEveryday.Infrastructure.Events.Handlers.ClassroomMessageBackgroundNotificationHandler>();
+        services.AddScoped<EnjoyEveryday.Shared.Events.IDomainEventHandler<EnjoyEveryday.Shared.Events.ClassroomMessageSentEvent>,
+            EnjoyEveryday.Infrastructure.Events.Handlers.AgentWebhookNotificationHandler>();
+        services.AddScoped<EnjoyEveryday.Shared.Events.IDomainEventHandler<EnjoyEveryday.Shared.Events.ChildAttendanceRecordedEvent>,
+            EnjoyEveryday.Infrastructure.Events.Handlers.AgentWebhookNotificationHandler>();
+        services.AddHttpClient("AgentWebhookClient");
 
         // Background Maintenance Worker
         services.AddHostedService<EnjoyEveryday.Infrastructure.BackgroundWorkers.DaycareMaintenanceHostedService>();

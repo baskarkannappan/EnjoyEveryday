@@ -335,6 +335,8 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             || path == "/billing/reports"
             || path == "/management/branches/new"
             || path == "/settings"
+            || path == "/settings/ai-agents"
+            || path == "/settings/agent-access"
             || path == "/organization/settings"
             || path == "/organization/profile"
             || path == "/organization"

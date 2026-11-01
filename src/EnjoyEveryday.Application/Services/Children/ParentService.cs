@@ -54,6 +54,8 @@ public class ParentChatMessage
     public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
     public bool IsFromParent { get; set; }
     public string DeliveryStatus { get; set; } = "Sent";
+    public bool IsAgentDraft { get; set; }
+    public Guid? AgentTokenId { get; set; }
 }
 
 public interface IParentService

@@ -15,6 +15,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<EnjoyEveryday.Api.Mcp.McpToolExecutor>();
 
 // Microsoft Native Output Caching with Multi-Tenant isolation
 builder.Services.AddOutputCache(options =>
@@ -67,8 +68,26 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = "SmartAuth";
+        options.DefaultChallengeScheme = "SmartAuth";
+    })
+    .AddPolicyScheme("SmartAuth", "Cookie or Agent Bearer", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return EnjoyEveryday.Api.Authentication.AgentAuthenticationDefaults.AuthenticationScheme;
+            }
+            return CookieAuthenticationDefaults.AuthenticationScheme;
+        };
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, EnjoyEveryday.Api.Authentication.AgentTokenAuthenticationHandler>(
+        EnjoyEveryday.Api.Authentication.AgentAuthenticationDefaults.AuthenticationScheme, _ => { })
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
     {
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
