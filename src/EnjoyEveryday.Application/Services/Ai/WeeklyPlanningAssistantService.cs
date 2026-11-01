@@ -143,6 +143,7 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
 
                 using var reqMsg = new HttpRequestMessage(HttpMethod.Post, "/api/weekly-plan");
                 reqMsg.Headers.Add("X-Tenant-Api-Key", apiKey);
+                reqMsg.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
                 reqMsg.Content = JsonContent.Create(payload);
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));

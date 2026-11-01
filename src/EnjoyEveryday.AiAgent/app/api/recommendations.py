@@ -6,9 +6,10 @@ from app.schemas.requests import RecommendationRequest
 from app.schemas.responses import RecommendationResponse
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
-from app.providers.gemini_provider import gemini_provider
+from app.providers.provider_registry import ai_provider_registry
 from app.prompts.recommendations import RECOMMENDATIONS_INSTRUCTION
 from app.validation.evidence_validator import evidence_validator
+from app.cache.ai_cache import ai_cache
 
 logger = logging.getLogger("EnjoyEveryday.Api.Recommendations")
 router = APIRouter(tags=["Recommendations"])
@@ -20,6 +21,12 @@ async def get_recommendations(
 ):
     if not req.candidateExperiences:
         return {"recommendations": []}
+
+    # Check in-memory semantic cache
+    cache_key = ai_cache.generate_key(context.tenant_id, "recommendations", req.model_dump())
+    cached_response = await ai_cache.get(cache_key)
+    if cached_response is not None:
+        return cached_response
 
     candidate_dicts = [c.model_dump() for c in req.candidateExperiences[:30]]
     memory_dicts = [m.model_dump() for m in req.evidenceMemories[:30]]
@@ -33,10 +40,14 @@ async def get_recommendations(
         "candidateExperiences": candidate_dicts
     }
 
-    prompt = f"Please recommend suitable experiences using this context and evidence:\n{json.dumps(context_payload, indent=2)}"
+    # Token-efficient minified prompt representation
+    compact_context = json.dumps(context_payload, separators=(',', ':'))
+    prompt = f"Please recommend suitable experiences using this context and evidence:\n{compact_context}"
+
+    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_recs = await gemini_provider.generate_json(
+        raw_recs = await provider.generate_json(
             prompt=prompt,
             system_instruction=RECOMMENDATIONS_INSTRUCTION,
             tenant_context=context,
@@ -79,4 +90,6 @@ async def get_recommendations(
                 "isEvidenceLimited": not has_evidence
             })
 
-    return {"recommendations": valid_recs}
+    result = {"recommendations": valid_recs}
+    await ai_cache.set(cache_key, result, ttl_seconds=1800)
+    return result

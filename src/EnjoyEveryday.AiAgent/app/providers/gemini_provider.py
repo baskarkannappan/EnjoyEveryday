@@ -1,7 +1,8 @@
 import json
 import asyncio
+import hashlib
 import logging
-from typing import Any, Optional, Type, List
+from typing import Any, Optional, Type, List, Dict
 from pydantic import BaseModel
 from fastapi import HTTPException
 from google import genai
@@ -15,22 +16,35 @@ logger = logging.getLogger("EnjoyEveryday.AIProvider")
 class GeminiProvider:
     provider_id: str = "GoogleGemini"
 
+    # Production models in order of priority (fast, accurate, cost-effective)
     FALLBACK_MODELS: List[str] = [
-        "gemini-3.5-flash",
-        "gemini-3.8-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-flash-latest",
-        "gemini-3-flash-preview",
-        "gemini-2.5-flash"
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-flash-latest"
     ]
 
     def __init__(self):
         self._mock_handler = None
         self._working_model: Optional[str] = None
+        self._client_cache: Dict[str, genai.Client] = {}
+        self._client_lock = asyncio.Lock()
 
     def set_mock_handler(self, handler):
         """Allows injecting a deterministic mock for unit/integration tests."""
         self._mock_handler = handler
+
+    async def _get_client(self, api_key: str) -> genai.Client:
+        """Retrieves or creates a cached genai.Client to avoid repeated TLS handshakes."""
+        key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        if key_hash in self._client_cache:
+            return self._client_cache[key_hash]
+
+        async with self._client_lock:
+            if key_hash not in self._client_cache:
+                self._client_cache[key_hash] = genai.Client(api_key=api_key)
+            return self._client_cache[key_hash]
 
     async def generate_json(
         self,
@@ -52,17 +66,21 @@ class GeminiProvider:
                 models_to_try.append(m)
 
         await rate_limiter.acquire_concurrency(tenant_context.tenant_id)
-        client = genai.Client(api_key=tenant_context.gemini_api_key)
+        client = await self._get_client(tenant_context.gemini_api_key)
 
         last_error = None
         try:
             for current_model in models_to_try:
                 try:
-                    config = types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json",
-                        temperature=temperature,
-                    )
+                    config_args = {
+                        "system_instruction": system_instruction,
+                        "response_mime_type": "application/json",
+                        "temperature": temperature,
+                    }
+                    if response_model is not None:
+                        config_args["response_schema"] = response_model
+
+                    config = types.GenerateContentConfig(**config_args)
 
                     response = await asyncio.wait_for(
                         client.aio.models.generate_content(
@@ -92,7 +110,7 @@ class GeminiProvider:
                         logger.error(f"Failed to decode JSON from Gemini ({current_model}): {jde}. Raw: {raw_text[:200]}")
                         continue
 
-                    # Record working model for future requests
+                    # Record verified working model for future requests
                     self._working_model = current_model
                     return data
 
@@ -105,26 +123,18 @@ class GeminiProvider:
                 except Exception as model_err:
                     err_str = str(model_err)
                     logger.warning(f"Model {current_model} call failed: {err_str[:150]}")
-                    
+
                     if "API_KEY_INVALID" in err_str or ("400" in err_str and "key" in err_str.lower()):
                         raise HTTPException(status_code=401, detail="Provided AI API key is invalid or not authorized.")
                     if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
                         raise HTTPException(status_code=429, detail="AI Provider quota or rate limit exceeded.")
-                    
+
                     last_error = model_err
-                    # If 404 NOT_FOUND, 503 UNAVAILABLE, or temporary server error, continue loop to try next model in fallback list
                     retry_conditions = ["404", "NOT_FOUND", "not found", "503", "UNAVAILABLE", "unavailable", "500", "overloaded", "demand"]
                     if any(cond in err_str for cond in retry_conditions):
                         continue
                     else:
                         break
-
-            # If all models failed, log available models from provider
-            try:
-                available = [m.name for m in client.models.list()]
-                logger.info(f"Available models for this API key: {available}")
-            except Exception as list_ex:
-                logger.debug(f"Could not list models: {list_ex}")
 
             if isinstance(last_error, HTTPException):
                 raise last_error

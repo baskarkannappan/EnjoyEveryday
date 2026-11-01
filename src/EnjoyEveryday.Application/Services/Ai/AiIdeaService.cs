@@ -33,6 +33,7 @@ public class AiIdeaService : IAiIdeaService
                 var request = new { idea = ideaInput };
                 using var message = new HttpRequestMessage(HttpMethod.Post, "/api/ideas");
                 message.Headers.Add("X-Tenant-Api-Key", apiKey);
+                message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
                 message.Content = JsonContent.Create(request);
 
                 var response = await _httpClient.SendAsync(message);
@@ -64,6 +65,7 @@ public class AiIdeaService : IAiIdeaService
             {
                 using var message = new HttpRequestMessage(HttpMethod.Post, "/api/improve");
                 message.Headers.Add("X-Tenant-Api-Key", apiKey);
+                message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
                 message.Content = JsonContent.Create(request);
 
                 var response = await _httpClient.SendAsync(message);
@@ -201,6 +203,7 @@ public class AiIdeaService : IAiIdeaService
                 var request = new { experienceDna };
                 using var message = new HttpRequestMessage(HttpMethod.Post, "/api/materials");
                 message.Headers.Add("X-Tenant-Api-Key", apiKey);
+                message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
                 message.Content = JsonContent.Create(request);
 
                 var response = await _httpClient.SendAsync(message);

@@ -6,8 +6,9 @@ from app.schemas.requests import OrganizationIntelligenceRequest
 from app.schemas.responses import OrganizationIntelligenceItem
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
-from app.providers.gemini_provider import gemini_provider
+from app.providers.provider_registry import ai_provider_registry
 from app.prompts.organization_intelligence import ORGANIZATION_INTELLIGENCE_INSTRUCTION
+from app.cache.ai_cache import ai_cache
 
 logger = logging.getLogger("EnjoyEveryday.Api.OrganizationIntelligence")
 router = APIRouter(tags=["Organization Intelligence"])
@@ -17,9 +18,13 @@ async def generate_organization_intelligence(
     req: OrganizationIntelligenceRequest,
     context: TenantContext = Depends(get_tenant_context)
 ):
+    cache_key = ai_cache.generate_key(context.tenant_id, "org_intelligence", req.model_dump())
+    cached_insights = await ai_cache.get(cache_key)
+    if cached_insights is not None:
+        return cached_insights
+
     def build_grounded_fallback() -> List[Dict[str, Any]]:
         insights = []
-        # Insight 1: Operational Attendance & Activity
         att_obs = f"Attendance rate is currently {req.attendanceRate}%, with {req.completedExperiences} completed experiences and {req.upcomingExperiences} planned across {req.scopeName}."
         insights.append({
             "title": "Operational Rhythm & Attendance Health",
@@ -30,7 +35,6 @@ async def generate_organization_intelligence(
             "dataLimitations": "Data reflects records logged during the active reporting period."
         })
 
-        # Insight 2: Curriculum Variety
         top_domain = max(req.domainBreakdown, key=req.domainBreakdown.get) if req.domainBreakdown else "Hands-On Play"
         var_obs = f"Classrooms engaged in {req.uniqueExperiences} distinct learning experiences with a diversity score of {req.varietyDiversityRate}%. The most active area is {top_domain}."
         insights.append({
@@ -42,7 +46,6 @@ async def generate_organization_intelligence(
             "dataLimitations": "Domain distribution is calculated based on planned experience tags."
         })
 
-        # Insight 3: Planning Gaps
         if req.classroomsNeedingPlansCount > 0:
             cls_names = ", ".join(req.classroomsNeedingPlans[:3])
             gap_obs = f"{req.classroomsNeedingPlansCount} classroom(s) ({cls_names}) have fewer than 2 experiences scheduled for the upcoming week."
@@ -55,7 +58,6 @@ async def generate_organization_intelligence(
                 "dataLimitations": "Does not account for unrecorded informal daily play or seasonal closures."
             })
 
-        # Insight 4: Data Quality & Operational Hygiene
         act_obs = f"Identified {req.missingDeparturesCount} departure checks without checkout timestamps and {req.pendingDraftsCount} parent communications awaiting review."
         insights.append({
             "title": "Operational Record Completeness",
@@ -68,24 +70,28 @@ async def generate_organization_intelligence(
 
         return insights
 
-    prompt = f"Please provide executive-level organization intelligence insights based strictly on these metrics:\n{json.dumps(req.model_dump(), indent=2)}"
+    compact_payload = json.dumps(req.model_dump(), separators=(',', ':'))
+    prompt = f"Please provide executive-level organization intelligence insights based strictly on these metrics:\n{compact_payload}"
+    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await gemini_provider.generate_json(
+        raw_result = await provider.generate_json(
             prompt=prompt,
             system_instruction=ORGANIZATION_INTELLIGENCE_INSTRUCTION,
             tenant_context=context,
             temperature=0.3
         )
         if isinstance(raw_result, list) and len(raw_result) > 0:
-            # Validate each item structure
             valid_list = []
             for item in raw_result:
                 if isinstance(item, dict) and "title" in item and "category" in item and "observation" in item:
                     valid_list.append(item)
             if valid_list:
+                await ai_cache.set(cache_key, valid_list, ttl_seconds=1800)
                 return valid_list
     except Exception as ex:
         logger.warning(f"Organization intelligence AI failed: {ex}. Using grounded metrics fallback.")
 
-    return build_grounded_fallback()
+    fallback_res = build_grounded_fallback()
+    await ai_cache.set(cache_key, fallback_res, ttl_seconds=1800)
+    return fallback_res

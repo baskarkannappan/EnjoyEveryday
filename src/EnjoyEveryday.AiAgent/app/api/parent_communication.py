@@ -6,8 +6,9 @@ from app.schemas.requests import ParentCommunicationRequest
 from app.schemas.responses import ParentCommunicationResponse
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
-from app.providers.gemini_provider import gemini_provider
+from app.providers.provider_registry import ai_provider_registry
 from app.prompts.parent_communication import PARENT_COMMUNICATION_INSTRUCTION
+from app.cache.ai_cache import ai_cache
 
 logger = logging.getLogger("EnjoyEveryday.Api.ParentCommunication")
 router = APIRouter(tags=["Parent Communication"])
@@ -28,48 +29,39 @@ async def generate_parent_communication(
             exp_text = "; ".join(req.completedExperiences[:3])
             highlights_parts.append(f"During group exploration, {child_name} participated with interest in: {exp_text}.")
         if req.approvedMoments:
-            mom_text = "; ".join(req.approvedMoments[:3])
-            highlights_parts.append(f"A wonderful moment we observed: {mom_text}.")
+            moments_text = "; ".join(req.approvedMoments[:2])
+            highlights_parts.append(f"Special moments observed today included: {moments_text}.")
         if req.careHighlights:
-            care_text = "; ".join(req.careHighlights[:3])
-            highlights_parts.append(f"Care and daily rhythm highlights: {care_text}.")
-        if not highlights_parts:
-            highlights_parts.append(f"{child_name} had a calm, gentle time participating in classroom play and social interactions.")
+            care_text = "; ".join(req.careHighlights[:2])
+            highlights_parts.append(f"Daily care routine: {care_text}.")
+        if req.teacherNotes:
+            highlights_parts.append(f"Educator note: {req.teacherNotes}.")
 
-        highlights = " ".join(highlights_parts)
-
-        learning_parts = []
-        if req.milestoneHighlights:
-            learning_parts.append(f"Celebrated milestone: {'; '.join(req.milestoneHighlights)}.")
+        growth = f"{child_name} demonstrated curiosity, positive engagement with classroom materials, and collaborative play."
+        starter = f"At home this evening, you might ask {child_name} to share their favorite part of today's classroom activities!"
         if req.completedExperiences:
-            learning_parts.append("These experiences supported hands-on discovery, social cooperation, and fine-motor expression.")
-        else:
-            learning_parts.append("Today's play supported communication, peer relationships, and natural curiosity.")
-        growth = " ".join(learning_parts)
-
-        starter = f"Ask {child_name} about their favorite thing they explored or played with friends today!"
-        if req.completedExperiences:
-            first_exp = req.completedExperiences[0].split(":")[0]
-            starter = f"Ask {child_name} what they enjoyed creating during our '{first_exp}' exploration today!"
-
-        title = f"{child_name}'s Daily Joy & Learning" if req.communicationType == "DailyUpdate" else f"{child_name}'s Weekly Learning Highlights"
+            first_exp = req.completedExperiences[0]
+            starter = f"Ask {child_name} about '{first_exp}' and what they enjoyed creating or discovering!"
 
         return {
-            "title": title,
+            "title": f"{child_name}'s Daily Learning & Care Update",
             "greeting": parent_greeting,
-            "highlights": highlights,
+            "highlights": " ".join(highlights_parts) or f"{child_name} had a calm and engaging day exploring classroom learning centers.",
             "growthAndLearning": growth,
             "familyConversationStarter": starter,
             "signOff": f"Warmly,\nThe {req.classroomName} Team"
         }
 
+    cache_key = ai_cache.generate_key(context.tenant_id, "parent_comm", req.model_dump())
+    cached_comm = await ai_cache.get(cache_key)
+    if cached_comm is not None:
+        return cached_comm
+
     context_payload = {
         "childName": child_name,
         "classroomName": req.classroomName,
+        "date": req.date,
         "recipientName": req.recipientName,
-        "recipientRelationship": req.recipientRelationship,
-        "communicationType": req.communicationType,
-        "reportingPeriod": req.reportingPeriod,
         "attendanceSummary": req.attendanceSummary,
         "completedExperiences": req.completedExperiences[:5],
         "approvedMoments": req.approvedMoments[:5],
@@ -79,17 +71,19 @@ async def generate_parent_communication(
         "teacherNotes": req.teacherNotes
     }
 
-    prompt = f"Please prepare a parent communication draft based strictly on this verified evidence:\n{json.dumps(context_payload, indent=2)}"
+    compact_payload = json.dumps(context_payload, separators=(',', ':'))
+    prompt = f"Please prepare a parent communication draft based strictly on this verified evidence:\n{compact_payload}"
+    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await gemini_provider.generate_json(
+        raw_result = await provider.generate_json(
             prompt=prompt,
             system_instruction=PARENT_COMMUNICATION_INSTRUCTION,
             tenant_context=context,
             temperature=0.3
         )
         if isinstance(raw_result, dict) and "highlights" in raw_result:
-            return {
+            result = {
                 "title": raw_result.get("title", f"{child_name}'s Learning Update"),
                 "greeting": raw_result.get("greeting", parent_greeting),
                 "highlights": raw_result.get("highlights", ""),
@@ -97,7 +91,11 @@ async def generate_parent_communication(
                 "familyConversationStarter": raw_result.get("familyConversationStarter", ""),
                 "signOff": raw_result.get("signOff", f"Warmly,\nThe {req.classroomName} Team")
             }
+            await ai_cache.set(cache_key, result, ttl_seconds=1800)
+            return result
     except Exception as ex:
         logger.warning(f"Parent communication AI call failed: {ex}. Using grounded fallback.")
 
-    return build_grounded_fallback()
+    fallback_res = build_grounded_fallback()
+    await ai_cache.set(cache_key, fallback_res, ttl_seconds=1800)
+    return fallback_res

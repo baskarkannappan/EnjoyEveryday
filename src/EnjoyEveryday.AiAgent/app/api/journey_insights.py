@@ -6,9 +6,10 @@ from app.schemas.requests import JourneyInsightRequest
 from app.schemas.responses import JourneyInsightResponse
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
-from app.providers.gemini_provider import gemini_provider
+from app.providers.provider_registry import ai_provider_registry
 from app.prompts.journey_insights import JOURNEY_INSIGHTS_INSTRUCTION
 from app.validation.evidence_validator import evidence_validator
+from app.cache.ai_cache import ai_cache
 
 logger = logging.getLogger("EnjoyEveryday.Api.JourneyInsights")
 router = APIRouter(tags=["Child Journey Insights"])
@@ -18,6 +19,11 @@ async def get_journey_insights(
     req: JourneyInsightRequest,
     context: TenantContext = Depends(get_tenant_context)
 ):
+    cache_key = ai_cache.generate_key(context.tenant_id, "journey_insights", req.model_dump())
+    cached_insights = await ai_cache.get(cache_key)
+    if cached_insights is not None:
+        return cached_insights
+
     evidence_count = len(req.evidenceMemories)
     memory_dicts = [m.model_dump() for m in req.evidenceMemories[:40]]
     candidate_dicts = [c.model_dump() for c in req.candidateExperiences[:20]]
@@ -32,10 +38,12 @@ async def get_journey_insights(
         "candidateExperiences": candidate_dicts
     }
 
-    prompt = f"Please generate evidence-grounded child journey insights for {req.childName} based on these records:\n{json.dumps(context_payload, indent=2)}"
+    compact_payload = json.dumps(context_payload, separators=(',', ':'))
+    prompt = f"Please generate evidence-grounded child journey insights for {req.childName} based on these records:\n{compact_payload}"
+    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await gemini_provider.generate_json(
+        raw_result = await provider.generate_json(
             prompt=prompt,
             system_instruction=JOURNEY_INSIGHTS_INSTRUCTION,
             tenant_context=context,
@@ -46,7 +54,6 @@ async def get_journey_insights(
         raw_result = None
 
     if not isinstance(raw_result, dict) or "items" not in raw_result:
-        # Grounded deterministic fallback
         fallback_items = []
         rank = 1
 
@@ -94,11 +101,13 @@ async def get_journey_insights(
                 "rankOrder": rank
             })
 
-        return {
+        fallback_res = {
             "overallSummary": f"Records reflect {evidence_count} captured moments for {req.childName} during the requested period.",
             "evidenceGaps": "Records are limited for this period; ongoing observations will deepen future insights." if evidence_count < 3 else None,
             "items": fallback_items
         }
+        await ai_cache.set(cache_key, fallback_res, ttl_seconds=1800)
+        return fallback_res
 
     # Validate output items
     candidate_map = {str(c["id"]): c["title"] for c in candidate_dicts if "id" in c}
@@ -109,7 +118,6 @@ async def get_journey_insights(
         if not isinstance(item, dict):
             continue
 
-        # Grounding check for IdeasToConsider
         s_id = item.get("suggestedExperienceId")
         if s_id and str(s_id) not in candidate_map:
             item["suggestedExperienceId"] = None
@@ -117,13 +125,14 @@ async def get_journey_insights(
         elif s_id and str(s_id) in candidate_map:
             item["suggestedExperienceTitle"] = candidate_map[str(s_id)]
 
-        # Validate citations
         cites = item.get("supportingEvidence", [])
         item["supportingEvidence"] = evidence_validator.validate_evidence_citations(cites, memory_dicts)
         valid_items.append(item)
 
-    return {
+    result = {
         "overallSummary": raw_result.get("overallSummary", f"Progress review for {req.childName}."),
         "evidenceGaps": raw_result.get("evidenceGaps"),
         "items": valid_items
     }
+    await ai_cache.set(cache_key, result, ttl_seconds=1800)
+    return result

@@ -7,12 +7,13 @@ from app.schemas.requests import IdeaRequest, ImproveRequest, MaterialsRequest
 from app.schemas.responses import IdeaResponse, ImproveResponse, MaterialsResponse
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
-from app.providers.gemini_provider import gemini_provider
+from app.providers.provider_registry import ai_provider_registry
 from app.prompts.ideas import IDEAS_INSTRUCTION
 from app.prompts.improve import IMPROVE_INSTRUCTION
 from app.prompts.materials import MATERIALS_INSTRUCTION
 from app.validation.experience_validator import experience_validator
 from app.validation.safety_validator import safety_validator
+from app.cache.ai_cache import ai_cache
 
 logger = logging.getLogger("EnjoyEveryday.Api.Ideas")
 router = APIRouter(tags=["Experience Design"])
@@ -138,10 +139,16 @@ async def generate_ideas(
     req: IdeaRequest,
     context: TenantContext = Depends(get_tenant_context)
 ):
+    cache_key = ai_cache.generate_key(context.tenant_id, "ideas", req.model_dump())
+    cached_ideas = await ai_cache.get(cache_key)
+    if cached_ideas is not None:
+        return cached_ideas
+
     prompt = f"Learning Theme / Starting Idea: {req.idea.strip()}"
+    provider = ai_provider_registry.get_provider()
     
     try:
-        raw_suggestions = await gemini_provider.generate_json(
+        raw_suggestions = await provider.generate_json(
             prompt=prompt,
             system_instruction=IDEAS_INSTRUCTION,
             tenant_context=context,
@@ -206,17 +213,26 @@ async def generate_ideas(
 
             validated_suggestions.append(clean_item)
 
-    return {"suggestions": validated_suggestions}
+    result = {"suggestions": validated_suggestions}
+    await ai_cache.set(cache_key, result, ttl_seconds=1800)
+    return result
 
 @router.post("/api/improve", response_model=ImproveResponse)
 async def improve_experience(
     req: ImproveRequest,
     context: TenantContext = Depends(get_tenant_context)
 ):
-    prompt = f"Improvement Request: {req.requestContext.strip()}\n\nCurrent Experience DNA:\n{json.dumps(req.experienceDna, indent=2)}"
+    cache_key = ai_cache.generate_key(context.tenant_id, "improve", req.model_dump())
+    cached_improvement = await ai_cache.get(cache_key)
+    if cached_improvement is not None:
+        return cached_improvement
+
+    compact_dna = json.dumps(req.experienceDna, separators=(',', ':'))
+    prompt = f"Improvement Request: {req.requestContext.strip()}\n\nCurrent Experience DNA:\n{compact_dna}"
+    provider = ai_provider_registry.get_provider()
     
     try:
-        raw_result = await gemini_provider.generate_json(
+        raw_result = await provider.generate_json(
             prompt=prompt,
             system_instruction=IMPROVE_INSTRUCTION,
             tenant_context=context,
@@ -233,7 +249,9 @@ async def improve_experience(
                 if not clean_data.get(k):
                     clean_data[k] = v
 
-        return {"reason": reason, "updatedData": clean_data}
+        res = {"reason": reason, "updatedData": clean_data}
+        await ai_cache.set(cache_key, res, ttl_seconds=1800)
+        return res
 
     except Exception as ex:
         logger.warning(f"AI improvement failed: {ex}. Returning safe grounded fallback.")
@@ -248,15 +266,22 @@ async def extract_materials(
     req: MaterialsRequest,
     context: TenantContext = Depends(get_tenant_context)
 ):
+    cache_key = ai_cache.generate_key(context.tenant_id, "materials", req.model_dump())
+    cached_mats = await ai_cache.get(cache_key)
+    if cached_mats is not None:
+        return cached_mats
+
     existing_mats = req.experienceDna.get("Materials", []) or req.experienceDna.get("materials", [])
     deduped = set()
     for m in existing_mats:
         if isinstance(m, str) and m.strip():
             deduped.add(m.strip().title())
 
-    prompt = f"Experience Design:\n{json.dumps(req.experienceDna, indent=2)}"
+    compact_dna = json.dumps(req.experienceDna, separators=(',', ':'))
+    prompt = f"Experience Design:\n{compact_dna}"
+    provider = ai_provider_registry.get_provider()
     try:
-        raw_mats = await gemini_provider.generate_json(
+        raw_mats = await provider.generate_json(
             prompt=prompt,
             system_instruction=MATERIALS_INSTRUCTION,
             tenant_context=context,
@@ -273,4 +298,6 @@ async def extract_materials(
     if not final_list:
         final_list = ["Standard classroom learning materials"]
 
-    return {"materials": final_list}
+    res = {"materials": final_list}
+    await ai_cache.set(cache_key, res, ttl_seconds=1800)
+    return res

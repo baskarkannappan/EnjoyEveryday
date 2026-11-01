@@ -303,8 +303,9 @@ public class ActivityRecommendationService : IActivityRecommendationService
             } : null
         };
 
-        var message = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:8000/api/recommendations");
+        var message = new HttpRequestMessage(HttpMethod.Post, "api/recommendations");
         message.Headers.Add("X-Tenant-Api-Key", apiKey);
+        message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
         message.Content = JsonContent.Create(requestBody);
 
         var response = await _httpClient.SendAsync(message, cancellationToken);

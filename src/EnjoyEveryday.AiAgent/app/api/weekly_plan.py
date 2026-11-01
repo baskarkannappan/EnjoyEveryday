@@ -6,9 +6,10 @@ from app.schemas.requests import WeeklyPlanRequest
 from app.schemas.responses import WeeklyPlanResponse
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
-from app.providers.gemini_provider import gemini_provider
+from app.providers.provider_registry import ai_provider_registry
 from app.prompts.weekly_plan import WEEKLY_PLAN_INSTRUCTION
 from app.validation.evidence_validator import evidence_validator
+from app.cache.ai_cache import ai_cache
 
 logger = logging.getLogger("EnjoyEveryday.Api.WeeklyPlan")
 router = APIRouter(tags=["Weekly Planning"])
@@ -22,6 +23,11 @@ async def get_weekly_plan(
 ):
     if not req.candidateExperiences:
         return {"weekSummary": "No candidate experiences available for planning.", "dailyPlans": []}
+
+    cache_key = ai_cache.generate_key(context.tenant_id, "weekly_plan", req.model_dump())
+    cached_plan = await ai_cache.get(cache_key)
+    if cached_plan is not None:
+        return cached_plan
 
     candidate_dicts = [c.model_dump() for c in req.candidateExperiences]
     candidate_map = {str(c["id"]): c for c in candidate_dicts}
@@ -45,10 +51,12 @@ async def get_weekly_plan(
         "candidateExperiences": available_candidates[:30]
     }
 
-    prompt = f"Please generate a balanced Monday-Friday weekly plan draft using these candidate experiences:\n{json.dumps(context_payload, indent=2)}"
+    compact_payload = json.dumps(context_payload, separators=(',', ':'))
+    prompt = f"Please generate a balanced Monday-Friday weekly plan draft using these candidate experiences:\n{compact_payload}"
+    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await gemini_provider.generate_json(
+        raw_result = await provider.generate_json(
             prompt=prompt,
             system_instruction=WEEKLY_PLAN_INSTRUCTION,
             tenant_context=context,
@@ -112,7 +120,9 @@ async def get_weekly_plan(
 
     week_summary = raw_result.get("weekSummary") if isinstance(raw_result, dict) and raw_result.get("weekSummary") else f"Curated weekly plan draft for {req.classroomName} balancing creative play, movement, and hands-on discovery."
 
-    return {
+    result = {
         "weekSummary": week_summary,
         "dailyPlans": daily_plans
     }
+    await ai_cache.set(cache_key, result, ttl_seconds=1800)
+    return result
