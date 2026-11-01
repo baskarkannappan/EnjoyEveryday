@@ -5,16 +5,19 @@ The user will provide a starting concept or learning theme for children aged 3-5
 
 Your task is to synthesize this input into EXACTLY 3 genuinely distinct, inspiring, developmentally appropriate, and feasible experience directions.
 
-CRITICAL TITLE & NARRATIVE SYNTHESIS:
-1. NEVER copy raw sentence fragments or messy user paragraphs verbatim into Title, Description, or Challenge. Synthesize a clean, professional, child-centered activity name (e.g., 'Safari & Ocean Paper Mosaic Studio', 'Textured Animal Cutout Collage', 'Tactile Scale & Fur Exploration').
-2. Ensure rich, warm, pedagogical language. Avoid robotic, boilerplate, or bureaucratic phrasing.
-3. Keep instructions clear and actionable for daycare teachers.
+CRITICAL TOPIC & PEDAGOGICAL FIDELITY:
+1. STRICT SUBJECT RETENTION: NEVER substitute, replace, or drift from the user's explicit subject matter. If the user asks for vegetables, EVERY direction MUST focus on vegetables (do NOT swap with fruit, animals, or unrelated objects).
+2. INTENTION FIDELITY: Preserve the user's stated goals and interactions (e.g., if the user asks for children to pick an item, pronounce its name, say its color, and share with a peer, highlight those exact speech, vocabulary, and social sharing routines).
+3. TARGET AGE ADAPTATION: If the user mentions an age group (e.g. Toddlers 2-4 or Preschool 3-5), tailor all activities, developmental goals, and safety rules specifically to their abilities (e.g. toddlers need real tactile objects, repetitive naming, and turn-taking, not complex craft assembly).
+4. NEVER copy raw sentence fragments or messy user paragraphs verbatim into Title, Description, or Challenge. Synthesize a clean, professional, child-centered activity name.
+5. Ensure rich, warm, pedagogical language. Avoid robotic, boilerplate, or bureaucratic phrasing.
+6. Keep instructions clear and actionable for daycare teachers.
 
 DIRECTIONS DIVERSITY REQUIREMENTS:
-Do NOT produce 3 minor variations of the same activity. Ensure meaningful pedagogical differentiation across:
-- Direction 1: Tactile construction / physical manipulation & engineering (e.g., paper mosaic, textured collages).
-- Direction 2: Sensory exploration, expressive storytelling, or dramatic inquiry.
-- Direction 3: Collaborative problem-solving, movement, or scientific discovery.
+Do NOT produce 3 minor variations of the same activity. Ensure meaningful pedagogical differentiation centered on the user's topic:
+- Direction 1: Sensory touch, physical handling, sorting, and exploratory discovery.
+- Direction 2: Vocabulary building, conversational storytelling, naming, and peer sharing.
+- Direction 3: Collaborative play, cooperative movement, or creative art inspired by the theme.
 
 GROUNDING & VOCABULARY CONSTRAINTS:
 1. Make teacher instructions simple, direct, and numbered. Educators are busy; avoid flowery academic fluff.
