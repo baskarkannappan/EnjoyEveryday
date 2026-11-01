@@ -1,3 +1,4 @@
+using EnjoyEveryday.Application.Common.Messaging;
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Application.Services.Ai;
 using EnjoyEveryday.Shared.Tenancy;
@@ -57,6 +58,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<EndOfDayService>();
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<MediaService>();
+        services.AddScoped<IClassroomCommunicationService, ClassroomCommunicationService>();
+        services.AddScoped<ClassroomCommunicationService>();
         Action<IServiceProvider, HttpClient> configureAiClient = (sp, client) =>
         {
             var config = sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
@@ -108,6 +111,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<AppIdentityContext>());
         services.AddScoped<IUserContext>(sp => sp.GetRequiredService<AppIdentityContext>());
         services.AddScoped<IResourceAuthorizer, ResourceAuthorizer>();
+
+        // Native Microsoft CQRS pipeline (Dispatcher + Handler auto-discovery)
+        services.AddMicrosoftCqrs();
 
         return services;
     }

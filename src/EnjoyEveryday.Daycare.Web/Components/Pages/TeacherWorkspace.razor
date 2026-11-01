@@ -13,12 +13,13 @@
 @inject IDaycareOperationsBoardService OperationsBoardService
 @inject ClassroomService ClassroomService
 @inject ExecutionService ExecutionService
-@inject IParentCommunicationRepository CommunicationRepo
+@inject IClassroomCommunicationService CommunicationService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
+@inject Microsoft.Extensions.Logging.ILogger<TeacherWorkspace> Logger
 
 <PageTitle>My Classroom — EnjoyEveryday</PageTitle>
 
@@ -582,7 +583,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading teacher classrooms: {ex.Message}");
+            Logger.LogError(ex, "Error loading teacher classrooms");
         }
     }
 
@@ -616,7 +617,8 @@
 
             try
             {
-                _chatUnreadCount = await CommunicationRepo.GetUnreadCountForEducatorAsync(TenantContext.TenantId);
+                var feed = await CommunicationService.GetConversationsFeedAsync(classroomId: _selectedClassroomId);
+                _chatUnreadCount = feed.TotalUnreadCount;
             }
             catch
             {
@@ -625,7 +627,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error refreshing teacher board: {ex.Message}");
+            Logger.LogError(ex, "Error refreshing teacher board");
         }
         finally
         {

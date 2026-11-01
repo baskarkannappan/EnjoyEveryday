@@ -206,9 +206,18 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             return profile.IsOrgAdmin;
         }
 
-        // BranchAdmin & OrgAdmin routes:
+        // BranchAdmin & OrgAdmin routes (with specific LeadTeacher allowances):
         if (IsBranchAdminRoute(cleanPath))
         {
+            if (profile.IsLeadTeacher && (cleanPath == "/management/roster" 
+                                      || cleanPath == "/studio" 
+                                      || cleanPath.StartsWith("/studio/") 
+                                      || cleanPath == "/materials-orders" 
+                                      || cleanPath == "/materials-marketplace"))
+            {
+                return true;
+            }
+
             return profile.IsBranchAdmin || profile.IsOrgAdmin;
         }
 

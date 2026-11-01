@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
+using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -25,6 +26,7 @@ public class ActivityRecommendationService : IActivityRecommendationService
     private readonly IUserContext _userContext;
     private readonly HttpClient _httpClient;
     private readonly ITeacherRepository? _teacherRepository;
+    private readonly Microsoft.Extensions.Logging.ILogger<ActivityRecommendationService>? _logger;
 
     public ActivityRecommendationService(
         IActivityRecommendationRepository recommendationRepository,
@@ -37,7 +39,8 @@ public class ActivityRecommendationService : IActivityRecommendationService
         ITenantContext tenantContext,
         IUserContext userContext,
         HttpClient httpClient,
-        ITeacherRepository? teacherRepository = null)
+        ITeacherRepository? teacherRepository = null,
+        Microsoft.Extensions.Logging.ILogger<ActivityRecommendationService>? logger = null)
     {
         _recommendationRepository = recommendationRepository;
         _memoryService = memoryService;
@@ -50,6 +53,7 @@ public class ActivityRecommendationService : IActivityRecommendationService
         _userContext = userContext;
         _httpClient = httpClient;
         _teacherRepository = teacherRepository;
+        _logger = logger;
     }
 
     public async Task<ActivityRecommendationResult> GenerateRecommendationsAsync(
@@ -113,7 +117,7 @@ public class ActivityRecommendationService : IActivityRecommendationService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ActivityRecommendationService] AI Agent query failed: {ex.Message}. Falling back to deterministic matching.");
+                _logger?.LogWarning(ex, "AI Agent query failed. Falling back to deterministic matching.");
             }
         }
 

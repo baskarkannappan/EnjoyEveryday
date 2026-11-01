@@ -4,9 +4,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
 using EnjoyEveryday.Domain.Entities;
-using EnjoyEveryday.Daycare.Web.Components.Pages.Experiences;
+using EnjoyEveryday.Domain.Entities.Learning;
 
-namespace EnjoyEveryday.Daycare.Web.Components.Pages;
+namespace EnjoyEveryday.Application.Services.Learning;
 
 public static class StandaloneHtmlGenerator
 {
@@ -32,9 +32,9 @@ public static class StandaloneHtmlGenerator
         return d;
     }
 
-    public static List<ExperienceStorybook.StoryChapter> BuildChapters(Experience? exp, ExperienceDna dna)
+    public static List<StoryChapter> BuildChapters(Experience? exp, ExperienceDna dna)
     {
-        var chapters = new List<ExperienceStorybook.StoryChapter>();
+        var chapters = new List<StoryChapter>();
         var cleanTitle = CleanTitle(exp?.Title);
         var mission = !string.IsNullOrWhiteSpace(exp?.Description) ? CleanDescription(exp.Description, cleanTitle) : "Discovering new wonders through playful hands and curious eyes.";
         var challenge = !string.IsNullOrWhiteSpace(dna.Challenge) ? dna.Challenge : "Explore materials, test ideas, and discover something surprising together.";
@@ -110,7 +110,7 @@ public static class StandaloneHtmlGenerator
                     wonderPrompt = "Did you see that? What made it happen? Can we do it again?";
                 }
 
-                chapters.Add(new ExperienceStorybook.StoryChapter
+                chapters.Add(new StoryChapter
                 {
                     Number = i + 1,
                     Title = string.IsNullOrWhiteSpace(p.Name) ? $"Step {i + 1}" : p.Name,
@@ -128,7 +128,7 @@ public static class StandaloneHtmlGenerator
         }
         else
         {
-            chapters.Add(new ExperienceStorybook.StoryChapter
+            chapters.Add(new StoryChapter
             {
                 Number = 1,
                 Title = "The Gathering & Setup Invitation",
@@ -143,7 +143,7 @@ public static class StandaloneHtmlGenerator
                 StepIcon = "🌿"
             });
 
-            chapters.Add(new ExperienceStorybook.StoryChapter
+            chapters.Add(new StoryChapter
             {
                 Number = 2,
                 Title = "The Wonder Challenge & Inquiry",
@@ -158,7 +158,7 @@ public static class StandaloneHtmlGenerator
                 StepIcon = "🔍"
             });
 
-            chapters.Add(new ExperienceStorybook.StoryChapter
+            chapters.Add(new StoryChapter
             {
                 Number = 3,
                 Title = "Active Hands-On Play & Construction",
@@ -173,7 +173,7 @@ public static class StandaloneHtmlGenerator
                 StepIcon = "🎨"
             });
 
-            chapters.Add(new ExperienceStorybook.StoryChapter
+            chapters.Add(new StoryChapter
             {
                 Number = 4,
                 Title = "The Magic Moment & Discovery",
@@ -188,7 +188,7 @@ public static class StandaloneHtmlGenerator
                 StepIcon = "✨"
             });
 
-            chapters.Add(new ExperienceStorybook.StoryChapter
+            chapters.Add(new StoryChapter
             {
                 Number = 5,
                 Title = "Pride, Reflection & Story Sharing",
@@ -252,7 +252,7 @@ public static class StandaloneHtmlGenerator
         string watchFor,
         string askQuestions,
         string tryThis,
-        List<ExperienceStorybook.StoryChapter> chapters,
+        List<StoryChapter> chapters,
         string versionInfo = "")
     {
         var sb = new StringBuilder();

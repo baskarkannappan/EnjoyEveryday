@@ -12,17 +12,16 @@
 @rendermode InteractiveServer
 @implements IDisposable
 
-@inject IParentCommunicationRepository CommunicationRepo
+@inject IClassroomCommunicationService CommunicationService
+@inject ClassroomService ClassroomService
 @inject IChildRepository ChildRepo
-@inject IClassroomRepository ClassroomRepo
-@inject IBranchRepository BranchRepo
-@inject IOrganizationRepository OrgRepo
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
 @inject DaycareRealtimeNotificationCenter NotificationCenter
 @inject IRealtimeNotificationService RealtimeNotificationService
 @inject Microsoft.AspNetCore.SignalR.IHubContext<EnjoyEveryday.Daycare.Web.Hubs.ClassroomChatHub> HubContext
 @inject IJSRuntime JSRuntime
+@inject Microsoft.Extensions.Logging.ILogger<ClassroomMessages> Logger
 
 <PageTitle>@(_totalUnread > 0 ? $"({_totalUnread}) 💬 Messages — EnjoyEveryday" : "Classroom Messages — EnjoyEveryday")</PageTitle>
 
@@ -922,82 +921,23 @@
         try
         {
             _loading = true;
-            var tenantId = TenantContext.TenantId;
+            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
 
-            // Load Classrooms
-            var cls = await ClassroomRepo.GetAllAsync(tenantId);
-            _classrooms = cls.Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
-
-            // Load Recent Communications
-            var comms = await CommunicationRepo.GetRecentCommunicationsAsync(tenantId, limit: 100);
-            var commList = comms.ToList();
-
-            var childrenMap = new Dictionary<Guid, Child>();
-            try
+            var feed = await CommunicationService.GetConversationsFeedAsync(classroomId: _selectedClassroomId);
+            _allConversations = feed.Conversations.Select(c => new ConversationItem
             {
-                var allChildren = await ChildRepo.GetAllAsync(tenantId);
-                foreach (var ch in allChildren)
-                {
-                    childrenMap[ch.Id] = ch;
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ClassroomMessages] Note on loading children: {ex.Message}");
-            }
+                ChildId = c.ChildId,
+                ChildName = c.ChildName,
+                ClassroomId = c.ClassroomId,
+                ClassroomName = c.ClassroomName,
+                ParentName = c.ParentName,
+                ParentUserId = c.ParentUserId,
+                LastMessageSnippet = c.LastMessageSnippet,
+                LastMessageTime = c.LastMessageTime,
+                UnreadCount = c.UnreadCount
+            }).ToList();
 
-            var convoList = new List<ConversationItem>();
-            var childIds = commList.Select(c => c.ChildId).Distinct().ToList();
-
-            foreach (var childId in childIds)
-            {
-                var childComms = commList.Where(c => c.ChildId == childId).OrderByDescending(c => c.CreatedAt).ToList();
-                var latest = childComms.FirstOrDefault();
-                if (latest == null) continue;
-
-                childrenMap.TryGetValue(childId, out var child);
-                var childName = child != null ? $"{child.FirstName} {child.LastName}".Trim() : (!string.IsNullOrWhiteSpace(latest.ChildName) ? latest.ChildName : "Student");
-                var classroomId = child?.ClassroomId ?? latest.ClassroomId;
-                var classroom = _classrooms.FirstOrDefault(cl => cl.Id == classroomId);
-                var classroomName = classroom?.Name ?? latest.ClassroomName ?? "Classroom";
-                var unreadCount = childComms.Count(c => c.TeacherId == Guid.Empty && c.DeliveryStatus != "Read");
-
-                convoList.Add(new ConversationItem
-                {
-                    ChildId = childId,
-                    ChildName = childName,
-                    ClassroomId = classroomId,
-                    ClassroomName = classroomName,
-                    ParentName = latest.RecipientName ?? "Parent",
-                    ParentUserId = latest.RecipientUserId,
-                    LastMessageSnippet = !string.IsNullOrWhiteSpace(latest.ContentFinal) ? latest.ContentFinal : latest.ContentDraft,
-                    LastMessageTime = latest.SentAt ?? latest.CreatedAt,
-                    UnreadCount = unreadCount
-                });
-            }
-
-            // Also add enrolled children who have no communications yet
-            foreach (var child in childrenMap.Values)
-            {
-                if (convoList.Any(c => c.ChildId == child.Id)) continue;
-                var classroom = _classrooms.FirstOrDefault(cl => cl.Id == child.ClassroomId);
-                convoList.Add(new ConversationItem
-                {
-                    ChildId = child.Id,
-                    ChildName = $"{child.FirstName} {child.LastName}".Trim(),
-                    ClassroomId = child.ClassroomId,
-                    ClassroomName = classroom?.Name ?? "Classroom",
-                    ParentName = "Family & Guardians",
-                    ParentUserId = null,
-                    LastMessageSnippet = "No messages yet · Click to start chat",
-                    LastMessageTime = child.CreatedAt,
-                    UnreadCount = 0
-                });
-            }
-
-            _allConversations = convoList.OrderByDescending(c => c.UnreadCount > 0).ThenByDescending(c => c.LastMessageTime).ToList();
-            _totalUnread = _allConversations.Sum(c => c.UnreadCount);
-
+            _totalUnread = feed.TotalUnreadCount;
             FilterConversations();
 
             // Auto-select first conversation
@@ -1008,7 +948,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ClassroomMessages] Error loading data: {ex.Message}");
+            Logger.LogError(ex, "Error loading messages data");
         }
         finally
         {
@@ -1061,28 +1001,14 @@
 
         if (_activeChild.ClassroomId.HasValue)
         {
-            _activeClassroom = await ClassroomRepo.GetByIdAsync(tenantId, _activeChild.ClassroomId.Value);
-            if (_activeClassroom != null)
-            {
-                _activeBranch = await BranchRepo.GetByIdAsync(tenantId, _activeClassroom.BranchId);
-            }
+            _activeClassroom = _classrooms.FirstOrDefault(c => c.Id == _activeChild.ClassroomId.Value);
         }
 
         // Load messages for child
-        var rawComms = await CommunicationRepo.GetByChildIdAsync(tenantId, childId);
-        _messages = rawComms.OrderBy(c => c.CreatedAt).Select(c => new ParentChatMessage
-        {
-            Id = c.Id,
-            ChildId = c.ChildId,
-            SenderName = (c.TeacherId == Guid.Empty) ? (c.RecipientName ?? "Parent") : (c.TeacherName ?? "Educator"),
-            Content = !string.IsNullOrWhiteSpace(c.ContentFinal) ? c.ContentFinal : c.ContentDraft,
-            Timestamp = c.SentAt ?? c.CreatedAt,
-            IsFromParent = (c.TeacherId == Guid.Empty),
-            DeliveryStatus = c.DeliveryStatus ?? "Delivered"
-        }).ToList();
+        _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(childId)).ToList();
 
         // Mark as Read in DB
-        await CommunicationRepo.MarkAsReadByEducatorAsync(tenantId, childId);
+        await CommunicationService.MarkConversationAsReadByEducatorAsync(childId);
         await NotificationCenter.NotifyMessagesReadAsync(childId);
 
         StateHasChanged();
@@ -1118,7 +1044,7 @@
                 }
 
                 // Mark read immediately
-                await CommunicationRepo.MarkAsReadByEducatorAsync(TenantContext.TenantId, notification.ChildId);
+                await CommunicationService.MarkConversationAsReadByEducatorAsync(notification.ChildId);
                 await NotificationCenter.NotifyMessagesReadAsync(notification.ChildId);
             }
             else
@@ -1169,32 +1095,7 @@
             var now = DateTimeOffset.UtcNow;
             var educatorName = UserContext.Email?.Split('@')[0] ?? "Teacher";
 
-            var comm = new ParentCommunication
-            {
-                Id = messageId,
-                TenantId = TenantContext.TenantId,
-                OrganizationId = _activeBranch?.OrganizationId ?? TenantContext.TenantId,
-                ClassroomId = _activeChild.ClassroomId,
-                ChildId = _selectedChildId.Value,
-                RecipientUserId = _activeParentUserId,
-                RecipientName = _activeParentName ?? "Parent",
-                CommunicationType = "EducatorMessage",
-                ReportingDateStart = DateOnly.FromDateTime(DateTime.Today),
-                ReportingDateEnd = DateOnly.FromDateTime(DateTime.Today),
-                Title = $"Educator message from {educatorName}",
-                ContentDraft = text,
-                ContentFinal = text,
-                Status = ParentCommunicationStatus.Sent,
-                TeacherId = UserContext.UserId,
-                TeacherName = educatorName,
-                SentAt = now,
-                DeliveryChannel = "Portal",
-                DeliveryStatus = "Delivered",
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-
-            await CommunicationRepo.CreateAsync(comm);
+            await CommunicationService.SendEducatorMessageAsync(_selectedChildId.Value, text, _activeChild.ClassroomId);
 
             _messages.Add(new ParentChatMessage
             {
@@ -1241,7 +1142,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ClassroomMessages] Error sending reply: {ex.Message}");
+            Logger.LogError(ex, "Error sending reply");
         }
         finally
         {
@@ -1295,20 +1196,10 @@
             {
                 if (!_isSending && !_loading && _selectedChildId.HasValue)
                 {
-                    var tenantId = TenantContext.TenantId;
-                    var rawComms = (await CommunicationRepo.GetByChildIdAsync(tenantId, _selectedChildId.Value)).ToList();
-                    if (rawComms.Count != _messages.Count)
+                    var msgs = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
+                    if (msgs.Count != _messages.Count)
                     {
-                        _messages = rawComms.OrderBy(c => c.CreatedAt).Select(c => new ParentChatMessage
-                        {
-                            Id = c.Id,
-                            ChildId = c.ChildId,
-                            SenderName = (c.TeacherId == Guid.Empty) ? (c.RecipientName ?? "Parent") : (c.TeacherName ?? "Educator"),
-                            Content = !string.IsNullOrWhiteSpace(c.ContentFinal) ? c.ContentFinal : c.ContentDraft,
-                            Timestamp = c.SentAt ?? c.CreatedAt,
-                            IsFromParent = (c.TeacherId == Guid.Empty),
-                            DeliveryStatus = c.DeliveryStatus ?? "Delivered"
-                        }).ToList();
+                        _messages = msgs;
 
                         var latest = _messages.LastOrDefault();
                         if (latest != null)
@@ -1330,7 +1221,7 @@
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ClassroomMessages] Sync tick note: {ex.Message}");
+            Logger.LogDebug(ex, "ClassroomMessages sync tick completed with error");
         }
     }
 

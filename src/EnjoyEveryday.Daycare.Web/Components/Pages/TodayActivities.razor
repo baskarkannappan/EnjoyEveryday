@@ -9,20 +9,15 @@
 @using Icons = Microsoft.FluentUI.AspNetCore.Components.Icons
 @using System.Text.Json
 
+@using EnjoyEveryday.Domain.Entities.Learning
+
 @inject PlannerService PlannerService
-@inject ExperienceService ExperienceService
-@inject ClassroomService ClassroomService
-@inject BranchService BranchService
-@inject OrganizationService OrganizationService
-@inject ITeacherService TeacherService
 @inject ExecutionService ExecutionService
-@inject IAccessScopeRepository AccessScopeRepo
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
-@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
-@inject TimeProvider TimeProvider
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject Microsoft.Extensions.Logging.ILogger<TodayActivities> Logger
 
 <PageTitle>Today's Activities — EnjoyEveryday</PageTitle>
 
@@ -666,7 +661,7 @@
     private bool _loading = true;
     private bool _isOperating = false;
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
-    private List<TodayActivityModel> _activities = new();
+    private List<TodayActivityItemDto> _activities = new();
 
     private bool _isActiveSessionOpen = false;
     private Guid _activeScheduleId = Guid.Empty;
@@ -699,154 +694,12 @@
         _loading = true;
         try
         {
-            var tenantId = TenantContext.TenantId;
-            var userId = UserContext.UserId;
-            var orgs = await OrganizationService.GetOrganizationsAsync();
-            var org = orgs.FirstOrDefault();
-            var orgId = org?.Id ?? UserContext.OrganizationId ?? Guid.Empty;
-
-            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-            bool isAdmin = userRoles.Any(r =>
-                r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
-
-            // Fetch assigned classrooms for the logged in user
-            var assignedClassroomIds = new HashSet<Guid>();
-            if (tenantId != Guid.Empty && userId != Guid.Empty)
-            {
-                var assigned = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
-                foreach (var cId in assigned) assignedClassroomIds.Add(cId);
-            }
-
-            // Also check teacher profiles
-            var teacherProfiles = (await TeacherService.GetAllTeachersAsync(tenantId)).ToList();
-            var currentProfile = teacherProfiles.FirstOrDefault(t => t.UserId == userId || t.Id == userId);
-            if (currentProfile != null && !string.IsNullOrWhiteSpace(currentProfile.DraftData))
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(currentProfile.DraftData);
-                    if (doc.RootElement.TryGetProperty("AssignedClassroom", out var cToken) || doc.RootElement.TryGetProperty("assignedClassroom", out cToken))
-                    {
-                        if (Guid.TryParse(cToken.GetString(), out var cId)) assignedClassroomIds.Add(cId);
-                    }
-                }
-                catch { }
-            }
-
-            var allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
-            var classroomLookup = allClassrooms.ToDictionary(c => c.Id);
-
-            var branches = orgId != Guid.Empty ? (await BranchService.GetBranchesAsync(orgId)).ToList() : new List<Branch>();
-            var branchLookup = branches.ToDictionary(b => b.Id);
-
-            // Fetch schedules for selected date
-            var schedules = (await PlannerService.GetSchedulesForDateAsync(_selectedDate)).ToList();
-
-            // Filter schedules: If not admin and user has assigned classrooms, filter to user's assigned classrooms or teacher ID
-            if (!isAdmin && assignedClassroomIds.Any())
-            {
-                schedules = schedules.Where(s => 
-                    assignedClassroomIds.Contains(s.ClassroomId) || 
-                    (currentProfile != null && s.PrimaryTeacherId == currentProfile.Id) ||
-                    s.PrimaryTeacherId == userId
-                ).ToList();
-            }
-
-            var experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
-            var experienceLookup = experiences.ToDictionary(e => e.Id);
-
-            var list = new List<TodayActivityModel>();
-            foreach (var s in schedules)
-            {
-                experienceLookup.TryGetValue(s.ExperienceId, out var exp);
-                classroomLookup.TryGetValue(s.ClassroomId, out var cls);
-                string branchName = "";
-                if (cls != null && branchLookup.TryGetValue(cls.BranchId, out var br))
-                {
-                    branchName = br.Name;
-                }
-
-                string teacherName = "";
-                if (s.PrimaryTeacherId.HasValue)
-                {
-                    var tProf = teacherProfiles.FirstOrDefault(t => t.Id == s.PrimaryTeacherId.Value || t.UserId == s.PrimaryTeacherId.Value);
-                    teacherName = tProf?.FullName ?? "";
-                }
-
-                string domain = "";
-                string ageGroup = cls?.AgeGroup ?? "";
-                if (exp != null && !string.IsNullOrWhiteSpace(exp.DnaPayload))
-                {
-                    try
-                    {
-                        using var dnaDoc = JsonDocument.Parse(exp.DnaPayload);
-                        if (dnaDoc.RootElement.TryGetProperty("Domain", out var dToken) || dnaDoc.RootElement.TryGetProperty("domain", out dToken))
-                        {
-                            domain = dToken.GetString() ?? "";
-                        }
-                        if (string.IsNullOrEmpty(ageGroup) && (dnaDoc.RootElement.TryGetProperty("AgeGroup", out var agToken) || dnaDoc.RootElement.TryGetProperty("ageGroup", out agToken)))
-                        {
-                            ageGroup = agToken.GetString() ?? "";
-                        }
-                    }
-                    catch { }
-                }
-
-                // Format time range string
-                string timeRange;
-                if (s.PlannedStartTime.HasValue && s.PlannedEndTime.HasValue)
-                {
-                    var startDt = DateTime.Today.Add(s.PlannedStartTime.Value);
-                    var endDt = DateTime.Today.Add(s.PlannedEndTime.Value);
-                    timeRange = $"{startDt:hh:mm tt} – {endDt:hh:mm tt}";
-                }
-                else if (s.PlannedStartTime.HasValue)
-                {
-                    var startDt = DateTime.Today.Add(s.PlannedStartTime.Value);
-                    timeRange = $"{startDt:hh:mm tt}";
-                }
-                else
-                {
-                    timeRange = s.TimeOfDay switch
-                    {
-                        "Morning" => "09:00 AM – 10:30 AM",
-                        "Mid-Day" => "11:00 AM – 12:30 PM",
-                        "Afternoon" => "02:00 PM – 03:30 PM",
-                        _ => s.TimeOfDay
-                    };
-                }
-
-                list.Add(new TodayActivityModel
-                {
-                    ScheduleId = s.Id,
-                    ExperienceId = s.ExperienceId,
-                    ClassroomId = s.ClassroomId,
-                    ClassroomName = cls?.Name ?? "Classroom",
-                    BranchName = branchName,
-                    Title = exp?.Title ?? "Assigned Experience",
-                    Description = exp?.Description ?? "",
-                    TimeOfDay = s.TimeOfDay,
-                    PlannedStartTime = s.PlannedStartTime,
-                    PlannedEndTime = s.PlannedEndTime,
-                    TimeRangeDisplay = timeRange,
-                    Status = s.Status,
-                    PreparationNotes = s.PreparationNotes,
-                    Domain = domain,
-                    AgeGroup = ageGroup,
-                    TeacherName = teacherName
-                });
-            }
-
-            // Sequence vertically by planned start time, then time of day
-            _activities = list.OrderBy(a => a.GetSortOrderTime()).ToList();
+            var feed = await PlannerService.GetTodayActivitiesFeedAsync(_selectedDate);
+            _activities = feed.Activities;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading today's activities: {ex.Message}");
+            Logger.LogError(ex, "Error loading today's activities");
         }
         finally
         {
@@ -854,7 +707,7 @@
         }
     }
 
-    private async Task StartActivity(TodayActivityModel act)
+    private async Task StartActivity(TodayActivityItemDto act)
     {
         _isOperating = true;
         try
@@ -875,7 +728,7 @@
         }
     }
 
-    private async Task EndActivity(TodayActivityModel act)
+    private async Task EndActivity(TodayActivityItemDto act)
     {
         _isOperating = true;
         try
@@ -895,13 +748,13 @@
         }
     }
 
-    private void OpenActiveSessionModal(TodayActivityModel act)
+    private void OpenActiveSessionModal(TodayActivityItemDto act)
     {
         _activeScheduleId = act.ScheduleId;
         _isActiveSessionOpen = true;
     }
 
-    private void OpenSessionDetails(TodayActivityModel act)
+    private void OpenSessionDetails(TodayActivityItemDto act)
     {
         Navigation.NavigateTo($"/storybook/{act.ExperienceId}");
     }
@@ -910,41 +763,5 @@
     {
         _isActiveSessionOpen = false;
         await LoadActivitiesAsync();
-    }
-
-    public class TodayActivityModel
-    {
-        public Guid ScheduleId { get; set; }
-        public Guid ExperienceId { get; set; }
-        public Guid ClassroomId { get; set; }
-        public string ClassroomName { get; set; } = "";
-        public string BranchName { get; set; } = "";
-        public string Title { get; set; } = "";
-        public string Description { get; set; } = "";
-        public string TimeOfDay { get; set; } = "";
-        public TimeSpan? PlannedStartTime { get; set; }
-        public TimeSpan? PlannedEndTime { get; set; }
-        public string TimeRangeDisplay { get; set; } = "";
-        public string Status { get; set; } = "Scheduled";
-        public string? PreparationNotes { get; set; }
-        public string Domain { get; set; } = "";
-        public string AgeGroup { get; set; } = "";
-        public string TeacherName { get; set; } = "";
-
-        public bool IsRunning => Status == "Started" || Status == "Active" || Status == "InProgress";
-        public bool IsCompleted => Status == "Completed" || Status == "Finished";
-        public bool IsPending => !IsRunning && !IsCompleted;
-
-        public TimeSpan GetSortOrderTime()
-        {
-            if (PlannedStartTime.HasValue) return PlannedStartTime.Value;
-            return TimeOfDay.ToLowerInvariant() switch
-            {
-                "morning" => new TimeSpan(9, 0, 0),
-                "mid-day" => new TimeSpan(11, 30, 0),
-                "afternoon" => new TimeSpan(14, 0, 0),
-                _ => new TimeSpan(16, 0, 0)
-            };
-        }
     }
 }

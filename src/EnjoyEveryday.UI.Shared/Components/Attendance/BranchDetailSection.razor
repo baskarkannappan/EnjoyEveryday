@@ -1,11 +1,8 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Entities.Attendance
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
-@inject ClassroomService ClassroomService
-@inject ChildService ChildService
-@inject UserService UserService
-@inject ITeacherService TeacherService
 @inject AttendanceService AttendanceService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Nav
@@ -380,134 +377,32 @@
         if (branch == null) return;
         _branchId = branch.Id;
 
-        var classrooms = (await ClassroomService.GetClassroomsAsync(_branchId)).ToList();
-        var classroomMap = classrooms.ToDictionary(c => c.Id);
-        var allChildren = (await ChildService.GetChildrenAsync()).ToList(); 
-        var allUsers = (await UserService.GetTeachersAsync()).ToList();
-        var teacherProfiles = (await TeacherService.GetAllTeachersAsync(org.TenantId)).ToList();
-        var teacherUserMap = teacherProfiles.Where(t => t.UserId.HasValue).ToDictionary(t => t.UserId!.Value, t => t.Id);
-        var userTeacherMap = teacherProfiles.Where(t => t.UserId.HasValue).ToDictionary(t => t.Id, t => t.UserId!.Value);
-
-        var childAtt = (await AttendanceService.GetChildAttendanceAsync(_branchId, _filterDate)).ToList();
-        var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(_branchId, _filterDate)).ToList();
-
-        _classRows = classrooms.Select(c => {
-            var expectedC = allChildren.Count(ch => ch.ClassroomId == c.Id);
-            var presentC = childAtt.Count(a => a.ClassroomId == c.Id && (a.Status == "Present" || a.Status == "Late"));
-            var pendingC = childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked");
-
-            var expectedT = 2;
-            var presentT = teacherAtt.Count(a => a.Status == "Present" || a.Status == "Late");
-            if (presentT > expectedT) presentT = expectedT;
-
-            string status;
-            if (pendingC > 0)
-            {
-                status = "Needs marking";
-            }
-            else if (expectedT > 0 && presentT < expectedT)
-            {
-                status = "Staffing attention";
-            }
-            else
-            {
-                status = "Marked";
-            }
-
-            return new ClassRow {
-                Name = c.Name,
-                Children = $"{presentC} / {expectedC}",
-                Teachers = $"{presentT} / {expectedT}",
-                Pending = pendingC.ToString(),
-                Status = status
-            };
+        var roster = await AttendanceService.GetBranchAttendanceRosterAsync(_branchId, _filterDate);
+        _classRows = roster.Classrooms.Select(c => new ClassRow {
+            Name = c.Name,
+            Children = c.ChildrenRatio,
+            Teachers = c.TeachersRatio,
+            Pending = c.Pending,
+            Status = c.Status
         }).ToList();
 
-        _personRows.Clear();
-        foreach(var child in allChildren)
-        {
-            var cr = classrooms.FirstOrDefault(c => c.Id == child.ClassroomId);
-            var att = childAtt.FirstOrDefault(a => a.ChildId == child.Id);
-            _personRows.Add(new PersonRow {
-                Id = child.Id,
-                Name = $"{child.FirstName} {child.LastName}",
-                Initials = $"{child.FirstName.FirstOrDefault()}{child.LastName.FirstOrDefault()}",
-                Room = cr?.Name ?? "Unknown",
-                ClassroomId = cr?.Id ?? Guid.Empty,
-                Status = att?.Status ?? "Not marked",
-                In = att?.ArrivalTime?.ToString(@"hh\:mm") ?? "—",
-                Out = att?.DepartureTime?.ToString(@"hh\:mm") ?? "—",
-                PickupPersonName = att?.PickupPersonName,
-                PickupPersonRelationship = att?.PickupPersonRelationship,
-                PickupVerificationMethod = att?.PickupVerificationMethod,
-                PickupNotes = att?.PickupNotes,
-                Notes = att?.Notes,
-                Type = "children",
-                AttendanceId = att?.Id
-            });
-        }
-        
-        // Filter teachers to this branch only
-        foreach(var profile in teacherProfiles)
-        {
-            Guid? assignedBranchId = null;
-            Guid? assignedClassroomId = null;
-
-            if (!string.IsNullOrWhiteSpace(profile.DraftData))
-            {
-                try
-                {
-                    using var doc = System.Text.Json.JsonDocument.Parse(profile.DraftData);
-                    if (doc.RootElement.TryGetProperty("AssignedBranch", out var bToken) || doc.RootElement.TryGetProperty("assignedBranch", out bToken))
-                    {
-                        if (Guid.TryParse(bToken.GetString(), out var parsedBranch)) assignedBranchId = parsedBranch;
-                    }
-                    if (doc.RootElement.TryGetProperty("AssignedClassroom", out var cToken) || doc.RootElement.TryGetProperty("assignedClassroom", out cToken))
-                    {
-                        if (Guid.TryParse(cToken.GetString(), out var parsedClassroom)) assignedClassroomId = parsedClassroom;
-                    }
-                }
-                catch { }
-            }
-
-            // If teacher is assigned to classroom in this branch
-            if (!assignedBranchId.HasValue && assignedClassroomId.HasValue && classroomMap.TryGetValue(assignedClassroomId.Value, out var cRoom))
-            {
-                assignedBranchId = cRoom.BranchId;
-            }
-
-            // Check if teacher belongs to current branch
-            bool belongsToBranch = assignedBranchId.HasValue && assignedBranchId.Value == _branchId;
-            
-            // Or if teacher has attendance recorded in this branch today
-            var att = teacherAtt.FirstOrDefault(a => a.TeacherId == profile.Id || (profile.UserId.HasValue && a.TeacherId == profile.UserId.Value));
-            if (!belongsToBranch && att != null)
-            {
-                belongsToBranch = true;
-            }
-
-            if (!belongsToBranch) continue;
-
-            string roomDisplay = "Teacher";
-            if (assignedClassroomId.HasValue && classroomMap.TryGetValue(assignedClassroomId.Value, out var mappedRoom))
-            {
-                roomDisplay = mappedRoom.Name;
-            }
-
-            _personRows.Add(new PersonRow {
-                Id = profile.Id,
-                Name = profile.FullName,
-                Initials = $"{profile.FirstName.FirstOrDefault()}{profile.LastName.FirstOrDefault()}",
-                Room = roomDisplay,
-                ClassroomId = assignedClassroomId ?? Guid.Empty,
-                Status = att?.Status ?? "Not marked",
-                In = att?.ClockInTime?.ToString(@"hh\:mm") ?? "—",
-                Out = att?.ClockOutTime?.ToString(@"hh\:mm") ?? "—",
-                Notes = att?.Notes,
-                Type = "teachers",
-                AttendanceId = att?.Id
-            });
-        }
+        _personRows = roster.People.Select(p => new PersonRow {
+            Id = p.Id,
+            AttendanceId = p.AttendanceId,
+            ClassroomId = p.ClassroomId,
+            Name = p.Name,
+            Initials = p.Initials,
+            Room = p.Room,
+            Status = p.Status,
+            In = p.In,
+            Out = p.Out,
+            PickupPersonName = p.PickupPersonName,
+            PickupPersonRelationship = p.PickupPersonRelationship,
+            PickupVerificationMethod = p.PickupVerificationMethod,
+            PickupNotes = p.PickupNotes,
+            Notes = p.Notes,
+            Type = p.Type
+        }).ToList();
     }
 
     private IEnumerable<ClassRow> GetClassrooms() => _classRows;
@@ -545,36 +440,25 @@
 
     private async Task ShowToast()
     {
-        foreach(var p in _personRows.Where(p => p.IsDirty))
+        var dirty = _personRows.Where(p => p.IsDirty).ToList();
+        if (dirty.Any())
         {
-            if (p.Type == "children")
+            var req = new BulkMarkAttendanceRequest
             {
-                var att = new ChildAttendance {
-                    Id = p.AttendanceId ?? Guid.NewGuid(),
-                    BranchId = _branchId,
+                BranchId = _branchId,
+                Date = _filterDate,
+                Items = dirty.Select(p => new BulkMarkAttendanceItem
+                {
+                    Id = p.Id,
+                    AttendanceId = p.AttendanceId,
                     ClassroomId = p.ClassroomId,
-                    ChildId = p.Id,
-                    AttendanceDate = _filterDate,
                     Status = p.Status,
-                    RecordedByUserId = UserContext.UserId
-                };
-                if (p.Status == "Present" && p.In == "—") att.ArrivalTime = DateTime.Now.TimeOfDay;
-                await AttendanceService.MarkChildAttendanceAsync(att);
-            }
-            else
-            {
-                var att = new TeacherAttendance {
-                    Id = p.AttendanceId ?? Guid.NewGuid(),
-                    BranchId = _branchId,
-                    TeacherId = p.Id,
-                    AttendanceDate = _filterDate,
-                    Status = p.Status,
-                    RecordedByUserId = UserContext.UserId
-                };
-                if (p.Status == "Present" && p.In == "—") att.ClockInTime = DateTime.Now.TimeOfDay;
-                await AttendanceService.MarkTeacherAttendanceAsync(att);
-            }
-            p.IsDirty = false;
+                    In = p.In,
+                    Type = p.Type
+                }).ToList()
+            };
+            await AttendanceService.BulkMarkAttendanceAsync(req, UserContext.UserId);
+            foreach (var p in dirty) p.IsDirty = false;
         }
 
         showToast = true;

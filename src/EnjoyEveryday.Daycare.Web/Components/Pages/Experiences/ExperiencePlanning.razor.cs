@@ -20,9 +20,6 @@ public partial class ExperiencePlanning : ComponentBase
     private ClassroomService ClassroomService { get; set; } = default!;
 
     [Inject]
-    private ExperienceService ExperienceService { get; set; } = default!;
-
-    [Inject]
     private BranchService BranchService { get; set; } = default!;
 
     [Inject]
@@ -92,41 +89,31 @@ public partial class ExperiencePlanning : ComponentBase
 
     private async Task OneClickOrderMissingMaterials()
     {
-        if (_readinessSummary == null || _selectedReadinessExperience == null) return;
-        var missing = _readinessSummary.Materials.Where(m => !m.IsAvailableInStock && !m.IsOrdered).ToList();
-        if (!missing.Any())
-        {
-            _readinessActionMessage = "All materials are already accounted for!";
-            return;
-        }
+        if (_selectedReadinessSchedule == null || _selectedReadinessExperience == null) return;
 
         _isSubmittingOrder = true;
         _readinessActionMessage = null;
         try
         {
-            var targetOrgId = UserContext.OrganizationId ?? _classroom?.BranchId ?? Guid.Empty;
-            var req = new CreateMaterialOrderRequest
+            var req = new EnjoyEveryday.Domain.Entities.Learning.OrderMissingMaterialsRequest
             {
-                OrganizationId = targetOrgId,
+                ScheduleId = _selectedReadinessSchedule.Id,
+                ExperienceId = _selectedReadinessExperience.Id,
                 ClassroomId = _classroom?.Id,
-                PlannedExperienceId = _selectedReadinessExperience.Id,
-                RequiredDeliveryDate = _selectedReadinessSchedule?.ScheduledDate != null
-                    ? new DateTimeOffset(_selectedReadinessSchedule.ScheduledDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero)
-                    : DateTimeOffset.UtcNow.AddDays(3),
-                DeliveryAddress = _classroom?.Name ?? "Main Daycare Center",
-                Notes = $"Order generated from Experience Planning for activity '{_selectedReadinessExperience.Title}'",
-                Items = missing.Select(m => new CreateMaterialOrderItemRequest
-                {
-                    ProductId = m.MatchedProductId ?? Guid.NewGuid(),
-                    Quantity = 1,
-                    FulfilmentMode = m.CanBorrow ? MaterialFulfilmentMode.Borrow : MaterialFulfilmentMode.Purchase,
-                    LoanDurationDays = m.CanBorrow ? 14 : 0
-                }).ToList()
+                OrganizationId = UserContext.OrganizationId ?? _classroom?.BranchId ?? Guid.Empty,
+                DeliveryAddress = _classroom?.Name ?? "Main Daycare Center"
             };
 
-            var order = await MaterialMarketplaceService.SubmitMaterialOrderAsync(req);
-            _readinessActionMessage = $"Order {order.OrderNumber} submitted successfully! Central warehouse has received your request.";
-            _readinessSummary = await MaterialMarketplaceService.CheckExperienceMaterialReadinessAsync(_selectedReadinessExperience.Id, _classroom?.Id ?? Guid.Empty);
+            var result = await PlannerService.OrderMissingMaterialsForScheduleAsync(req);
+            _readinessActionMessage = result.Message;
+            if (result.UpdatedReadiness is ExperienceMaterialReadinessSummary updated)
+            {
+                _readinessSummary = updated;
+            }
+            else
+            {
+                _readinessSummary = await MaterialMarketplaceService.CheckExperienceMaterialReadinessAsync(_selectedReadinessExperience.Id, _classroom?.Id ?? Guid.Empty);
+            }
         }
         catch (Exception ex)
         {
@@ -246,9 +233,6 @@ public partial class ExperiencePlanning : ComponentBase
             _selectedClassroomId = _classroom?.Id;
         }
 
-        var exps = await ExperienceService.GetExperiencesAsync();
-        _experiences = exps.ToDictionary(e => e.Id);
-
         await LoadSchedules();
     }
 
@@ -294,16 +278,27 @@ public partial class ExperiencePlanning : ComponentBase
     {
         if (_classroom != null)
         {
-            var schedules = await PlannerService.GetMonthlyScheduleAsync(_classroom.Id, _currentDate.Year, _currentDate.Month);
-            _schedules = schedules.ToList();
-            CalculateDynamicCards();
+            var summary = await PlannerService.GetMonthlyCalendarSummaryAsync(_classroom.Id, _currentDate.Year, _currentDate.Month);
+            _schedules = summary.Schedules;
+            _experiences = summary.Experiences.ToDictionary(e => e.Id);
+            _exploreCount = summary.ExploreCount;
+            _createCount = summary.CreateCount;
+            _togetherCount = summary.TogetherCount;
+            _moveCount = summary.MoveCount;
+            _totalRhythmCount = summary.TotalRhythmCount;
+            _topGoal = summary.TopGoal;
+            _topGoalsList = summary.TopGoalsList;
+            _commonMaterial = summary.CommonMaterial;
+            _aiSuggestionsList = summary.AiSuggestionsList;
+            _adaptationsList = summary.AdaptationsList;
         }
 
         try
         {
             _events = (await EventService.GetEventsAsync()).ToList();
             _eventClassroomsMap.Clear();
-            foreach (var ev in _events.Where(e => e.Scope == "Classroom"))
+            var classroomEvents = _events.Where(e => e.Scope == "Classroom" && e.EventDate.Year == _currentDate.Year && e.EventDate.Month == _currentDate.Month).ToList();
+            foreach (var ev in classroomEvents)
             {
                 var crIds = await EventService.GetEventClassroomsAsync(ev.Id);
                 _eventClassroomsMap[ev.Id] = crIds.ToHashSet();
@@ -328,105 +323,6 @@ public partial class ExperiencePlanning : ComponentBase
     private List<string> _aiSuggestionsList = new() { "Add more materials to the block area", "Plan a collaborative outdoor experience" };
 
     private List<string> _adaptationsList = new() { "Indoor obstacle course (Move)", "Storytime with props (Together)" };
-
-    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
-
-    private void CalculateDynamicCards()
-    {
-        _exploreCount = 0; _createCount = 0; _togetherCount = 0; _moveCount = 0;
-        var allGoals = new List<string>();
-        var allMaterials = new List<string>();
-        var allAdaptations = new List<string>();
-
-        foreach (var s in _schedules)
-        {
-            if (_experiences.TryGetValue(s.ExperienceId, out var exp))
-            {
-                if (!string.IsNullOrWhiteSpace(exp.DnaPayload))
-                {
-                    try 
-                    {
-                        var dna = JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload, _jsonOptions);
-                        if (dna != null)
-                        {
-                            // Count dimensions present in this experience
-                            if (!string.IsNullOrWhiteSpace(dna.Challenge)) _exploreCount++;
-                            if (!string.IsNullOrWhiteSpace(dna.Create)) _createCount++;
-                            if (!string.IsNullOrWhiteSpace(dna.Together)) _togetherCount++;
-                            if ((dna.Environment != null && dna.Environment.Contains("Outdoor", StringComparison.OrdinalIgnoreCase)) ||
-                                (exp.Title != null && (exp.Title.Contains("Scavenger", StringComparison.OrdinalIgnoreCase) || exp.Title.Contains("Dance", StringComparison.OrdinalIgnoreCase) || exp.Title.Contains("Forest", StringComparison.OrdinalIgnoreCase))))
-                            {
-                                _moveCount++;
-                            }
-
-                            if (dna.DevelopmentalGoals != null && dna.DevelopmentalGoals.Any()) 
-                                allGoals.AddRange(dna.DevelopmentalGoals);
-                            if (dna.Materials != null && dna.Materials.Any()) 
-                                allMaterials.AddRange(dna.Materials);
-                            if (dna.ExecutionGuide?.Adaptations != null && dna.ExecutionGuide.Adaptations.Any()) 
-                                allAdaptations.AddRange(dna.ExecutionGuide.Adaptations);
-                        }
-
-                        // Also parse any lowercase json properties if not captured
-                        using var doc = JsonDocument.Parse(exp.DnaPayload);
-                        if (doc.RootElement.TryGetProperty("materials", out var matArr) && matArr.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var item in matArr.EnumerateArray())
-                            {
-                                var mStr = item.GetString();
-                                if (!string.IsNullOrWhiteSpace(mStr)) allMaterials.Add(mStr);
-                            }
-                        }
-                    }
-                    catch { }
-                }
-            }
-        }
-
-        // Total rhythm sum used for relative mix percentages
-        _totalRhythmCount = _exploreCount + _createCount + _togetherCount + _moveCount;
-        if (_totalRhythmCount == 0) _totalRhythmCount = 1;
-
-        if (allGoals.Any())
-        {
-            var top = allGoals.GroupBy(x => x, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).Take(3).Select(g => g.Key).ToList();
-            _topGoal = top.First();
-            _topGoalsList = top;
-        }
-        else
-        {
-            _topGoal = "Tactile exploration and sensory vocabulary";
-            _topGoalsList = new List<string> { "Color recognition and sorting", "Fine motor coordination using tools", "Cooperative play and turn-taking" };
-        }
-
-        if (allMaterials.Any())
-        {
-            _commonMaterial = allMaterials.GroupBy(x => x, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key ?? "craft materials";
-            _aiSuggestionsList = new List<string> 
-            { 
-                $"Plan an activity centered around {_commonMaterial}", 
-                "Combine this with a new environment to spark curiosity" 
-            };
-        }
-        else
-        {
-            _commonMaterial = "natural materials";
-            _aiSuggestionsList = new List<string> 
-            { 
-                "Plan an activity centered around sensory textures", 
-                "Combine this with a new environment to spark curiosity" 
-            };
-        }
-
-        if (allAdaptations.Any())
-        {
-            _adaptationsList = allAdaptations.Distinct(StringComparer.OrdinalIgnoreCase).Take(3).ToList();
-        }
-        else
-        {
-            _adaptationsList = new List<string> { "Indoor obstacle course (Move)", "Storytime with props (Together)", "Sensory bins with water/sand (Explore)" };
-        }
-    }
 
     private async Task RefreshSchedules()
     {

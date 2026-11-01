@@ -8,6 +8,7 @@ using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
+using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -19,6 +20,7 @@ public class AccountBookService : IAccountBookService
     private readonly IOrganizationRepository _orgRepo;
     private readonly IUserContext _userContext;
     private readonly ITenantContext _tenantContext;
+    private readonly Microsoft.Extensions.Logging.ILogger<AccountBookService>? _logger;
 
     // Concurrent store for investigation notes and manual resolution overrides
     private static readonly ConcurrentDictionary<string, List<string>> _investigationNotes = new();
@@ -30,7 +32,8 @@ public class AccountBookService : IAccountBookService
         IMaterialMarketplaceRepository materialRepo,
         IOrganizationRepository orgRepo,
         IUserContext userContext,
-        ITenantContext tenantContext)
+        ITenantContext tenantContext,
+        Microsoft.Extensions.Logging.ILogger<AccountBookService>? logger = null)
     {
         _platformAdminService = platformAdminService;
         _billingRepository = billingRepository;
@@ -38,6 +41,7 @@ public class AccountBookService : IAccountBookService
         _orgRepo = orgRepo;
         _userContext = userContext;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     private void EnsureAuthorized()
@@ -577,7 +581,7 @@ public class AccountBookService : IAccountBookService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error fetching marketplace orders for Account Book: {ex.Message}");
+            _logger?.LogError(ex, "Error fetching marketplace orders for Account Book");
         }
 
         // 3. Query Invoices & Payments from Billing (Scoped strictly by tenant & caller org for non-platform users)
@@ -622,7 +626,7 @@ public class AccountBookService : IAccountBookService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error fetching invoices for Account Book: {ex.Message}");
+            _logger?.LogError(ex, "Error fetching invoices for Account Book");
         }
 
         return list;

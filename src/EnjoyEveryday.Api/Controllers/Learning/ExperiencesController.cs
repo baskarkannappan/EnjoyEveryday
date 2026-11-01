@@ -25,6 +25,14 @@ public class ExperiencesController : ControllerBase
         return Ok(experiences);
     }
 
+    [HttpGet("catalog")]
+    [HttpGet("/api/v1/experiences/catalog")]
+    public async Task<ActionResult<IEnumerable<ExperienceCatalogItemDto>>> GetCatalog(CancellationToken cancellationToken)
+    {
+        var catalog = await _experienceService.GetCatalogAsync(cancellationToken: cancellationToken);
+        return Ok(catalog);
+    }
+
     [HttpGet("{id}")]
     public async Task<ActionResult<Experience>> GetExperience(Guid id, CancellationToken cancellationToken)
     {
@@ -68,7 +76,31 @@ public class ExperiencesController : ControllerBase
             return NotFound();
         }
     }
+
+    [HttpPost("{id}/publish")]
+    [HttpPost("/api/v1/experiences/{id}/publish")]
+    public async Task<ActionResult<PublishExperienceResult>> PublishExperience(Guid id, [FromBody] PublishExperienceRequest request, CancellationToken cancellationToken)
+    {
+        var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString();
+        var userId = Guid.TryParse(userIdString, out var parsedId) ? parsedId : Guid.Empty;
+
+        try
+        {
+            var result = await _experienceService.PublishExperienceAsync(id, request.Title, request.Description, request.DnaPayload, userId, cancellationToken);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
 }
 
 public record CreateExperienceRequest(string Title, string Description, string DnaPayload);
 public record UpdateExperienceRequest(string Title, string Description, string DnaPayload, string Status, string ChangeReason);
+public record PublishExperienceRequest(string Title, string Description, string DnaPayload);
+

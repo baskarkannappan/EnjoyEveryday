@@ -7,6 +7,7 @@ using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.UI.Shared.Components.DailyCare;
 
@@ -19,6 +20,7 @@ public partial class ChildDailyCareSection : ComponentBase
     [Inject] private ITenantContext TenantContext { get; set; } = default!;
     [Inject] private IUserContext UserContext { get; set; } = default!;
     [Inject] private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
+    [Inject] private Microsoft.Extensions.Logging.ILogger<ChildDailyCareSection>? Logger { get; set; }
 
     private bool _isTeacherOnly = false;
     private HashSet<Guid> _assignedClassroomIds = new();
@@ -29,10 +31,10 @@ public partial class ChildDailyCareSection : ComponentBase
     private Guid? _selectedClassroomId;
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
 
-    private List<ClassroomChildCareStatus> _classroomOverview = new();
+    private List<ClassroomChildCareStatusDto> _classroomOverview = new();
     private Guid _selectedChildId = Guid.Empty;
-    private ClassroomChildCareStatus? _selectedChildStatus;
-    private List<ChildTimelineEntry> _childTimeline = new();
+    private ClassroomChildCareStatusDto? _selectedChildStatus;
+    private List<ChildTimelineEntryDto> _childTimeline = new();
 
     private string _selectedActivity = CareEventTypes.DiaperChange;
     private string _selectedDetail = "Wet";
@@ -150,29 +152,22 @@ public partial class ChildDailyCareSection : ComponentBase
     {
         if (_selectedBranchId == Guid.Empty) return;
 
-        _classroomOverview = (await DailyCareService.GetClassroomOverviewAsync(
-            _selectedBranchId,
-            _selectedClassroomId,
-            _selectedDate)).ToList();
-
-        _lowSupplies = (await DailyCareService.GetLowSuppliesAsync(_selectedBranchId)).ToList();
-        _totalRecordedEventsToday = _classroomOverview.Sum(c => c.TodayEventsCount);
-
         try
         {
-            _pendingHandovers = (await DailyCareService.GetPendingHandoversAsync(_selectedBranchId)).ToList();
-            if (_selectedClassroomId.HasValue)
-            {
-                _classroomHandovers = (await DailyCareService.GetClassroomHandoversAsync(_selectedClassroomId.Value, _selectedDate)).ToList();
-            }
-            else
-            {
-                _classroomHandovers = _pendingHandovers.ToList();
-            }
+            var feed = await DailyCareService.GetClassroomDailyCareFeedAsync(
+                _selectedBranchId,
+                _selectedClassroomId,
+                _selectedDate);
+
+            _classroomOverview = feed.ClassroomOverview;
+            _lowSupplies = feed.LowSupplies;
+            _totalRecordedEventsToday = feed.TotalRecordedEventsToday;
+            _pendingHandovers = feed.PendingHandovers;
+            _classroomHandovers = feed.ClassroomHandovers;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading handovers: {ex.Message}");
+            Logger?.LogError(ex, "Error loading daily care feed");
         }
 
         if (_selectedChildId == Guid.Empty && _classroomOverview.Count > 0)
@@ -193,9 +188,17 @@ public partial class ChildDailyCareSection : ComponentBase
         }
 
         _selectedChildStatus = _classroomOverview.FirstOrDefault(c => c.ChildId == _selectedChildId);
-        _childTimeline = (await DailyCareService.GetChildCareTimelineAsync(_selectedChildId, _selectedDate)).ToList();
-        _childSupplies = (await DailyCareService.GetChildSuppliesAsync(_selectedChildId)).ToList();
-        _currentPlan = await DailyCareService.GetChildCarePlanAsync(_selectedChildId);
+        try
+        {
+            var package = await DailyCareService.GetChildCarePackageAsync(_selectedChildId, _selectedDate);
+            _childTimeline = package.ChildTimeline;
+            _childSupplies = package.ChildSupplies;
+            _currentPlan = package.CurrentPlan;
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogError(ex, "Error loading child care package");
+        }
     }
 
     private async Task OnBranchChanged(ChangeEventArgs e)

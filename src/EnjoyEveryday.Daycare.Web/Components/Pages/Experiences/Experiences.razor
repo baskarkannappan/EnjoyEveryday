@@ -83,7 +83,7 @@
             <div class="stat-badge">
                 <span class="stat-icon">✨</span>
                 <div>
-                    <span class="stat-val">@(_experiences.Count(IsAiCreated))</span>
+                    <span class="stat-val">@(_experiences.Count(e => e.IsAiCreated))</span>
                     <span class="stat-lbl">AI Enhanced</span>
                 </div>
             </div>
@@ -121,19 +121,17 @@
         {
             @foreach (var exp in FilteredExperiences)
             {
-                var type = GetExperienceType(exp);
-
                 <ExperienceCard 
-                    Type="@type" 
+                    Type="@exp.ExperienceType" 
                     Status="@(exp.Status ?? "Idea")" 
                     Title="@exp.Title" 
                     Description="@exp.Description" 
-                    Ages="3-4" 
-                    Duration="15 min" 
-                    Setting="Indoor" 
+                    Ages="@exp.AgeGroup" 
+                    Duration="@exp.Duration" 
+                    Setting="@exp.Environment" 
                     Uses="1" 
-                    Stars="@(_ratings.ContainsKey(exp.Id) ? _ratings[exp.Id].Stars : 0)"
-                    ReviewsCount="@(_ratings.ContainsKey(exp.Id) ? _ratings[exp.Id].Count : 0)"
+                    Stars="@exp.AverageRating"
+                    ReviewsCount="@exp.ReviewCount"
                     Version="v1" 
                     CreatedBy="Teacher"
                     CreatedDate="@exp.CreatedAt.ToString("MMM dd, yyyy")"
@@ -224,16 +222,26 @@
     OnSave="SaveScheduleAsync" />
 
 @code {
-    private IEnumerable<Experience>? _experiences;
+    private IReadOnlyList<ExperienceCatalogItemDto>? _experiences;
     private bool _showCurationModal;
     private Experience? _curationExperience;
     private string? _curationStatus;
 
     private void OpenCurationModal(Guid id)
     {
-        _curationExperience = _experiences?.FirstOrDefault(e => e.Id == id);
-        if (_curationExperience != null)
+        var item = _experiences?.FirstOrDefault(e => e.Id == id);
+        if (item != null)
         {
+            _curationExperience = new Experience
+            {
+                Id = item.Id,
+                TenantId = item.TenantId,
+                OrganizationId = item.OrganizationId,
+                Title = item.Title,
+                Description = item.Description,
+                Status = item.Status,
+                DnaPayload = item.DnaPayload
+            };
             _curationStatus = null;
             _showCurationModal = true;
         }
@@ -271,38 +279,12 @@
         SelectedSort = "newest";
     }
 
-    private static bool IsAiCreated(Experience exp)
-    {
-        if (string.IsNullOrEmpty(exp.DnaPayload)) return false;
-        return exp.DnaPayload.Contains("\"source\": \"ai\"", StringComparison.OrdinalIgnoreCase) ||
-               exp.DnaPayload.Contains("\"source\":\"ai\"", StringComparison.OrdinalIgnoreCase) ||
-               exp.DnaPayload.Contains("ai_generated", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private bool IsPlatform(Experience exp)
-    {
-        return exp.CreatedByUserId != _defaultUserId && !IsAiCreated(exp);
-    }
-
-    private static string GetExperienceType(Experience exp)
-    {
-        if (string.IsNullOrEmpty(exp.DnaPayload)) return "Experience";
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(exp.DnaPayload);
-            if (doc.RootElement.TryGetProperty("type", out var typeEl))
-            {
-                return typeEl.GetString() ?? "Experience";
-            }
-        }
-        catch {}
-        return "Experience";
-    }
-
     private string GetAverageRatingDisplay()
     {
-        if (_ratings == null || !_ratings.Any()) return "4.8";
-        var avg = _ratings.Values.Average(r => r.Stars);
+        if (_experiences == null || !_experiences.Any()) return "4.8";
+        var withReviews = _experiences.Where(e => e.ReviewCount > 0).ToList();
+        if (!withReviews.Any()) return "4.8";
+        var avg = withReviews.Average(e => e.AverageRating);
         return avg > 0 ? avg.ToString("0.0") : "4.8";
     }
 
@@ -310,10 +292,10 @@
     {
         get
         {
-            var allCount = _experiences?.Count() ?? 0;
-            var createdCount = _experiences?.Count(e => !IsAiCreated(e) && !IsPlatform(e)) ?? 0;
-            var platformCount = _experiences?.Count(e => IsPlatform(e)) ?? 0;
-            var aiCount = _experiences?.Count(e => IsAiCreated(e)) ?? 0;
+            var allCount = _experiences?.Count ?? 0;
+            var createdCount = _experiences?.Count(e => !e.IsAiCreated && !e.IsPlatform) ?? 0;
+            var platformCount = _experiences?.Count(e => e.IsPlatform) ?? 0;
+            var aiCount = _experiences?.Count(e => e.IsAiCreated) ?? 0;
 
             return new List<FilterTabs.TabItem>
             {
@@ -325,11 +307,11 @@
         }
     }
 
-    private IEnumerable<Experience> FilteredExperiences
+    private IEnumerable<ExperienceCatalogItemDto> FilteredExperiences
     {
         get
         {
-            if (_experiences == null) return Enumerable.Empty<Experience>();
+            if (_experiences == null) return Enumerable.Empty<ExperienceCatalogItemDto>();
             var query = _experiences.AsEnumerable();
 
             // Tab filter
@@ -337,15 +319,15 @@
             {
                 if (ActiveFilter == "created")
                 {
-                    query = query.Where(e => !IsAiCreated(e) && !IsPlatform(e));
+                    query = query.Where(e => !e.IsAiCreated && !e.IsPlatform);
                 }
                 else if (ActiveFilter == "ai")
                 {
-                    query = query.Where(e => IsAiCreated(e));
+                    query = query.Where(e => e.IsAiCreated);
                 }
                 else if (ActiveFilter == "platform")
                 {
-                    query = query.Where(e => IsPlatform(e));
+                    query = query.Where(e => e.IsPlatform);
                 }
             }
 
@@ -361,13 +343,13 @@
             // Type filter
             if (!string.IsNullOrEmpty(SelectedTypeFilter) && SelectedTypeFilter != "all")
             {
-                query = query.Where(e => GetExperienceType(e).Equals(SelectedTypeFilter, StringComparison.OrdinalIgnoreCase));
+                query = query.Where(e => e.ExperienceType.Equals(SelectedTypeFilter, StringComparison.OrdinalIgnoreCase));
             }
 
             // Sort
             if (SelectedSort == "rating")
             {
-                query = query.OrderByDescending(e => _ratings.ContainsKey(e.Id) ? _ratings[e.Id].Stars : 0);
+                query = query.OrderByDescending(e => e.AverageRating);
             }
             else if (SelectedSort == "title")
             {
@@ -424,9 +406,22 @@
     private bool _isViewModalOpen = false;
     private IEnumerable<ExperienceFeedback>? _currentReviews;
 
-    private async Task OpenViewExperienceModal(Experience exp)
+    private async Task OpenViewExperienceModal(ExperienceCatalogItemDto exp)
     {
-        _currentExperience = exp;
+        _currentExperience = new Experience
+        {
+            Id = exp.Id,
+            TenantId = exp.TenantId,
+            OrganizationId = exp.OrganizationId,
+            Title = exp.Title,
+            Description = exp.Description,
+            Status = exp.Status,
+            DnaPayload = exp.DnaPayload,
+            CreatedByUserId = exp.CreatedByUserId,
+            CreatedAt = exp.CreatedAt,
+            UpdatedAt = exp.UpdatedAt,
+            AverageStars = exp.AverageRating
+        };
         _parsedDna = new ExperienceDna();
         if (!string.IsNullOrEmpty(exp.DnaPayload))
         {
@@ -560,21 +555,9 @@
         await LoadExperiencesAsync();
     }
 
-    private Dictionary<Guid, (double Stars, int Count)> _ratings = new();
-
     private async Task LoadExperiencesAsync()
     {
-        _experiences = await ExperienceService.GetExperiencesAsync();
-        _ratings.Clear();
-        foreach (var exp in _experiences)
-        {
-            var feedbacks = await ExperienceService.GetFeedbackForExperienceAsync(exp.Id);
-            if (feedbacks.Any())
-            {
-                var avg = feedbacks.Average(f => f.Stars);
-                _ratings[exp.Id] = (avg, feedbacks.Count());
-            }
-        }
+        _experiences = await ExperienceService.GetCatalogAsync(_defaultUserId);
     }
 
     private void OpenAddExperienceModal()

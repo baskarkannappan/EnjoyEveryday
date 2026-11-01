@@ -25,6 +25,171 @@ public class ExperienceService
         return await _experienceRepository.GetAllAsync(_tenantContext.TenantId, orgId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ExperienceCatalogItemDto>> GetCatalogAsync(Guid? defaultSystemUserId = null, CancellationToken cancellationToken = default)
+    {
+        var orgId = _userContext.OrganizationId;
+        var experiences = (await _experienceRepository.GetAllAsync(_tenantContext.TenantId, orgId, cancellationToken)).ToList();
+
+        // Batch load all feedback for the current tenant in a single round-trip
+        var allFeedbacks = (await _feedbackRepository.GetAllAsync(_tenantContext.TenantId, cancellationToken)).ToList();
+        var feedbacksByExp = allFeedbacks
+            .Where(f => f.ExperienceId.HasValue)
+            .GroupBy(f => f.ExperienceId!.Value)
+            .ToDictionary(g => g.Key, g => new { Average = g.Average(f => f.Stars), Count = g.Count() });
+
+        var results = new List<ExperienceCatalogItemDto>(experiences.Count);
+
+        foreach (var exp in experiences)
+        {
+            var hasFeedback = feedbacksByExp.TryGetValue(exp.Id, out var fb);
+            var avgStars = hasFeedback ? fb!.Average : (exp.AverageStars > 0 ? exp.AverageStars : 0);
+            var reviewCount = hasFeedback ? fb!.Count : 0;
+
+            var (type, isAi, ageGroup, duration, env) = ParseDnaMetadata(exp.DnaPayload);
+            var isPlatform = defaultSystemUserId.HasValue 
+                && exp.CreatedByUserId != defaultSystemUserId.Value 
+                && !isAi;
+
+            results.Add(new ExperienceCatalogItemDto
+            {
+                Id = exp.Id,
+                TenantId = exp.TenantId,
+                OrganizationId = exp.OrganizationId,
+                Title = exp.Title,
+                Description = exp.Description,
+                Status = exp.Status ?? "Idea",
+                DnaPayload = exp.DnaPayload,
+                CreatedByUserId = exp.CreatedByUserId,
+                CreatedAt = exp.CreatedAt,
+                UpdatedAt = exp.UpdatedAt,
+                AverageRating = avgStars,
+                ReviewCount = reviewCount,
+                ExperienceType = type,
+                IsAiCreated = isAi,
+                IsPlatform = isPlatform,
+                AgeGroup = ageGroup,
+                Duration = duration,
+                Environment = env
+            });
+        }
+
+        return results;
+    }
+
+    public async Task<PublishExperienceResult> PublishExperienceAsync(
+        Guid id,
+        string title,
+        string description,
+        string dnaPayload,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(title) || title == "New Experience")
+        {
+            throw new ArgumentException("Title is required to publish.", nameof(title));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dnaPayload))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(dnaPayload);
+                if (doc.RootElement.TryGetProperty("challenge", out var chalEl))
+                {
+                    var chal = chalEl.GetString();
+                    if (string.IsNullOrWhiteSpace(chal))
+                    {
+                        throw new ArgumentException("Challenge is required to publish.");
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                throw new ArgumentException("Invalid DNA payload format.");
+            }
+        }
+
+        Experience experience;
+        var effectiveUserId = userId != Guid.Empty ? userId : _userContext.UserId;
+
+        if (id == Guid.Empty)
+        {
+            experience = await CreateExperienceAsync(
+                title,
+                description,
+                dnaPayload,
+                effectiveUserId,
+                "Published",
+                cancellationToken);
+        }
+        else
+        {
+            await UpdateExperienceAsync(
+                id,
+                title,
+                description,
+                dnaPayload,
+                "Published",
+                "Published Version",
+                effectiveUserId,
+                cancellationToken);
+
+            experience = await GetExperienceByIdAsync(id, cancellationToken)
+                ?? throw new InvalidOperationException("Experience not found after update.");
+        }
+
+        var versions = (await GetExperienceHistoryAsync(experience.Id, cancellationToken))
+            .OrderByDescending(v => v.VersionNumber)
+            .ToList();
+
+        return new PublishExperienceResult(experience, versions);
+    }
+
+    private static (string Type, bool IsAi, string AgeGroup, string Duration, string Environment) ParseDnaMetadata(string? dnaPayload)
+    {
+        if (string.IsNullOrWhiteSpace(dnaPayload))
+        {
+            return ("Experience", false, "3-4", "15 min", "Indoor");
+        }
+
+        var isAi = dnaPayload.Contains("\"source\": \"ai\"", StringComparison.OrdinalIgnoreCase) ||
+                   dnaPayload.Contains("\"source\":\"ai\"", StringComparison.OrdinalIgnoreCase) ||
+                   dnaPayload.Contains("ai_generated", StringComparison.OrdinalIgnoreCase);
+
+        string type = "Experience";
+        string ageGroup = "3-4";
+        string duration = "15 min";
+        string environment = "Indoor";
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(dnaPayload);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("type", out var typeEl))
+            {
+                type = typeEl.GetString() ?? "Experience";
+            }
+            if (root.TryGetProperty("environment", out var envEl))
+            {
+                environment = envEl.GetString() ?? "Indoor";
+            }
+            if (root.TryGetProperty("ageMin", out var aMin) && root.TryGetProperty("ageMax", out var aMax))
+            {
+                ageGroup = $"{aMin.GetInt32()}-{aMax.GetInt32()}";
+            }
+            if (root.TryGetProperty("duration", out var durEl))
+            {
+                duration = durEl.GetString() ?? "15 min";
+            }
+        }
+        catch
+        {
+            // fallback defaults
+        }
+
+        return (type, isAi, ageGroup, duration, environment);
+    }
+
     public async Task<Experience?> GetExperienceByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
@@ -118,3 +283,6 @@ public class ExperienceService
         return await _feedbackRepository.AddAsync(feedback, cancellationToken);
     }
 }
+
+public record PublishExperienceResult(Experience Experience, IReadOnlyList<ExperienceVersion> Versions);
+

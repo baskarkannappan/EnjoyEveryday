@@ -33,10 +33,20 @@ public static class InfrastructureServiceRegistration
         // Audit
         services.AddScoped<IAuditService, DapperAuditService>();
 
+        // Caching (Tenant-Aware In-Memory Cache)
+        services.AddMemoryCache();
+        services.AddScoped<EnjoyEveryday.Shared.Caching.ITenantMemoryCache, EnjoyEveryday.Infrastructure.Caching.TenantMemoryCache>();
+
         // Repositories
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
-        services.AddScoped<IBranchRepository, BranchRepository>();
-        services.AddScoped<IClassroomRepository, ClassroomRepository>();
+        services.AddScoped<BranchRepository>();
+        services.AddScoped<IBranchRepository>(sp => new EnjoyEveryday.Infrastructure.Repositories.Decorators.CachedBranchRepository(
+            sp.GetRequiredService<BranchRepository>(),
+            sp.GetRequiredService<EnjoyEveryday.Shared.Caching.ITenantMemoryCache>()));
+        services.AddScoped<ClassroomRepository>();
+        services.AddScoped<IClassroomRepository>(sp => new EnjoyEveryday.Infrastructure.Repositories.Decorators.CachedClassroomRepository(
+            sp.GetRequiredService<ClassroomRepository>(),
+            sp.GetRequiredService<EnjoyEveryday.Shared.Caching.ITenantMemoryCache>()));
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IChildRepository, ChildRepository>();
         services.AddScoped<IExperienceRepository, ExperienceRepository>();
@@ -116,6 +126,20 @@ public static class InfrastructureServiceRegistration
 
         // Observability & Diagnostics
         services.AddAppObservability();
+
+        // In-Process Domain Events & Background Processing (Native Microsoft Stack)
+        services.AddSingleton<EnjoyEveryday.Infrastructure.Events.InProcessDomainEventChannel>();
+        services.AddSingleton<EnjoyEveryday.Shared.Events.IDomainEventPublisher, EnjoyEveryday.Infrastructure.Events.ChannelDomainEventPublisher>();
+        services.AddHostedService<EnjoyEveryday.Infrastructure.Events.DomainEventChannelProcessor>();
+        services.AddScoped<EnjoyEveryday.Shared.Events.IDomainEventHandler<EnjoyEveryday.Shared.Events.ClassroomMessageSentEvent>,
+            EnjoyEveryday.Infrastructure.Events.Handlers.ClassroomMessageBackgroundNotificationHandler>();
+
+        // Background Maintenance Worker
+        services.AddHostedService<EnjoyEveryday.Infrastructure.BackgroundWorkers.DaycareMaintenanceHostedService>();
+
+        // Health Checks (PostgreSQL Probe)
+        services.AddHealthChecks()
+            .AddCheck<EnjoyEveryday.Infrastructure.Diagnostics.PostgreSqlHealthCheck>("postgresql", tags: new[] { "ready", "db" });
 
         return services;
     }

@@ -91,6 +91,8 @@ public interface IChildDailyCareService
     Task AcknowledgeHandoverAsync(Guid handoverId, string? notes, CancellationToken ct = default);
     Task<IEnumerable<TeacherHandover>> GetClassroomHandoversAsync(Guid classroomId, DateOnly date, CancellationToken ct = default);
     Task<IEnumerable<TeacherHandover>> GetPendingHandoversAsync(Guid branchId, CancellationToken ct = default);
+    Task<ClassroomDailyCareFeedDto> GetClassroomDailyCareFeedAsync(Guid branchId, Guid? classroomId, DateOnly date, CancellationToken ct = default);
+    Task<ChildCarePackageDto> GetChildCarePackageAsync(Guid childId, DateOnly date, CancellationToken ct = default);
 }
 
 public class ChildDailyCareService : IChildDailyCareService
@@ -797,5 +799,82 @@ public class ChildDailyCareService : IChildDailyCareService
     public async Task<IEnumerable<TeacherHandover>> GetPendingHandoversAsync(Guid branchId, CancellationToken ct = default)
     {
         return await _repository.GetPendingHandoversByBranchAsync(_tenantContext.TenantId, branchId, ct);
+    }
+
+    public async Task<ClassroomDailyCareFeedDto> GetClassroomDailyCareFeedAsync(Guid branchId, Guid? classroomId, DateOnly date, CancellationToken ct = default)
+    {
+        var overview = (await GetClassroomOverviewAsync(branchId, classroomId, date, ct)).ToList();
+        var lowSupplies = (await GetLowSuppliesAsync(branchId, ct)).ToList();
+        var pendingHandovers = (await GetPendingHandoversAsync(branchId, ct)).ToList();
+        List<TeacherHandover> classroomHandovers;
+        if (classroomId.HasValue)
+        {
+            classroomHandovers = (await GetClassroomHandoversAsync(classroomId.Value, date, ct)).ToList();
+        }
+        else
+        {
+            classroomHandovers = pendingHandovers.ToList();
+        }
+
+        var overviewDtos = overview.Select(c => new ClassroomChildCareStatusDto
+        {
+            ChildId = c.ChildId,
+            ChildName = c.ChildName,
+            PhotoUrl = c.PhotoUrl,
+            ClassroomId = c.ClassroomId,
+            ClassroomName = c.ClassroomName,
+            IsCheckedIn = c.IsCheckedIn,
+            AttendanceStatus = c.AttendanceStatus,
+            ArrivalTime = c.ArrivalTime,
+            LastDiaperEvent = c.LastDiaperEvent,
+            LastMealEvent = c.LastMealEvent,
+            ActiveNapSession = c.ActiveNapSession,
+            LastComfortMood = c.LastComfortMood,
+            TodayEventsCount = c.TodayEventsCount,
+            HasLowSupplies = c.HasLowSupplies,
+            ImportantCareAlert = c.ImportantCareAlert
+        }).ToList();
+
+        return new ClassroomDailyCareFeedDto
+        {
+            BranchId = branchId,
+            ClassroomId = classroomId,
+            Date = date,
+            TotalRecordedEventsToday = overview.Sum(c => c.TodayEventsCount),
+            ClassroomOverview = overviewDtos,
+            LowSupplies = lowSupplies,
+            PendingHandovers = pendingHandovers,
+            ClassroomHandovers = classroomHandovers
+        };
+    }
+
+    public async Task<ChildCarePackageDto> GetChildCarePackageAsync(Guid childId, DateOnly date, CancellationToken ct = default)
+    {
+        var timeline = (await GetChildCareTimelineAsync(childId, date, ct)).ToList();
+        var supplies = (await GetChildSuppliesAsync(childId, ct)).ToList();
+        var plan = await GetChildCarePlanAsync(childId, ct);
+
+        var timelineDtos = timeline.Select(t => new ChildTimelineEntryDto
+        {
+            Id = t.Id,
+            EventTime = t.EventTime,
+            TimeLabel = t.TimeLabel,
+            Title = t.Title,
+            Description = t.Description,
+            Category = t.Category,
+            Icon = t.Icon,
+            StaffName = t.StaffName,
+            IsParentVisible = t.IsParentVisible,
+            IsCorrected = t.IsCorrected
+        }).ToList();
+
+        return new ChildCarePackageDto
+        {
+            ChildId = childId,
+            Date = date,
+            ChildTimeline = timelineDtos,
+            ChildSupplies = supplies,
+            CurrentPlan = plan
+        };
     }
 }
