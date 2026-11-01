@@ -37,7 +37,8 @@ public class ExperienceService
 
     public async Task<Experience> CreateExperienceAsync(string title, string description, string dnaPayload, Guid createdByUserId, string? status = null, CancellationToken cancellationToken = default)
     {
-        // if (!_userContext.HasPermission("experience.create")) throw new UnauthorizedAccessException("Requires experience.create permission.");
+        if (!_userContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate)) 
+            throw new UnauthorizedAccessException("Requires experience.create permission.");
         var effectiveUserId = createdByUserId != Guid.Empty ? createdByUserId : _userContext.UserId;
         var experience = new Experience
         {
@@ -58,6 +59,8 @@ public class ExperienceService
 
     public async Task UpdateExperienceAsync(Guid id, string title, string description, string dnaPayload, string status, string changeReason, Guid modifiedByUserId, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate)) 
+            throw new UnauthorizedAccessException("Requires experience.create permission.");
         var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
         if (experience == null) throw new InvalidOperationException("Experience not found.");
 
@@ -78,6 +81,8 @@ public class ExperienceService
 
     public async Task DeleteExperienceAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!_userContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate)) 
+            throw new UnauthorizedAccessException("Requires experience.create permission.");
         var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
         if (experience != null && _userContext.OrganizationId.HasValue && experience.OrganizationId.HasValue && experience.OrganizationId.Value != _userContext.OrganizationId.Value)
         {

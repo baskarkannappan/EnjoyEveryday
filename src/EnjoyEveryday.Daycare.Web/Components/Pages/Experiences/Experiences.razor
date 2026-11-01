@@ -15,6 +15,7 @@
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>My Experiences — EnjoyEveryday</PageTitle>
 
@@ -33,19 +34,22 @@
                 <span>🛒</span>
                 <span>Experience Marketplace</span>
             </a>
-            <button class="btn-hero-secondary" @onclick='() => NavigationManager.NavigateTo("/studio")'>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-                </svg>
-                <span>Experience Studio</span>
-            </button>
-            <button id="createExperienceButton" class="btn-hero-primary" @onclick="OpenAddExperienceModal">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                <span>Create experience</span>
-            </button>
+            @if (_canManageExperiences)
+            {
+                <button class="btn-hero-secondary" @onclick='() => NavigationManager.NavigateTo("/studio")'>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                    </svg>
+                    <span>Experience Studio</span>
+                </button>
+                <button id="createExperienceButton" class="btn-hero-primary" @onclick="OpenAddExperienceModal">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    <span>Create experience</span>
+                </button>
+            }
         </div>
     </div>
 
@@ -148,9 +152,12 @@
                     <button class="btn-hero-secondary" @onclick="ResetFilters">
                         Clear all filters
                     </button>
-                    <button class="btn-hero-primary" @onclick="OpenAddExperienceModal">
-                        + Create experience
-                    </button>
+                    @if (_canManageExperiences)
+                    {
+                        <button class="btn-hero-primary" @onclick="OpenAddExperienceModal">
+                            + Create experience
+                        </button>
+                    }
                 </div>
             </div>
         }
@@ -174,6 +181,7 @@
 
 <ExperienceViewModal 
     IsOpen="@_isViewModalOpen"
+    CanManage="@_canManageExperiences"
     Title="@(_currentExperience?.Title ?? "Experience")"
     Mission="@(_currentExperience?.Description ?? "No description available.")"
     Discover="@(_parsedDna?.Create ?? "")"
@@ -443,6 +451,7 @@
 
     private async Task DuplicateExperience()
     {
+        if (!_canManageExperiences) return;
         var sourceExp = _currentExperience;
         await ExperienceService.CreateExperienceAsync(
             sourceExp.Title + " (Copy)",
@@ -463,7 +472,7 @@
     {
         var js = @"
             var content = document.querySelector('.modal').innerHTML;
-            var printWindow = window.open('', '', 'height=800,width=800');
+            printWindow = window.open('', '', 'height=800,width=800');
             printWindow.document.write('<html><head><title>Print Experience</title>');
             printWindow.document.write('<style>body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; line-height: 1.6; color: #333; } h2, h3 { color: #111; } .eyebrow { font-size: 12px; font-weight: bold; color: #666; text-transform: uppercase; margin-bottom: 10px; } .detail { margin-top: 20px; margin-bottom: 20px; } .detail label { font-weight: bold; font-size: 14px; color: #555; display: block; margin-bottom: 5px; } .modal-meta { font-weight: bold; color: #444; margin-bottom: 20px; } .modal-footer, .modal-close, button { display: none !important; } ul { padding-left: 20px; } hr { border: none; border-top: 1px dashed #ccc; margin: 30px 0; } </style>');
             printWindow.document.write('</head><body>');
@@ -499,6 +508,7 @@
 
     private void ImproveExperience()
     {
+        if (!_canManageExperiences) return;
         CloseViewDialog();
         NavigationManager.NavigateTo($"/studio/{_currentExperience.Id}");
     }
@@ -530,6 +540,7 @@
         }
     }
 
+    private bool _canManageExperiences = false;
     private bool _isEditing = false;
     private Guid _defaultUserId = Guid.Parse("50000000-0000-0000-0000-000000000001");
 
@@ -542,6 +553,10 @@
             var newUser = await UserService.CreateUserAsync("system@enjoyeveryday.com", "System", "User", "TEMP_HASH");
             _defaultUserId = newUser.Id;
         }
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        _canManageExperiences = profile.IsOrgAdmin || profile.IsBranchAdmin || UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate);
+
         await LoadExperiencesAsync();
     }
 
@@ -564,6 +579,7 @@
 
     private void OpenAddExperienceModal()
     {
+        if (!_canManageExperiences) return;
         _currentExperience = new Experience { DnaPayload = "{\"type\": \"Experience\"}" };
         experienceAge = "3-4";
         experienceDuration = "15 minutes";
@@ -577,6 +593,7 @@
 
     private void OpenEditExperienceModal(Experience exp)
     {
+        if (!_canManageExperiences) return;
         _currentExperience = new Experience
         {
             Id = exp.Id,
@@ -598,6 +615,7 @@
 
     private async Task SaveExperienceAsync()
     {
+        if (!_canManageExperiences) return;
         if (string.IsNullOrWhiteSpace(_currentExperience.Title)) return;
 
         if (_isEditing)
@@ -627,6 +645,7 @@
 
     private async Task DeleteExperienceAsync()
     {
+        if (!_canManageExperiences) return;
         if (_currentExperience.Id != Guid.Empty)
         {
             await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);

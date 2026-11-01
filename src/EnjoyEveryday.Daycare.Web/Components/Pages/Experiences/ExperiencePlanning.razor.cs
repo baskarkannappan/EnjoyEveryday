@@ -46,6 +46,11 @@ public partial class ExperiencePlanning : ComponentBase
     [Inject]
     private EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService { get; set; } = default!;
 
+    [Inject]
+    private EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth { get; set; } = default!;
+
+    private bool _canPlan = false;
+
     private bool _isMaterialReadinessModalOpen = false;
     private ExperienceSchedule? _selectedReadinessSchedule;
     private Experience? _selectedReadinessExperience;
@@ -212,6 +217,14 @@ public partial class ExperiencePlanning : ComponentBase
 
     protected override async Task OnInitializedAsync()
     {
+        var profile = await PageAuth.GetUserProfileAsync();
+        _canPlan = profile.IsOrgAdmin || profile.IsBranchAdmin || profile.IsLeadTeacher || UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceSchedule);
+        if (!_canPlan)
+        {
+            NavigationManager.NavigateTo("/today-activities");
+            return;
+        }
+
         var today = TimeProvider.GetLocalNow().Date;
         _currentDate = new DateTime(today.Year, today.Month, 1);
 

@@ -375,6 +375,14 @@ public class PlatformAdminService : IPlatformAdminService
         }).OrderBy(a => a.OrganizationName).ToList();
     }
 
+    public async Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId = null, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            await _platformAdminRepository.CreateAdminUserAsync(email, firstName, lastName, password, roleName, orgId, cancellationToken);
+        }
+    }
+
     private static string DeriveDisplayNameFromEmail(string email)
     {
         if (string.IsNullOrWhiteSpace(email)) return "Daycare Director";

@@ -88,6 +88,7 @@ public interface IPlatformAdminService
     Task<List<PlatformBranchDto>> GetAllBranchesAsync(CancellationToken cancellationToken = default);
     Task<PlatformBranchDto> CreateBranchAsync(Guid organizationId, string name, string? location, CancellationToken cancellationToken = default);
     Task<List<PlatformAdminUserDto>> GetOrganizationAdminsAsync(CancellationToken cancellationToken = default);
+    Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId = null, CancellationToken cancellationToken = default);
 
     // Organization CRUD
     Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(

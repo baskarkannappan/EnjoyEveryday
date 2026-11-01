@@ -9,11 +9,22 @@
 <div class="content">
     <PageHero Eyebrow="ORGANIZATION MANAGEMENT"
               Title="Organization Administrators"
-              Subtitle="Assigned daycare directors, owners, and primary billing administrators.">
+              Subtitle="Directory of system administrators, daycare directors, owners, and billing admins.">
         <RightContent>
+            <button class="btn primary" @onclick="OpenCreateAdminModal" style="display: inline-flex; align-items: center; gap: 6px;">
+                <span>+ Add Administrator</span>
+            </button>
             <a href="/" class="btn secondary">← Back to Dashboard</a>
         </RightContent>
     </PageHero>
+
+    @if (!string.IsNullOrEmpty(_notificationMessage))
+    {
+        <div style="background: #eaf2ec; border: 1px solid #b7d1c0; color: #2e4d3a; padding: 12px 16px; border-radius: 10px; font-size: 13.5px; font-weight: 600; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <span>✓ @_notificationMessage</span>
+            <button type="button" @onclick="() => _notificationMessage = null" style="background:none;border:none;cursor:pointer;color:#2e4d3a;font-weight:700;">✕</button>
+        </div>
+    }
 
     <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
         <p style="color: var(--muted); font-size: 14px; margin-top: 0; margin-bottom: 16px;">
@@ -25,7 +36,7 @@
                          SearchQueryChanged="OnSearch">
             <Filters>
                 <select class="filter" @bind="_selectedOrgFilter">
-                    <option value="">All Daycare Organizations (@(_admins?.Count ?? 0) admins)</option>
+                    <option value="">All Organizations (@(_admins?.Count ?? 0) admins)</option>
                     @foreach (var org in _organizations)
                     {
                         <option value="@org.Id">@org.Name</option>
@@ -36,7 +47,7 @@
 
         @if (_isLoading)
         {
-            <LoadingState Text="Loading organization administrators..." />
+            <LoadingState Text="Loading administrators..." />
         }
         else if (FilteredAdmins.Count == 0)
         {
@@ -49,7 +60,7 @@
                     <thead>
                         <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
                             <th style="padding: 12px 14px; text-align: left;">Administrator</th>
-                            <th style="padding: 12px 14px; text-align: left;">Daycare Organization</th>
+                            <th style="padding: 12px 14px; text-align: left;">Organization / Scope</th>
                             <th style="padding: 12px 14px; text-align: left;">Role</th>
                             <th style="padding: 12px 14px; text-align: left;">Account Status</th>
                         </tr>
@@ -57,17 +68,28 @@
                     <tbody>
                         @foreach (var admin in FilteredAdmins)
                         {
+                            bool isPlatformAdmin = admin.RoleName.Contains("Platform", StringComparison.OrdinalIgnoreCase);
                             <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
                                 <td style="padding: 14px;">
                                     <strong>@admin.AdminName</strong>
                                     <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">@admin.AdminEmail</div>
                                 </td>
                                 <td style="padding: 14px; font-weight: 650; color: var(--text);">
-                                    @admin.OrganizationName
+                                    @if (isPlatformAdmin)
+                                    {
+                                        <span style="display: inline-flex; align-items: center; gap: 5px; color: #2d5a45;">
+                                            <span>🌐</span>
+                                            <span>EnjoyEveryday Platform (Global)</span>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span>@admin.OrganizationName</span>
+                                    }
                                 </td>
                                 <td style="padding: 14px;">
-                                    <span style="background: #edf1ec; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 650; color: #3e5044;">
-                                        @FormatRoleName(admin.RoleName)
+                                    <span style="background: @(isPlatformAdmin ? "#e6eee9" : "#edf1ec"); color: @(isPlatformAdmin ? "#2e5a45" : "#3e5044"); padding: 3px 9px; border-radius: 6px; font-size: 12px; font-weight: 700; border: 1px solid @(isPlatformAdmin ? "#c9dacf" : "#d8e2d9");">
+                                        @(isPlatformAdmin ? "👑 Platform Administrator" : FormatRoleName(admin.RoleName))
                                     </span>
                                 </td>
                                 <td style="padding: 14px;">
@@ -82,12 +104,105 @@
     </div>
 </div>
 
+<!-- ================= CREATE ADMINISTRATOR MODAL ================= -->
+@if (_showCreateModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">PLATFORM GOVERNANCE</div>
+                    <h3 class="modal-title">Create Administrator User</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: var(--muted); margin: 0;">
+                    Add a new platform-level administrator or assign daycare organization ownership.
+                </p>
+
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;">
+                        @_errorMessage
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label>Administrator Role &amp; Scope *</label>
+                    <select class="form-input" @bind="_createRole">
+                        <option value="PlatformAdmin">👑 Platform Administrator (Global Platform Access — Port 7004)</option>
+                        <option value="OrganizationOwner">🏢 Daycare Organization Owner</option>
+                        <option value="OrganizationAdmin">🏛️ Daycare Organization Admin</option>
+                    </select>
+                </div>
+
+                @if (_createRole != "PlatformAdmin")
+                {
+                    <div class="form-group">
+                        <label>Assign to Daycare Organization *</label>
+                        <select class="form-input" @bind="_createOrgId">
+                            <option value="">-- Select Daycare Organization --</option>
+                            @foreach (var org in _organizations)
+                            {
+                                <option value="@org.Id">@org.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>First Name *</label>
+                        <input type="text" class="form-input" placeholder="e.g. Alex" @bind="_createFirstName" />
+                    </div>
+                    <div class="form-group">
+                        <label>Last Name *</label>
+                        <input type="text" class="form-input" placeholder="e.g. Rivera" @bind="_createLastName" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Email Address *</label>
+                    <input type="email" class="form-input" placeholder="alex.rivera@example.com" @bind="_createEmail" />
+                </div>
+
+                <div class="form-group">
+                    <label>Initial Password (or login via Google SSO)</label>
+                    <input type="text" class="form-input" placeholder="Welcome@123" @bind="_createPassword" />
+                    <span style="font-size: 11px; color: var(--muted); margin-top: 2px;">
+                        User can sign in with this password or via Google Single Sign-On matching this email address.
+                    </span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals" disabled="@_isSaving">Cancel</button>
+                <button class="btn primary" @onclick="SubmitCreateAdmin" disabled="@(_isSaving || string.IsNullOrWhiteSpace(_createEmail))">
+                    @(_isSaving ? "Creating..." : "Create Administrator")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<PlatformAdminUserDto>? _admins;
     private List<PlatformOrganizationDto> _organizations = new();
     private bool _isLoading = true;
     private string _search = "";
     private string _selectedOrgFilter = "";
+    private string? _notificationMessage;
+
+    // Modal state
+    private bool _showCreateModal = false;
+    private bool _isSaving = false;
+    private string? _errorMessage;
+    private string _createRole = "PlatformAdmin";
+    private string _createOrgId = "";
+    private string _createFirstName = "";
+    private string _createLastName = "";
+    private string _createEmail = "";
+    private string _createPassword = "Welcome@123";
 
     protected override async Task OnInitializedAsync()
     {
@@ -108,6 +223,70 @@
         }
     }
 
+    private void OpenCreateAdminModal()
+    {
+        _errorMessage = null;
+        _createRole = "PlatformAdmin";
+        _createOrgId = "";
+        _createFirstName = "";
+        _createLastName = "";
+        _createEmail = "";
+        _createPassword = "Welcome@123";
+        _showCreateModal = true;
+    }
+
+    private void CloseModals()
+    {
+        _showCreateModal = false;
+        _errorMessage = null;
+    }
+
+    private async Task SubmitCreateAdmin()
+    {
+        if (string.IsNullOrWhiteSpace(_createEmail))
+        {
+            _errorMessage = "Please enter an email address.";
+            return;
+        }
+
+        Guid? targetOrgId = null;
+        if (_createRole != "PlatformAdmin")
+        {
+            if (!Guid.TryParse(_createOrgId, out var parsedOrgId) || parsedOrgId == Guid.Empty)
+            {
+                _errorMessage = "Please select a daycare organization for this administrator.";
+                return;
+            }
+            targetOrgId = parsedOrgId;
+        }
+
+        _isSaving = true;
+        _errorMessage = null;
+
+        try
+        {
+            await PlatformService.CreateAdminUserAsync(
+                _createEmail.Trim(),
+                _createFirstName.Trim(),
+                _createLastName.Trim(),
+                _createPassword.Trim(),
+                _createRole,
+                targetOrgId);
+
+            _notificationMessage = $"Administrator '{_createEmail.Trim()}' created successfully as {_createRole}.";
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to create administrator: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
     private List<PlatformAdminUserDto> FilteredAdmins =>
         (_admins ?? new List<PlatformAdminUserDto>())
         .Where(a => (string.IsNullOrWhiteSpace(_selectedOrgFilter) || a.OrganizationId.ToString() == _selectedOrgFilter)
@@ -115,7 +294,8 @@
                      || a.AdminName.Contains(_search, StringComparison.OrdinalIgnoreCase)
                      || a.AdminEmail.Contains(_search, StringComparison.OrdinalIgnoreCase)
                      || a.OrganizationName.Contains(_search, StringComparison.OrdinalIgnoreCase)))
-        .OrderBy(a => a.OrganizationName)
+        .OrderByDescending(a => a.RoleName.Contains("Platform", StringComparison.OrdinalIgnoreCase))
+        .ThenBy(a => a.OrganizationName)
         .ThenBy(a => a.AdminName)
         .ToList();
 

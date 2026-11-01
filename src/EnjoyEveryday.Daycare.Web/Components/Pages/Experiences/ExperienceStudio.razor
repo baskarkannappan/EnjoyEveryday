@@ -16,6 +16,7 @@
 @inject EnjoyEveryday.Daycare.Web.Services.StorybookStorageService StorybookStorageService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject EnjoyEveryday.Application.Services.Ai.IStorybookGenerationService StorybookGenerationService
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 <div class="content">
     <PageHero Eyebrow="Little Stars"
               Title="Experience Studio"
@@ -691,6 +692,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var profile = await PageAuth.GetUserProfileAsync();
+        if (!profile.IsOrgAdmin && !profile.IsBranchAdmin && !UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate))
+        {
+            NavigationManager.NavigateTo("/experiences");
+            return;
+        }
+
         _currentUserId = UserContext.UserId;
         if (_currentUserId == Guid.Empty)
         {

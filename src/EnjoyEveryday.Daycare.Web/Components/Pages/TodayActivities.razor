@@ -22,6 +22,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 <PageTitle>Today's Activities — EnjoyEveryday</PageTitle>
 
@@ -36,7 +37,10 @@
                 {
                     <button class="btn secondary" @onclick="GoToToday">Today</button>
                 }
-                <a href="/planning" class="btn secondary">Planning Calendar →</a>
+                @if (_canPlan)
+                {
+                    <a href="/planning" class="btn secondary">Planning Calendar →</a>
+                }
             </div>
         </RightContent>
     </PageHero>
@@ -78,7 +82,10 @@
                     There are no planned experiences mapped to your assigned classroom(s) for this day. You can draft plans in the Activity Planner.
                 </p>
                 <div class="empty-actions">
-                    <a href="/planning" class="btn primary">+ Plan Experience for Today</a>
+                    @if (_canPlan)
+                    {
+                        <a href="/planning" class="btn primary">+ Plan Experience for Today</a>
+                    }
                     <a href="/experiences" class="btn secondary">Explore Experience Library</a>
                 </div>
             </div>
@@ -663,9 +670,12 @@
 
     private bool _isActiveSessionOpen = false;
     private Guid _activeScheduleId = Guid.Empty;
+    private bool _canPlan = false;
 
     protected override async Task OnInitializedAsync()
     {
+        var profile = await PageAuth.GetUserProfileAsync();
+        _canPlan = profile.IsOrgAdmin || profile.IsBranchAdmin || profile.IsLeadTeacher || UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceSchedule);
         await LoadActivitiesAsync();
     }
 

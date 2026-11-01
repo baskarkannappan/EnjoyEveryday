@@ -69,7 +69,7 @@ public static class RoleTemplates
         Permissions.BranchManage, Permissions.ClassroomManage, Permissions.StaffManage, Permissions.AuditView,
         Permissions.ChildView, Permissions.ChildManage, Permissions.ChildEnrollmentManage,
         Permissions.FamilyManage, Permissions.FamilyVerify,
-        Permissions.ExperienceView, Permissions.ExperienceSchedule, Permissions.ExperiencePlanSubmit, Permissions.ExperiencePlanApprove,
+        Permissions.ExperienceView, Permissions.ExperienceCreate, Permissions.ExperienceSchedule, Permissions.ExperiencePlanSubmit, Permissions.ExperiencePlanApprove,
         Permissions.ExperienceExecute, Permissions.ChildObserve, Permissions.ObservationApprove,
         Permissions.JourneyViewInternal, Permissions.JourneyPublish, Permissions.AiUse,
         Permissions.AttendanceView, Permissions.AttendanceRecord, Permissions.AttendanceCorrect, Permissions.AttendanceApprove,
@@ -102,8 +102,7 @@ public static class RoleTemplates
     // by which assignment records (branch work vs classroom) scope them.
     private static readonly string[] TeacherPermissions =
     {
-        Permissions.ChildView, Permissions.ExperienceView, Permissions.ExperienceSchedule,
-        Permissions.ExperiencePlanSubmit, Permissions.ExperienceExecute,
+        Permissions.ChildView, Permissions.ExperienceView, Permissions.ExperienceExecute,
         Permissions.ChildObserve, Permissions.AiUse,
         Permissions.AttendanceView, Permissions.AttendanceRecord,
         Permissions.CareView, Permissions.CareRecord,

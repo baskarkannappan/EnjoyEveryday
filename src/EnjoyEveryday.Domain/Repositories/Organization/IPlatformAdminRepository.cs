@@ -50,4 +50,5 @@ public interface IPlatformAdminRepository
     Task<List<PlatformDbBranchRecord>> GetAllBranchesAsync(CancellationToken ct = default);
     Task<PlatformDbBranchRecord> AddBranchAsync(Guid organizationId, string name, string? location, CancellationToken ct = default);
     Task<List<PlatformDbAdminUserRecord>> GetOrganizationAdminsAsync(CancellationToken ct = default);
+    Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId, CancellationToken ct = default);
 }

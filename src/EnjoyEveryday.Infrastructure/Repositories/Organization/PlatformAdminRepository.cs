@@ -99,4 +99,21 @@ public class PlatformAdminRepository : IPlatformAdminRepository
             cancellationToken: ct);
         return list.ToList();
     }
+
+    public async Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteProcedureAsync(
+            "sp_create_admin_user",
+            new
+            {
+                Email = email,
+                FirstName = firstName,
+                LastName = lastName,
+                Password = password,
+                RoleName = roleName,
+                OrgId = orgId
+            },
+            cancellationToken: ct);
+    }
 }

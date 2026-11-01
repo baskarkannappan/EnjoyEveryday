@@ -212,6 +212,12 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             return profile.IsBranchAdmin || profile.IsOrgAdmin;
         }
 
+        // Planning routes: OrgAdmin, BranchAdmin, and LeadTeacher can plan:
+        if (cleanPath == "/planning" || cleanPath == "/planner" || cleanPath == "/planner-old")
+        {
+            return profile.IsOrgAdmin || profile.IsBranchAdmin || profile.IsLeadTeacher;
+        }
+
         // All active daycare staff permitted (scoped internally):
         return true;
     }
@@ -344,6 +350,8 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             || path.StartsWith("/management/branches")
             || path == "/users-by-role"
             || path == "/management/users-by-role"
-            || path == "/materials-orders";
+            || path == "/materials-orders"
+            || path == "/studio"
+            || path.StartsWith("/studio/");
     }
 }

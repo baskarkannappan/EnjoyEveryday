@@ -9,6 +9,9 @@
 @using EnjoyEveryday.Domain.Repositories
 @inject IClassroomRepository ClassroomRepository
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager NavigationManager
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @rendermode InteractiveServer
 
 <div class="content">
@@ -107,6 +110,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var profile = await PageAuth.GetUserProfileAsync();
+        bool canPlan = profile.IsOrgAdmin || profile.IsBranchAdmin || profile.IsLeadTeacher || UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceSchedule);
+        if (!canPlan)
+        {
+            NavigationManager.NavigateTo("/today-activities");
+            return;
+        }
+
         // Set to current month's first day
         var today = DateTime.Today;
         _currentDate = new DateOnly(today.Year, today.Month, 1);
