@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<EnjoyEveryday.Api.Middleware.GlobalExceptionHandler>();
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -12,6 +15,57 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
+
+// Microsoft Native Output Caching with Multi-Tenant isolation
+builder.Services.AddOutputCache(options =>
+{
+    options.AddPolicy("TenantReadCache", policy =>
+        policy.Expire(TimeSpan.FromSeconds(30))
+              .SetVaryByHeader("X-Tenant-Id")
+              .SetVaryByQuery("*")
+              .Tag("daycare-reads"));
+
+    options.AddPolicy("DashboardMetricsCache", policy =>
+        policy.Expire(TimeSpan.FromSeconds(15))
+              .SetVaryByHeader("X-Tenant-Id")
+              .Tag("dashboard-metrics"));
+});
+
+// Microsoft Native Rate Limiting (sliding window per tenant/client)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too Many Requests",
+            Detail = "API rate limit reached. Please pause briefly before submitting additional requests.",
+            Instance = context.HttpContext.Request.Path
+        }, cancellationToken);
+    };
+
+    options.AddPolicy("ApiSlidingWindow", httpContext =>
+    {
+        var tenantId = httpContext.Request.Headers["X-Tenant-Id"].ToString();
+        var partitionKey = !string.IsNullOrWhiteSpace(tenantId)
+            ? $"tenant_{tenantId}"
+            : (httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous");
+
+        return System.Threading.RateLimiting.RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey,
+            _ => new System.Threading.RateLimiting.SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 6,
+                QueueLimit = 20,
+                QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst
+            });
+    });
+});
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -30,6 +84,7 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
 app.UseAppObservability();
 
 // Configure the HTTP request pipeline.
@@ -41,10 +96,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseRateLimiter();
+app.UseOutputCache();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapAppHealthChecks();
-app.MapControllers();
+app.MapControllers().RequireRateLimiting("ApiSlidingWindow");
 
 app.Run();

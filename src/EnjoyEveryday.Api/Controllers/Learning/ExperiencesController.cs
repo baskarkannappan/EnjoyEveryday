@@ -19,6 +19,7 @@ public class ExperiencesController : ControllerBase
     }
 
     [HttpGet]
+    [Microsoft.AspNetCore.OutputCaching.OutputCache(PolicyName = "TenantReadCache")]
     public async Task<ActionResult<IEnumerable<Experience>>> GetExperiences(CancellationToken cancellationToken)
     {
         var experiences = await _experienceService.GetExperiencesAsync(cancellationToken);
@@ -27,6 +28,7 @@ public class ExperiencesController : ControllerBase
 
     [HttpGet("catalog")]
     [HttpGet("/api/v1/experiences/catalog")]
+    [Microsoft.AspNetCore.OutputCaching.OutputCache(PolicyName = "TenantReadCache")]
     public async Task<ActionResult<IEnumerable<ExperienceCatalogItemDto>>> GetCatalog(CancellationToken cancellationToken)
     {
         var catalog = await _experienceService.GetCatalogAsync(cancellationToken: cancellationToken);

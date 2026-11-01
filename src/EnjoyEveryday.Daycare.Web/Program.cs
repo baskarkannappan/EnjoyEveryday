@@ -16,8 +16,20 @@ System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = inrCulture;
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents(options => options.DetailedErrors = true)
-    .AddHubOptions(options => options.MaximumReceiveMessageSize = 10 * 1024 * 1024);
+    .AddInteractiveServerComponents(options =>
+    {
+        options.DetailedErrors = builder.Environment.IsDevelopment();
+        options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(10);
+        options.DisconnectedCircuitMaxRetained = 250;
+        options.JSInteropDefaultCallTimeout = TimeSpan.FromSeconds(30);
+    })
+    .AddHubOptions(options =>
+    {
+        options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
+        options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+        options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        options.ClientTimeoutInterval = TimeSpan.FromSeconds(45);
+    });
 builder.Services.AddFluentUIComponents();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient();

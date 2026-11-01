@@ -24,8 +24,10 @@ public static class InfrastructureServiceRegistration
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is required.");
 
-        services.AddSingleton<IDbConnectionFactory>(
-            new NpgsqlConnectionFactory(connectionString));
+        var factory = new NpgsqlConnectionFactory(connectionString);
+        services.AddSingleton(factory.DataSource);
+        services.AddSingleton<IDbConnectionFactory>(factory);
+        services.AddScoped<IDbUnitOfWork, DbUnitOfWork>();
 
         // Migrations
         services.AddScoped<SqlMigrationRunner>();

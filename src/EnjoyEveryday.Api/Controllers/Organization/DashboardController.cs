@@ -32,6 +32,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("/api/v1/dashboards/org-admin")]
+    [Microsoft.AspNetCore.OutputCaching.OutputCache(PolicyName = "DashboardMetricsCache")]
     public async Task<ActionResult<OperationsBoardModel>> GetOrgAdminDashboard([FromQuery] Guid? branchId, [FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
         var filter = new OperationsBoardFilter
@@ -45,6 +46,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("/api/v1/dashboards/branch-admin")]
+    [Microsoft.AspNetCore.OutputCaching.OutputCache(PolicyName = "DashboardMetricsCache")]
     public async Task<ActionResult<OperationsBoardModel>> GetBranchAdminDashboard([FromQuery] Guid? branchId, [FromQuery] DateTime? date, CancellationToken cancellationToken)
     {
         var filter = new OperationsBoardFilter
