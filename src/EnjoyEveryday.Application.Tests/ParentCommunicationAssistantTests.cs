@@ -380,6 +380,30 @@ public class ParentCommunicationAssistantTests
             }
             return Task.CompletedTask;
         }
+
+        public Task<bool> ApproveDraftAsync(Guid tenantId, Guid id, Guid approvedByUserId, CancellationToken cancellationToken = default)
+        {
+            if (Comms.TryGetValue(id, out var comm) && comm.TenantId == tenantId)
+            {
+                comm.IsAgentDraft = false;
+                comm.Status = "Sent";
+                comm.ApprovedByUserId = approvedByUserId;
+                comm.ApprovedAt = DateTimeOffset.UtcNow;
+                comm.SentAt = DateTimeOffset.UtcNow;
+                return Task.FromResult(true);
+            }
+            return Task.FromResult(false);
+        }
+
+        public Task<bool> DiscardDraftAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
+        {
+            if (Comms.TryGetValue(id, out var comm) && comm.TenantId == tenantId)
+            {
+                comm.Status = "Archived";
+                return Task.FromResult(true);
+            }
+            return Task.FromResult(false);
+        }
     }
 
     private class MockChildRepository : IChildRepository

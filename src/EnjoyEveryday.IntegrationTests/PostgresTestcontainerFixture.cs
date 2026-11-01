@@ -15,23 +15,25 @@ namespace EnjoyEveryday.IntegrationTests;
 public abstract class PostgresTestcontainerFixture
 {
     private PostgreSqlContainer? _postgresContainer;
-    protected IDbConnectionFactory ConnectionFactory { get; private set; } = null!;
+    protected NpgsqlConnectionFactory? ConnectionFactory { get; private set; }
     protected string ConnectionString { get; private set; } = string.Empty;
 
     [OneTimeSetUp]
     public virtual async Task GlobalSetUpAsync()
     {
-        _postgresContainer = new PostgreSqlBuilder()
+        var container = new PostgreSqlBuilder()
             .WithImage("postgres:16-alpine")
             .WithDatabase("enjoyeveryday_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
             .Build();
 
+        _postgresContainer = container;
+
         try
         {
-            await _postgresContainer.StartAsync();
-            ConnectionString = _postgresContainer.GetConnectionString();
+            await container.StartAsync();
+            ConnectionString = container.GetConnectionString();
             ConnectionFactory = new NpgsqlConnectionFactory(ConnectionString);
         }
         catch (Exception ex)
@@ -44,6 +46,8 @@ public abstract class PostgresTestcontainerFixture
     [OneTimeTearDown]
     public virtual async Task GlobalTearDownAsync()
     {
+        ConnectionFactory?.Dispose();
+
         if (_postgresContainer != null)
         {
             await _postgresContainer.DisposeAsync();
@@ -61,7 +65,7 @@ public abstract class PostgresTestcontainerFixture
             migrationsPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "database", "migrations"));
         }
 
-        var runner = new SqlMigrationRunner(ConnectionFactory, NullLogger<SqlMigrationRunner>.Instance);
+        var runner = new SqlMigrationRunner(ConnectionFactory!, NullLogger<SqlMigrationRunner>.Instance);
         await runner.RunMigrationsAsync(migrationsPath);
     }
 }

@@ -17,7 +17,7 @@ public class DatabaseMigrationIntegrationTests : PostgresTestcontainerFixture
         await ApplyMigrationsAsync();
 
         // Assert: Query database catalog to ensure core tables exist
-        using var connection = await ConnectionFactory.CreateConnectionAsync();
+        using var connection = await ConnectionFactory!.CreateConnectionAsync();
         
         var appliedMigrations = (await connection.QueryAsync<string>(
             "SELECT filename FROM _migrations ORDER BY id")).AsList();
