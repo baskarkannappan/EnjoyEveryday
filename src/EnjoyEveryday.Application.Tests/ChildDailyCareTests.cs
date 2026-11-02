@@ -642,4 +642,9 @@ public class MockAttendanceRepository : IAttendanceRepository
     {
         return Task.FromResult<IEnumerable<Guid>>(ChildAttendances.Where(a => a.ClassroomId == classroomId && a.AttendanceDate == date.Date && (a.Status == "Present" || a.Status == "Late")).Select(a => a.ChildId));
     }
+
+    public Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>> GetAttendanceNeedsAttentionAsync(Guid tenantId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>>(Enumerable.Empty<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>());
+    }
 }
