@@ -16,34 +16,23 @@
 @inject IPageAuthorizationService PageAuth
 @rendermode InteractiveServer
 
-
 <div class="content">
-    <section id="overview">
-        <AttendanceOverviewHeader />
-        <AttendanceFilterBar 
-            @bind-SelectedDate="SelectedDate" 
-            @bind-BranchFilter="SelectedBranchFilter" 
-            @bind-TypeFilter="SelectedTypeFilter" 
-            @bind-SearchQuery="SearchQuery" 
-            Branches="Branches" />
-        
-        @if (!_isTeacherOnly)
-        {
-            <AttendanceKpiSection Summary="Summary" />
-            
-            <div class="cols">
-                <BranchAttendanceSection Branches="Branches.Where(FilterBranch)" SelectedDate="SelectedDate" />
-                <NeedsAttentionSection />
-            </div>
-        }
-        
-        <ClassroomAttendanceSection Classrooms="AllClassrooms" Branches="Branches" SelectedDate="SelectedDate" SearchQuery="@SearchQuery" BranchFilter="@SelectedBranchFilter" />
-    </section>
+    <AttendanceOverviewView 
+        Branches="Branches"
+        Classrooms="AllClassrooms"
+        Summary="Summary"
+        IsTeacherOnly="_isTeacherOnly"
+        SelectedDate="SelectedDate"
+        SelectedDateChanged="OnDateSelected"
+        SelectedBranchFilter="@SelectedBranchFilter"
+        SelectedBranchFilterChanged="@((v) => SelectedBranchFilter = v)"
+        SelectedTypeFilter="@SelectedTypeFilter"
+        SelectedTypeFilterChanged="@((v) => SelectedTypeFilter = v)"
+        SearchQuery="@SearchQuery"
+        SearchQueryChanged="@((v) => SearchQuery = v)" />
 </div>
 
 <ToastNotification />
-
-
 
 @code {
     private IEnumerable<EnjoyEveryday.Domain.Entities.Branch> Branches = new List<EnjoyEveryday.Domain.Entities.Branch>();
@@ -133,6 +122,16 @@
         }
     }
 
+    private async Task OnDateSelected(DateTime dt)
+    {
+        SelectedDate = dt;
+        if (!_isTeacherOnly)
+        {
+            await LoadData();
+        }
+        StateHasChanged();
+    }
+
     private async Task LoadData()
     {
         if (_isBranchAdmin && _assignedBranchIds.Count > 0)
@@ -157,33 +156,5 @@
         {
             Summary = await AttendanceService.GetOrganizationSummaryAsync(SelectedDate);
         }
-    }
-
-    private bool FilterBranch(EnjoyEveryday.Domain.Entities.Branch b)
-    {
-        if (SelectedBranchFilter != "all" && b.Name != SelectedBranchFilter)
-            return false;
-
-        if (!string.IsNullOrWhiteSpace(SearchQuery) &&
-            !b.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) &&
-            (b.Location == null || !b.Location.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        return true;
-    }
-
-    private void GoToBranch(Guid id)
-    {
-        Nav.NavigateTo($"/management/attendance/branches/{id}");
-    }
-
-    private void GoToClassroom(Guid id)
-    {
-        Nav.NavigateTo($"/management/attendance/classrooms/{id}");
-    }
-
-    private void ExportReport()
-    {
-        // Prototype logic
     }
 }

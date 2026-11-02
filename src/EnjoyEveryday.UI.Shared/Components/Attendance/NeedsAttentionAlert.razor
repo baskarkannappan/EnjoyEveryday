@@ -1,17 +1,37 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@inject NavigationManager Nav
 
 <div class="alert">
     <div class="alerticon">@Icon</div>
     <div>
         <div class="alerttitle">@Title</div>
         <div class="alertdesc">@Description</div>
-        <button class="link" onclick="openBranch('@Branch')">@ActionText →</button>
+        <button class="link" @onclick="HandleAction">@ActionText →</button>
     </div>
 </div>
 
 @code {
-    [Parameter] public string Icon { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "◷";
     [Parameter] public string Title { get; set; } = "";
     [Parameter] public string Description { get; set; } = "";
     [Parameter] public string Branch { get; set; } = "";
     [Parameter] public string ActionText { get; set; } = "Review branch";
+    [Parameter] public string? ActionUrl { get; set; }
+    [Parameter] public EventCallback OnAction { get; set; }
+
+    private async Task HandleAction()
+    {
+        if (OnAction.HasDelegate)
+        {
+            await OnAction.InvokeAsync();
+        }
+        else if (!string.IsNullOrEmpty(ActionUrl))
+        {
+            Nav.NavigateTo(ActionUrl);
+        }
+        else if (!string.IsNullOrEmpty(Branch))
+        {
+            Nav.NavigateTo($"/management/attendance/branches/{Uri.EscapeDataString(Branch)}");
+        }
+    }
 }

@@ -1,11 +1,14 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Domain.Entities.Attendance
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject AttendanceService AttendanceService
+@inject ISystemLookupCatalog LookupCatalog
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Nav
+
 <section id="detail">
     <div class="detailhead">
         <button class="back" @onclick="BackToOverview">←</button>
@@ -24,12 +27,14 @@
         </select>
         <input class="control search" @bind="personSearch" @bind:event="oninput" placeholder="Search people...">
     </div>
-    <div class="stats">
-        <div class="stat"><div class="mlabel">Children present</div><div class="statnum">@Totals[0]</div><span class="pill green">Attendance</span></div>
-        <div class="stat"><div class="mlabel">Teachers present</div><div class="statnum">@Totals[1]</div><span class="pill blue">Staff</span></div>
-        <div class="stat"><div class="mlabel">Not marked</div><div class="statnum">@UnmarkedCount</div><span class="pill amber">Action needed</span></div>
-        <div class="stat"><div class="mlabel">Missing check-out</div><div class="statnum">@MissingCheckoutCount</div><span class="pill red">Review</span></div>
-    </div>
+
+    <!-- Reusable Attendance Stat Strip -->
+    <AttendanceStatStrip 
+        ChildrenPresentRatio="@Totals[0]" 
+        TeachersPresentRatio="@Totals[1]" 
+        UnmarkedCount="UnmarkedCount" 
+        MissingCheckoutCount="MissingCheckoutCount" />
+
     <div class="card">
         <div class="tabs">
             <button class="tab @(currentTab == "classrooms" ? "active" : "")" @onclick="@(() => currentTab = "classrooms")">Classrooms</button>
@@ -39,26 +44,8 @@
         
         @if (currentTab == "classrooms")
         {
-            <div id="classPanel">
-                <div class="tablewrap">
-                    <table>
-                        <thead><tr><th>Classroom</th><th>Children present</th><th>Teachers present</th><th>Pending</th><th>Status</th><th></th></tr></thead>
-                        <tbody>
-                            @foreach(var c in GetClassrooms())
-                            {
-                                <tr>
-                                    <td><b>@c.Name</b></td>
-                                    <td>@c.Children</td>
-                                    <td>@c.Teachers</td>
-                                    <td>@c.Pending</td>
-                                    <td><span class="pill @(c.Status == "Marked" ? "green" : c.Status == "Staffing attention" ? "red" : "amber")">@c.Status</span></td>
-                                    <td><button class="link" @onclick="@(() => OpenClass(c.Name))">Open →</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <!-- Reusable Classroom Table -->
+            <AttendanceClassroomTable Classrooms="GetClassroomItems()" OnOpenClassroom="OpenClass" />
         }
         else
         {
@@ -66,10 +53,10 @@
                 <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px;align-items:center;">
                     <select class="control" @bind="statusFilter" @bind:event="oninput">
                         <option value="all">All statuses</option>
-                        <option>Present</option>
-                        <option>Late</option>
-                        <option>Absent</option>
-                        <option>Not marked</option>
+                        @foreach (var st in _availableStatuses)
+                        {
+                            <option value="@st">@st</option>
+                        }
                     </select>
 
                     @if (currentTab == "teachers" && !CanEditTeacherAttendance)
@@ -89,124 +76,17 @@
                         <span>End of Day Process</span>
                     </button>
                 </div>
-                <div class="tablewrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>
-                                    @if (currentTab != "teachers" || CanEditTeacherAttendance)
-                                    {
-                                        <input type="checkbox" @onchange="ToggleSelectAll" aria-label="Select all">
-                                    }
-                                </th>
-                                <th>Person</th>
-                                <th>Classroom / Role</th>
-                                <th>Status</th>
-                                <th>Arrival / Clock-in</th>
-                                <th>Departure / Clock-out</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach(var p in GetPeople())
-                            {
-                                bool isTeacher = p.Type == "teachers";
-                                bool isReadOnlyRow = isTeacher && !CanEditTeacherAttendance;
 
-                                <tr>
-                                    <td>
-                                        @if (!isReadOnlyRow)
-                                        {
-                                            <input type="checkbox" @bind="p.IsSelected" aria-label="Select @p.Name">
-                                        }
-                                    </td>
-                                    <td><div class="person"><span class="personicon">@p.Initials</span>@p.Name</div></td>
-                                    <td>@p.Room</td>
-                                    <td>
-                                        @if (isReadOnlyRow)
-                                        {
-                                            <span class="pill @(p.Status == "Present" ? "green" : p.Status == "Late" ? "amber" : p.Status == "Absent" ? "red" : "blue")" style="font-weight: 700;">
-                                                @p.Status
-                                            </span>
-                                        }
-                                        else
-                                        {
-                                            <select class="statusselect" @bind="p.Status" @bind:event="oninput">
-                                                <option value="Present">Present</option>
-                                                <option value="Late">Late</option>
-                                                <option value="Absent">Absent</option>
-                                                <option value="Excused">Excused</option>
-                                                <option value="Not marked">Not marked</option>
-                                            </select>
-                                        }
-                                    </td>
-                                    <td>@p.In</td>
-                                    <td>
-                                        @if (p.Type == "children" && (p.Status == "Present" || p.Status == "Late"))
-                                        {
-                                            @if (p.Out != "—")
-                                            {
-                                                <div style="display: flex; align-items: center; gap: 6px;">
-                                                    <span style="font-weight: 700; color: #26332d;">@p.Out</span>
-                                                    @if (p.PickupVerificationMethod == "System Auto-Closed" || (p.PickupNotes?.Contains("System auto-checkout") == true))
-                                                    {
-                                                        <span class="pill amber" style="font-size: 10px; padding: 2px 6px;" title="Automatically checked out by system at End of Day">
-                                                            ⚡ System Auto-Closed
-                                                        </span>
-                                                    }
-                                                    else if (!string.IsNullOrEmpty(p.PickupPersonName))
-                                                    {
-                                                        <span class="pill green" style="font-size: 10px; padding: 2px 6px;" title="Collected by @p.PickupPersonName (@p.PickupPersonRelationship) · @p.PickupVerificationMethod">
-                                                            <i class="bi bi-shield-check"></i> @p.PickupPersonName
-                                                        </span>
-                                                    }
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => OpenSecurePickupModal(p)">
-                                                    <i class="bi bi-shield-check"></i> Check Out
-                                                </button>
-                                            }
-                                        }
-                                        else if (p.Type == "teachers" && (p.Status == "Present" || p.Status == "Late"))
-                                        {
-                                            @if (p.Out != "—")
-                                            {
-                                                <div style="display: flex; align-items: center; gap: 6px;">
-                                                    <span style="font-weight: 700; color: #26332d;">@p.Out</span>
-                                                    @if (p.Notes?.Contains("System auto-checkout") == true)
-                                                    {
-                                                        <span class="pill amber" style="font-size: 10px; padding: 2px 6px;" title="Automatically checked out by system at End of Day">
-                                                            ⚡ System Auto-Closed
-                                                        </span>
-                                                    }
-                                                </div>
-                                            }
-                                            else if (!isReadOnlyRow)
-                                            {
-                                                <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => CheckOutTeacher(p)">
-                                                    Check Out
-                                                </button>
-                                            }
-                                            else
-                                            {
-                                                <span style="color: #6c7870;">—</span>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            @p.Out
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                            @if (!GetPeople().Any())
-                            {
-                                <tr><td colspan="6">No matching records</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                <!-- Reusable People Roster Table -->
+                <AttendancePeopleTable 
+                    People="GetPeopleItems()" 
+                    CurrentTab="@currentTab" 
+                    CanEditTeacherAttendance="CanEditTeacherAttendance" 
+                    AvailableStatuses="_availableStatuses" 
+                    OnToggleSelectAll="ToggleSelectAll" 
+                    OnOpenPickupModal="OpenSecurePickupModal" 
+                    OnCheckOutTeacher="CheckOutTeacher" />
+
                 <div class="note" style="margin-top:12px;">Changes will now be saved securely to the database.</div>
             </div>
         }
@@ -237,7 +117,7 @@
 }
 
 @code {
-    [Parameter] public string BranchName { get; set; } = "Downtown";
+    [Parameter] public string BranchName { get; set; } = "";
     [Parameter] public string ClassroomName { get; set; } = "";
 
     private bool IsRoomView => !string.IsNullOrEmpty(ClassroomName);
@@ -248,9 +128,10 @@
     private bool showToast = false;
 
     private Guid _branchId;
-    private List<ClassRow> _classRows = new();
-    private List<PersonRow> _personRows = new();
+    private List<AttendanceClassroomTable.ClassRowItem> _classRows = new();
+    private List<AttendancePeopleTable.PersonRowItem> _personRows = new();
     private DateTime _filterDate = DateTime.Today;
+    private IReadOnlyList<string> _availableStatuses = new[] { "Present", "Late", "Absent", "Excused", "Not marked" };
 
     private int UnmarkedCount => _personRows.Count(p => p.Status == "Not marked");
     private int MissingCheckoutCount => _personRows.Count(p => p.Status == "Present" && (p.Out == "—" || string.IsNullOrEmpty(p.Out)));
@@ -261,8 +142,103 @@
     private string _activePickupChildName = "";
     private string _activePickupClassroomName = "";
     private string? _activePickupArrivalTime;
+    private bool _isEndOfDayModalOpen = false;
 
-    private void OpenSecurePickupModal(PersonRow person)
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var lookups = await LookupCatalog.GetLookupsByCategoryAsync("AttendanceStatus");
+            if (lookups != null && lookups.Any())
+            {
+                _availableStatuses = lookups.Select(l => l.DisplayName).ToList();
+            }
+        }
+        catch { }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsRoomView && currentTab == "classrooms") currentTab = "children";
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var org = orgs.FirstOrDefault();
+        if (org == null) return;
+        
+        var branches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+        var branch = !string.IsNullOrEmpty(BranchName)
+            ? branches.FirstOrDefault(b => b.Name.Contains(BranchName, StringComparison.OrdinalIgnoreCase))
+            : branches.FirstOrDefault();
+
+        if (branch == null) return;
+        _branchId = branch.Id;
+        if (string.IsNullOrEmpty(BranchName)) BranchName = branch.Name;
+
+        var roster = await AttendanceService.GetBranchAttendanceRosterAsync(_branchId, _filterDate);
+        _classRows = roster.Classrooms.Select(c => new AttendanceClassroomTable.ClassRowItem {
+            Name = c.Name,
+            Children = c.ChildrenRatio,
+            Teachers = c.TeachersRatio,
+            Pending = c.Pending,
+            Status = c.Status
+        }).ToList();
+
+        _personRows = roster.People.Select(p => new AttendancePeopleTable.PersonRowItem {
+            Id = p.Id,
+            AttendanceId = p.AttendanceId,
+            ClassroomId = p.ClassroomId,
+            Name = p.Name,
+            Initials = p.Initials,
+            Room = p.Room,
+            Status = p.Status,
+            In = p.In,
+            Out = p.Out,
+            PickupPersonName = p.PickupPersonName,
+            PickupPersonRelationship = p.PickupPersonRelationship,
+            PickupVerificationMethod = p.PickupVerificationMethod,
+            PickupNotes = p.PickupNotes,
+            Notes = p.Notes,
+            Type = p.Type
+        }).ToList();
+    }
+
+    private IEnumerable<AttendanceClassroomTable.ClassRowItem> GetClassroomItems() => _classRows;
+
+    private IEnumerable<AttendancePeopleTable.PersonRowItem> GetPeopleItems()
+    {
+        var result = _personRows.AsEnumerable();
+        if (typeFilter == "children" && currentTab == "teachers") return Enumerable.Empty<AttendancePeopleTable.PersonRowItem>();
+        if (typeFilter == "teachers" && currentTab == "children") return Enumerable.Empty<AttendancePeopleTable.PersonRowItem>();
+        
+        string targetType = currentTab == "teachers" ? "teachers" : "children";
+        result = result.Where(p => p.Type == targetType);
+
+        if (!string.IsNullOrEmpty(personSearch))
+            result = result.Where(p => (p.Name + " " + p.Room).Contains(personSearch, StringComparison.OrdinalIgnoreCase));
+        
+        if (statusFilter != "all")
+            result = result.Where(p => p.Status.Equals(statusFilter, StringComparison.OrdinalIgnoreCase));
+            
+        if (IsRoomView)
+        {
+            if (currentTab == "teachers")
+            {
+                result = result.Where(p => p.Room.Equals(ClassroomName, StringComparison.OrdinalIgnoreCase) || p.Room == "Teacher");
+            }
+            else
+            {
+                result = result.Where(p => p.Room.Contains(ClassroomName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        return result;
+    }
+
+    private void OpenSecurePickupModal(AttendancePeopleTable.PersonRowItem person)
     {
         _activePickupChildId = person.Id;
         _activePickupClassroomId = person.ClassroomId;
@@ -272,15 +248,13 @@
         _isPickupModalOpen = true;
     }
 
-    private bool _isEndOfDayModalOpen = false;
-
     private async Task HandleDepartureConfirmed(ChildAttendance att)
     {
         await LoadDataAsync();
         StateHasChanged();
     }
 
-    private async Task CheckOutTeacher(PersonRow teacher)
+    private async Task CheckOutTeacher(AttendancePeopleTable.PersonRowItem teacher)
     {
         var att = new TeacherAttendance {
             Id = teacher.AttendanceId ?? Guid.NewGuid(),
@@ -314,10 +288,9 @@
 
     private void OpenClass(string room) => Nav.NavigateTo($"/management/attendance/classrooms/{Uri.EscapeDataString(room)}?branch={Uri.EscapeDataString(BranchName)}");
 
-    private void ToggleSelectAll(ChangeEventArgs e)
+    private void ToggleSelectAll(bool isChecked)
     {
-        bool isChecked = (bool)(e.Value ?? false);
-        foreach(var p in GetPeople())
+        foreach(var p in GetPeopleItems())
         {
             p.IsSelected = isChecked;
         }
@@ -325,7 +298,7 @@
 
     private async Task MarkSelectedPresent()
     {
-        foreach(var p in GetPeople().Where(p => p.IsSelected))
+        foreach(var p in GetPeopleItems().Where(p => p.IsSelected))
         {
             if (p.Status != "Present")
             {
@@ -357,85 +330,6 @@
             _filterDate = parsedDate;
             await LoadDataAsync();
         }
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        if (IsRoomView && currentTab == "classrooms") currentTab = "children";
-        if (string.IsNullOrEmpty(BranchName)) BranchName = "Downtown";
-        await LoadDataAsync();
-    }
-
-    private async Task LoadDataAsync()
-    {
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org == null) return;
-        
-        var branches = await BranchService.GetBranchesAsync(org.Id);
-        var branch = branches.FirstOrDefault(b => b.Name.Contains(BranchName, StringComparison.OrdinalIgnoreCase));
-        if (branch == null) return;
-        _branchId = branch.Id;
-
-        var roster = await AttendanceService.GetBranchAttendanceRosterAsync(_branchId, _filterDate);
-        _classRows = roster.Classrooms.Select(c => new ClassRow {
-            Name = c.Name,
-            Children = c.ChildrenRatio,
-            Teachers = c.TeachersRatio,
-            Pending = c.Pending,
-            Status = c.Status
-        }).ToList();
-
-        _personRows = roster.People.Select(p => new PersonRow {
-            Id = p.Id,
-            AttendanceId = p.AttendanceId,
-            ClassroomId = p.ClassroomId,
-            Name = p.Name,
-            Initials = p.Initials,
-            Room = p.Room,
-            Status = p.Status,
-            In = p.In,
-            Out = p.Out,
-            PickupPersonName = p.PickupPersonName,
-            PickupPersonRelationship = p.PickupPersonRelationship,
-            PickupVerificationMethod = p.PickupVerificationMethod,
-            PickupNotes = p.PickupNotes,
-            Notes = p.Notes,
-            Type = p.Type
-        }).ToList();
-    }
-
-    private IEnumerable<ClassRow> GetClassrooms() => _classRows;
-
-    private IEnumerable<PersonRow> GetPeople()
-    {
-        var result = _personRows.AsEnumerable();
-        if (typeFilter == "children" && currentTab == "teachers") return Enumerable.Empty<PersonRow>();
-        if (typeFilter == "teachers" && currentTab == "children") return Enumerable.Empty<PersonRow>();
-        
-        string targetType = currentTab == "teachers" ? "teachers" : "children";
-        result = result.Where(p => p.Type == targetType);
-
-        if (!string.IsNullOrEmpty(personSearch))
-            result = result.Where(p => (p.Name + " " + p.Room).Contains(personSearch, StringComparison.OrdinalIgnoreCase));
-        
-        if (statusFilter != "all")
-            result = result.Where(p => p.Status.Equals(statusFilter, StringComparison.OrdinalIgnoreCase));
-            
-        if (IsRoomView)
-        {
-            if (currentTab == "teachers")
-            {
-                // In classroom view, show teachers assigned to this classroom OR general teachers for this branch
-                result = result.Where(p => p.Room.Equals(ClassroomName, StringComparison.OrdinalIgnoreCase) || p.Room == "Teacher");
-            }
-            else
-            {
-                result = result.Where(p => p.Room.Contains(ClassroomName, StringComparison.OrdinalIgnoreCase));
-            }
-        }
-
-        return result;
     }
 
     private async Task ShowToast()
@@ -473,29 +367,4 @@
         $"{_personRows.Count(p => p.Type == "children" && (p.Status == "Present" || p.Status == "Late"))} / {_personRows.Count(p => p.Type == "children")}",
         $"{_personRows.Count(p => p.Type == "teachers" && (p.Status == "Present" || p.Status == "Late"))} / {_personRows.Count(p => p.Type == "teachers")}"
     };
-
-    public class ClassRow { public string Name { get; set; } = ""; public string Children { get; set; } = ""; public string Teachers { get; set; } = ""; public string Pending { get; set; } = ""; public string Status { get; set; } = ""; }
-    public class PersonRow { 
-        public Guid Id { get; set; }
-        public Guid? AttendanceId { get; set; }
-        public Guid ClassroomId { get; set; }
-        public string Name { get; set; } = ""; 
-        public string Initials { get; set; } = ""; 
-        public string Room { get; set; } = ""; 
-        private string _status = "";
-        public string Status { 
-            get => _status; 
-            set { if (_status != value && !string.IsNullOrEmpty(_status)) IsDirty = true; _status = value; } 
-        } 
-        public string In { get; set; } = ""; 
-        public string Out { get; set; } = ""; 
-        public string? PickupPersonName { get; set; }
-        public string? PickupPersonRelationship { get; set; }
-        public string? PickupVerificationMethod { get; set; }
-        public string? PickupNotes { get; set; }
-        public string? Notes { get; set; }
-        public string Type { get; set; } = ""; 
-        public bool IsDirty { get; set; }
-        public bool IsSelected { get; set; }
-    }
 }

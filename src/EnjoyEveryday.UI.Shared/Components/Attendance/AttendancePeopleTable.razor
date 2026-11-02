@@ -1,0 +1,180 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Domain.Entities
+
+<div class="tablewrap">
+    <table>
+        <thead>
+            <tr>
+                <th>
+                    @if (CurrentTab != "teachers" || CanEditTeacherAttendance)
+                    {
+                        <input type="checkbox" @onchange="HandleSelectAllChanged" aria-label="Select all">
+                    }
+                </th>
+                <th>Person</th>
+                <th>Classroom / Role</th>
+                <th>Status</th>
+                <th>Arrival / Clock-in</th>
+                <th>Departure / Clock-out</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach(var p in People)
+            {
+                bool isTeacher = p.Type == "teachers";
+                bool isReadOnlyRow = isTeacher && !CanEditTeacherAttendance;
+
+                <tr>
+                    <td>
+                        @if (!isReadOnlyRow)
+                        {
+                            <input type="checkbox" @bind="p.IsSelected" aria-label="Select @p.Name">
+                        }
+                    </td>
+                    <td>
+                        <div class="person">
+                            <span class="personicon">@p.Initials</span>
+                            @p.Name
+                        </div>
+                    </td>
+                    <td>@p.Room</td>
+                    <td>
+                        @if (isReadOnlyRow)
+                        {
+                            <span class="pill @(p.Status == "Present" ? "green" : p.Status == "Late" ? "amber" : p.Status == "Absent" ? "red" : "blue")" style="font-weight: 700;">
+                                @p.Status
+                            </span>
+                        }
+                        else
+                        {
+                            <select class="statusselect" @bind="p.Status" @bind:event="oninput">
+                                @foreach (var status in AvailableStatuses)
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        }
+                    </td>
+                    <td>@p.In</td>
+                    <td>
+                        @if (p.Type == "children" && (p.Status == "Present" || p.Status == "Late"))
+                        {
+                            @if (p.Out != "—")
+                            {
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-weight: 700; color: #26332d;">@p.Out</span>
+                                    @if (p.PickupVerificationMethod == "System Auto-Closed" || (p.PickupNotes?.Contains("System auto-checkout") == true))
+                                    {
+                                        <span class="pill amber" style="font-size: 10px; padding: 2px 6px;" title="Automatically checked out by system at End of Day">
+                                            ⚡ System Auto-Closed
+                                        </span>
+                                    }
+                                    else if (!string.IsNullOrEmpty(p.PickupPersonName))
+                                    {
+                                        <span class="pill green" style="font-size: 10px; padding: 2px 6px;" title="Collected by @p.PickupPersonName (@p.PickupPersonRelationship) · @p.PickupVerificationMethod">
+                                            <i class="bi bi-shield-check"></i> @p.PickupPersonName
+                                        </span>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => OnOpenPickupModal.InvokeAsync(p)">
+                                    <i class="bi bi-shield-check"></i> Check Out
+                                </button>
+                            }
+                        }
+                        else if (p.Type == "teachers" && (p.Status == "Present" || p.Status == "Late"))
+                        {
+                            @if (p.Out != "—")
+                            {
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-weight: 700; color: #26332d;">@p.Out</span>
+                                    @if (p.Notes?.Contains("System auto-checkout") == true)
+                                    {
+                                        <span class="pill amber" style="font-size: 10px; padding: 2px 6px;" title="Automatically checked out by system at End of Day">
+                                            ⚡ System Auto-Closed
+                                        </span>
+                                    }
+                                </div>
+                            }
+                            else if (!isReadOnlyRow)
+                            {
+                                <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => OnCheckOutTeacher.InvokeAsync(p)">
+                                    Check Out
+                                </button>
+                            }
+                            else
+                            {
+                                <span style="color: #6c7870;">—</span>
+                            }
+                        }
+                        else
+                        {
+                            @p.Out
+                        }
+                    </td>
+                </tr>
+            }
+            @if (!People.Any())
+            {
+                <tr><td colspan="6" style="text-align: center; color: #6c7870; padding: 20px;">No matching records</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    public class PersonRowItem
+    {
+        public Guid Id { get; set; }
+        public Guid? AttendanceId { get; set; }
+        public Guid ClassroomId { get; set; }
+        public string Name { get; set; } = "";
+        public string Initials { get; set; } = "";
+        public string Room { get; set; } = "";
+        private string _status = "";
+        public string Status
+        {
+            get => _status;
+            set { if (_status != value && !string.IsNullOrEmpty(_status)) IsDirty = true; _status = value; }
+        }
+        public string In { get; set; } = "";
+        public string Out { get; set; } = "";
+        public string? PickupPersonName { get; set; }
+        public string? PickupPersonRelationship { get; set; }
+        public string? PickupVerificationMethod { get; set; }
+        public string? PickupNotes { get; set; }
+        public string? Notes { get; set; }
+        public string Type { get; set; } = "";
+        public bool IsDirty { get; set; }
+        public bool IsSelected { get; set; }
+    }
+
+    [Parameter]
+    public IEnumerable<PersonRowItem> People { get; set; } = Enumerable.Empty<PersonRowItem>();
+
+    [Parameter]
+    public string CurrentTab { get; set; } = "children";
+
+    [Parameter]
+    public bool CanEditTeacherAttendance { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<string> AvailableStatuses { get; set; } = new[] { "Present", "Late", "Absent", "Excused", "Not marked" };
+
+    [Parameter]
+    public EventCallback<bool> OnToggleSelectAll { get; set; }
+
+    [Parameter]
+    public EventCallback<PersonRowItem> OnOpenPickupModal { get; set; }
+
+    [Parameter]
+    public EventCallback<PersonRowItem> OnCheckOutTeacher { get; set; }
+
+    private async Task HandleSelectAllChanged(ChangeEventArgs e)
+    {
+        bool isChecked = (bool)(e.Value ?? false);
+        await OnToggleSelectAll.InvokeAsync(isChecked);
+    }
+}

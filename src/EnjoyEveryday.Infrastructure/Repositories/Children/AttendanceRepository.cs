@@ -97,4 +97,14 @@ public class AttendanceRepository : IAttendanceRepository
             parameterNames: new[] { "TenantId", "ClassroomId", "Date::date" },
             cancellationToken: cancellationToken);
     }
+
+    public async Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>> GetAttendanceNeedsAttentionAsync(Guid tenantId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryFunctionAsync<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>(
+            "fn_get_attendance_needs_attention",
+            new { TenantId = tenantId, Date = DateOnly.FromDateTime(date) },
+            parameterNames: new[] { "TenantId", "Date::date" },
+            cancellationToken: cancellationToken);
+    }
 }

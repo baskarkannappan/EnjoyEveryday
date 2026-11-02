@@ -1,0 +1,112 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+
+<section id="overview" class="attendance-overview-component">
+    <AttendanceOverviewHeader />
+    <AttendanceFilterBar 
+        SelectedDate="SelectedDate" 
+        SelectedDateChanged="HandleDateChanged" 
+        BranchFilter="SelectedBranchFilter" 
+        BranchFilterChanged="HandleBranchFilterChanged" 
+        TypeFilter="SelectedTypeFilter" 
+        TypeFilterChanged="HandleTypeFilterChanged" 
+        SearchQuery="SearchQuery" 
+        SearchQueryChanged="HandleSearchQueryChanged" 
+        Branches="Branches" />
+    
+    @if (!IsTeacherOnly)
+    {
+        <AttendanceKpiSection Summary="Summary" />
+        
+        <div class="cols">
+            <BranchAttendanceSection Branches="GetFilteredBranches()" SelectedDate="SelectedDate" />
+            <NeedsAttentionSection SelectedDate="SelectedDate" />
+        </div>
+    }
+    
+    <ClassroomAttendanceSection 
+        Classrooms="Classrooms" 
+        Branches="Branches" 
+        SelectedDate="SelectedDate" 
+        SearchQuery="@SearchQuery" 
+        BranchFilter="@SelectedBranchFilter" />
+</section>
+
+@code {
+    [Parameter]
+    public IEnumerable<Branch> Branches { get; set; } = Enumerable.Empty<Branch>();
+
+    [Parameter]
+    public IEnumerable<Classroom> Classrooms { get; set; } = Enumerable.Empty<Classroom>();
+
+    [Parameter]
+    public AttendanceSummary? Summary { get; set; }
+
+    [Parameter]
+    public bool IsTeacherOnly { get; set; }
+
+    [Parameter]
+    public DateTime SelectedDate { get; set; } = DateTime.Today;
+
+    [Parameter]
+    public EventCallback<DateTime> SelectedDateChanged { get; set; }
+
+    [Parameter]
+    public string SelectedBranchFilter { get; set; } = "all";
+
+    [Parameter]
+    public EventCallback<string> SelectedBranchFilterChanged { get; set; }
+
+    [Parameter]
+    public string SelectedTypeFilter { get; set; } = "both";
+
+    [Parameter]
+    public EventCallback<string> SelectedTypeFilterChanged { get; set; }
+
+    [Parameter]
+    public string SearchQuery { get; set; } = "";
+
+    [Parameter]
+    public EventCallback<string> SearchQueryChanged { get; set; }
+
+    private IEnumerable<Branch> GetFilteredBranches()
+    {
+        return Branches.Where(b =>
+        {
+            if (SelectedBranchFilter != "all" && !b.Name.Equals(SelectedBranchFilter, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(SearchQuery) &&
+                !b.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) &&
+                (b.Location == null || !b.Location.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            return true;
+        });
+    }
+
+    private async Task HandleDateChanged(DateTime date)
+    {
+        SelectedDate = date;
+        await SelectedDateChanged.InvokeAsync(date);
+    }
+
+    private async Task HandleBranchFilterChanged(string branch)
+    {
+        SelectedBranchFilter = branch;
+        await SelectedBranchFilterChanged.InvokeAsync(branch);
+    }
+
+    private async Task HandleTypeFilterChanged(string type)
+    {
+        SelectedTypeFilter = type;
+        await SelectedTypeFilterChanged.InvokeAsync(type);
+    }
+
+    private async Task HandleSearchQueryChanged(string query)
+    {
+        SearchQuery = query;
+        await SearchQueryChanged.InvokeAsync(query);
+    }
+}

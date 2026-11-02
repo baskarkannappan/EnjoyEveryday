@@ -1,15 +1,75 @@
-﻿<div class="card">
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities.Attendance
+@inject AttendanceService AttendanceService
+
+<div class="card">
     <div class="cardhead">
         <h2>Needs attention</h2>
-        <span class="pill amber">3 items</span>
+        @if (_alertList.Any())
+        {
+            <span class="pill amber">@_alertList.Count @(_alertList.Count == 1 ? "item" : "items")</span>
+        }
+        else
+        {
+            <span class="pill green">All Clear</span>
+        }
     </div>
+    
     <div class="alerts">
-        <NeedsAttentionAlert Icon="◷" Title="Attendance not completed" Description="South · Sunshine Room has 4 children not marked." Branch="South" ActionText="Review classroom" />
-        <NeedsAttentionAlert Icon="♙" Title="Teacher coverage needs review" Description="West · Rainbow Room's assigned lead teacher is not marked present." Branch="West" ActionText="Review branch" />
-        <NeedsAttentionAlert Icon="↗" Title="Child checkout missing" Description="2 children are checked in without a recorded departure." Branch="Downtown" ActionText="View records" />
+        @if (_alertList.Any())
+        {
+            @foreach (var alert in _alertList)
+            {
+                <NeedsAttentionAlert 
+                    Icon="@alert.Icon" 
+                    Title="@alert.Title" 
+                    Description="@alert.Description" 
+                    Branch="@alert.BranchName" 
+                    ActionText="@alert.ActionText" 
+                    ActionUrl="@alert.ActionUrl" />
+            }
+        }
+        else
+        {
+            <div style="padding: 16px; text-align: center; color: var(--accent-dark, #3e6253); background: var(--accent-light, #e6eee9); border-radius: 12px; font-size: 13px; font-weight: 600; margin-top: 10px;">
+                🌿 All attendances are marked and staffing coverage is on track.
+            </div>
+        }
     </div>
+    
     <div style="margin-top:18px;padding:13px;border-radius:12px;background:#f2f6f1">
         <b style="font-size:12px">A useful daily habit</b>
         <div class="note" style="margin-top:5px">Start with unmarked attendance, then review staffing and missing check-outs.</div>
     </div>
 </div>
+
+@code {
+    [Parameter]
+    public IEnumerable<AttendanceAttentionAlertDto>? Alerts { get; set; }
+
+    [Parameter]
+    public DateTime SelectedDate { get; set; } = DateTime.Today;
+
+    private List<AttendanceAttentionAlertDto> _alertList = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Alerts != null)
+        {
+            _alertList = Alerts.ToList();
+        }
+        else
+        {
+            try
+            {
+                var result = await AttendanceService.GetAttendanceNeedsAttentionAsync(SelectedDate);
+                _alertList = result.ToList();
+            }
+            catch
+            {
+                _alertList = new List<AttendanceAttentionAlertDto>();
+            }
+        }
+    }
+}

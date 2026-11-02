@@ -1,7 +1,9 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Entities.Attendance
 @using EnjoyEveryday.Application.Services
 @inject AttendanceService AttendanceService
-@inject ChildService ChildService
+@inject NavigationManager Nav
 
 <div class="section">
     <div>
@@ -30,23 +32,20 @@
             <tbody>
                 @foreach (var room in GetFilteredClassrooms())
                 {
-                    var branch = Branches.FirstOrDefault(b => b.Id == room.Classroom.BranchId);
-                    var branchName = branch?.Name ?? "Unknown";
-
                     <tr>
                         <td>
                             <div class="room-cell">
                                 <div class="room-avatar">
-                                    @(string.IsNullOrWhiteSpace(room.Classroom.Name) ? "C" : room.Classroom.Name[0].ToString().ToUpper())
+                                    @(string.IsNullOrWhiteSpace(room.ClassroomName) ? "C" : room.ClassroomName[0].ToString().ToUpper())
                                 </div>
                                 <div class="room-meta">
-                                    <strong class="room-title">@room.Classroom.Name</strong>
-                                    <span class="room-age">@room.Classroom.AgeGroup</span>
+                                    <strong class="room-title">@room.ClassroomName</strong>
+                                    <span class="room-age">@room.AgeGroup</span>
                                 </div>
                             </div>
                         </td>
                         <td>
-                            <span class="branch-pill">@branchName</span>
+                            <span class="branch-pill">@room.BranchName</span>
                         </td>
                         <td>
                             <div class="stat-cell">
@@ -66,7 +65,7 @@
                             </span>
                         </td>
                         <td style="text-align: right;">
-                            <button class="btn-action" @onclick="@(() => GoToClassroom(branchName, room.Classroom.Name))">
+                            <button class="btn-action" @onclick="@(() => GoToClassroom(room.BranchName, room.ClassroomName))">
                                 Open &rarr;
                             </button>
                         </td>
@@ -85,7 +84,6 @@
     </div>
 </div>
 
-@inject NavigationManager Nav
 @code {
     [Parameter]
     public IEnumerable<Classroom> Classrooms { get; set; } = Array.Empty<Classroom>();
@@ -103,99 +101,29 @@
     public string BranchFilter { get; set; } = "all";
 
     private string ClassroomTab { get; set; } = "all";
-    private List<ClassroomSummaryData> Summaries = new();
+    private List<ClassroomAttendanceSummaryDto> Summaries = new();
 
     protected override async Task OnParametersSetAsync()
     {
-        Summaries.Clear();
-        var allChildren = (await ChildService.GetChildrenAsync()).ToList();
-
-        // Ensure distinct branches to prevent duplicate rows
-        var distinctBranches = (Branches ?? Enumerable.Empty<Branch>())
-            .GroupBy(b => b.Id)
-            .Select(g => g.First())
-            .ToList();
-
-        // Ensure distinct classrooms
-        var distinctClassrooms = (Classrooms ?? Enumerable.Empty<Classroom>())
-            .GroupBy(c => c.Id)
-            .Select(g => g.First())
-            .ToList();
-
-        var processedClassroomIds = new HashSet<Guid>();
-
-        foreach (var branch in distinctBranches)
-        {
-            var childAtt = (await AttendanceService.GetChildAttendanceAsync(branch.Id, SelectedDate)).ToList();
-            var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(branch.Id, SelectedDate)).ToList();
-
-            var rooms = distinctClassrooms.Where(c => c.BranchId == branch.Id);
-            foreach (var room in rooms)
-            {
-                if (!processedClassroomIds.Add(room.Id)) continue;
-
-                var roomChildrenCount = allChildren.Count(c => c.ClassroomId == room.Id);
-                var expectedC = Math.Max(roomChildrenCount, childAtt.Count(x => x.ClassroomId == room.Id));
-                
-                var presentC = childAtt.Count(x => x.ClassroomId == room.Id && (x.Status == "Present" || x.Status == "Late"));
-                var markedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status != "Not marked");
-                
-                var unmarkedC = expectedC - markedC;
-                if (unmarkedC < 0) unmarkedC = 0;
-
-                var expectedT = 2; // Teacher assignments to classrooms not available on TeacherAttendance entity
-                var presentT = 2;
-
-                var summary = new ClassroomSummaryData
-                {
-                    Classroom = room,
-                    ExpectedChildren = expectedC,
-                    PresentChildren = presentC,
-                    ExpectedTeachers = expectedT,
-                    PresentTeachers = presentT,
-                    UnmarkedChildren = unmarkedC
-                };
-
-                if (unmarkedC > 0)
-                {
-                    summary.StatusText = "Needs marking";
-                    summary.StatusCss = "amber";
-                    summary.StatusCategory = "pending";
-                }
-                else if (expectedT > 0 && presentT < expectedT)
-                {
-                    summary.StatusText = "Staffing attention";
-                    summary.StatusCss = "red";
-                    summary.StatusCategory = "attention";
-                }
-                else
-                {
-                    summary.StatusText = "Marked";
-                    summary.StatusCss = "green";
-                    summary.StatusCategory = "all";
-                }
-
-                Summaries.Add(summary);
-            }
-        }
+        var dtos = await AttendanceService.GetClassroomAttendanceSummariesAsync(SelectedDate, Branches, Classrooms);
+        Summaries = dtos.ToList();
     }
 
-    private IEnumerable<ClassroomSummaryData> GetFilteredClassrooms()
+    private IEnumerable<ClassroomAttendanceSummaryDto> GetFilteredClassrooms()
     {
         var result = Summaries
-            .GroupBy(s => s.Classroom.Id)
+            .GroupBy(s => s.ClassroomId)
             .Select(g => g.First())
             .AsEnumerable();
 
         if (BranchFilter != "all")
         {
-            var b = Branches.FirstOrDefault(x => x.Name == BranchFilter);
-            if (b != null) result = result.Where(x => x.Classroom.BranchId == b.Id);
+            result = result.Where(x => x.BranchName.Equals(BranchFilter, StringComparison.OrdinalIgnoreCase));
         }
 
         if (!string.IsNullOrWhiteSpace(SearchQuery))
         {
-            result = result.Where(x => x.Classroom.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase));
+            result = result.Where(x => x.ClassroomName.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase));
         }
 
         if (ClassroomTab != "all")
@@ -207,17 +135,4 @@
     }
 
     private void GoToClassroom(string branch, string room) => Nav.NavigateTo($"/management/attendance/classrooms/{Uri.EscapeDataString(room)}?branch={Uri.EscapeDataString(branch)}");
-
-    private class ClassroomSummaryData
-    {
-        public Classroom Classroom { get; set; } = default!;
-        public int ExpectedChildren { get; set; }
-        public int PresentChildren { get; set; }
-        public int ExpectedTeachers { get; set; }
-        public int PresentTeachers { get; set; }
-        public int UnmarkedChildren { get; set; }
-        public string StatusText { get; set; } = "";
-        public string StatusCss { get; set; } = "";
-        public string StatusCategory { get; set; } = "all";
-    }
 }

@@ -19,12 +19,13 @@ public class AttendanceService
     private readonly ITeacherRepository? _teacherRepository;
     private readonly IBranchRepository? _branchRepository;
     private readonly IUserContext? _userContext;
+    private readonly ITenantPreferencesService? _tenantPreferencesService;
 
     public AttendanceService(
         IAttendanceRepository attendanceRepository,
         IClassroomRepository classroomRepository,
         ITenantContext tenantContext)
-        : this(attendanceRepository, classroomRepository, tenantContext, null, null, null, null)
+        : this(attendanceRepository, classroomRepository, tenantContext, null, null, null, null, null)
     {
     }
 
@@ -36,6 +37,19 @@ public class AttendanceService
         ITeacherRepository? teacherRepository,
         IBranchRepository? branchRepository,
         IUserContext? userContext)
+        : this(attendanceRepository, classroomRepository, tenantContext, childRepository, teacherRepository, branchRepository, userContext, null)
+    {
+    }
+
+    public AttendanceService(
+        IAttendanceRepository attendanceRepository,
+        IClassroomRepository classroomRepository,
+        ITenantContext tenantContext,
+        IChildRepository? childRepository,
+        ITeacherRepository? teacherRepository,
+        IBranchRepository? branchRepository,
+        IUserContext? userContext,
+        ITenantPreferencesService? tenantPreferencesService)
     {
         _attendanceRepository = attendanceRepository;
         _classroomRepository = classroomRepository;
@@ -44,6 +58,7 @@ public class AttendanceService
         _teacherRepository = teacherRepository;
         _branchRepository = branchRepository;
         _userContext = userContext;
+        _tenantPreferencesService = tenantPreferencesService;
     }
 
     public async Task<IEnumerable<ChildAttendance>> GetChildAttendanceAsync(Guid branchId, DateTime date)
@@ -263,5 +278,96 @@ public class AttendanceService
                 await _attendanceRepository.RecordTeacherAttendanceAsync(att);
             }
         }
+    }
+
+    public async Task<IEnumerable<AttendanceAttentionAlertDto>> GetAttendanceNeedsAttentionAsync(DateTime date, CancellationToken ct = default)
+    {
+        return await _attendanceRepository.GetAttendanceNeedsAttentionAsync(_tenantContext.TenantId, date, ct);
+    }
+
+    public async Task<IEnumerable<ClassroomAttendanceSummaryDto>> GetClassroomAttendanceSummariesAsync(
+        DateTime date, 
+        IEnumerable<Branch>? branches = null, 
+        IEnumerable<Classroom>? classrooms = null, 
+        CancellationToken ct = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var classroomList = classrooms != null 
+            ? classrooms.ToList() 
+            : (await _classroomRepository.GetAllAsync(tenantId, ct)).ToList();
+
+        var branchMap = (branches != null ? branches.ToList() : new List<Branch>()).ToDictionary(b => b.Id);
+        
+        if (_branchRepository != null)
+        {
+            var missingBranchIds = classroomList.Select(c => c.BranchId).Where(id => !branchMap.ContainsKey(id)).Distinct();
+            foreach (var bId in missingBranchIds)
+            {
+                var b = await _branchRepository.GetByIdAsync(tenantId, bId, ct);
+                if (b != null) branchMap[b.Id] = b;
+            }
+        }
+
+        var allChildren = _childRepository != null ? (await _childRepository.GetAllAsync(tenantId, ct)).ToList() : new List<Child>();
+        var result = new List<ClassroomAttendanceSummaryDto>();
+
+        var distinctBranchIds = classroomList.Select(c => c.BranchId).Distinct();
+        foreach (var branchId in distinctBranchIds)
+        {
+            branchMap.TryGetValue(branchId, out var branch);
+            var branchName = branch?.Name ?? "Main Campus";
+
+            var childAtt = (await _attendanceRepository.GetChildAttendanceByDateAsync(tenantId, branchId, date, ct)).ToList();
+            var teacherAtt = (await _attendanceRepository.GetTeacherAttendanceByDateAsync(tenantId, branchId, date, ct)).ToList();
+
+            var branchClassrooms = classroomList.Where(c => c.BranchId == branchId);
+            foreach (var room in branchClassrooms)
+            {
+                var roomChildrenCount = allChildren.Count(c => c.ClassroomId == room.Id);
+                var expectedC = Math.Max(roomChildrenCount, childAtt.Count(x => x.ClassroomId == room.Id));
+                var presentC = childAtt.Count(x => x.ClassroomId == room.Id && (x.Status == "Present" || x.Status == "Late"));
+                var markedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status != "Not marked");
+                var unmarkedC = Math.Max(0, expectedC - markedC);
+
+                var expectedT = 2;
+                var presentT = Math.Min(expectedT, teacherAtt.Count(x => x.Status == "Present" || x.Status == "Late"));
+
+                string statusText = "Marked";
+                string statusCss = "green";
+                string statusCategory = "all";
+
+                if (unmarkedC > 0)
+                {
+                    statusText = "Needs marking";
+                    statusCss = "amber";
+                    statusCategory = "pending";
+                }
+                else if (expectedT > 0 && presentT < expectedT)
+                {
+                    statusText = "Staffing attention";
+                    statusCss = "red";
+                    statusCategory = "attention";
+                }
+
+                result.Add(new ClassroomAttendanceSummaryDto
+                {
+                    ClassroomId = room.Id,
+                    ClassroomName = room.Name,
+                    AgeGroup = room.AgeGroup ?? string.Empty,
+                    BranchId = branchId,
+                    BranchName = branchName,
+                    ExpectedChildren = expectedC,
+                    PresentChildren = presentC,
+                    ExpectedTeachers = expectedT,
+                    PresentTeachers = presentT,
+                    UnmarkedChildren = unmarkedC,
+                    StatusText = statusText,
+                    StatusCss = statusCss,
+                    StatusCategory = statusCategory
+                });
+            }
+        }
+
+        return result;
     }
 }

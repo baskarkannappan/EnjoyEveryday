@@ -24,4 +24,5 @@ public interface IAttendanceRepository
     Task<TeacherAttendance> RecordTeacherAttendanceAsync(TeacherAttendance attendance, CancellationToken cancellationToken = default);
     Task<AttendanceSummary> GetOrganizationSummaryAsync(Guid tenantId, DateTime date, CancellationToken cancellationToken = default);
     Task<IEnumerable<Guid>> GetPresentChildIdsByClassroomAsync(Guid tenantId, Guid classroomId, DateTime date, CancellationToken cancellationToken = default);
+    Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>> GetAttendanceNeedsAttentionAsync(Guid tenantId, DateTime date, CancellationToken cancellationToken = default);
 }
