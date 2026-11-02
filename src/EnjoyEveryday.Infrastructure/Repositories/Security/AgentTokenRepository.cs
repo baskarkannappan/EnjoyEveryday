@@ -14,6 +14,11 @@ namespace EnjoyEveryday.Infrastructure.Repositories.Security;
 /// </summary>
 public class AgentTokenRepository : IAgentTokenRepository
 {
+    static AgentTokenRepository()
+    {
+        SqlMapper.AddTypeHandler(new StringListTypeHandler());
+    }
+
     private readonly IDbConnectionFactory _connectionFactory;
 
     public AgentTokenRepository(IDbConnectionFactory connectionFactory)
@@ -96,5 +101,21 @@ public class AgentTokenRepository : IAgentTokenRepository
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         await connection.ExecuteAsync(
             new CommandDefinition(sql, new { tokenId }, cancellationToken: cancellationToken));
+    }
+}
+
+public class StringListTypeHandler : SqlMapper.TypeHandler<List<string>>
+{
+    public override void SetValue(System.Data.IDbDataParameter parameter, List<string>? value)
+    {
+        parameter.Value = value?.ToArray() ?? Array.Empty<string>();
+    }
+
+    public override List<string> Parse(object value)
+    {
+        if (value is string[] array) return new List<string>(array);
+        if (value is IEnumerable<string> enumerable) return new List<string>(enumerable);
+        if (value is string str) return new List<string> { str };
+        return new List<string>();
     }
 }

@@ -100,6 +100,14 @@ public class PlatformAdminRepository : IPlatformAdminRepository
         return list.ToList();
     }
 
+    public async Task<int> GetPlatformAdminCountAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        return await conn.ExecuteScalarFunctionAsync<int>(
+            "fn_get_platform_admin_count",
+            cancellationToken: ct);
+    }
+
     public async Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
@@ -113,6 +121,37 @@ public class PlatformAdminRepository : IPlatformAdminRepository
                 Password = password,
                 RoleName = roleName,
                 OrgId = orgId
+            },
+            cancellationToken: ct);
+    }
+
+    public async Task UpdateAdminUserAsync(Guid userId, string email, string firstName, string lastName, string? password, string roleName, string accountStatus, Guid? orgId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteProcedureAsync(
+            "sp_update_admin_user",
+            new
+            {
+                UserId = userId,
+                Email = email,
+                FirstName = firstName,
+                LastName = lastName,
+                Password = password ?? string.Empty,
+                RoleName = roleName,
+                AccountStatus = accountStatus,
+                OrgId = orgId
+            },
+            cancellationToken: ct);
+    }
+
+    public async Task DeleteAdminUserAsync(Guid userId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteProcedureAsync(
+            "sp_delete_admin_user",
+            new
+            {
+                UserId = userId
             },
             cancellationToken: ct);
     }

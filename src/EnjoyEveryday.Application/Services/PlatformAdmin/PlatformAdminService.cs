@@ -351,7 +351,9 @@ public class PlatformAdminService : IPlatformAdminService
                             OrganizationId = a.OrganizationId,
                             OrganizationName = a.OrganizationName,
                             RoleName = a.RoleName,
-                            AccountStatus = a.AccountStatus
+                            AccountStatus = a.AccountStatus,
+                            FirstName = !string.IsNullOrWhiteSpace(a.FirstName) ? a.FirstName : (name.Split(' ').FirstOrDefault() ?? ""),
+                            LastName = !string.IsNullOrWhiteSpace(a.LastName) ? a.LastName : (name.Contains(' ') ? string.Join(" ", name.Split(' ').Skip(1)) : "")
                         };
                     }).ToList();
                 }
@@ -371,15 +373,58 @@ public class PlatformAdminService : IPlatformAdminService
             OrganizationId = o.Id,
             OrganizationName = o.Name,
             RoleName = "Organization Owner",
-            AccountStatus = o.AccountStatus.ToString()
+            AccountStatus = o.AccountStatus.ToString(),
+            FirstName = DeriveDisplayNameFromEmail(o.AdminEmail).Split(' ').FirstOrDefault() ?? "",
+            LastName = DeriveDisplayNameFromEmail(o.AdminEmail).Contains(' ') ? string.Join(" ", DeriveDisplayNameFromEmail(o.AdminEmail).Split(' ').Skip(1)) : ""
         }).OrderBy(a => a.OrganizationName).ToList();
+    }
+
+    public async Task<int> GetPlatformAdminCountAsync(CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                return await _platformAdminRepository.GetPlatformAdminCountAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to query platform admin count from database.");
+            }
+        }
+        return 1;
     }
 
     public async Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId = null, CancellationToken cancellationToken = default)
     {
+        if (roleName.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) || roleName.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            var currentCount = await GetPlatformAdminCountAsync(cancellationToken);
+            if (currentCount >= 3)
+            {
+                throw new InvalidOperationException("A maximum of 3 platform administrators can exist at any point in time. Please remove an existing platform administrator before creating a new one.");
+            }
+        }
+
         if (_platformAdminRepository != null)
         {
             await _platformAdminRepository.CreateAdminUserAsync(email, firstName, lastName, password, roleName, orgId, cancellationToken);
+        }
+    }
+
+    public async Task UpdateAdminUserAsync(Guid userId, string email, string firstName, string lastName, string? password, string roleName, string accountStatus, Guid? orgId = null, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            await _platformAdminRepository.UpdateAdminUserAsync(userId, email, firstName, lastName, password, roleName, accountStatus, orgId, cancellationToken);
+        }
+    }
+
+    public async Task DeleteAdminUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            await _platformAdminRepository.DeleteAdminUserAsync(userId, cancellationToken);
         }
     }
 

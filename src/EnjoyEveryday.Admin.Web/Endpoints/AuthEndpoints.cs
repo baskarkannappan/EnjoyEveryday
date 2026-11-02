@@ -125,17 +125,17 @@ public static class AuthEndpoints
                     FullName = fullName
                 });
 
-            if (syncResult == null || (string)syncResult.out_status != "success")
+            if (syncResult is null || syncResult.out_status is null || (string)syncResult.out_status != "success")
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                var reason = (string?)syncResult?.out_status ?? "auth_failed";
+                var reason = syncResult != null ? (string?)syncResult.out_status ?? "auth_failed" : "auth_failed";
                 return Results.Redirect($"/access-denied?reason={reason}");
             }
 
-            Guid userId = (Guid)syncResult.out_user_id;
-            Guid effectiveTenantId = (Guid)syncResult.out_effective_tenant_id;
+            Guid userId = syncResult.out_user_id != null ? (Guid)syncResult.out_user_id : Guid.Empty;
+            Guid effectiveTenantId = syncResult.out_effective_tenant_id != null ? (Guid)syncResult.out_effective_tenant_id : Guid.Empty;
             Guid? activeOrgId = syncResult.out_active_org_id != null ? (Guid)syncResult.out_active_org_id : null;
-            string displayName = (string)syncResult.out_display_name;
+            string displayName = syncResult.out_display_name != null ? (string)syncResult.out_display_name : string.Empty;
 
             var claims = new List<Claim>
             {

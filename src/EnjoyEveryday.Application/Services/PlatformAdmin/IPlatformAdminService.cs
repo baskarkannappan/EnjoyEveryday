@@ -70,6 +70,8 @@ public class PlatformAdminUserDto
     public string OrganizationName { get; set; } = string.Empty;
     public string RoleName { get; set; } = "Tenant Admin";
     public string AccountStatus { get; set; } = "Active";
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
 }
 
 public interface IPlatformAdminService
@@ -88,7 +90,10 @@ public interface IPlatformAdminService
     Task<List<PlatformBranchDto>> GetAllBranchesAsync(CancellationToken cancellationToken = default);
     Task<PlatformBranchDto> CreateBranchAsync(Guid organizationId, string name, string? location, CancellationToken cancellationToken = default);
     Task<List<PlatformAdminUserDto>> GetOrganizationAdminsAsync(CancellationToken cancellationToken = default);
+    Task<int> GetPlatformAdminCountAsync(CancellationToken cancellationToken = default);
     Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId = null, CancellationToken cancellationToken = default);
+    Task UpdateAdminUserAsync(Guid userId, string email, string firstName, string lastName, string? password, string roleName, string accountStatus, Guid? orgId = null, CancellationToken cancellationToken = default);
+    Task DeleteAdminUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
     // Organization CRUD
     Task<PlatformOrganizationDto> CreateOrganizationWorkflowAsync(

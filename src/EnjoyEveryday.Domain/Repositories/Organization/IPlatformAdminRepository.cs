@@ -40,6 +40,8 @@ public class PlatformDbAdminUserRecord
     public string OrganizationName { get; set; } = string.Empty;
     public string RoleName { get; set; } = "Tenant Admin";
     public string AccountStatus { get; set; } = "Active";
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
 }
 
 public interface IPlatformAdminRepository
@@ -50,5 +52,8 @@ public interface IPlatformAdminRepository
     Task<List<PlatformDbBranchRecord>> GetAllBranchesAsync(CancellationToken ct = default);
     Task<PlatformDbBranchRecord> AddBranchAsync(Guid organizationId, string name, string? location, CancellationToken ct = default);
     Task<List<PlatformDbAdminUserRecord>> GetOrganizationAdminsAsync(CancellationToken ct = default);
+    Task<int> GetPlatformAdminCountAsync(CancellationToken ct = default);
     Task CreateAdminUserAsync(string email, string firstName, string lastName, string password, string roleName, Guid? orgId, CancellationToken ct = default);
+    Task UpdateAdminUserAsync(Guid userId, string email, string firstName, string lastName, string? password, string roleName, string accountStatus, Guid? orgId, CancellationToken ct = default);
+    Task DeleteAdminUserAsync(Guid userId, CancellationToken ct = default);
 }

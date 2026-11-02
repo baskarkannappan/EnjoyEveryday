@@ -1,7 +1,9 @@
 @page "/admins"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.UI.Shared.Components
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IPlatformAdminService PlatformService
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Organization Admins — Platform Admin</PageTitle>
@@ -25,6 +27,44 @@
             <button type="button" @onclick="() => _notificationMessage = null" style="background:none;border:none;cursor:pointer;color:#2e4d3a;font-weight:700;">✕</button>
         </div>
     }
+
+    <!-- Platform Admin Policy & Quota Banner -->
+    <div style="background: var(--surface); border: 1px solid @(PlatformAdminCount > 3 ? "#fecaca" : "var(--border)"); border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow);">
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="width: 44px; height: 44px; border-radius: 11px; background: @(PlatformAdminCount > 3 ? "#fee2e2" : "var(--accent-light)"); display: flex; align-items: center; justify-content: center; font-size: 22px;">
+                👑
+            </div>
+            <div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <strong style="font-size: 15px; color: var(--text);">Platform Administrator Quota</strong>
+                    <span style="font-size: 12px; font-weight: 750; padding: 2px 10px; border-radius: 999px; @(PlatformAdminCount > 3 ? "background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5;" : (PlatformAdminCount == 3 ? "background: #fef3c7; color: #b45309; border: 1px solid #fde68a;" : "background: var(--accent-light); color: var(--accent-dark); border: 1px solid #c9dacf;"))">
+                        @PlatformAdminCount / 3 Maximum
+                    </span>
+                </div>
+                <p style="font-size: 13px; color: var(--muted); margin: 3px 0 0 0;">
+                    @if (PlatformAdminCount > 3)
+                    {
+                        <span style="color: #b91c1c; font-weight: 600;">
+                            ⚠️ Policy limit exceeded: only 3 platform administrators are permitted at any point in time. Please delete or reassign @(PlatformAdminCount - 3) administrator(s).
+                        </span>
+                    }
+                    else if (PlatformAdminCount == 3)
+                    {
+                        <span>Capacity full (3 of 3 allocated). At any point in time, only 3 platform administrators can exist. Delete an existing administrator to invite a new one.</span>
+                    }
+                    else
+                    {
+                        <span>@(3 - PlatformAdminCount) platform administrator slot(s) available. Platform administrators hold global authority across all daycare tenants.</span>
+                    }
+                </p>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <button class="btn secondary" @onclick="LoadDataAsync" title="Refresh directory" style="padding: 7px 12px; font-size: 12.5px;">
+                ↻ Refresh
+            </button>
+        </div>
+    </div>
 
     <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
         <p style="color: var(--muted); font-size: 14px; margin-top: 0; margin-bottom: 16px;">
@@ -63,15 +103,24 @@
                             <th style="padding: 12px 14px; text-align: left;">Organization / Scope</th>
                             <th style="padding: 12px 14px; text-align: left;">Role</th>
                             <th style="padding: 12px 14px; text-align: left;">Account Status</th>
+                            <th style="padding: 12px 14px; text-align: right;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var admin in FilteredAdmins)
                         {
                             bool isPlatformAdmin = admin.RoleName.Contains("Platform", StringComparison.OrdinalIgnoreCase);
+                            bool isSelf = !string.IsNullOrEmpty(_currentLoggedInEmail) && admin.AdminEmail.Equals(_currentLoggedInEmail, StringComparison.OrdinalIgnoreCase);
+
                             <tr style="border-bottom: 1px solid #edf1ec; font-size: 13.5px;">
                                 <td style="padding: 14px;">
-                                    <strong>@admin.AdminName</strong>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <strong>@admin.AdminName</strong>
+                                        @if (isSelf)
+                                        {
+                                            <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 750;">You</span>
+                                        }
+                                    </div>
                                     <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">@admin.AdminEmail</div>
                                 </td>
                                 <td style="padding: 14px; font-weight: 650; color: var(--text);">
@@ -94,6 +143,23 @@
                                 </td>
                                 <td style="padding: 14px;">
                                     <StatusBadge Status="@admin.AccountStatus" />
+                                </td>
+                                <td style="padding: 14px; text-align: right; white-space: nowrap;">
+                                    <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                        <button class="btn secondary" 
+                                                style="padding: 5px 11px; font-size: 12px; border-radius: 7px; font-weight: 650; display: inline-flex; align-items: center; gap: 4px;"
+                                                @onclick="() => OpenEditAdminModal(admin)">
+                                            <span>✏️</span>
+                                            <span>Edit</span>
+                                        </button>
+                                        <button class="btn" 
+                                                style="padding: 5px 11px; font-size: 12px; border-radius: 7px; font-weight: 650; background: #fef2f2; color: #b91c1c; border: 1px solid #fee2e2; display: inline-flex; align-items: center; gap: 4px;"
+                                                @onclick="() => OpenDeleteAdminModal(admin)"
+                                                title="@(isSelf ? "You cannot delete your own active platform administrator account" : "Delete administrator")">
+                                            <span>🗑️</span>
+                                            <span>Delete</span>
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -125,6 +191,17 @@
                 {
                     <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;">
                         @_errorMessage
+                    </div>
+                }
+
+                @if (_createRole == "PlatformAdmin" && PlatformAdminCount >= 3)
+                {
+                    <div style="background: #fef3f2; border: 1px solid #fee4e2; color: #b42318; padding: 12px 14px; border-radius: 8px; font-size: 13px; display: flex; align-items: flex-start; gap: 8px;">
+                        <span style="font-size: 16px;">⚠️</span>
+                        <div>
+                            <strong>Platform Administrator Quota Full (@PlatformAdminCount / 3):</strong> 
+                            At any point in time, only 3 platform administrators can exist. You must delete an existing platform administrator before creating a new one, or select an organization administrator role.
+                        </div>
                     </div>
                 }
 
@@ -177,9 +254,181 @@
             </div>
             <div class="modal-footer">
                 <button class="btn secondary" @onclick="CloseModals" disabled="@_isSaving">Cancel</button>
-                <button class="btn primary" @onclick="SubmitCreateAdmin" disabled="@(_isSaving || string.IsNullOrWhiteSpace(_createEmail))">
+                <button class="btn primary" @onclick="SubmitCreateAdmin" disabled="@(_isSaving || string.IsNullOrWhiteSpace(_createEmail) || (_createRole == "PlatformAdmin" && PlatformAdminCount >= 3))">
                     @(_isSaving ? "Creating..." : "Create Administrator")
                 </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ================= EDIT ADMINISTRATOR MODAL ================= -->
+@if (_showEditModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">ADMINISTRATOR GOVERNANCE</div>
+                    <h3 class="modal-title">Edit Administrator</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: var(--muted); margin: 0;">
+                    Update administrator details, credentials, or security scope.
+                </p>
+
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;">
+                        @_errorMessage
+                    </div>
+                }
+
+                @if (_editRole == "PlatformAdmin" && _originalRole != "PlatformAdmin" && PlatformAdminCount >= 3)
+                {
+                    <div style="background: #fef3f2; border: 1px solid #fee4e2; color: #b42318; padding: 12px 14px; border-radius: 8px; font-size: 13px; display: flex; align-items: flex-start; gap: 8px;">
+                        <span style="font-size: 16px;">⚠️</span>
+                        <div>
+                            <strong>Cannot Promote to Platform Administrator:</strong> 
+                            The quota of 3 platform administrators is currently full (@PlatformAdminCount / 3). You must delete an existing platform administrator before promoting this user.
+                        </div>
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label>Administrator Role &amp; Scope *</label>
+                    <select class="form-input" @bind="_editRole">
+                        <option value="PlatformAdmin">👑 Platform Administrator (Global Platform Access)</option>
+                        <option value="OrganizationOwner">🏢 Daycare Organization Owner</option>
+                        <option value="OrganizationAdmin">🏛️ Daycare Organization Admin</option>
+                    </select>
+                </div>
+
+                @if (_editRole != "PlatformAdmin")
+                {
+                    <div class="form-group">
+                        <label>Assigned Daycare Organization *</label>
+                        <select class="form-input" @bind="_editOrgId">
+                            <option value="">-- Select Daycare Organization --</option>
+                            @foreach (var org in _organizations)
+                            {
+                                <option value="@org.Id">@org.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>First Name *</label>
+                        <input type="text" class="form-input" placeholder="e.g. Alex" @bind="_editFirstName" />
+                    </div>
+                    <div class="form-group">
+                        <label>Last Name *</label>
+                        <input type="text" class="form-input" placeholder="e.g. Rivera" @bind="_editLastName" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Email Address *</label>
+                    <input type="email" class="form-input" placeholder="alex.rivera@example.com" @bind="_editEmail" />
+                </div>
+
+                <div class="form-group">
+                    <label>Account Status *</label>
+                    <select class="form-input" @bind="_editAccountStatus">
+                        <option value="Active">Active</option>
+                        <option value="Suspended">Suspended</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Reset Password (optional)</label>
+                    <input type="text" class="form-input" placeholder="Leave blank to keep existing password" @bind="_editPassword" />
+                    <span style="font-size: 11px; color: var(--muted); margin-top: 2px;">
+                        Leave blank to retain their current password.
+                    </span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals" disabled="@_isSaving">Cancel</button>
+                <button class="btn primary" @onclick="SubmitEditAdmin" disabled="@(_isSaving || string.IsNullOrWhiteSpace(_editEmail) || (_editRole == "PlatformAdmin" && _originalRole != "PlatformAdmin" && PlatformAdminCount >= 3))">
+                    @(_isSaving ? "Saving..." : "Save Changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ================= DELETE ADMINISTRATOR MODAL ================= -->
+@if (_showDeleteModal && _deleteTargetAdmin != null)
+{
+    bool isTargetPlatformAdmin = _deleteTargetAdmin.RoleName.Contains("Platform", StringComparison.OrdinalIgnoreCase);
+    bool isSelf = !string.IsNullOrEmpty(_currentLoggedInEmail) && _deleteTargetAdmin.AdminEmail.Equals(_currentLoggedInEmail, StringComparison.OrdinalIgnoreCase);
+    bool isOnlyPlatformAdmin = isTargetPlatformAdmin && PlatformAdminCount <= 1;
+
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true" style="max-width: 480px;">
+            <div class="modal-header" style="background: #fef2f2;">
+                <div>
+                    <div class="modal-eyebrow" style="color: #b91c1c;">CONFIRM DELETION</div>
+                    <h3 class="modal-title" style="color: #991b1b;">Delete Administrator</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                @if (isSelf)
+                {
+                    <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 12px 14px; border-radius: 8px; font-size: 13px;">
+                        <strong>Action Prohibited:</strong> You cannot delete your own platform administrator account while logged in.
+                    </div>
+                }
+                else if (isOnlyPlatformAdmin)
+                {
+                    <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 12px 14px; border-radius: 8px; font-size: 13px;">
+                        <strong>Action Prohibited:</strong> Cannot delete the only remaining platform administrator. At least one platform administrator must exist.
+                    </div>
+                }
+                else
+                {
+                    <p style="font-size: 13.5px; color: var(--text); margin: 0; line-height: 1.5;">
+                        Are you sure you want to delete administrator <strong>@_deleteTargetAdmin.AdminName</strong>?
+                    </p>
+
+                    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 13px;">
+                        <div><strong>Email:</strong> @_deleteTargetAdmin.AdminEmail</div>
+                        <div style="margin-top: 4px;"><strong>Role:</strong> @_deleteTargetAdmin.RoleName</div>
+                        <div style="margin-top: 4px;"><strong>Scope:</strong> @(isTargetPlatformAdmin ? "EnjoyEveryday Platform (Global)" : _deleteTargetAdmin.OrganizationName)</div>
+                    </div>
+
+                    @if (isTargetPlatformAdmin)
+                    {
+                        <div style="background: #fef3f2; border: 1px solid #fee4e2; color: #b42318; padding: 10px 12px; border-radius: 8px; font-size: 12.5px;">
+                            ℹ️ Deleting this platform administrator will revoke their global administrative privileges and free up 1 platform administrator quota slot.
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_errorMessage))
+                    {
+                        <div style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;">
+                            @_errorMessage
+                        </div>
+                    }
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals" disabled="@_isSaving">Cancel</button>
+                @if (!isSelf && !isOnlyPlatformAdmin)
+                {
+                    <button class="btn" 
+                            style="background: #dc2626; color: #ffffff; border: none; font-weight: 700; border-radius: 11px; padding: 8px 18px; font-size: 13px;"
+                            @onclick="SubmitDeleteAdmin" 
+                            disabled="@_isSaving">
+                        @(_isSaving ? "Deleting..." : "Confirm Delete")
+                    </button>
+                }
             </div>
         </div>
     </div>
@@ -192,8 +441,10 @@
     private string _search = "";
     private string _selectedOrgFilter = "";
     private string? _notificationMessage;
+    private string? _currentLoggedInEmail;
+    private int _platformAdminCount = 0;
 
-    // Modal state
+    // Create Modal state
     private bool _showCreateModal = false;
     private bool _isSaving = false;
     private string? _errorMessage;
@@ -204,8 +455,37 @@
     private string _createEmail = "";
     private string _createPassword = "Welcome@123";
 
+    // Edit Modal state
+    private bool _showEditModal = false;
+    private Guid _editUserId;
+    private string _editFirstName = "";
+    private string _editLastName = "";
+    private string _editEmail = "";
+    private string _editRole = "PlatformAdmin";
+    private string _originalRole = "PlatformAdmin";
+    private string _editOrgId = "";
+    private string _editAccountStatus = "Active";
+    private string _editPassword = "";
+
+    // Delete Modal state
+    private bool _showDeleteModal = false;
+    private PlatformAdminUserDto? _deleteTargetAdmin;
+
+    private int PlatformAdminCount => _platformAdminCount > 0 ? _platformAdminCount : (_admins?.Count(a => a.RoleName.Contains("Platform", StringComparison.OrdinalIgnoreCase)) ?? 0);
+
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            _currentLoggedInEmail = user.Identity?.Name ?? user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        }
+        catch
+        {
+            // Fallback for non-authenticated environments
+        }
+
         await LoadDataAsync();
     }
 
@@ -216,6 +496,7 @@
         {
             _organizations = await PlatformService.GetOrganizationsOverviewAsync();
             _admins = await PlatformService.GetOrganizationAdminsAsync();
+            _platformAdminCount = await PlatformService.GetPlatformAdminCountAsync();
         }
         finally
         {
@@ -226,7 +507,7 @@
     private void OpenCreateAdminModal()
     {
         _errorMessage = null;
-        _createRole = "PlatformAdmin";
+        _createRole = PlatformAdminCount >= 3 ? "OrganizationAdmin" : "PlatformAdmin";
         _createOrgId = "";
         _createFirstName = "";
         _createLastName = "";
@@ -235,9 +516,36 @@
         _showCreateModal = true;
     }
 
+    private void OpenEditAdminModal(PlatformAdminUserDto admin)
+    {
+        _errorMessage = null;
+        _editUserId = admin.UserId;
+        _editFirstName = admin.FirstName ?? admin.AdminName.Split(' ').FirstOrDefault() ?? "";
+        _editLastName = admin.LastName ?? (admin.AdminName.Contains(' ') ? string.Join(" ", admin.AdminName.Split(' ').Skip(1)) : "");
+        _editEmail = admin.AdminEmail;
+        _editRole = admin.RoleName.Contains("Platform", StringComparison.OrdinalIgnoreCase) 
+            ? "PlatformAdmin" 
+            : (admin.RoleName.Contains("Owner", StringComparison.OrdinalIgnoreCase) ? "OrganizationOwner" : "OrganizationAdmin");
+        _originalRole = _editRole;
+        _editOrgId = admin.OrganizationId != Guid.Empty ? admin.OrganizationId.ToString() : "";
+        _editAccountStatus = admin.AccountStatus;
+        _editPassword = "";
+        _showEditModal = true;
+    }
+
+    private void OpenDeleteAdminModal(PlatformAdminUserDto admin)
+    {
+        _errorMessage = null;
+        _deleteTargetAdmin = admin;
+        _showDeleteModal = true;
+    }
+
     private void CloseModals()
     {
         _showCreateModal = false;
+        _showEditModal = false;
+        _showDeleteModal = false;
+        _deleteTargetAdmin = null;
         _errorMessage = null;
     }
 
@@ -246,6 +554,12 @@
         if (string.IsNullOrWhiteSpace(_createEmail))
         {
             _errorMessage = "Please enter an email address.";
+            return;
+        }
+
+        if (_createRole == "PlatformAdmin" && PlatformAdminCount >= 3)
+        {
+            _errorMessage = "A maximum of 3 platform administrators can exist at any point in time. Please delete an existing platform administrator before creating a new one.";
             return;
         }
 
@@ -280,6 +594,84 @@
         catch (Exception ex)
         {
             _errorMessage = $"Failed to create administrator: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SubmitEditAdmin()
+    {
+        if (string.IsNullOrWhiteSpace(_editEmail))
+        {
+            _errorMessage = "Please enter an email address.";
+            return;
+        }
+
+        if (_editRole == "PlatformAdmin" && _originalRole != "PlatformAdmin" && PlatformAdminCount >= 3)
+        {
+            _errorMessage = "A maximum of 3 platform administrators can exist at any point in time. Quota is full.";
+            return;
+        }
+
+        Guid? targetOrgId = null;
+        if (_editRole != "PlatformAdmin")
+        {
+            if (!Guid.TryParse(_editOrgId, out var parsedOrgId) || parsedOrgId == Guid.Empty)
+            {
+                _errorMessage = "Please select a daycare organization for this administrator.";
+                return;
+            }
+            targetOrgId = parsedOrgId;
+        }
+
+        _isSaving = true;
+        _errorMessage = null;
+
+        try
+        {
+            await PlatformService.UpdateAdminUserAsync(
+                _editUserId,
+                _editEmail.Trim(),
+                _editFirstName.Trim(),
+                _editLastName.Trim(),
+                string.IsNullOrWhiteSpace(_editPassword) ? null : _editPassword.Trim(),
+                _editRole,
+                _editAccountStatus,
+                targetOrgId);
+
+            _notificationMessage = $"Administrator '{_editEmail.Trim()}' updated successfully.";
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to update administrator: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task SubmitDeleteAdmin()
+    {
+        if (_deleteTargetAdmin == null) return;
+
+        _isSaving = true;
+        _errorMessage = null;
+
+        try
+        {
+            await PlatformService.DeleteAdminUserAsync(_deleteTargetAdmin.UserId);
+            _notificationMessage = $"Administrator '{_deleteTargetAdmin.AdminEmail}' deleted successfully.";
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to delete administrator: {ex.Message}";
         }
         finally
         {

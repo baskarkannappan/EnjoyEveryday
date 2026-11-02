@@ -421,10 +421,19 @@ public class LocalMockExperienceScheduleRepository : IExperienceScheduleReposito
 public class LocalMockTenantSettingsRepository : ITenantSettingsRepository
 {
     private string? _apiKey;
+    private string? _provider = "gemini";
     public Task<string?> GetEncryptedAiApiKeyAsync(Guid tenantId) => Task.FromResult(_apiKey);
     public Task SetEncryptedAiApiKeyAsync(Guid tenantId, string encryptedKey)
     {
         _apiKey = encryptedKey;
+        return Task.CompletedTask;
+    }
+    public Task<(string? EncryptedKey, string? Provider)> GetAiSettingsAsync(Guid tenantId) =>
+        Task.FromResult((_apiKey, _provider));
+    public Task SetAiSettingsAsync(Guid tenantId, string encryptedKey, string provider)
+    {
+        _apiKey = encryptedKey;
+        _provider = provider;
         return Task.CompletedTask;
     }
 }

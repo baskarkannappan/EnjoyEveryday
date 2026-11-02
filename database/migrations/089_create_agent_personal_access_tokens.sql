@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS agent_personal_access_tokens (
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_name VARCHAR(100) NOT NULL,
-    token_prefix VARCHAR(16) NOT NULL,
+    token_prefix VARCHAR(32) NOT NULL,
     token_hash VARCHAR(128) NOT NULL UNIQUE,
     role VARCHAR(50) NOT NULL,
     scopes TEXT[] NOT NULL DEFAULT '{}',
