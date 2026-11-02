@@ -24,6 +24,37 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
         if (comm.Id == Guid.Empty) comm.Id = Guid.NewGuid();
 
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
+        if (comm.OrganizationId == Guid.Empty)
+        {
+            if (comm.ClassroomId.HasValue && comm.ClassroomId.Value != Guid.Empty)
+            {
+                var orgFromClassroom = await connection.QueryFirstOrDefaultAsync<Guid?>(
+                    @"SELECT b.organization_id 
+                      FROM classrooms c 
+                      JOIN branches b ON b.id = c.branch_id 
+                      WHERE c.id = @ClassroomId",
+                    new { ClassroomId = comm.ClassroomId.Value });
+
+                if (orgFromClassroom.HasValue && orgFromClassroom.Value != Guid.Empty)
+                {
+                    comm.OrganizationId = orgFromClassroom.Value;
+                }
+            }
+
+            if (comm.OrganizationId == Guid.Empty && comm.TenantId != Guid.Empty)
+            {
+                var orgFromTenant = await connection.QueryFirstOrDefaultAsync<Guid?>(
+                    @"SELECT id FROM organizations WHERE tenant_id = @TenantId ORDER BY created_at ASC LIMIT 1",
+                    new { comm.TenantId });
+
+                if (orgFromTenant.HasValue && orgFromTenant.Value != Guid.Empty)
+                {
+                    comm.OrganizationId = orgFromTenant.Value;
+                }
+            }
+        }
+
         await connection.ExecuteProcedureAsync(
             "sp_create_parent_communication",
             new

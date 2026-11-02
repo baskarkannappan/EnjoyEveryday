@@ -216,6 +216,7 @@ public class ClassroomCommunicationService : IClassroomCommunicationService
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
+            OrganizationId = _userContext.OrganizationId ?? Guid.Empty,
             ChildId = childId,
             ChildName = child != null ? $"{child.FirstName} {child.LastName}".Trim() : "Child",
             ClassroomId = classroom?.Id ?? classroomId,

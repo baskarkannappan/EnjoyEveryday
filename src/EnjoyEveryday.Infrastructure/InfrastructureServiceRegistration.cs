@@ -62,6 +62,8 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IExperienceSessionRepository, ExperienceSessionRepository>();
         services.AddScoped<IHarvestRepository, HarvestRepository>();
         services.AddScoped<ITenantSettingsRepository, TenantSettingsRepository>();
+        services.AddScoped<ITenantPreferencesRepository, TenantPreferencesRepository>();
+        services.AddScoped<IMasterLookupRepository, MasterLookupRepository>();
         services.AddScoped<IAttendanceRepository, AttendanceRepository>();
         services.AddScoped<IEndOfDayRepository, EndOfDayRepository>();
         services.AddScoped<IParentRepository, ParentRepository>();

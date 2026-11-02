@@ -70,9 +70,12 @@ builder.Services.AddSingleton<EnjoyEveryday.Daycare.Web.Services.DaycareRealtime
 
 builder.Services.AddCors(options =>
 {
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+        ?? new[] { "https://localhost:7005", "http://localhost:5076" };
+
     options.AddPolicy("AllowParentPortal", policy =>
     {
-        policy.WithOrigins("https://localhost:7005", "http://localhost:5076")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

@@ -36,6 +36,10 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IMemoryService, MemoryService>();
         services.AddScoped<IAesEncryptionService, AesEncryptionService>();
         services.AddScoped<TenantSettingsService>();
+        services.AddScoped<ITenantPreferencesService, TenantPreferencesService>();
+        services.AddScoped<TenantPreferencesService>();
+        services.AddScoped<ISystemLookupCatalog, SystemLookupCatalog>();
+        services.AddScoped<SystemLookupCatalog>();
         services.AddScoped<AttendanceService>();
         services.AddScoped<ISecurePickupService, SecurePickupService>();
         services.AddScoped<SecurePickupService>();
