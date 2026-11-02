@@ -1,0 +1,113 @@
+@namespace EnjoyEveryday.UI.Shared.Components.DailyCare
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject IChildDailyCareService DailyCareService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IAccessScopeRepository AccessScopeRepo
+
+<div class="care-plans-view-container">
+    @if (_loading)
+    {
+        <LoadingState Message="Loading individual child care plans..." />
+    }
+    else if (_plans.Count == 0)
+    {
+        <EmptyState Icon="📋"
+                    Title="No care plans registered yet"
+                    Description="Individual care plans with allergy, dietary, safe sleep, and bottle instructions will appear here once saved for enrolled children." />
+    }
+    else
+    {
+        <div class="care-plans-summary-bar">
+            <span class="care-plans-count-badge">@_plans.Count Individual @(_plans.Count == 1 ? "Plan" : "Plans") Active</span>
+        </div>
+        <ChildCarePlansGrid Plans="@_plans" />
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? BranchId { get; set; }
+    [Parameter] public Guid? ClassroomId { get; set; }
+
+    private List<ChildCarePlan> _plans = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPlansAsync();
+    }
+
+    public async Task LoadPlansAsync()
+    {
+        try
+        {
+            _loading = true;
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+
+            bool isOrgAdmin = userRoles.Any(r =>
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+            bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+            HashSet<Guid> assignedClassroomIds = new();
+            if (tenantId != Guid.Empty && userId != Guid.Empty && !isOrgAdmin && !isBranchAdmin)
+            {
+                var assigned = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+                assignedClassroomIds = new HashSet<Guid>(assigned);
+            }
+
+            var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+            var primaryOrg = (UserContext.OrganizationId.HasValue
+                ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+                : null) ?? orgs.FirstOrDefault();
+
+            var allBranches = primaryOrg != null ? (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList() : new List<Branch>();
+            var targetBranches = BranchId.HasValue
+                ? allBranches.Where(b => b.Id == BranchId.Value).ToList()
+                : allBranches;
+
+            var planList = new List<ChildCarePlan>();
+            var today = DateOnly.FromDateTime(DateTime.Today);
+
+            foreach (var b in targetBranches)
+            {
+                var overview = (await DailyCareService.GetClassroomOverviewAsync(b.Id, ClassroomId, today)).ToList();
+
+                if (!isOrgAdmin && !isBranchAdmin && assignedClassroomIds.Count > 0)
+                {
+                    overview = overview.Where(c => c.ClassroomId.HasValue && assignedClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+                }
+
+                foreach (var child in overview)
+                {
+                    var cp = await DailyCareService.GetChildCarePlanAsync(child.ChildId);
+                    if (cp != null && !planList.Any(x => x.Id == cp.Id))
+                    {
+                        cp.ChildName = child.ChildName;
+                        planList.Add(cp);
+                    }
+                }
+            }
+
+            _plans = planList;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

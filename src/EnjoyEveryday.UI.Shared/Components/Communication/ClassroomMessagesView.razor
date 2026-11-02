@@ -1,0 +1,446 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Communication
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Tenancy
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+
+@inject IClassroomCommunicationService CommunicationService
+@inject ClassroomService ClassroomService
+@inject IChildRepository ChildRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject IRealtimeNotificationService RealtimeNotificationService
+@inject IJSRuntime JSRuntime
+@inject ILogger<ClassroomMessagesView> Logger
+
+<div class="messages-container">
+    <!-- Top Hero Header -->
+    <div class="messages-hero">
+        <div class="hero-left">
+            <span class="eyebrow">COMMUNICATION · FAMILIES &amp; EDUCATORS</span>
+            <h1 class="hero-title">Parent &amp; Classroom Messages</h1>
+        </div>
+        <div class="hero-right">
+            <div class="live-status-pill">
+                <span class="live-dot-pulse"></span>
+                <span class="live-label">SignalR Active · Live Broadcast</span>
+            </div>
+            @if (_totalUnread > 0)
+            {
+                <div class="unread-hero-badge">
+                    <span>@_totalUnread New @(_totalUnread == 1 ? "Message" : "Messages")</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Chat Workspace -->
+    <div class="chat-workspace @(_selectedChildId != null ? "has-active-chat" : "")">
+        <!-- LEFT PANEL: Conversation Sidebar Component -->
+        <ChatConversationList Conversations="_filteredConversations"
+                              Classrooms="_classrooms"
+                              SelectedChildId="_selectedChildId"
+                              SelectedClassroomId="_selectedClassroomId"
+                              SearchQuery="@_searchQuery"
+                              Loading="_loading"
+                              OnSelectConversation="SelectConversationAsync"
+                              OnClassroomChanged="HandleClassroomFilterChanged"
+                              OnSearchQueryChanged="HandleSearchQueryChanged" />
+
+        <!-- RIGHT PANEL: Active Chat Thread Component -->
+        <div class="chat-thread-container">
+            <ChatMessageThread ActiveChild="_activeChild"
+                               ActiveClassroom="_activeClassroom"
+                               ActiveBranch="_activeBranch"
+                               ActiveParentName="@_activeParentName"
+                               Messages="_messages"
+                               OnBackToConversations="ClearSelectedConversation"
+                               OnApproveDraft="HandleApproveDraftAsync"
+                               OnDiscardDraft="HandleDiscardDraftAsync" />
+
+            @if (_selectedChildId != null && _activeChild != null)
+            {
+                <ChatQuickReplies OnSelectReply="SendQuickReply" />
+                <ChatMessageComposer @ref="_composerRef"
+                                     TargetName="@_activeParentName"
+                                     IsSending="_isSending"
+                                     OnSendMessage="SendReplyAsync" />
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Func<ParentMessageNotification, Task>? OnNotificationSent { get; set; }
+
+    private bool _loading = true;
+    private bool _isSending = false;
+    private string _searchQuery = "";
+    private Guid? _selectedClassroomId;
+    private Guid? _selectedChildId;
+
+    private Child? _activeChild;
+    private Classroom? _activeClassroom;
+    private Branch? _activeBranch;
+    private string? _activeParentName;
+    private Guid? _activeParentUserId;
+
+    private List<ConversationItemDto> _allConversations = new();
+    private List<ConversationItemDto> _filteredConversations = new();
+    private List<Classroom> _classrooms = new();
+    private List<ParentChatMessage> _messages = new();
+    private int _totalUnread = 0;
+    private readonly CancellationTokenSource _cts = new();
+    private ChatMessageComposer? _composerRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInitialDataAsync();
+        _ = StartBackgroundSyncAsync();
+    }
+
+    public void ClearSelectedConversation()
+    {
+        _selectedChildId = null;
+        _activeChild = null;
+        _activeClassroom = null;
+        _activeBranch = null;
+        _activeParentName = null;
+        _activeParentUserId = null;
+        _messages.Clear();
+    }
+
+    public async Task HandleExternalIncomingMessage(ParentMessageNotification notification)
+    {
+        await InvokeAsync(async () =>
+        {
+            if (_selectedChildId == notification.ChildId)
+            {
+                if (!_messages.Any(m => m.Id == notification.MessageId))
+                {
+                    _messages.Add(new ParentChatMessage
+                    {
+                        Id = notification.MessageId,
+                        ChildId = notification.ChildId,
+                        SenderName = notification.SenderName,
+                        Content = notification.Content,
+                        Timestamp = notification.Timestamp,
+                        IsFromParent = true,
+                        DeliveryStatus = "Delivered"
+                    });
+                }
+
+                var convo = _allConversations.FirstOrDefault(c => c.ChildId == notification.ChildId);
+                if (convo != null)
+                {
+                    convo.LastMessageSnippet = notification.Content;
+                    convo.LastMessageTime = notification.Timestamp;
+                }
+
+                await CommunicationService.MarkConversationAsReadByEducatorAsync(notification.ChildId);
+            }
+            else
+            {
+                var convo = _allConversations.FirstOrDefault(c => c.ChildId == notification.ChildId);
+                if (convo != null)
+                {
+                    convo.UnreadCount++;
+                    convo.LastMessageSnippet = notification.Content;
+                    convo.LastMessageTime = notification.Timestamp;
+                }
+                else
+                {
+                    _allConversations.Insert(0, new ConversationItemDto
+                    {
+                        ChildId = notification.ChildId,
+                        ChildName = notification.ChildName,
+                        ClassroomId = notification.ClassroomId,
+                        ClassroomName = notification.ClassroomName,
+                        ParentName = notification.SenderName,
+                        LastMessageSnippet = notification.Content,
+                        LastMessageTime = notification.Timestamp,
+                        UnreadCount = 1
+                    });
+                }
+                _totalUnread++;
+                FilterConversations();
+            }
+
+            StateHasChanged();
+            await ScrollToBottomAsync();
+        });
+    }
+
+    private async Task LoadInitialDataAsync()
+    {
+        try
+        {
+            _loading = true;
+            _classrooms = (await ClassroomService.GetAllClassroomsAsync()).Where(c => c.IsActive).OrderBy(c => c.Name).ToList();
+
+            var feed = await CommunicationService.GetConversationsFeedAsync(classroomId: _selectedClassroomId);
+            _allConversations = feed.Conversations.Select(c => new ConversationItemDto
+            {
+                ChildId = c.ChildId,
+                ChildName = c.ChildName,
+                ClassroomId = c.ClassroomId,
+                ClassroomName = c.ClassroomName,
+                ParentName = c.ParentName,
+                ParentUserId = c.ParentUserId,
+                LastMessageSnippet = c.LastMessageSnippet,
+                LastMessageTime = c.LastMessageTime,
+                UnreadCount = c.UnreadCount
+            }).ToList();
+
+            _totalUnread = feed.TotalUnreadCount;
+            FilterConversations();
+
+            if (_filteredConversations.Any() && _selectedChildId == null)
+            {
+                await SelectConversationAsync(_filteredConversations.First().ChildId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading messages data");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void HandleClassroomFilterChanged(Guid? classroomId)
+    {
+        _selectedClassroomId = classroomId;
+        FilterConversations();
+    }
+
+    private void HandleSearchQueryChanged(string query)
+    {
+        _searchQuery = query;
+        FilterConversations();
+    }
+
+    private void FilterConversations()
+    {
+        var q = _searchQuery?.Trim().ToLowerInvariant() ?? "";
+        _filteredConversations = _allConversations.Where(c =>
+        {
+            if (_selectedClassroomId.HasValue && c.ClassroomId != _selectedClassroomId.Value)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var matchName = c.ChildName.ToLowerInvariant().Contains(q);
+                var matchParent = c.ParentName.ToLowerInvariant().Contains(q);
+                var matchClass = c.ClassroomName.ToLowerInvariant().Contains(q);
+                return matchName || matchParent || matchClass;
+            }
+
+            return true;
+        }).ToList();
+    }
+
+    public async Task SelectConversationAsync(Guid childId)
+    {
+        _selectedChildId = childId;
+        var convo = _allConversations.FirstOrDefault(c => c.ChildId == childId);
+        if (convo != null)
+        {
+            _totalUnread = Math.Max(0, _totalUnread - convo.UnreadCount);
+            convo.UnreadCount = 0;
+            _activeParentName = convo.ParentName;
+            _activeParentUserId = convo.ParentUserId;
+        }
+
+        var tenantId = TenantContext.TenantId;
+        _activeChild = await ChildRepo.GetByIdAsync(tenantId, childId);
+
+        _activeChild ??= new Child
+        {
+            Id = childId,
+            FirstName = convo?.ChildName ?? "Student",
+            LastName = "",
+            ClassroomId = convo?.ClassroomId
+        };
+
+        if (_activeChild.ClassroomId.HasValue)
+        {
+            _activeClassroom = _classrooms.FirstOrDefault(c => c.Id == _activeChild.ClassroomId.Value);
+        }
+
+        _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(childId)).ToList();
+        await CommunicationService.MarkConversationAsReadByEducatorAsync(childId);
+
+        StateHasChanged();
+        await ScrollToBottomAsync();
+    }
+
+    private async Task SendReplyAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || _selectedChildId == null || _activeChild == null)
+            return;
+
+        try
+        {
+            _isSending = true;
+            var messageId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var educatorName = UserContext.Email?.Split('@')[0] ?? "Teacher";
+
+            await CommunicationService.SendEducatorMessageAsync(_selectedChildId.Value, text, _activeChild.ClassroomId);
+
+            _messages.Add(new ParentChatMessage
+            {
+                Id = messageId,
+                ChildId = _selectedChildId.Value,
+                SenderName = educatorName,
+                Content = text,
+                Timestamp = now,
+                IsFromParent = false,
+                DeliveryStatus = "Delivered"
+            });
+
+            var convo = _allConversations.FirstOrDefault(c => c.ChildId == _selectedChildId.Value);
+            if (convo != null)
+            {
+                convo.LastMessageSnippet = text;
+                convo.LastMessageTime = now;
+            }
+
+            var notification = new ParentMessageNotification
+            {
+                MessageId = messageId,
+                TenantId = TenantContext.TenantId,
+                OrganizationId = _activeBranch?.OrganizationId ?? TenantContext.TenantId,
+                BranchId = _activeClassroom?.BranchId,
+                ClassroomId = _activeChild.ClassroomId,
+                ChildId = _selectedChildId.Value,
+                ChildName = $"{_activeChild.FirstName} {_activeChild.LastName}".Trim(),
+                ClassroomName = _activeClassroom?.Name ?? "Classroom",
+                SenderName = educatorName,
+                Content = text,
+                Timestamp = now,
+                IsFromParent = false
+            };
+
+            _ = RealtimeNotificationService.NotifyEducatorMessageSentAsync(notification);
+            if (OnNotificationSent != null)
+            {
+                await OnNotificationSent.Invoke(notification);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error sending reply");
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
+
+    private async Task SendQuickReply(string text)
+    {
+        await SendReplyAsync(text);
+    }
+
+    private async Task HandleApproveDraftAsync(Guid messageId)
+    {
+        var approved = await CommunicationService.ApproveAgentDraftAsync(messageId);
+        if (approved && _selectedChildId.HasValue)
+        {
+            _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
+            StateHasChanged();
+            await ScrollToBottomAsync();
+        }
+    }
+
+    private async Task HandleDiscardDraftAsync(Guid messageId)
+    {
+        var discarded = await CommunicationService.DiscardAgentDraftAsync(messageId);
+        if (discarded && _selectedChildId.HasValue)
+        {
+            _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartBackgroundSyncAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+            {
+                if (!_isSending && !_loading && _selectedChildId.HasValue)
+                {
+                    var msgs = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
+                    if (msgs.Count != _messages.Count)
+                    {
+                        _messages = msgs;
+
+                        var latest = _messages.LastOrDefault();
+                        if (latest != null)
+                        {
+                            var convo = _allConversations.FirstOrDefault(c => c.ChildId == _selectedChildId.Value);
+                            if (convo != null)
+                            {
+                                convo.LastMessageSnippet = latest.Content;
+                                convo.LastMessageTime = latest.Timestamp;
+                            }
+                        }
+
+                        await InvokeAsync(StateHasChanged);
+                        await ScrollToBottomAsync();
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "ClassroomMessages sync tick completed");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ScrollToBottomAsync();
+        }
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", @"
+                setTimeout(function() {
+                    var el = document.getElementById('messageStream');
+                    if (el) {
+                        el.scrollTop = el.scrollHeight;
+                    }
+                }, 60);
+            ");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

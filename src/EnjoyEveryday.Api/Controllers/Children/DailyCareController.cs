@@ -15,10 +15,26 @@ namespace EnjoyEveryday.Api.Controllers;
 public class DailyCareController : ControllerBase
 {
     private readonly IChildDailyCareService _dailyCareService;
+    private readonly ISystemLookupCatalog _lookupCatalog;
 
-    public DailyCareController(IChildDailyCareService dailyCareService)
+    public DailyCareController(
+        IChildDailyCareService dailyCareService,
+        ISystemLookupCatalog lookupCatalog)
     {
         _dailyCareService = dailyCareService;
+        _lookupCatalog = lookupCatalog;
+    }
+
+    [HttpGet("classroom-overview")]
+    public async Task<ActionResult<IEnumerable<ClassroomChildCareStatusDto>>> GetClassroomOverview(
+        [FromQuery] Guid branchId,
+        [FromQuery] Guid? classroomId,
+        [FromQuery] DateOnly? date,
+        CancellationToken ct)
+    {
+        var targetDate = date ?? DateOnly.FromDateTime(DateTime.Today);
+        var overview = await _dailyCareService.GetClassroomOverviewAsync(branchId, classroomId, targetDate, ct);
+        return Ok(overview);
     }
 
     [HttpGet("classroom-feed")]
@@ -104,6 +120,28 @@ public class DailyCareController : ControllerBase
     {
         var planId = await _dailyCareService.SaveCarePlanAsync(plan, ct);
         return Ok(planId);
+    }
+
+    [HttpGet("children/{childId}/care-plan")]
+    public async Task<ActionResult<ChildCarePlan>> GetCarePlan(Guid childId, CancellationToken ct)
+    {
+        var plan = await _dailyCareService.GetChildCarePlanAsync(childId, ct);
+        if (plan == null) return NotFound();
+        return Ok(plan);
+    }
+
+    [HttpGet("children/{childId}/supplies")]
+    public async Task<ActionResult<IEnumerable<ChildCareSupply>>> GetChildSupplies(Guid childId, CancellationToken ct)
+    {
+        var supplies = await _dailyCareService.GetChildSuppliesAsync(childId, ct);
+        return Ok(supplies);
+    }
+
+    [HttpGet("activity-types")]
+    public async Task<ActionResult<IReadOnlyList<MasterLookupItem>>> GetActivityTypes(CancellationToken ct)
+    {
+        var types = await _lookupCatalog.GetLookupsByCategoryAsync("CareActivityType", ct);
+        return Ok(types);
     }
 
     [HttpGet("children/{childId}/parent-report")]

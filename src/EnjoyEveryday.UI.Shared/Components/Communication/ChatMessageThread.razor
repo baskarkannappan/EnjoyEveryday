@@ -1,0 +1,127 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Communication
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using EnjoyEveryday.Domain.Entities
+
+<div class="chat-main">
+    @if (ActiveChild == null)
+    {
+        <div class="no-selection-view">
+            <div class="no-selection-card">
+                <div class="no-selection-icon">💌</div>
+                <h2>Select a Child Conversation</h2>
+                <p>Choose a student on the left to review messages, live updates, and reply to families.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Thread Header -->
+        <div class="thread-header">
+            <button class="mobile-back-to-convos" type="button" @onclick="() => OnBackToConversations.InvokeAsync()">
+                ← Back
+            </button>
+            <div class="thread-avatar" style="background: @GetAvatarColor(ActiveChild.FirstName);">
+                @GetInitials($"{ActiveChild.FirstName} {ActiveChild.LastName}")
+            </div>
+            <div class="thread-details">
+                <div class="thread-title">@ActiveChild.FirstName @ActiveChild.LastName</div>
+                <div class="thread-sub">
+                    <span>@(ActiveClassroom?.Name ?? "Classroom")</span>
+                    <span>•</span>
+                    <span>@(ActiveBranch?.Name ?? "Branch")</span>
+                    <span>•</span>
+                    <span>Guardian: @(ActiveParentName ?? "Parent")</span>
+                </div>
+            </div>
+            <div class="thread-channel-badge">
+                <span class="live-dot-pulse"></span>
+                <span>Direct Channel</span>
+            </div>
+        </div>
+
+        <!-- Live Message Stream -->
+        <div class="message-stream" id="messageStream">
+            @if (Messages == null || !Messages.Any())
+            {
+                <div class="empty-thread">
+                    <p>No messages yet in this channel. Send the first check-in below!</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var msg in Messages)
+                {
+                    @if (msg.IsAgentDraft)
+                    {
+                        <div class="message-row agent-draft-row">
+                            <div class="agent-draft-card">
+                                <div class="draft-header">
+                                    <div class="draft-title-badge">
+                                        <span class="draft-icon">🤖</span>
+                                        <span class="draft-badge-text">AI Agent Draft</span>
+                                    </div>
+                                    <span class="draft-sub">Needs Educator Approval</span>
+                                </div>
+                                <div class="draft-body">@msg.Content</div>
+                                <div class="draft-footer">
+                                    <span class="draft-time">@msg.Timestamp.ToLocalTime().ToString("h:mm tt")</span>
+                                    <div class="draft-actions">
+                                        <button class="approve-btn" @onclick="() => OnApproveDraft.InvokeAsync(msg.Id)">✓ Approve &amp; Send</button>
+                                        <button class="discard-btn" @onclick="() => OnDiscardDraft.InvokeAsync(msg.Id)">✕ Discard</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="message-row @(msg.IsFromParent ? "from-parent" : "from-educator")">
+                            <div class="message-bubble">
+                                <div class="bubble-sender">
+                                    @(msg.IsFromParent ? msg.SenderName : $"{msg.SenderName} (Educator)")
+                                </div>
+                                <div class="bubble-content">@msg.Content</div>
+                                <div class="bubble-footer">
+                                    <span class="bubble-time">@msg.Timestamp.ToLocalTime().ToString("h:mm tt")</span>
+                                    @if (!msg.IsFromParent)
+                                    {
+                                        <span class="bubble-status">✓ @msg.DeliveryStatus</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Child? ActiveChild { get; set; }
+    [Parameter] public Classroom? ActiveClassroom { get; set; }
+    [Parameter] public Branch? ActiveBranch { get; set; }
+    [Parameter] public string? ActiveParentName { get; set; }
+    [Parameter] public IReadOnlyList<ParentChatMessage> Messages { get; set; } = Array.Empty<ParentChatMessage>();
+
+    [Parameter] public EventCallback OnBackToConversations { get; set; }
+    [Parameter] public EventCallback<Guid> OnApproveDraft { get; set; }
+    [Parameter] public EventCallback<Guid> OnDiscardDraft { get; set; }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "C";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][0].ToString().ToUpper();
+        return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+    }
+
+    private string GetAvatarColor(string name)
+    {
+        var colors = new[] { "#557c6c", "#3e6253", "#0d9488", "#0284c7", "#4f46e5", "#b45309" };
+        var hash = Math.Abs(name?.GetHashCode() ?? 0);
+        return colors[hash % colors.Length];
+    }
+}

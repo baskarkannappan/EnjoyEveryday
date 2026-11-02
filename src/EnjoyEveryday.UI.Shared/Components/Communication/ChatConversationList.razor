@@ -1,0 +1,132 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Communication
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using EnjoyEveryday.Domain.Entities
+
+<div class="chat-sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-title-row">
+            <h3>Conversations</h3>
+            <span class="convo-count">@Conversations.Count</span>
+        </div>
+        <!-- Search & Filter Controls -->
+        <div class="search-box">
+            <input type="text"
+                   class="search-input"
+                   placeholder="Search child or parent..."
+                   value="@SearchQuery"
+                   @oninput="HandleSearchInput" />
+        </div>
+        @if (Classrooms != null && Classrooms.Count > 1)
+        {
+            <select class="classroom-select" value="@SelectedClassroomIdString" @onchange="HandleClassroomChange">
+                <option value="">All Classrooms</option>
+                @foreach (var cl in Classrooms)
+                {
+                    <option value="@cl.Id.ToString()">@cl.Name</option>
+                }
+            </select>
+        }
+    </div>
+
+    <!-- Conversations List -->
+    <div class="convo-list">
+        @if (Loading)
+        {
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <span>Loading conversations...</span>
+            </div>
+        }
+        else if (!Conversations.Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon">💬</div>
+                <p>No active conversations found.</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var convo in Conversations)
+            {
+                var isSelected = convo.ChildId == SelectedChildId;
+                <div class="convo-item @(isSelected ? "selected" : "") @(convo.UnreadCount > 0 ? "has-unread" : "")"
+                     @onclick="() => OnSelectConversation.InvokeAsync(convo.ChildId)">
+                    <div class="convo-avatar" style="background: @GetAvatarColor(convo.ChildName);">
+                        @GetInitials(convo.ChildName)
+                        @if (convo.UnreadCount > 0)
+                        {
+                            <span class="avatar-unread-dot"></span>
+                        }
+                    </div>
+                    <div class="convo-info">
+                        <div class="convo-name-row">
+                            <span class="convo-name">@convo.ChildName</span>
+                            <span class="convo-time">@FormatTime(convo.LastMessageTime)</span>
+                        </div>
+                        <div class="convo-meta-row">
+                            <span class="convo-sub">@convo.ClassroomName · @convo.ParentName</span>
+                            @if (convo.UnreadCount > 0)
+                            {
+                                <span class="convo-badge">@convo.UnreadCount</span>
+                            }
+                        </div>
+                        <div class="convo-snippet">@convo.LastMessageSnippet</div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ConversationItemDto> Conversations { get; set; } = Array.Empty<ConversationItemDto>();
+    [Parameter] public IReadOnlyList<Classroom> Classrooms { get; set; } = Array.Empty<Classroom>();
+    [Parameter] public Guid? SelectedChildId { get; set; }
+    [Parameter] public Guid? SelectedClassroomId { get; set; }
+    [Parameter] public string SearchQuery { get; set; } = "";
+    [Parameter] public bool Loading { get; set; }
+
+    [Parameter] public EventCallback<Guid> OnSelectConversation { get; set; }
+    [Parameter] public EventCallback<Guid?> OnClassroomChanged { get; set; }
+    [Parameter] public EventCallback<string> OnSearchQueryChanged { get; set; }
+
+    private string SelectedClassroomIdString => SelectedClassroomId?.ToString() ?? "";
+
+    private async Task HandleSearchInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        await OnSearchQueryChanged.InvokeAsync(val);
+    }
+
+    private async Task HandleClassroomChange(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        Guid? parsed = Guid.TryParse(val, out var g) ? g : null;
+        await OnClassroomChanged.InvokeAsync(parsed);
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "C";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][0].ToString().ToUpper();
+        return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+    }
+
+    private string GetAvatarColor(string name)
+    {
+        var colors = new[] { "#557c6c", "#3e6253", "#0d9488", "#0284c7", "#4f46e5", "#b45309" };
+        var hash = Math.Abs(name?.GetHashCode() ?? 0);
+        return colors[hash % colors.Length];
+    }
+
+    private string FormatTime(DateTimeOffset time)
+    {
+        var local = time.ToLocalTime();
+        if (local.Date == DateTime.Today) return local.ToString("h:mm tt");
+        if (local.Date == DateTime.Today.AddDays(-1)) return "Yesterday";
+        return local.ToString("MMM d");
+    }
+}

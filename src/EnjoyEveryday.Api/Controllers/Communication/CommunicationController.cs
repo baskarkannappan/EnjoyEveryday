@@ -15,10 +15,14 @@ namespace EnjoyEveryday.Api.Controllers;
 public class CommunicationController : ControllerBase
 {
     private readonly IClassroomCommunicationService _communicationService;
+    private readonly ISystemLookupCatalog _lookupCatalog;
 
-    public CommunicationController(IClassroomCommunicationService communicationService)
+    public CommunicationController(
+        IClassroomCommunicationService communicationService,
+        ISystemLookupCatalog lookupCatalog)
     {
         _communicationService = communicationService;
+        _lookupCatalog = lookupCatalog;
     }
 
     [HttpGet("conversations-feed")]
@@ -49,6 +53,27 @@ public class CommunicationController : ControllerBase
     {
         var sent = await _communicationService.SendEducatorMessageAsync(req.ChildId, req.Content, req.ClassroomId, ct);
         return Ok(sent);
+    }
+
+    [HttpPost("messages/{messageId}/approve-draft")]
+    public async Task<ActionResult<bool>> ApproveDraft(Guid messageId, CancellationToken ct)
+    {
+        var approved = await _communicationService.ApproveAgentDraftAsync(messageId, ct);
+        return Ok(approved);
+    }
+
+    [HttpPost("messages/{messageId}/discard-draft")]
+    public async Task<ActionResult<bool>> DiscardDraft(Guid messageId, CancellationToken ct)
+    {
+        var discarded = await _communicationService.DiscardAgentDraftAsync(messageId, ct);
+        return Ok(discarded);
+    }
+
+    [HttpGet("quick-templates")]
+    public async Task<ActionResult<IReadOnlyList<MasterLookupItem>>> GetQuickTemplates(CancellationToken ct)
+    {
+        var templates = await _lookupCatalog.GetLookupsByCategoryAsync("QuickResponseTemplate", ct);
+        return Ok(templates);
     }
 
     [HttpPost("children/{childId}/read")]

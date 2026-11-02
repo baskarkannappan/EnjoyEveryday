@@ -1,0 +1,56 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Communication
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+
+@inject ISystemLookupCatalog LookupCatalog
+
+<div class="quick-replies-bar">
+    <span class="quick-label">QUICK REPLY:</span>
+    @foreach (var reply in _quickReplies)
+    {
+        <button type="button" class="quick-btn" title="@reply.Text" @onclick="() => OnSelectReply.InvokeAsync(reply.Text)">
+            @reply.ShortLabel
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnSelectReply { get; set; }
+
+    private record QuickReplyItem(string ShortLabel, string Text);
+
+    private List<QuickReplyItem> _quickReplies = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var lookups = await LookupCatalog.GetLookupsByCategoryAsync("QuickResponseTemplate");
+            if (lookups != null && lookups.Any())
+            {
+                _quickReplies = lookups.Select(l => new QuickReplyItem(
+                    l.DisplayName.Length > 22 ? l.DisplayName.Substring(0, 20) + "…" : l.DisplayName,
+                    l.DisplayName
+                )).ToList();
+            }
+        }
+        catch
+        {
+            // Fallback if catalog not reachable
+        }
+
+        if (!_quickReplies.Any())
+        {
+            _quickReplies = new List<QuickReplyItem>
+            {
+                new("Thank you! 😊", "Thank you! 😊"),
+                new("Doing great today! 🌟", "Doing great today! 🌟"),
+                new("Received update 👍", "Received the update, thanks! 👍"),
+                new("Ready for pickup 🎒", "All packed and ready for pickup 🎒")
+            };
+        }
+    }
+}

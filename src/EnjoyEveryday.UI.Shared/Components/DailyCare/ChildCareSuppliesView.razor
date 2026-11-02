@@ -1,0 +1,133 @@
+@namespace EnjoyEveryday.UI.Shared.Components.DailyCare
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@inject IChildDailyCareService DailyCareService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IAccessScopeRepository AccessScopeRepo
+@inject ISystemLookupCatalog LookupCatalog
+
+<div class="care-supplies-view-container">
+    @if (!string.IsNullOrEmpty(_statusMsg))
+    {
+        <div class="alert-banner success" style="margin-bottom: 20px;">
+            <span>✅ @_statusMsg</span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <LoadingState Message="Loading personal care supplies..." />
+    }
+    else
+    {
+        <ChildCareSuppliesTable Supplies="@_allSupplies"
+                                OnSetStatus="HandleSetStatus"
+                                OnSendReminder="SendParentReminder" />
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? BranchId { get; set; }
+    [Parameter] public Guid? ClassroomId { get; set; }
+    [Parameter] public EventCallback<ChildCareSupply> OnReminderSent { get; set; }
+
+    private List<ChildCareSupply> _allSupplies = new();
+    private string? _statusMsg;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSuppliesAsync();
+    }
+
+    public async Task LoadSuppliesAsync()
+    {
+        try
+        {
+            _loading = true;
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+            var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
+
+            bool isOrgAdmin = userRoles.Any(r =>
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
+            bool isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+
+            HashSet<Guid> assignedClassroomIds = new();
+            if (tenantId != Guid.Empty && userId != Guid.Empty && !isOrgAdmin && !isBranchAdmin)
+            {
+                var assigned = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
+                assignedClassroomIds = new HashSet<Guid>(assigned);
+            }
+
+            var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+            var primaryOrg = (UserContext.OrganizationId.HasValue
+                ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+                : null) ?? orgs.FirstOrDefault();
+
+            var allBranches = primaryOrg != null ? (await BranchService.GetBranchesAsync(primaryOrg.Id)).ToList() : new List<Branch>();
+            var targetBranches = BranchId.HasValue
+                ? allBranches.Where(b => b.Id == BranchId.Value).ToList()
+                : allBranches;
+
+            var list = new List<ChildCareSupply>();
+            var today = DateOnly.FromDateTime(DateTime.Today);
+
+            foreach (var b in targetBranches)
+            {
+                var overview = (await DailyCareService.GetClassroomOverviewAsync(b.Id, ClassroomId, today)).ToList();
+
+                if (!isOrgAdmin && !isBranchAdmin && assignedClassroomIds.Count > 0)
+                {
+                    overview = overview.Where(c => c.ClassroomId.HasValue && assignedClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+                }
+
+                foreach (var child in overview)
+                {
+                    var supplies = await DailyCareService.GetChildSuppliesAsync(child.ChildId);
+                    foreach (var s in supplies)
+                    {
+                        s.ChildName = child.ChildName;
+                        list.Add(s);
+                    }
+                }
+            }
+
+            _allSupplies = list;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task HandleSetStatus((ChildCareSupply supply, string status) args)
+    {
+        args.supply.Status = args.status;
+        await DailyCareService.UpdateSupplyStatusAsync(args.supply);
+        _statusMsg = $"{args.supply.SupplyType} for {args.supply.ChildName} updated to {args.status}.";
+        await LoadSuppliesAsync();
+    }
+
+    private async Task SendParentReminder(ChildCareSupply supply)
+    {
+        _statusMsg = $"Parent reminder generated for {supply.ChildName}'s {supply.SupplyType}.";
+        if (OnReminderSent.HasDelegate)
+        {
+            await OnReminderSent.InvokeAsync(supply);
+        }
+    }
+}

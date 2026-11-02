@@ -1,0 +1,52 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Communication
+@using System.Threading.Tasks
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="composer-box">
+    <input class="composer-input"
+           placeholder="Type a reply to @(TargetName ?? "Parent")..."
+           @bind="_text"
+           @bind:event="oninput"
+           @onkeydown="HandleKeyDown"
+           disabled="@IsSending" />
+    <button type="button" class="send-btn" @onclick="HandleSend" disabled="@(string.IsNullOrWhiteSpace(_text) || IsSending)">
+        @if (IsSending)
+        {
+            <span>Sending...</span>
+        }
+        else
+        {
+            <span>Send ➔</span>
+        }
+    </button>
+</div>
+
+@code {
+    [Parameter] public string? TargetName { get; set; }
+    [Parameter] public bool IsSending { get; set; }
+    [Parameter] public EventCallback<string> OnSendMessage { get; set; }
+
+    private string _text = string.Empty;
+
+    public void SetText(string text)
+    {
+        _text = text;
+        StateHasChanged();
+    }
+
+    private async Task HandleSend()
+    {
+        if (string.IsNullOrWhiteSpace(_text) || IsSending) return;
+        var toSend = _text.Trim();
+        _text = string.Empty;
+        await OnSendMessage.InvokeAsync(toSend);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await HandleSend();
+        }
+    }
+}
