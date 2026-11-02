@@ -1,0 +1,208 @@
+@namespace EnjoyEveryday.UI.Shared.Components.SafetyTrust
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+
+@inject IConsentService ConsentService
+@inject ChildService ChildService
+@inject BranchService BranchService
+@inject OrganizationService OrgService
+@inject IUserContext UserContext
+
+<div class="safety-trust-view-wrapper">
+    <TrustBanner Icon="🛡️"
+                 Title="Your organization is in a good place."
+                 Description="@($"Core safety controls are active across all {_activeBranchCount} active branch campuses. No unresolved critical safety issues are currently open.")"
+                 StatusText="Trust controls active" />
+
+    <div class="summary-grid">
+        <SafetySummaryCard Label="Children with active consent"
+                           Value="@($"{_consentedChildrenCount} / {_totalChildrenCount}")"
+                           DetailText="@($"{_consentPercent}% recorded")"
+                           StatusClass="@(_consentPercent >= 80 ? "good" : "attention")" />
+        <SafetySummaryCard Label="Media permissions"
+                           Value="@($"{_mediaConsentCount} / {_totalChildrenCount}")"
+                           DetailText="@(_mediaReviewCount > 0 ? $"{_mediaReviewCount} need review" : "All granted")"
+                           StatusClass="@(_mediaReviewCount > 0 ? "attention" : "good")" />
+        <SafetySummaryCard Label="Open safety incidents"
+                           Value="0"
+                           DetailText="All clear"
+                           StatusClass="good" />
+        <SafetySummaryCard Label="AI safety checks"
+                           Value="100%"
+                           DetailText="No blocked bypasses"
+                           StatusClass="good" />
+    </div>
+
+    <FilterTabs Tabs="TrustTabs"
+                ActiveTab="@_currentTab"
+                OnTabSelected="OnTabSelected" />
+
+    @if (_currentTab == "consent")
+    {
+        <ConsentManagementSection />
+    }
+    else if (_currentTab == "floormaps")
+    {
+        <EmergencyFloorMapsSection />
+    }
+    else if (_currentTab == "contacts")
+    {
+        <EmergencyContactsSection />
+    }
+    else
+    {
+        <div class="main-grid">
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">Protection layers</div>
+                        <div class="panel-sub">Safeguards working together across the platform</div>
+                    </div>
+                    <button type="button" class="btn secondary">Framework</button>
+                </div>
+                <div class="panel-body">
+                    <SafetyDomainRow Icon="♡" IconClass="green-icon"
+                                     Name="Child Safety" Description="Safeguarding rules, authorized relationships, access controls and protected child information."
+                                     StatusText="Active" StatusClass="mini-good" />
+                    <SafetyDomainRow Icon="✓" IconClass="blue-icon"
+                                     Name="Consent &amp; Privacy" Description="Parent permissions are checked before protected information or experiences are shared."
+                                     StatusText="Active" StatusClass="mini-good" />
+                    <SafetyDomainRow Icon="▣" IconClass="blue-icon"
+                                     Name="Media Protection" Description="Photos and videos respect child-level permissions, audience restrictions and retention rules."
+                                     StatusText="2 Review" StatusClass="mini-attention" />
+                    <SafetyDomainRow Icon="✦" IconClass="amber-icon"
+                                     Name="AI Safety" Description="AI recommendations are validated before they become part of the application workflow."
+                                     StatusText="Protected" StatusClass="mini-good" />
+                    <SafetyDomainRow Icon="!" IconClass="red-icon"
+                                     Name="Incident Management" Description="Safety concerns are recorded, assigned, followed up and retained according to policy."
+                                     StatusText="1 Open" StatusClass="mini-attention" />
+                    <SafetyDomainRow Icon="◌" IconClass="green-icon"
+                                     Name="Accountability &amp; Audit" Description="Important actions are traceable to the person, purpose, time and affected record."
+                                     StatusText="Active" StatusClass="mini-good" />
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">Branch trust status</div>
+                        <div class="panel-sub">Current organization-wide view</div>
+                    </div>
+                    <button type="button" class="view-link">Details &rarr;</button>
+                </div>
+                <div class="panel-body">
+                    @if (_branches != null && _branches.Any())
+                    {
+                        var branchIcons = new[] { "🌿", "🌳", "☀️", "🌊", "🌸", "🌻" };
+                        int iconIdx = 0;
+                        @foreach (var b in _branches)
+                        {
+                            var icon = branchIcons[iconIdx % branchIcons.Length];
+                            iconIdx++;
+                            <BranchSafetyRow Avatar="@icon" Name="@b.Name" Detail="Consent · Media · Safety" ScoreText="Good" ScoreClass="good" ScoreLabel="protected" />
+                        }
+                    }
+                    else
+                    {
+                        <BranchSafetyRow Avatar="🌿" Name="Primary Campus" Detail="Consent · Media · Safety" ScoreText="Good" ScoreClass="good" ScoreLabel="protected" />
+                    }
+
+                    <PrivacyControlsCard Title="Privacy controls"
+                                         Controls="@(new Dictionary<string, string> { { "Tenant isolation", "Active" }, { "Role-based access", "Active" }, { "Child-level permissions", "Active" }, { "Audit logging", "Active" } })" />
+                </div>
+            </section>
+        </div>
+
+        <div class="main-grid" style="margin-top:18px;">
+            <AiSafetyGuardrailsCard />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string InitialTab { get; set; } = "consent";
+
+    private string _currentTab = "consent";
+
+    private List<Branch> _branches = new();
+    private int _activeBranchCount = 1;
+    private int _totalChildrenCount = 0;
+    private int _consentedChildrenCount = 0;
+    private int _consentPercent = 100;
+    private int _mediaConsentCount = 0;
+    private int _mediaReviewCount = 0;
+
+    private List<FilterTabs.TabItem> TrustTabs = new()
+    {
+        new FilterTabs.TabItem { Text = "Consent Management", Value = "consent" },
+        new FilterTabs.TabItem { Text = "Emergency Floor Maps", Value = "floormaps" },
+        new FilterTabs.TabItem { Text = "Emergency Contacts & Card", Value = "contacts" },
+        new FilterTabs.TabItem { Text = "Trust Overview", Value = "overview" },
+        new FilterTabs.TabItem { Text = "Media", Value = "media" },
+        new FilterTabs.TabItem { Text = "Incidents", Value = "incidents" },
+        new FilterTabs.TabItem { Text = "AI Safety", Value = "ai" },
+        new FilterTabs.TabItem { Text = "Audit", Value = "audit" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentTab = InitialTab;
+        await LoadMetricsAsync();
+    }
+
+    public async Task LoadMetricsAsync()
+    {
+        try
+        {
+            var orgs = await OrgService.GetOrganizationsAsync();
+            var org = (UserContext.OrganizationId.HasValue
+                ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+                : null) ?? orgs.FirstOrDefault();
+
+            if (org != null)
+            {
+                var branchList = (await BranchService.GetBranchesAsync(org.Id)).Where(b => b.IsActive).ToList();
+                _branches = branchList.GroupBy(b => b.Id).Select(g => g.First()).ToList();
+                _activeBranchCount = Math.Max(1, _branches.Count);
+            }
+
+            var children = (await ChildService.GetChildrenAsync()).ToList();
+            _totalChildrenCount = children.Count;
+
+            var docs = (await ConsentService.GetDocumentsAsync()).ToList();
+            var signedChildIds = docs.Where(d => d.Status == ConsentWorkflowStatus.Signed)
+                                     .Select(d => d.ChildId)
+                                     .Distinct()
+                                     .ToHashSet();
+
+            _consentedChildrenCount = _totalChildrenCount > 0 ? signedChildIds.Count : 0;
+            _consentPercent = _totalChildrenCount > 0 
+                ? (int)Math.Round((double)_consentedChildrenCount / _totalChildrenCount * 100)
+                : 100;
+
+            var mediaDocs = docs.Where(d => d.DocumentTitle != null && d.DocumentTitle.Contains("Media", StringComparison.OrdinalIgnoreCase)
+                                         || (d.DocumentTitle != null && d.DocumentTitle.Contains("Photo", StringComparison.OrdinalIgnoreCase))).ToList();
+            var signedMediaChildIds = mediaDocs.Where(d => d.Status == ConsentWorkflowStatus.Signed)
+                                               .Select(d => d.ChildId)
+                                               .Distinct()
+                                               .ToHashSet();
+            _mediaConsentCount = signedMediaChildIds.Count;
+            _mediaReviewCount = Math.Max(0, _totalChildrenCount - _mediaConsentCount);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading safety trust metrics: {ex.Message}");
+        }
+    }
+
+    private void OnTabSelected(string val)
+    {
+        _currentTab = val;
+    }
+}

@@ -1,0 +1,573 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Settings
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Security.Cryptography
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities.Security
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@using Microsoft.JSInterop
+
+@inject IAgentTokenRepository TokenRepo
+@inject IAgentWebhookRepository WebhookRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject ISystemLookupCatalog LookupCatalog
+@inject IJSRuntime JSRuntime
+
+<div class="agent-management-view">
+    <!-- Navigation Tabs -->
+    <div class="agent-tabs-row">
+        <button type="button" class="agent-tab @(_activeTab == "tokens" ? "active" : "")" @onclick='() => _activeTab = "tokens"'>
+            🔑 Personal Access Tokens (@_tokens.Count)
+        </button>
+        <button type="button" class="agent-tab @(_activeTab == "webhooks" ? "active" : "")" @onclick='() => _activeTab = "webhooks"'>
+            ⚡ Outbound Webhooks (@_webhooks.Count)
+        </button>
+        <button type="button" class="agent-tab @(_activeTab == "guides" ? "active" : "")" @onclick='() => _activeTab = "guides"'>
+            📖 MCP &amp; Integration Guides
+        </button>
+    </div>
+
+    <!-- Alert Banner for Newly Generated Token -->
+    @if (!string.IsNullOrEmpty(_newlyCreatedRawToken))
+    {
+        <div class="new-token-alert">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-content">
+                <strong>New Personal Access Token Generated</strong>
+                <p>Copy your token now. For security purposes, this token will never be displayed again.</p>
+                <div class="token-copy-box">
+                    <input type="text" readonly value="@_newlyCreatedRawToken" class="token-value-input" />
+                    <button type="button" class="primary copy-btn" @onclick="CopyRawTokenAsync">
+                        @(_copiedToken ? "✓ Copied!" : "Copy Token")
+                    </button>
+                </div>
+            </div>
+            <button type="button" class="alert-close" @onclick="() => _newlyCreatedRawToken = null">✕</button>
+        </div>
+    }
+
+    <!-- Alert Banner for Newly Registered Webhook Secret -->
+    @if (!string.IsNullOrEmpty(_newlyCreatedWebhookSecret))
+    {
+        <div class="new-token-alert">
+            <div class="alert-icon">🔐</div>
+            <div class="alert-content">
+                <strong>Webhook Secret Key</strong>
+                <p>Use this HMAC secret to verify the <code>X-EnjoyEveryday-Signature</code> header on incoming webhook deliveries.</p>
+                <div class="token-copy-box">
+                    <input type="text" readonly value="@_newlyCreatedWebhookSecret" class="token-value-input" />
+                    <button type="button" class="primary copy-btn" @onclick="CopyWebhookSecretAsync">
+                        @(_copiedSecret ? "✓ Copied!" : "Copy Secret")
+                    </button>
+                </div>
+            </div>
+            <button type="button" class="alert-close" @onclick="() => _newlyCreatedWebhookSecret = null">✕</button>
+        </div>
+    }
+
+    <!-- TAB 1: TOKENS -->
+    @if (_activeTab == "tokens")
+    {
+        <div class="section-card">
+            <div class="card-title-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2>Active Agent Tokens</h2>
+                    <p class="section-desc">Personal access tokens grant scoped read/write access to external AI agents acting on behalf of a user persona.</p>
+                </div>
+                <button type="button" class="primary" @onclick="() => _showCreateTokenModal = true">+ Create Agent Token</button>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="loading-state">Loading access tokens...</div>
+            }
+            else if (!_tokens.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-icon">🤖</div>
+                    <h3>No Agent Tokens Created Yet</h3>
+                    <p>Generate a Personal Access Token to connect external assistants (such as Claude Desktop or Python SDK) to your daycare data via MCP.</p>
+                    <button type="button" class="primary" @onclick="() => _showCreateTokenModal = true">+ Create First Token</button>
+                </div>
+            }
+            else
+            {
+                <div class="tokens-table-container">
+                    <table class="agent-table">
+                        <thead>
+                            <tr>
+                                <th>Token Name</th>
+                                <th>Prefix</th>
+                                <th>Persona Role</th>
+                                <th>Scopes</th>
+                                <th>Expires</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var token in _tokens)
+                            {
+                                <tr>
+                                    <td><span class="token-name">@token.TokenName</span></td>
+                                    <td><code>@token.TokenPrefix</code></td>
+                                    <td><span class="role-badge">@token.Role</span></td>
+                                    <td>
+                                        <div class="scopes-list">
+                                            @foreach (var sc in token.Scopes.Take(3))
+                                            {
+                                                <span class="scope-pill">@sc</span>
+                                            }
+                                            @if (token.Scopes.Count > 3)
+                                            {
+                                                <span class="scope-pill more">+@(token.Scopes.Count - 3) more</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if (token.ExpiresAt.HasValue)
+                                        {
+                                            var isExp = token.ExpiresAt.Value < DateTime.UtcNow;
+                                            <span class="status-badge @(isExp ? "inactive" : "active")">
+                                                @(isExp ? "Expired" : token.ExpiresAt.Value.ToString("MMM d, yyyy"))
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge active">Never</span>
+                                        }
+                                    </td>
+                                    <td>@token.CreatedAt.ToString("MMM d, yyyy")</td>
+                                    <td>
+                                        <button type="button" class="revoke-btn" @onclick="() => RevokeTokenAsync(token.Id)">Revoke</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- TAB 2: WEBHOOKS -->
+    @if (_activeTab == "webhooks")
+    {
+        <div class="section-card">
+            <div class="card-title-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2>Outbound Event Webhooks</h2>
+                    <p class="section-desc">Receive real-time signed HTTP POST payloads whenever classroom events occur (messages, attendance, care updates).</p>
+                </div>
+                <button type="button" class="secondary" @onclick="() => _showCreateWebhookModal = true">+ Register Webhook</button>
+            </div>
+
+            @if (_loading)
+            {
+                <div class="loading-state">Loading webhooks...</div>
+            }
+            else if (!_webhooks.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-icon">⚡</div>
+                    <h3>No Webhooks Configured</h3>
+                    <p>Register an endpoint to stream live daycare domain events into your custom bots, alerting channels, or downstream servers.</p>
+                    <button type="button" class="primary" @onclick="() => _showCreateWebhookModal = true">+ Register Webhook</button>
+                </div>
+            }
+            else
+            {
+                <div class="tokens-table-container">
+                    <table class="agent-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Endpoint URL</th>
+                                <th>Subscribed Events</th>
+                                <th>Status</th>
+                                <th>Registered</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var hook in _webhooks)
+                            {
+                                <tr>
+                                    <td><strong>@hook.Name</strong></td>
+                                    <td><code>@hook.WebhookUrl</code></td>
+                                    <td>
+                                        <div class="scopes-list">
+                                            @foreach (var ev in hook.SubscribedEvents)
+                                            {
+                                                <span class="scope-pill">@ev</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge @(hook.IsActive ? "active" : "inactive")">
+                                            @(hook.IsActive ? "Active" : "Disabled")
+                                        </span>
+                                    </td>
+                                    <td>@hook.CreatedAt.ToString("MMM d, yyyy")</td>
+                                    <td>
+                                        <button type="button" class="revoke-btn" @onclick="() => DeleteWebhookAsync(hook.Id)">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- TAB 3: GUIDES -->
+    @if (_activeTab == "guides")
+    {
+        <div class="guides-grid">
+            <div class="guide-card">
+                <div class="guide-header">
+                    <span class="guide-pill">MODEL CONTEXT PROTOCOL</span>
+                    <h3>Claude Desktop Configuration</h3>
+                    <p>Add EnjoyEveryday as an MCP Server to your <code>claude_desktop_config.json</code> file.</p>
+                </div>
+                <div class="guide-snippet">
+                    <pre><code>{
+  "mcpServers": {
+    "enjoyeveryday": {
+      "command": "python",
+      "args": ["-m", "enjoyeveryday.mcp"],
+      "env": {
+        "ENJOYEVERYDAY_API_KEY": "eed_pat_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}</code></pre>
+                </div>
+            </div>
+
+            <div class="guide-card">
+                <div class="guide-header">
+                    <span class="guide-pill">REST / PYTHON / LANGCHAIN</span>
+                    <h3>Direct OpenTools Discovery</h3>
+                    <p>Inspect available tools in OpenAPI / OpenAI Tool Call format using your bearer token.</p>
+                </div>
+                <div class="guide-snippet">
+                    <pre><code>import requests
+
+headers = {"Authorization": "Bearer eed_pat_YOUR_TOKEN"}
+tools = requests.get(
+    "https://api.enjoyeveryday.com/api/v1/agent/tools.json",
+    headers=headers
+).json()</code></pre>
+                </div>
+            </div>
+
+            <div class="guide-card">
+                <div class="guide-header">
+                    <span class="guide-pill">SAFETY &amp; GOVERNANCE</span>
+                    <h3>Human-in-the-Loop Safeguards</h3>
+                    <p>EnjoyEveryday enforces strict deterministic business guardrails for all autonomous agent actions.</p>
+                </div>
+                <ul class="safety-points">
+                    <li><strong>Draft-Only Communications:</strong> Outbound messages drafted by AI agents are flagged as drafts and require explicit human teacher approval.</li>
+                    <li><strong>Tenancy Isolation:</strong> Token claims enforce database-level tenant isolation, guaranteeing agents cannot access out-of-tenant records.</li>
+                    <li><strong>Role Scopes:</strong> Parent agents can only access their authorized children; educators only their assigned classrooms.</li>
+                </ul>
+            </div>
+        </div>
+    }
+
+    <!-- MODAL: Create Token -->
+    @if (_showCreateTokenModal)
+    {
+        <div class="modal-backdrop" @onclick="() => _showCreateTokenModal = false">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Generate New Agent Access Token</h3>
+                    <button type="button" class="modal-close-btn" @onclick="() => _showCreateTokenModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Token Name</label>
+                        <input type="text" class="input-text" @bind="_newTokenName" placeholder="e.g. Claude Desktop Assistant" />
+                        <span class="input-hint">A recognizable label for what this agent does.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Agent Role Persona</label>
+                        <select class="input-select" @bind="_newTokenRole">
+                            <option value="@RoleTemplates.ClassroomTeacher">Classroom Teacher (Classroom access &amp; care records)</option>
+                            <option value="@RoleTemplates.Parent">Parent (Child timeline &amp; communications)</option>
+                            <option value="@RoleTemplates.BranchAdmin">Branch Admin (Roster, operations, classrooms)</option>
+                            <option value="@RoleTemplates.OrganizationAdmin">Organization Admin (Full tenant insights)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Expiration</label>
+                        <select class="input-select" @bind="_newTokenExpirationDays">
+                            <option value="30">30 days</option>
+                            <option value="60">60 days</option>
+                            <option value="90">90 days (Recommended)</option>
+                            <option value="365">1 year</option>
+                            <option value="0">Never (Requires manual revocation)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="secondary" @onclick="() => _showCreateTokenModal = false">Cancel</button>
+                    <button type="button" class="primary" @onclick="CreateTokenAsync" disabled="@(string.IsNullOrWhiteSpace(_newTokenName) || _isSubmitting)">
+                        @(_isSubmitting ? "Generating..." : "Generate Token")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- MODAL: Register Webhook -->
+    @if (_showCreateWebhookModal)
+    {
+        <div class="modal-backdrop" @onclick="() => _showCreateWebhookModal = false">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Register Outbound Webhook</h3>
+                    <button type="button" class="modal-close-btn" @onclick="() => _showCreateWebhookModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Webhook Name</label>
+                        <input type="text" class="input-text" @bind="_newWebhookName" placeholder="e.g. Parent Bot Notification Relay" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Payload Endpoint URL</label>
+                        <input type="text" class="input-text" @bind="_newWebhookUrl" placeholder="https://agent.mydaycare.org/events" />
+                        <span class="input-hint">Must be an accessible HTTP or HTTPS URL.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Event Triggers</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="_subscribeMessages" />
+                                <span><code>classroom.message.sent</code> (Parent &amp; educator communications)</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" @bind="_subscribeAttendance" />
+                                <span><code>attendance.recorded</code> (Check-in, check-out, absence updates)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="secondary" @onclick="() => _showCreateWebhookModal = false">Cancel</button>
+                    <button type="button" class="primary" @onclick="RegisterWebhookAsync" disabled="@(string.IsNullOrWhiteSpace(_newWebhookName) || string.IsNullOrWhiteSpace(_newWebhookUrl) || _isSubmitting)">
+                        @(_isSubmitting ? "Registering..." : "Register Webhook")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private string _activeTab = "tokens";
+    private bool _loading = true;
+    private bool _isSubmitting = false;
+
+    private List<AgentAccessToken> _tokens = new();
+    private List<AgentWebhookSubscription> _webhooks = new();
+
+    private bool _showCreateTokenModal = false;
+    private string _newTokenName = "";
+    private string _newTokenRole = RoleTemplates.ClassroomTeacher;
+    private int _newTokenExpirationDays = 90;
+    private string? _newlyCreatedRawToken;
+    private bool _copiedToken = false;
+
+    private bool _showCreateWebhookModal = false;
+    private string _newWebhookName = "";
+    private string _newWebhookUrl = "";
+    private bool _subscribeMessages = true;
+    private bool _subscribeAttendance = true;
+    private string? _newlyCreatedWebhookSecret;
+    private bool _copiedSecret = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    public async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+
+            var tokensTask = TokenRepo.GetUserTokensAsync(tenantId, userId);
+            var webhooksTask = WebhookRepo.GetTenantSubscriptionsAsync(tenantId);
+
+            await Task.WhenAll(tokensTask, webhooksTask);
+
+            _tokens = (await tokensTask).ToList();
+            _webhooks = (await webhooksTask).ToList();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CreateTokenAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newTokenName)) return;
+
+        _isSubmitting = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+
+            var randomBytes = new byte[32];
+            RandomNumberGenerator.Fill(randomBytes);
+            var base64Random = Convert.ToBase64String(randomBytes)
+                .Replace("+", "-")
+                .Replace("/", "_")
+                .TrimEnd('=');
+
+            var rawToken = $"eed_pat_{base64Random}";
+            var tokenPrefix = $"{rawToken[..Math.Min(14, rawToken.Length)]}...";
+
+            using var sha = SHA256.Create();
+            var hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(rawToken));
+            var tokenHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+
+            var scopes = AgentTokenScopes.GetDefaultScopesForRole(_newTokenRole);
+            DateTime? expiresAt = _newTokenExpirationDays > 0 ? DateTime.UtcNow.AddDays(_newTokenExpirationDays) : null;
+
+            var token = new AgentAccessToken
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                UserId = userId,
+                TokenName = _newTokenName.Trim(),
+                TokenPrefix = tokenPrefix,
+                TokenHash = tokenHash,
+                Role = _newTokenRole,
+                Scopes = scopes,
+                ExpiresAt = expiresAt,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await TokenRepo.CreateTokenAsync(token);
+
+            _newlyCreatedRawToken = rawToken;
+            _copiedToken = false;
+            _showCreateTokenModal = false;
+            _newTokenName = "";
+
+            await LoadDataAsync();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task RevokeTokenAsync(Guid tokenId)
+    {
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var revoked = await TokenRepo.RevokeTokenAsync(tenantId, tokenId, userId);
+        if (revoked)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task RegisterWebhookAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newWebhookName) || string.IsNullOrWhiteSpace(_newWebhookUrl)) return;
+
+        _isSubmitting = true;
+        try
+        {
+            var tenantId = TenantContext.TenantId;
+            var userId = UserContext.UserId;
+
+            var secretBytes = new byte[32];
+            RandomNumberGenerator.Fill(secretBytes);
+            var secretKey = Convert.ToHexString(secretBytes).ToLowerInvariant();
+
+            var events = new List<string>();
+            if (_subscribeMessages) events.Add("classroom.message.sent");
+            if (_subscribeAttendance) events.Add("attendance.recorded");
+            if (!events.Any()) events.Add("*");
+
+            var subscription = new AgentWebhookSubscription
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                UserId = userId,
+                Name = _newWebhookName.Trim(),
+                WebhookUrl = _newWebhookUrl.Trim(),
+                SecretKey = secretKey,
+                SubscribedEvents = events,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await WebhookRepo.CreateSubscriptionAsync(subscription);
+
+            _newlyCreatedWebhookSecret = secretKey;
+            _copiedSecret = false;
+            _showCreateWebhookModal = false;
+            _newWebhookName = "";
+            _newWebhookUrl = "";
+
+            await LoadDataAsync();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task DeleteWebhookAsync(Guid subscriptionId)
+    {
+        var tenantId = TenantContext.TenantId;
+        var deleted = await WebhookRepo.DeleteSubscriptionAsync(tenantId, subscriptionId);
+        if (deleted)
+        {
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task CopyRawTokenAsync()
+    {
+        if (!string.IsNullOrEmpty(_newlyCreatedRawToken))
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _newlyCreatedRawToken);
+            _copiedToken = true;
+        }
+    }
+
+    private async Task CopyWebhookSecretAsync()
+    {
+        if (!string.IsNullOrEmpty(_newlyCreatedWebhookSecret))
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _newlyCreatedWebhookSecret);
+            _copiedSecret = true;
+        }
+    }
+}

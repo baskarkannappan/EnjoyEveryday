@@ -1,0 +1,338 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+
+@inject IBillingService BillingService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="content billing-page-container">
+    <PageHero Eyebrow="ORGANIZATION MANAGEMENT"
+              Title="Billing &amp; Invoices"
+              Subtitle="Track issued daycare subscription invoices, payment receipts, due dates, and review your organization's ledger balance.">
+        <RightContent>
+            <a href="mailto:billing@enjoyeveryday.com?subject=Billing Inquiry for Daycare" class="btn secondary">
+                ✉️ Contact Billing Support
+            </a>
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div style="padding: 12px 18px; border-radius: 12px; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 16px;">⚠️</span>
+                <span>@_errorMessage</span>
+            </div>
+            <button style="background: none; border: none; cursor: pointer; color: inherit; font-size: 14px;" @onclick="() => _errorMessage = null">✕</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_paymentMessage))
+    {
+        <div style="padding: 12px 18px; border-radius: 12px; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; background: @(_paymentSuccess ? "var(--accent-light, #e6eee9)" : "#fff5f5"); border: 1px solid @(_paymentSuccess ? "#c8dacd" : "#fed7d7"); color: @(_paymentSuccess ? "var(--accent-dark, #3e6253)" : "#9b2c2c");">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 16px;">@(_paymentSuccess ? "✓" : "⚠️")</span>
+                <span>@_paymentMessage</span>
+            </div>
+            <button style="background: none; border: none; cursor: pointer; color: inherit; font-size: 14px;" @onclick="() => _paymentMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- METRICS SUMMARY -->
+    <BillingMetricsStrip TotalOutstandingBalance="@TotalOutstandingBalance"
+                         OverdueCount="@OverdueCount"
+                         TotalAmountPaid="@TotalAmountPaid"
+                         PaidInvoicesCount="@_invoices.Count(i => i.AmountPaid > 0)"
+                         NextDueDate="@NextDueDate"
+                         BillingScheduleFrequency="@(_billingSettings?.Frequency.ToString() ?? "Monthly")"
+                         BillingScheduleModeDescription="@(_billingSettings?.Mode == BillingMode.Automatic ? "Automatic scheduled billing" : "Manual administrative invoicing")" />
+
+    <!-- FILTER & SEARCH ROW -->
+    <div class="filter-row">
+        <div class="tabs-container">
+            <button class="billing-tab @(_activeTab == "All" ? "active" : "")" @onclick='() => _activeTab = "All"'>
+                All Invoices (@_invoices.Count)
+            </button>
+            <button class="billing-tab @(_activeTab == "Outstanding" ? "active" : "")" @onclick='() => _activeTab = "Outstanding"'>
+                Outstanding &amp; Overdue (@_invoices.Count(i => i.BalanceDue > 0))
+            </button>
+            <button class="billing-tab @(_activeTab == "Paid" ? "active" : "")" @onclick='() => _activeTab = "Paid"'>
+                Paid (@_invoices.Count(i => i.Status == InvoiceStatus.Paid))
+            </button>
+        </div>
+
+        <input class="search-box" placeholder="Search by invoice # or memo..." @bind="_searchQuery" @bind:event="oninput" />
+    </div>
+
+    <!-- INVOICE LIST -->
+    @if (_isLoading)
+    {
+        <LoadingState Message="Retrieving organization invoices..." />
+    }
+    else if (!FilteredInvoices.Any())
+    {
+        <EmptyState Title="No Invoices Issued Yet"
+                    Description="There are no published invoices for your daycare organization at this time. When our platform administrators issue your billing statements, they will appear here." />
+    }
+    else
+    {
+        <InvoicesTable Invoices="@FilteredInvoices"
+                       IsProcessingPayment="@_isProcessingPayment"
+                       OnPayOnline="PayInvoiceOnline"
+                       OnViewDetails="OpenInvoiceModal" />
+    }
+
+    <!-- SUPPORT / REMITTANCE BANNER -->
+    <div class="support-banner">
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="support-icon">💡</div>
+            <div>
+                <div style="font-weight: 750; font-size: 14px; color: var(--text);">Payment Questions or Inquiries?</div>
+                <div style="font-size: 12.5px; color: var(--muted); margin-top: 2px;">
+                    Invoices are issued by the EnjoyEveryday platform administration team. Please remit payments according to the wire instructions on each invoice.
+                </div>
+            </div>
+        </div>
+        <a href="mailto:billing@enjoyeveryday.com" style="color: var(--accent-dark); font-size: 13px; font-weight: 750; text-decoration: none;">
+            billing@enjoyeveryday.com →
+        </a>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- INVOICE DETAILS MODAL COMPONENT -->
+<!-- ========================================== -->
+<InvoiceDetailsModal 
+    IsOpen="@(_showInvoiceModal && _selectedInvoice != null)"
+    Invoice="@_selectedInvoice"
+    OrganizationName="@_orgName"
+    Payments="@_selectedInvoicePayments"
+    OnClose="CloseModal"
+    OnPrint="PrintInvoice">
+    <FooterContent>
+        <div>
+            @if (_selectedInvoice != null && _selectedInvoice.BalanceDue > 0 && _selectedInvoice.Status != InvoiceStatus.Draft && _selectedInvoice.Status != InvoiceStatus.Void)
+            {
+                <button class="btn-pay-now" @onclick="() => PayInvoiceOnline(_selectedInvoice)" disabled="@_isProcessingPayment" style="padding: 8px 18px; font-size: 13.5px;">
+                    💳 Pay Outstanding Balance (@_selectedInvoice.BalanceDue.ToString("C2"))
+                </button>
+            }
+        </div>
+        <button class="btn secondary" @onclick="CloseModal">Close</button>
+    </FooterContent>
+</InvoiceDetailsModal>
+
+@code {
+    private List<Invoice> _invoices = new();
+    private OrganizationBillingSettings? _billingSettings;
+    private Invoice? _selectedInvoice;
+    private bool _showInvoiceModal = false;
+    private bool _isLoading = true;
+    private string _activeTab = "All";
+    private string _searchQuery = string.Empty;
+    private string _orgName = "Daycare Organization";
+
+    private string? _errorMessage;
+    private DotNetObjectReference<OrganizationBillingView>? _dotNetRef;
+    private bool _isProcessingPayment = false;
+    private string? _paymentMessage;
+    private bool _paymentSuccess = false;
+    private List<Payment> _selectedInvoicePayments = new();
+    private Invoice? _selectedInvoiceForPayment;
+
+    private decimal TotalOutstandingBalance => _invoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.BalanceDue);
+    private decimal TotalAmountPaid => _invoices.Where(i => i.Status != InvoiceStatus.Void).Sum(i => i.AmountPaid);
+    private int OverdueCount => _invoices.Count(i => i.Status == InvoiceStatus.Overdue);
+    private DateTimeOffset? NextDueDate => _invoices
+        .Where(i => i.BalanceDue > 0 && i.Status != InvoiceStatus.Void)
+        .OrderBy(i => i.DueDate)
+        .Select(i => (DateTimeOffset?)i.DueDate)
+        .FirstOrDefault();
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInvoicesAsync();
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private async Task LoadInvoicesAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        try
+        {
+            var orgId = UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
+            _invoices = await BillingService.GetInvoicesForOrganizationAsync(orgId);
+            _billingSettings = await BillingService.GetBillingSettingsAsync(orgId);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load invoices: {ex.Message}";
+            _invoices = new();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private List<Invoice> FilteredInvoices
+    {
+        get
+        {
+            var query = _invoices.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(i => i.InvoiceNumber.ToLowerInvariant().Contains(q)
+                                      || (i.Description != null && i.Description.ToLowerInvariant().Contains(q)));
+            }
+
+            query = _activeTab switch
+            {
+                "Outstanding" => query.Where(i => i.BalanceDue > 0),
+                "Paid" => query.Where(i => i.Status == InvoiceStatus.Paid),
+                _ => query
+            };
+
+            return query.OrderByDescending(i => i.IssueDate).ToList();
+        }
+    }
+
+    private async Task OpenInvoiceModal(Invoice inv)
+    {
+        _selectedInvoice = inv;
+        _selectedInvoicePayments = await BillingService.GetInvoicePaymentsAsync(inv.Id);
+        _showInvoiceModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showInvoiceModal = false;
+        _selectedInvoice = null;
+    }
+
+    private async Task PayInvoiceOnline(Invoice inv)
+    {
+        if (_isProcessingPayment) return;
+        _isProcessingPayment = true;
+        _paymentMessage = null;
+        _selectedInvoiceForPayment = inv;
+
+        try
+        {
+            var order = await BillingService.CreateRazorpayOrderAsync(new CreateRazorpayOrderRequest { InvoiceId = inv.Id });
+            var options = new
+            {
+                key = order.KeyId,
+                amount = order.AmountInPaise,
+                currency = order.Currency,
+                name = "EnjoyEveryday Daycare",
+                description = $"Payment for Invoice {order.InvoiceNumber}",
+                orderId = order.OrderId,
+                invoiceId = inv.Id.ToString(),
+                invoiceNumber = order.InvoiceNumber,
+                organizationId = inv.OrganizationId.ToString(),
+                prefillName = _orgName,
+                prefillEmail = inv.BillingContactEmail ?? ""
+            };
+
+            await JS.InvokeVoidAsync("initiateRazorpayPayment", options, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            _paymentSuccess = false;
+            _paymentMessage = $"Could not initiate payment: {ex.Message}";
+            _isProcessingPayment = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnRazorpaySuccess(RazorpayCallbackPayload payload)
+    {
+        _isProcessingPayment = true;
+        StateHasChanged();
+        try
+        {
+            if (_selectedInvoiceForPayment == null) return;
+
+            var result = await BillingService.VerifyRazorpayPaymentAsync(new VerifyRazorpayPaymentRequest
+            {
+                InvoiceId = _selectedInvoiceForPayment.Id,
+                RazorpayOrderId = payload.OrderId,
+                RazorpayPaymentId = payload.PaymentId,
+                RazorpaySignature = payload.Signature
+            });
+
+            if (!result.Success || result.Payment == null)
+            {
+                throw new InvalidOperationException(result.ErrorMessage ?? "Payment verification failed.");
+            }
+
+            var payment = result.Payment;
+            _paymentSuccess = true;
+            _paymentMessage = $"Payment of {payment.Amount:C2} ({payment.PaymentReference}) verified successfully via Razorpay.";
+            await LoadInvoicesAsync();
+            if (_selectedInvoice != null && _selectedInvoice.Id == _selectedInvoiceForPayment.Id)
+            {
+                _selectedInvoice = _invoices.FirstOrDefault(i => i.Id == _selectedInvoiceForPayment.Id);
+                if (_selectedInvoice != null)
+                {
+                    _selectedInvoicePayments = await BillingService.GetInvoicePaymentsAsync(_selectedInvoice.Id);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _paymentSuccess = false;
+            _paymentMessage = $"Payment verification error: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessingPayment = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnRazorpayError(string error)
+    {
+        _isProcessingPayment = false;
+        _paymentSuccess = false;
+        _paymentMessage = $"Payment was not completed: {error}";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnRazorpayDismiss()
+    {
+        _isProcessingPayment = false;
+        StateHasChanged();
+    }
+
+    private async Task PrintInvoice()
+    {
+        await JS.InvokeVoidAsync("window.print");
+    }
+
+    public class RazorpayCallbackPayload
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public string PaymentId { get; set; } = string.Empty;
+        public string Signature { get; set; } = string.Empty;
+    }
+}

@@ -1,0 +1,821 @@
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Tenancy
+
+@inject IStaffRosterService RosterService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject NavigationManager NavigationManager
+@inject IUserContext UserContext
+@inject ISystemLookupCatalog LookupCatalog
+
+<div class="roster-page-container">
+    <PageHero Eyebrow="COMPLIANCE &amp; STAFFING"
+              Title="Staff Roster &amp; Coverage"
+              Subtitle="Statutory educator-to-child ratios, staggered shifts, and leave coverage in real time.">
+        <RightContent>
+            <div class="hero-actions-bar">
+                <div class="date-navigator">
+                    <button class="date-arrow-btn" @onclick="GoPreviousDay" title="Previous day">‹</button>
+                    <input type="date" class="roster-date-input" @bind="_selectedDate" @bind:after="LoadRosterAsync" />
+                    <button class="date-arrow-btn" @onclick="GoNextDay" title="Next day">›</button>
+                    @if (_selectedDate.Date != DateTime.Today)
+                    {
+                        <button class="today-badge-btn" @onclick="GoToday">Today</button>
+                    }
+                </div>
+                <button class="btn secondary directory-link" @onclick='() => NavigationManager.NavigateTo("/teachers")'>
+                    <i class="bi bi-people"></i> Teachers
+                </button>
+                <button class="primary log-leave-btn" @onclick="OpenLeaveModal">
+                    + Log Leave
+                </button>
+            </div>
+        </RightContent>
+    </PageHero>
+
+    <!-- Branch Filter Tabs -->
+    @if (_branches != null && _branches.Count > 1)
+    {
+        <div class="branch-filter-bar">
+            <span class="filter-label"><i class="bi bi-geo-alt"></i> Branch:</span>
+            <div class="branch-tabs-group">
+                @foreach (var b in _branches)
+                {
+                    <button class="branch-tab-btn @(_selectedBranchId == b.Id ? "active" : "")" @onclick="() => SelectBranch(b.Id)">
+                        @b.Name
+                    </button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <LoadingState Message="Calculating real-time ratio compliance and shift rosters..." />
+    }
+    else if (_overview != null)
+    {
+        <!-- KPI Metrics Strip -->
+        <div class="roster-kpi-grid">
+            <div class="kpi-card kpi-scheduled">
+                <div class="kpi-header">
+                    <span class="kpi-lbl">Educators Scheduled</span>
+                    <span class="kpi-icon">👥</span>
+                </div>
+                <div class="kpi-num-row">
+                    <span class="kpi-num">@_overview.TotalTeachersScheduled</span>
+                    <span class="kpi-tag">Rostered Today</span>
+                </div>
+            </div>
+
+            <div class="kpi-card kpi-clocked">
+                <div class="kpi-header">
+                    <span class="kpi-lbl">Active On Site</span>
+                    <span class="kpi-icon">⏱️</span>
+                </div>
+                <div class="kpi-num-row">
+                    <span class="kpi-num">@_overview.TotalTeachersClockedIn</span>
+                    <span class="kpi-tag active-pill">
+                        <span class="pulse-dot"></span> Clocked In Now
+                    </span>
+                </div>
+            </div>
+
+            <div class="kpi-card kpi-understaffed @(_overview.UnderstaffedRoomsCount > 0 ? "has-understaffed" : "is-healthy")">
+                <div class="kpi-header">
+                    <span class="kpi-lbl">Ratio Compliance</span>
+                    <span class="kpi-icon">@(_overview.UnderstaffedRoomsCount > 0 ? "⚠️" : "🛡️")</span>
+                </div>
+                <div class="kpi-num-row">
+                    @if (_overview.UnderstaffedRoomsCount > 0)
+                    {
+                        <span class="kpi-num alert-num">@_overview.UnderstaffedRoomsCount</span>
+                        <span class="kpi-tag alert-pill">Rooms Understaffed</span>
+                    }
+                    else
+                    {
+                        <span class="kpi-num healthy-num">100%</span>
+                        <span class="kpi-tag healthy-pill">All Ratios Compliant</span>
+                    }
+                </div>
+            </div>
+
+            <div class="kpi-card kpi-leaves">
+                <div class="kpi-header">
+                    <span class="kpi-lbl">Staff On Leave</span>
+                    <span class="kpi-icon">🏖️</span>
+                </div>
+                <div class="kpi-num-row">
+                    <span class="kpi-num">@_overview.TotalLeavesToday</span>
+                    <span class="kpi-tag">
+                        @(_overview.TotalLeavesToday == 1 ? "1 Absence Today" : $"{_overview.TotalLeavesToday} Absences Today")
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 1: Statutory Educator-to-Child Ratios -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-shield-check"></i> Statutory Educator-to-Child Ratios
+                    </h2>
+                    <p class="section-subtitle">Real-time room occupancy measured against official early-childhood licensing standards.</p>
+                </div>
+                @if (_overview.AvailableFloatTeachers.Any())
+                {
+                    <div class="floats-available-badge">
+                        <span class="float-dot"></span>
+                        @_overview.AvailableFloatTeachers.Count Float Educator(s) Ready for Dispatch
+                    </div>
+                }
+            </div>
+
+            <div class="ratio-cards-grid">
+                @foreach (var r in _overview.Ratios)
+                {
+                    var ratioStatus = r.Status;
+                    var ratioClass = GetRatioClass(ratioStatus);
+                    var pct = r.TeachersPresent > 0 
+                        ? Math.Min(100, (double)r.ChildrenPresent / (r.TeachersPresent * r.MaxAllowedRatio) * 100)
+                        : (r.ChildrenPresent > 0 ? 100 : 0);
+
+                    <div class="ratio-card @ratioClass">
+                        <div class="ratio-card-top">
+                            <div>
+                                <span class="room-title">@r.ClassroomName</span>
+                                <span class="rule-badge">@r.StatutoryRule</span>
+                            </div>
+                            <span class="status-badge @ratioClass">
+                                @if (ratioStatus == RatioComplianceStatus.Compliant)
+                                {
+                                    <span>✓ Compliant</span>
+                                }
+                                else if (ratioStatus == RatioComplianceStatus.AtRisk)
+                                {
+                                    <span>⚠️ At Capacity</span>
+                                }
+                                else
+                                {
+                                    <span>🚨 Understaffed</span>
+                                }
+                            </span>
+                        </div>
+
+                        <div class="ratio-metric-row">
+                            <div class="metric-block">
+                                <span class="metric-value">@r.ChildrenPresent</span>
+                                <span class="metric-caption">Children Present</span>
+                            </div>
+                            <div class="metric-divider">:</div>
+                            <div class="metric-block">
+                                <span class="metric-value">@r.TeachersPresent</span>
+                                <span class="metric-caption">Educators Active</span>
+                            </div>
+                        </div>
+
+                        <div class="ratio-bar-container">
+                            <div class="ratio-bar-track">
+                                <div class="ratio-bar-fill @ratioClass" style="width: @(pct.ToString("0"))%;"></div>
+                            </div>
+                            <div class="ratio-bar-footer">
+                                <span>Current 1:@(r.CurrentRatio)</span>
+                                <span>Statutory Limit 1:@(r.MaxAllowedRatio)</span>
+                            </div>
+                        </div>
+
+                        @if (ratioStatus == RatioComplianceStatus.Breached)
+                        {
+                            <div class="ratio-alert-action">
+                                <span><strong>+@r.MissingTeachersCount</strong> educator needed</span>
+                                @if (_overview.AvailableFloatTeachers.Any())
+                                {
+                                    <button class="btn secondary dispatch-btn" @onclick="() => DispatchFloat(r.ClassroomId)">
+                                        ⚡ Dispatch Float
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Section 2: Shift Roster Board & Float Support -->
+        <div class="section-container">
+            <div class="section-header shift-header-row">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-clock-history"></i> Daily Shift Roster
+                    </h2>
+                    <p class="section-subtitle">Staggered morning, core, and closing educator coverage assignments.</p>
+                </div>
+
+                <div class="shift-controls-bar">
+                    <input class="shift-search-input" 
+                           placeholder="Search educator or room..." 
+                           @bind="_shiftSearch" 
+                           @bind:event="oninput" />
+
+                    <div class="shift-filter-tabs">
+                        <button class="shift-tab @(_shiftFilter == "all" ? "active" : "")" @onclick='() => _shiftFilter = "all"'>All (@_overview.Shifts.Count)</button>
+                        <button class="shift-tab @(_shiftFilter == "active" ? "active" : "")" @onclick='() => _shiftFilter = "active"'>Active (@_overview.Shifts.Count(s => s.IsClockedIn && !s.IsOnLeave))</button>
+                        <button class="shift-tab @(_shiftFilter == "scheduled" ? "active" : "")" @onclick='() => _shiftFilter = "scheduled"'>Scheduled (@_overview.Shifts.Count(s => !s.IsClockedIn && !s.IsOnLeave))</button>
+                        <button class="shift-tab @(_shiftFilter == "leave" ? "active" : "")" @onclick='() => _shiftFilter = "leave"'>On Leave (@_overview.Shifts.Count(s => s.IsOnLeave))</button>
+                    </div>
+                </div>
+            </div>
+
+            @{
+                var filteredShifts = _overview.Shifts.Where(s =>
+                {
+                    if (!string.IsNullOrWhiteSpace(_shiftSearch))
+                    {
+                        var q = _shiftSearch.Trim().ToLowerInvariant();
+                        if (!s.TeacherName.ToLowerInvariant().Contains(q) && 
+                            !s.ClassroomName.ToLowerInvariant().Contains(q))
+                            return false;
+                    }
+
+                    return _shiftFilter switch
+                    {
+                        "active" => s.IsClockedIn && !s.IsOnLeave,
+                        "scheduled" => !s.IsClockedIn && !s.IsOnLeave,
+                        "leave" => s.IsOnLeave,
+                        _ => true
+                    };
+                }).ToList();
+            }
+
+            @if (filteredShifts.Any())
+            {
+                <div class="shift-grid">
+                    @foreach (var shift in filteredShifts)
+                    {
+                        <div class="shift-card @(shift.IsOnLeave ? "on-leave" : (shift.IsClockedIn ? "active-shift" : ""))">
+                            <div class="shift-card-header">
+                                <div class="shift-teacher-identity">
+                                    <div class="teacher-avatar">
+                                        @(shift.TeacherName.FirstOrDefault().ToString())
+                                    </div>
+                                    <div>
+                                        <div class="teacher-name">@shift.TeacherName</div>
+                                        <div class="teacher-room">
+                                            <i class="bi bi-door-open"></i> @shift.ClassroomName
+                                        </div>
+                                    </div>
+                                </div>
+                                @if (shift.IsOnLeave)
+                                {
+                                    <span class="leave-tag">🏖️ @(string.IsNullOrEmpty(shift.LeaveNote) ? "On Leave" : shift.LeaveNote)</span>
+                                }
+                                else if (shift.IsClockedIn)
+                                {
+                                    <span class="clock-tag clocked-in">
+                                        <span class="pulse-dot"></span>
+                                        Active
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="clock-tag scheduled">Scheduled</span>
+                                }
+                            </div>
+                            <div class="shift-timing">
+                                <i class="bi bi-clock"></i> @shift.ShiftType
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-shifts-placeholder">
+                    <p>No educators match the selected filter.</p>
+                </div>
+            }
+        </div>
+
+        <!-- Section 3: Staff Leave & Absence Coverage -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-calendar2-week"></i> Leave &amp; Substitute Coverage
+                    </h2>
+                    <p class="section-subtitle">Active and scheduled staff absences with assigned substitute coverage.</p>
+                </div>
+                <button class="btn secondary" @onclick="OpenLeaveModal">
+                    + Log Leave Record
+                </button>
+            </div>
+
+            @if (_overview.Leaves.Any())
+            {
+                <div class="leaves-table-wrap">
+                    <table class="leaves-table">
+                        <thead>
+                            <tr>
+                                <th>Educator</th>
+                                <th>Leave Type</th>
+                                <th>Dates</th>
+                                <th>Reason / Handover</th>
+                                <th>Coverage Status</th>
+                                <th>Substitute Educator</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in _overview.Leaves)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="leave-teacher-cell">
+                                            <div class="teacher-avatar-sm">@l.TeacherName.FirstOrDefault()</div>
+                                            <strong>@l.TeacherName</strong>
+                                        </div>
+                                    </td>
+                                    <td><span class="leave-pill">@l.LeaveType</span></td>
+                                    <td>
+                                        <div class="leave-date-cell">
+                                            <i class="bi bi-calendar3"></i>
+                                            @l.StartDate.ToString("MMM d") – @l.EndDate.ToString("MMM d, yyyy")
+                                        </div>
+                                    </td>
+                                    <td class="leave-reason-cell">@(l.Reason ?? "Scheduled leave")</td>
+                                    <td>
+                                        <span class="coverage-pill @(l.CoverageStatus == "Covered" ? "covered" : "uncovered")">
+                                            @(l.CoverageStatus == "Covered" ? "✓ Covered" : "⚠️ Needs Substitute")
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(l.SubstituteTeacherName))
+                                        {
+                                            <span class="substitute-assigned"><i class="bi bi-person-check"></i> @l.SubstituteTeacherName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="substitute-none">No substitute assigned</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (l.CoverageStatus != "Covered")
+                                        {
+                                            <button class="btn secondary sub-btn" @onclick="() => OpenSubModal(l)">
+                                                Assign Sub
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn secondary sub-btn-reassign" @onclick="() => OpenSubModal(l)">
+                                                Change Sub
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty-leaves">
+                    <i class="bi bi-check-circle" style="font-size: 28px; color: var(--accent, #52745e);"></i>
+                    <p style="margin: 8px 0 2px; font-weight: 750; color: var(--text, #26332d);">Full Team Availability</p>
+                    <span style="font-size: 12px; color: var(--muted, #6c7870);">No educator leaves or absences recorded for this date.</span>
+                </div>
+            }
+        </div>
+
+        <!-- Section 4: Activity Coverage (activities led by absent teachers) -->
+        <div class="section-container">
+            <div class="section-header">
+                <div>
+                    <h2 class="section-title">
+                        <i class="bi bi-arrow-left-right"></i> Activity Coverage
+                    </h2>
+                    <p class="section-subtitle">Planned activities in the next 7 days whose lead teacher is on approved leave. Reassign each to a free teacher.</p>
+                </div>
+                @if (_coverageNeeds.Any())
+                {
+                    <span class="coverage-pill uncovered">@_coverageNeeds.Count need cover</span>
+                }
+            </div>
+
+            @if (_coverageNeeds.Any())
+            {
+                <div class="cov-grid">
+                    @foreach (var n in _coverageNeeds)
+                    {
+                        <div class="cov-card">
+                            <div class="cov-card-top">
+                                <div class="cov-card-text">
+                                    <h3>@n.Title</h3>
+                                    <p>@n.EventDate.ToString("ddd, MMM d") · @FormatSlot(n.StartTime, n.EndTime)</p>
+                                </div>
+                                <span class="leave-pill">@n.ClassroomName</span>
+                            </div>
+                            <div class="cov-card-lead">
+                                <div class="teacher-avatar-sm">@((n.OrganizerName ?? "?").FirstOrDefault())</div>
+                                <span><strong>@n.OrganizerName</strong> · on @n.LeaveType leave</span>
+                            </div>
+                            <button class="primary cov-btn" @onclick="() => OpenReassignModal(n)">Find free teacher</button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-leaves">
+                    <i class="bi bi-check-circle" style="font-size: 28px; color: var(--accent, #52745e);"></i>
+                    <p style="margin: 8px 0 2px; font-weight: 750; color: var(--text, #26332d);">All activities have a teacher</p>
+                    <span style="font-size: 12px; color: var(--muted, #6c7870);">No upcoming activities are led by an absent teacher.</span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Modal: Reassign Activity -->
+@if (_reassignTarget != null)
+{
+    <div class="modal-backdrop-roster" @onclick="CloseReassignModal">
+        <div class="modal-card-roster cov-modal" @onclick:stopPropagation="true">
+            <div class="modal-top">
+                <h3>Reassign “@_reassignTarget.Title”</h3>
+                <button class="close-x" @onclick="CloseReassignModal">✕</button>
+            </div>
+            <p class="modal-helper-text">
+                @_reassignTarget.ClassroomName · @_reassignTarget.EventDate.ToString("ddd, MMM d") · @FormatSlot(_reassignTarget.StartTime, _reassignTarget.EndTime).
+                Teachers are ranked: free first, then co-teachers of this room, then fewest covers this week.
+            </p>
+
+            @if (_candidatesLoading)
+            {
+                <LoadingState Message="Checking teacher availability..." />
+            }
+            else if (!_candidates.Any())
+            {
+                <p class="substitute-none">No other teachers are assigned to this branch.</p>
+            }
+            else
+            {
+                <div class="cov-candidates">
+                    @foreach (var c in _candidates)
+                    {
+                        <div class="cov-candidate @(c.IsAvailable ? "" : "is-busy") @(_selectedCandidate == c.UserId ? "selected" : "")"
+                             role="button" tabindex="0"
+                             @onclick="() => { if (c.IsAvailable) _selectedCandidate = c.UserId; }">
+                            <div class="teacher-avatar-sm">@((c.DisplayName ?? "?").FirstOrDefault())</div>
+                            <div class="cov-card-text">
+                                <strong>@c.DisplayName</strong>
+                                <span>@c.Reason · @c.CoversThisWeek cover(s) this week</span>
+                            </div>
+                            <span class="cov-status @(c.IsAvailable ? "free" : "busy")">@(c.IsAvailable ? "Free" : "Unavailable")</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_reassignError))
+            {
+                <div class="cov-error">@_reassignError</div>
+            }
+
+            <div class="modal-bottom">
+                <button class="btn secondary" @onclick="CloseReassignModal">Cancel</button>
+                <button class="primary" @onclick="ConfirmReassign" disabled="@(_selectedCandidate == Guid.Empty || _reassigning)">
+                    @(_reassigning ? "Assigning..." : "Confirm Reassignment")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Log Staff Leave -->
+@if (_isLeaveModalOpen)
+{
+    <div class="modal-backdrop-roster" @onclick="() => _isLeaveModalOpen = false">
+        <div class="modal-card-roster" @onclick:stopPropagation="true">
+            <div class="modal-top">
+                <h3>Log Staff Leave</h3>
+                <button class="close-x" @onclick="() => _isLeaveModalOpen = false">✕</button>
+            </div>
+            <div class="modal-fields">
+                <label class="field-lbl">Educator</label>
+                <select class="field-input" @bind="_newLeaveTeacherId">
+                    <option value="@Guid.Empty">-- Select Educator --</option>
+                    @if (_overview?.Shifts != null)
+                    {
+                        @foreach (var s in _overview.Shifts)
+                        {
+                            <option value="@s.TeacherId">@s.TeacherName (@s.ClassroomName)</option>
+                        }
+                    }
+                </select>
+
+                <label class="field-lbl">Leave Type</label>
+                <select class="field-input" @bind="_newLeaveType">
+                    @if (_leaveTypes != null && _leaveTypes.Any())
+                    {
+                        @foreach (var lt in _leaveTypes)
+                        {
+                            <option value="@lt.Code">@lt.DisplayName</option>
+                        }
+                    }
+                    else
+                    {
+                        <option value="Vacation">Vacation</option>
+                        <option value="Sick">Sick / Health</option>
+                        <option value="Personal">Personal Leave</option>
+                        <option value="Training">Professional Training</option>
+                        <option value="MaternityPaternity">Parental Leave</option>
+                        <option value="Bereavement">Bereavement</option>
+                    }
+                </select>
+
+                <div class="modal-date-row">
+                    <div class="date-col">
+                        <label class="field-lbl">Start Date</label>
+                        <input type="date" class="field-input" @bind="_newLeaveStart" />
+                    </div>
+                    <div class="date-col">
+                        <label class="field-lbl">End Date</label>
+                        <input type="date" class="field-input" @bind="_newLeaveEnd" />
+                    </div>
+                </div>
+
+                <label class="field-lbl">Reason / Handover Note</label>
+                <textarea class="field-input" rows="2" @bind="_newLeaveReason" placeholder="e.g. Annual leave, lead educator handover confirmed"></textarea>
+            </div>
+            <div class="modal-bottom">
+                <button class="btn secondary" @onclick="() => _isLeaveModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="SubmitLeave" disabled="@(_newLeaveTeacherId == Guid.Empty)">
+                    Save Leave Record
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Assign Substitute -->
+@if (_isSubModalOpen && _selectedLeaveForSub != null)
+{
+    <div class="modal-backdrop-roster" @onclick="() => _isSubModalOpen = false">
+        <div class="modal-card-roster" @onclick:stopPropagation="true">
+            <div class="modal-top">
+                <h3>Assign Substitute for @_selectedLeaveForSub.TeacherName</h3>
+                <button class="close-x" @onclick="() => _isSubModalOpen = false">✕</button>
+            </div>
+            <div class="modal-fields">
+                <p class="modal-helper-text">
+                    Select an available educator to provide classroom ratio coverage from <strong>@_selectedLeaveForSub.StartDate.ToString("MMM d")</strong> to <strong>@_selectedLeaveForSub.EndDate.ToString("MMM d")</strong>.
+                </p>
+                <label class="field-lbl">Available Educator</label>
+                <select class="field-input" @bind="_selectedSubTeacherId">
+                    <option value="@Guid.Empty">-- Select Substitute --</option>
+                    @if (_overview?.Shifts != null)
+                    {
+                        @foreach (var s in _overview.Shifts.Where(sh => sh.TeacherId != _selectedLeaveForSub.TeacherId && !sh.IsOnLeave))
+                        {
+                            <option value="@s.TeacherId">@s.TeacherName (@s.ClassroomName)</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="modal-bottom">
+                <button class="btn secondary" @onclick="() => _isSubModalOpen = false">Cancel</button>
+                <button class="primary" @onclick="ConfirmSubAssignment" disabled="@(_selectedSubTeacherId == Guid.Empty)">
+                    Confirm Coverage
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private DateTime _selectedDate = DateTime.Today;
+    private Guid _selectedBranchId = Guid.Empty;
+    private List<Branch>? _branches;
+    private StaffRosterOverview? _overview;
+    private bool _isLoading = true;
+
+    // Filters
+    private string _shiftFilter = "all";
+    private string _shiftSearch = "";
+
+    // Dynamic Lookups
+    private IReadOnlyList<MasterLookupItem>? _leaveTypes;
+
+    // Modals
+    private bool _isLeaveModalOpen = false;
+    private Guid _newLeaveTeacherId = Guid.Empty;
+    private string _newLeaveType = "Vacation";
+    private DateTime _newLeaveStart = DateTime.Today;
+    private DateTime _newLeaveEnd = DateTime.Today.AddDays(1);
+    private string _newLeaveReason = "";
+
+    private bool _isSubModalOpen = false;
+    private StaffLeaveItem? _selectedLeaveForSub;
+    private Guid _selectedSubTeacherId = Guid.Empty;
+
+    // Activity coverage
+    private List<ActivityCoverageNeedRecord> _coverageNeeds = new();
+    private ActivityCoverageNeedRecord? _reassignTarget;
+    private List<CoverCandidateRecord> _candidates = new();
+    private Guid _selectedCandidate = Guid.Empty;
+    private bool _candidatesLoading;
+    private bool _reassigning;
+    private string? _reassignError;
+
+    private static string FormatSlot(TimeSpan? start, TimeSpan? end) =>
+        start.HasValue ? $"{start.Value:hh\\:mm}–{(end.HasValue ? end.Value.ToString(@"hh\:mm") : "end of day")}" : "All day";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var lookups = await LookupCatalog.GetLookupsByCategoryAsync("StaffLeaveType");
+            if (lookups != null && lookups.Any())
+            {
+                _leaveTypes = lookups;
+                _newLeaveType = _leaveTypes.First().Code;
+            }
+        }
+        catch
+        {
+            // Fallback gracefully
+        }
+
+        var orgs = await OrganizationService.GetOrganizationsAsync();
+        var defaultOrg = orgs.FirstOrDefault();
+        if (defaultOrg != null)
+        {
+            var branchesList = (await BranchService.GetBranchesAsync(defaultOrg.Id)).ToList();
+            _branches = branchesList;
+
+            if (_branches.Any())
+            {
+                _selectedBranchId = _branches.First().Id;
+            }
+        }
+
+        await LoadRosterAsync();
+    }
+
+    private async Task SelectBranch(Guid branchId)
+    {
+        _selectedBranchId = branchId;
+        await LoadRosterAsync();
+    }
+
+    private async Task GoPreviousDay()
+    {
+        _selectedDate = _selectedDate.AddDays(-1);
+        await LoadRosterAsync();
+    }
+
+    private async Task GoNextDay()
+    {
+        _selectedDate = _selectedDate.AddDays(1);
+        await LoadRosterAsync();
+    }
+
+    private async Task GoToday()
+    {
+        _selectedDate = DateTime.Today;
+        await LoadRosterAsync();
+    }
+
+    private async Task LoadRosterAsync()
+    {
+        if (_selectedBranchId == Guid.Empty) return;
+
+        _isLoading = true;
+        try
+        {
+            _overview = await RosterService.GetRosterOverviewAsync(_selectedBranchId, _selectedDate);
+            _coverageNeeds = await RosterService.GetActivityCoverageNeedsAsync(_selectedBranchId, _selectedDate, _selectedDate.AddDays(7));
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private string GetRatioClass(RatioComplianceStatus status) => status switch
+    {
+        RatioComplianceStatus.Compliant => "compliant",
+        RatioComplianceStatus.AtRisk => "atrisk",
+        _ => "breached"
+    };
+
+    private async Task DispatchFloat(Guid classroomId)
+    {
+        if (_overview?.AvailableFloatTeachers.Any() == true)
+        {
+            var floatTeacher = _overview.AvailableFloatTeachers.First();
+            await RosterService.DispatchFloatTeacherAsync(floatTeacher.TeacherId, classroomId);
+            await LoadRosterAsync();
+        }
+    }
+
+    private void OpenLeaveModal()
+    {
+        _newLeaveTeacherId = Guid.Empty;
+        _newLeaveType = _leaveTypes?.FirstOrDefault()?.Code ?? "Vacation";
+        _newLeaveStart = _selectedDate;
+        _newLeaveEnd = _selectedDate.AddDays(1);
+        _newLeaveReason = "";
+        _isLeaveModalOpen = true;
+    }
+
+    private async Task SubmitLeave()
+    {
+        if (_newLeaveTeacherId == Guid.Empty) return;
+
+        var leave = new StaffLeave
+        {
+            TeacherId = _newLeaveTeacherId,
+            LeaveType = _newLeaveType,
+            StartDate = _newLeaveStart,
+            EndDate = _newLeaveEnd,
+            Reason = _newLeaveReason,
+            Status = "Approved",
+            CoverageStatus = "Uncovered"
+        };
+
+        await RosterService.SubmitStaffLeaveAsync(leave);
+        _isLeaveModalOpen = false;
+        _newLeaveTeacherId = Guid.Empty;
+        _newLeaveReason = "";
+        await LoadRosterAsync();
+    }
+
+    private void OpenSubModal(StaffLeaveItem leave)
+    {
+        _selectedLeaveForSub = leave;
+        _selectedSubTeacherId = leave.SubstituteTeacherId ?? Guid.Empty;
+        _isSubModalOpen = true;
+    }
+
+    private async Task ConfirmSubAssignment()
+    {
+        if (_selectedLeaveForSub == null || _selectedSubTeacherId == Guid.Empty) return;
+
+        await RosterService.AssignSubstituteCoverageAsync(_selectedLeaveForSub.Id, _selectedSubTeacherId);
+        _isSubModalOpen = false;
+        _selectedLeaveForSub = null;
+        await LoadRosterAsync();
+    }
+
+    private async Task OpenReassignModal(ActivityCoverageNeedRecord need)
+    {
+        _reassignTarget = need;
+        _selectedCandidate = Guid.Empty;
+        _reassignError = null;
+        _candidatesLoading = true;
+        try
+        {
+            _candidates = await RosterService.GetCoverCandidatesAsync(_selectedBranchId, need.EventId);
+        }
+        finally
+        {
+            _candidatesLoading = false;
+        }
+    }
+
+    private void CloseReassignModal()
+    {
+        _reassignTarget = null;
+        _candidates = new();
+    }
+
+    private async Task ConfirmReassign()
+    {
+        if (_reassignTarget == null || _selectedCandidate == Guid.Empty) return;
+        _reassigning = true;
+        _reassignError = null;
+        try
+        {
+            await RosterService.ReassignActivityAsync(_selectedBranchId, _reassignTarget.EventId, _selectedCandidate);
+            CloseReassignModal();
+            await LoadRosterAsync();
+        }
+        catch (SchedulingRuleException ex)
+        {
+            _reassignError = ex.Message;
+            _candidates = await RosterService.GetCoverCandidatesAsync(_selectedBranchId, _reassignTarget.EventId);
+            _selectedCandidate = Guid.Empty;
+        }
+        finally
+        {
+            _reassigning = false;
+        }
+    }
+}

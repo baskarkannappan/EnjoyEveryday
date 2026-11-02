@@ -1,0 +1,486 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Users
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@using Microsoft.AspNetCore.Components
+
+@inject IOrganizationPermissionService OrgPermService
+@inject OrganizationService OrgService
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+
+<div class="matrix-view-container">
+    @if (_isLoading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading organization permissions...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Organization Scope Bar -->
+        <div class="org-scope-bar">
+            <div class="org-info">
+                <div class="org-avatar">🏢</div>
+                <div>
+                    <div class="org-title-row">
+                        <span class="org-label">Current Organization</span>
+                        <span class="org-badge">Strict Isolation</span>
+                    </div>
+                    @if (_availableOrgs.Count > 1)
+                    {
+                        <div class="org-selector-wrapper">
+                            <select class="org-select" value="@_currentOrgId" @onchange="OnOrganizationChanged">
+                                @foreach (var org in _availableOrgs)
+                                {
+                                    <option value="@org.Id">@org.Name (@(org.Location ?? "Main Facility"))</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <h2 class="org-name">@_currentOrgName</h2>
+                        <span class="org-meta">@_currentOrgLocation • ID: @_currentOrgId</span>
+                    }
+                </div>
+            </div>
+
+            <div class="scope-alert">
+                <span class="scope-icon">ℹ️</span>
+                <p>
+                    Changes saved here apply <strong>exclusively</strong> to <strong>@_currentOrgName</strong>. Other daycare organizations maintain their own isolated access rules.
+                </p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_statusMessage))
+        {
+            <div class="status-banner @(_isErrorStatus ? "error" : "success")">
+                <span>@(_isErrorStatus ? "⚠️" : "✅")</span>
+                <span>@_statusMessage</span>
+                <button type="button" class="close-status" @onclick="() => _statusMessage = null">✕</button>
+            </div>
+        }
+
+        <!-- Filter & Search Toolbar -->
+        <div class="toolbar-card">
+            <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input class="search-input" 
+                       type="text" 
+                       placeholder="Filter by page name, functionality, route..." 
+                       @bind="_searchQuery" 
+                       @bind:event="oninput" />
+                @if (!string.IsNullOrEmpty(_searchQuery))
+                {
+                    <button type="button" class="clear-search" @onclick="() => _searchQuery = string.Empty">✕</button>
+                }
+            </div>
+
+            <div class="category-tabs">
+                <button type="button" class="cat-tab @(_selectedCategory == "All" ? "active" : "")" 
+                        @onclick='() => _selectedCategory = "All"'>
+                    All (@_allFeatures.Count)
+                </button>
+                @foreach (var cat in _categories)
+                {
+                    var count = _allFeatures.Count(f => f.Category == cat);
+                    <button type="button" class="cat-tab @(_selectedCategory == cat ? "active" : "")" 
+                            @onclick="() => _selectedCategory = cat">
+                        @cat (@count)
+                    </button>
+                }
+            </div>
+        </div>
+
+        <!-- Role Summary Header Cards -->
+        <div class="role-overview-grid">
+            @foreach (var role in _roles)
+            {
+                var roleName = OrgPermService.GetRoleDisplayName(role);
+                var enabledCount = GetEnabledCountForRole(role);
+                var totalCount = _allFeatures.Count;
+
+                <div class="role-stat-card">
+                    <div class="role-stat-header">
+                        <span class="role-badge-pill @GetRoleCssClass(role)">@roleName</span>
+                        <span class="role-stat-ratio">@enabledCount / @totalCount</span>
+                    </div>
+                    <div class="role-progress-bar">
+                        <div class="role-progress-fill @GetRoleCssClass(role)" 
+                             style="width: @((int)((double)enabledCount / Math.Max(1, totalCount) * 100))%;"></div>
+                    </div>
+                    <div class="role-quick-actions">
+                        <button type="button" class="quick-btn" @onclick="() => SetRoleAccessForFiltered(role, true)">Grant All</button>
+                        <span class="sep">•</span>
+                        <button type="button" class="quick-btn" @onclick="() => SetRoleAccessForFiltered(role, false)">Revoke All</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Permission Matrix Table -->
+        <div class="matrix-card">
+            <div class="table-responsive">
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th class="col-feature">Page &amp; Functionality</th>
+                            @foreach (var role in _roles)
+                            {
+                                <th class="col-role text-center">
+                                    <div class="role-th-content">
+                                        <span class="role-th-title">@OrgPermService.GetRoleDisplayName(role)</span>
+                                        <span class="role-th-desc">@GetRoleDescription(role)</span>
+                                    </div>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var category in GetVisibleCategories())
+                        {
+                            var catFeatures = GetFeaturesForCategory(category);
+                            if (catFeatures.Count == 0) continue;
+
+                            <tr class="category-header-row">
+                                <td colspan="@(_roles.Count + 1)">
+                                    <div class="category-header-content">
+                                        <span class="cat-icon">@GetCategoryIcon(category)</span>
+                                        <span class="cat-title">@category</span>
+                                        <span class="cat-badge">@catFeatures.Count @(catFeatures.Count == 1 ? "element" : "elements")</span>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            @foreach (var feat in catFeatures)
+                            {
+                                <tr class="feature-row">
+                                    <td class="col-feature-cell">
+                                        <div class="feature-info">
+                                            <div class="feature-title-line">
+                                                <span class="feature-name">@feat.Name</span>
+                                                <span class="badge-type @feat.FeatureType.ToLower()">@feat.FeatureType</span>
+                                            </div>
+                                            <p class="feature-desc">@feat.Description</p>
+                                            <div class="feature-route"><code>@feat.FeatureKey</code></div>
+                                        </div>
+                                    </td>
+                                    @foreach (var role in _roles)
+                                    {
+                                        var isChecked = IsRoleGranted(role, feat.FeatureKey);
+                                        var isImmutable = IsRoleImmutable(role);
+
+                                        <td class="col-checkbox-cell text-center @(isChecked ? "cell-active" : "")">
+                                            <label class="matrix-check-wrap">
+                                                <input type="checkbox" 
+                                                       checked="@isChecked" 
+                                                       disabled="@(isImmutable || _isSaving)"
+                                                       @onchange="(e) => TogglePermission(role, feat.FeatureKey, e)" />
+                                                <span class="check-box-custom @(isImmutable ? "immutable" : "")"></span>
+                                            </label>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback<bool> OnUnsavedChangesChanged { get; set; }
+
+    private bool _isLoading = true;
+    private bool _isSaving = false;
+    private bool _hasUnsavedChanges = false;
+    private string? _statusMessage;
+    private bool _isErrorStatus = false;
+
+    private Guid _currentOrgId;
+    private string _currentOrgName = "Daycare Organization";
+    private string _currentOrgLocation = "Main Facility";
+    private List<Organization> _availableOrgs = new();
+
+    private List<FeatureDefinition> _allFeatures = new();
+    private List<string> _roles = new();
+    private List<string> _categories = new();
+    private Dictionary<string, HashSet<string>> _matrix = new();
+
+    private string _searchQuery = string.Empty;
+    private string _selectedCategory = "All";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMatrixAsync();
+    }
+
+    public async Task LoadMatrixAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _availableOrgs = (await OrgService.GetOrganizationsAsync()).ToList();
+
+            var targetOrg = (UserContext.OrganizationId.HasValue
+                ? _availableOrgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+                : null) ?? _availableOrgs.FirstOrDefault();
+
+            if (targetOrg != null)
+            {
+                _currentOrgId = targetOrg.Id;
+                _currentOrgName = targetOrg.Name;
+                _currentOrgLocation = targetOrg.Location ?? "Main Campus";
+            }
+
+            _roles = OrgPermService.GetConfigurableRoles().ToList();
+            _allFeatures = OrgPermService.GetAllFeatures().ToList();
+            _categories = _allFeatures.Select(f => f.Category).Distinct().ToList();
+
+            if (_currentOrgId != Guid.Empty)
+            {
+                var perms = await OrgPermService.GetPermissionsMatrixAsync(TenantContext.TenantId, _currentOrgId);
+                _matrix.Clear();
+                foreach (var role in _roles)
+                {
+                    _matrix[role] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+                foreach (var kv in perms)
+                {
+                    if (kv.Value)
+                    {
+                        if (!_matrix.TryGetValue(kv.Key.RoleName, out var set))
+                        {
+                            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            _matrix[kv.Key.RoleName] = set;
+                        }
+                        set.Add(kv.Key.FeatureKey);
+                    }
+                }
+            }
+
+            _hasUnsavedChanges = false;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public async Task SavePermissionsAsync()
+    {
+        if (_currentOrgId == Guid.Empty || _isSaving) return;
+
+        try
+        {
+            _isSaving = true;
+            _statusMessage = null;
+
+            var dict = new Dictionary<(string RoleName, string FeatureKey), bool>();
+            foreach (var role in _roles)
+            {
+                var set = _matrix.TryGetValue(role, out var s) ? s : new HashSet<string>();
+                foreach (var feat in _allFeatures)
+                {
+                    dict[(role, feat.Key)] = set.Contains(feat.Key);
+                }
+            }
+
+            await OrgPermService.SavePermissionsMatrixAsync(TenantContext.TenantId, _currentOrgId, dict);
+            _hasUnsavedChanges = false;
+            await OnUnsavedChangesChanged.InvokeAsync(false);
+            _isErrorStatus = false;
+            _statusMessage = "Role permissions updated and applied to your daycare organization.";
+        }
+        catch (Exception ex)
+        {
+            _isErrorStatus = true;
+            _statusMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    public async Task ResetToDefaultsAsync()
+    {
+        if (_currentOrgId == Guid.Empty) return;
+
+        try
+        {
+            _isSaving = true;
+            await OrgPermService.ResetPermissionsMatrixAsync(TenantContext.TenantId, _currentOrgId);
+            await LoadMatrixAsync();
+            _isErrorStatus = false;
+            _statusMessage = "All role permissions reset to system baseline defaults.";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task OnOrganizationChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var newOrgId))
+        {
+            _currentOrgId = newOrgId;
+            var org = _availableOrgs.FirstOrDefault(o => o.Id == newOrgId);
+            if (org != null)
+            {
+                _currentOrgName = org.Name;
+                _currentOrgLocation = org.Location ?? "Main Campus";
+            }
+            await LoadMatrixAsync();
+        }
+    }
+
+    private bool IsRoleGranted(string role, string featureKey)
+    {
+        if (_matrix.TryGetValue(role, out var set))
+        {
+            return set.Contains(featureKey);
+        }
+        return false;
+    }
+
+    private bool IsRoleImmutable(string role)
+    {
+        return role == RoleTemplates.PlatformAdmin;
+    }
+
+    private void TogglePermission(string role, string featureKey, ChangeEventArgs e)
+    {
+        if (IsRoleImmutable(role)) return;
+
+        bool isChecked = e.Value is bool b && b;
+        if (!_matrix.ContainsKey(role))
+        {
+            _matrix[role] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (isChecked)
+            _matrix[role].Add(featureKey);
+        else
+            _matrix[role].Remove(featureKey);
+
+        _hasUnsavedChanges = true;
+        _ = OnUnsavedChangesChanged.InvokeAsync(true);
+    }
+
+    private void SetRoleAccessForFiltered(string role, bool grant)
+    {
+        if (IsRoleImmutable(role)) return;
+
+        var visibleFeatures = GetVisibleFeatures();
+        if (!_matrix.ContainsKey(role))
+        {
+            _matrix[role] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        foreach (var feat in visibleFeatures)
+        {
+            if (grant)
+                _matrix[role].Add(feat.FeatureKey);
+            else
+                _matrix[role].Remove(feat.FeatureKey);
+        }
+
+        _hasUnsavedChanges = true;
+        _ = OnUnsavedChangesChanged.InvokeAsync(true);
+    }
+
+    private int GetEnabledCountForRole(string role)
+    {
+        if (_matrix.TryGetValue(role, out var set))
+        {
+            return _allFeatures.Count(f => set.Contains(f.FeatureKey));
+        }
+        return 0;
+    }
+
+    private List<FeatureDefinition> GetVisibleFeatures()
+    {
+        return _allFeatures.Where(f =>
+        {
+            if (_selectedCategory != "All" && f.Category != _selectedCategory) return false;
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.ToLowerInvariant();
+                return f.Name.ToLowerInvariant().Contains(q) ||
+                       f.Description.ToLowerInvariant().Contains(q) ||
+                       f.FeatureKey.ToLowerInvariant().Contains(q);
+            }
+            return true;
+        }).ToList();
+    }
+
+    private List<string> GetVisibleCategories()
+    {
+        var vis = GetVisibleFeatures();
+        return _categories.Where(c => vis.Any(f => f.Category == c)).ToList();
+    }
+
+    private List<FeatureDefinition> GetFeaturesForCategory(string cat)
+    {
+        return GetVisibleFeatures().Where(f => f.Category == cat).ToList();
+    }
+
+    private string GetRoleCssClass(string role)
+    {
+        return role switch
+        {
+            RoleTemplates.PlatformAdmin => "role-platform",
+            RoleTemplates.OrganizationAdmin => "role-org-admin",
+            RoleTemplates.BranchAdmin => "role-branch-admin",
+            RoleTemplates.LeadTeacher => "role-lead-teacher",
+            RoleTemplates.ClassroomTeacher => "role-teacher",
+            RoleTemplates.DaycareTeacher => "role-assistant",
+            RoleTemplates.Parent => "role-parent",
+            _ => "role-default"
+        };
+    }
+
+    private string GetRoleDescription(string role)
+    {
+        return role switch
+        {
+            RoleTemplates.PlatformAdmin => "Super Administrator",
+            RoleTemplates.OrganizationAdmin => "Org Executive",
+            RoleTemplates.BranchAdmin => "Campus Director",
+            RoleTemplates.LeadTeacher => "Lead Educator",
+            RoleTemplates.ClassroomTeacher => "Classroom Teacher",
+            RoleTemplates.DaycareTeacher => "Support Staff",
+            RoleTemplates.Parent => "Family / Parent",
+            _ => role
+        };
+    }
+
+    private string GetCategoryIcon(string category)
+    {
+        return category switch
+        {
+            "Attendance" => "⏱️",
+            "DailyCare" => "🍼",
+            "Curriculum" => "🎨",
+            "Communication" => "💬",
+            "Children" => "👶",
+            "Organization" => "🏢",
+            "SafetyTrust" => "🛡️",
+            "Intelligence" => "✦",
+            "Billing" => "💳",
+            _ => "📁"
+        };
+    }
+}

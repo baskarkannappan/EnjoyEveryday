@@ -1,0 +1,528 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Intelligence
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@using Microsoft.AspNetCore.Components
+
+@inject IOrganizationIntelligenceService IntelService
+@inject IBranchBenchmarkingService BenchmarkingService
+@inject OrganizationService OrgService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject NavigationManager NavigationManager
+
+<div class="intel-view-container">
+    <!-- Header Actions -->
+    <div class="intel-view-header">
+        <div class="view-switch-tabs">
+            <button type="button" class="view-tab @(_activeTab == "Benchmarking" ? "active" : "")" @onclick='() => SetTab("Benchmarking")'>
+                🏢 Multi-Branch Benchmarking (@_scorecards.Count)
+            </button>
+            <button type="button" class="view-tab @(_activeTab == "Intelligence" ? "active" : "")" @onclick='() => SetTab("Intelligence")'>
+                ✦ Executive Insights &amp; Rhythm
+            </button>
+            <button type="button" class="view-tab @(_activeTab == "Goals" ? "active" : "")" @onclick='() => SetTab("Goals")'>
+                🎯 Operational Goals &amp; Actions (@_operationalGoals.Count)
+            </button>
+        </div>
+
+        <div class="header-actions">
+            @if (_activeTab == "Intelligence")
+            {
+                <button type="button" class="btn-refresh" @onclick="GenerateFreshInsightsAsync" disabled="@_isLoading">
+                    @if (_isLoading)
+                    {
+                        <span class="spinner-small"></span>
+                        <span>Analyzing Operations...</span>
+                    }
+                    else
+                    {
+                        <span>↻ Refresh AI Insights</span>
+                    }
+                </button>
+            }
+            else if (_activeTab == "Goals")
+            {
+                <button type="button" class="btn-refresh" @onclick="() => _isAddGoalModalOpen = true">
+                    + Add Improvement Goal
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-error">
+            ⚠️ @_errorMessage
+        </div>
+    }
+
+    <!-- TAB 1: MULTI-BRANCH BENCHMARKING -->
+    @if (_activeTab == "Benchmarking")
+    {
+        @if (_isLoadingBenchmarking)
+        {
+            <LoadingState Message="Calculating multi-branch benchmarking scores..." />
+        }
+        else if (!_scorecards.Any())
+        {
+            <EmptyState Icon="🏢"
+                        Title="No branch data available"
+                        Description="No branches registered under this organization to benchmark."
+                        ActionText="Go to Settings"
+                        OnAction='() => NavigationManager.NavigateTo("/settings")' />
+        }
+        else
+        {
+            <!-- NETWORK PULSE -->
+            <BranchBenchmarkingPulseStrip Scorecards="_scorecards" />
+
+            <!-- BRANCH SCORECARDS GRID -->
+            <div class="scorecards-grid">
+                @foreach (var sc in _scorecards)
+                {
+                    <BranchScorecardCard Scorecard="sc" />
+                }
+            </div>
+
+            <!-- SIDE-BY-SIDE BENCHMARKING TABLE -->
+            <CrossBranchBenchmarkingTable Scorecards="_scorecards" />
+        }
+    }
+
+    <!-- TAB 2: EXECUTIVE AI INTELLIGENCE & OPERATIONS -->
+    @if (_activeTab == "Intelligence")
+    {
+        <!-- Filter Bar -->
+        <div class="intel-filter-bar">
+            <div class="filter-group">
+                <label>Organization</label>
+                <select class="filter-select" @bind="_selectedOrgId" @bind:after="OnOrgChangedAsync">
+                    @foreach (var org in _organizations)
+                    {
+                        <option value="@org.Id">@org.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Branch</label>
+                <select class="filter-select" @bind="_selectedBranchId" @bind:after="OnBranchChangedAsync">
+                    <option value="">All Branches</option>
+                    @foreach (var branch in _branches)
+                    {
+                        <option value="@branch.Id">@branch.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Classroom</label>
+                <select class="filter-select" @bind="_selectedClassroomId" @bind:after="LoadReportAsync">
+                    <option value="">All Classrooms</option>
+                    @foreach (var cls in _filteredClassrooms)
+                    {
+                        <option value="@cls.Id">@cls.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Reporting Period</label>
+                <select class="filter-select" @bind="_reportingPeriod" @bind:after="LoadReportAsync">
+                    <option value="@IntelligenceReportingPeriod.Last7Days">Last 7 Days</option>
+                    <option value="@IntelligenceReportingPeriod.Last30Days">Last 30 Days</option>
+                    <option value="@IntelligenceReportingPeriod.ThisMonth">This Month</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label>Category Filter</label>
+                <select class="filter-select" @bind="_selectedCategory" @bind:after="LoadReportAsync">
+                    <option value="">All Categories</option>
+                    <option value="@OrganizationIntelligenceCategory.OperationalOverview">Operational Overview</option>
+                    <option value="@OrganizationIntelligenceCategory.CurriculumVariety">Curriculum Variety</option>
+                    <option value="@OrganizationIntelligenceCategory.PlanningGaps">Planning Gaps</option>
+                    <option value="@OrganizationIntelligenceCategory.DataQuality">Data Quality</option>
+                </select>
+            </div>
+        </div>
+
+        @if (_isLoading)
+        {
+            <LoadingState Message="Analyzing daycare operations & generating executive insights..." />
+        }
+        else if (_report == null)
+        {
+            <EmptyState Icon="✦"
+                        Title="No intelligence data available"
+                        Description="Select an organization and branch above to generate executive operational insights."
+                        ActionText="↻ Generate Insights"
+                        OnAction="GenerateFreshInsightsAsync" />
+        }
+        else
+        {
+            <!-- Section A: Operational Overview Metrics Grid -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Attendance Health</div>
+                    <div class="metric-value">@_report.OperationalOverview.AttendanceRatePercentage%</div>
+                    <div class="metric-sub">
+                        @_report.OperationalOverview.ActualPresentCount present · @_report.OperationalOverview.AbsentCount absent
+                    </div>
+                    <div class="metric-indicator positive">✓ Stable Daily Rhythm</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Classroom Planning Coverage</div>
+                    <div class="metric-value">@_report.OperationalOverview.PlanningCoveragePercentage%</div>
+                    <div class="metric-sub">
+                        @_report.OperationalOverview.PlannedClassroomsCount of @_report.OperationalOverview.TotalClassrooms classrooms with active plans
+                    </div>
+                    <div class="metric-indicator @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "positive" : "warning")">
+                        @(_report.OperationalOverview.PlanningCoveragePercentage >= 75 ? "✓ Good Coverage" : "Needs Attention")
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Experience Rhythm</div>
+                    <div class="metric-value">@_report.OperationalOverview.CompletedExperiencesCount</div>
+                    <div class="metric-sub">
+                        Experiences logged across enrolled rooms
+                    </div>
+                    <div class="metric-indicator positive">Active Learning</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Family Engagement</div>
+                    <div class="metric-value">@_report.OperationalOverview.LoggedMomentsCount</div>
+                    <div class="metric-sub">
+                        Moments shared with families this cycle
+                    </div>
+                    <div class="metric-indicator positive">Connected Families</div>
+                </div>
+            </div>
+
+            <!-- Section B: Executive Intelligence Insights -->
+            @if (_report.Insights.Any())
+            {
+                <div class="insights-section">
+                    <h2 class="section-title">Key Executive Insights</h2>
+                    <div class="insights-grid">
+                        @foreach (var insight in _report.Insights)
+                        {
+                            <div class="insight-card @insight.EvidenceStrength.ToLower()">
+                                <div class="insight-header">
+                                    <span class="insight-badge @insight.EvidenceStrength.ToLower()">@insight.EvidenceStrength Evidence</span>
+                                    <span class="insight-domain">@insight.Category</span>
+                                </div>
+                                <h3 class="insight-title">@insight.Title</h3>
+                                <p class="insight-desc">@insight.Observation</p>
+                                @if (!string.IsNullOrEmpty(insight.SuggestedNextStep))
+                                {
+                                    <div class="insight-action">
+                                        <strong>Recommendation:</strong> @insight.SuggestedNextStep
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- Section C: Curriculum & Data Quality -->
+            <div class="intel-split-row">
+                <div class="intel-half-card">
+                    <h3 class="card-title">Developmental Domain Balance</h3>
+                    <div class="domain-bars">
+                        @foreach (var kvp in _report.CurriculumVariety.DomainDistribution)
+                        {
+                            <div class="domain-row">
+                                <div class="domain-meta">
+                                    <span>@kvp.Key</span>
+                                    <span class="domain-count">@kvp.Value experiences</span>
+                                </div>
+                                <div class="domain-progress-track">
+                                    <div class="domain-progress-fill" style="width: @GetDomainBarWidth(kvp.Value)%"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="intel-half-card">
+                    <h3 class="card-title">Operational Data Hygiene</h3>
+                    <div class="action-items-grid">
+                        <div class="action-card">
+                            <div class="action-count">@_report.DataQuality.MissingDepartureTimesCount</div>
+                            <div class="action-label">Unrecorded Checkouts</div>
+                            <p class="action-desc">Children marked present without departure checkout before today.</p>
+                        </div>
+                        <div class="action-card">
+                            <div class="action-count">@_report.DataQuality.DraftsAwaitingReviewCount</div>
+                            <div class="action-label">Drafts Needing Approval</div>
+                            <p class="action-desc">Parent communications and updates waiting for educator approval.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    <!-- TAB 3: OPERATIONAL GOALS & ACTION TRACKER -->
+    @if (_activeTab == "Goals")
+    {
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div>
+                <h3 style="margin: 0; font-size: 18px; font-weight: 750; color: var(--text);">Operational Improvement Action Tracker</h3>
+                <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--muted);">
+                    Track targets for capacity, educator ratio compliance, attendance, and curriculum execution.
+                </p>
+            </div>
+            <button type="button" class="primary" @onclick="() => _isAddGoalModalOpen = true">
+                + Add Goal
+            </button>
+        </div>
+
+        @if (!_operationalGoals.Any())
+        {
+            <EmptyState Icon="🎯"
+                        Title="No active goals logged"
+                        Description="Set an operational milestone for your branch to continuously improve quality and compliance."
+                        ActionText="+ Add First Goal"
+                        OnAction="() => _isAddGoalModalOpen = true" />
+        }
+        else
+        {
+            <div class="goals-grid">
+                @foreach (var g in _operationalGoals)
+                {
+                    <OperationalGoalCard Goal="g" OnStatusChanged="HandleGoalStatusChanged" />
+                }
+            </div>
+        }
+    }
+</div>
+
+<AddOperationalGoalModal 
+    IsOpen="_isAddGoalModalOpen"
+    Branches="_branches"
+    Goal="_newGoal"
+    OnClose="() => _isAddGoalModalOpen = false"
+    OnSave="SaveGoal" />
+
+@code {
+    private List<Organization> _organizations = new();
+    private List<Branch> _branches = new();
+    private List<Classroom> _allClassrooms = new();
+    private List<Classroom> _filteredClassrooms = new();
+
+    private string _activeTab = "Benchmarking";
+    private List<BranchHealthScorecard> _scorecards = new();
+    private List<BranchOperationalGoal> _operationalGoals = new();
+    private bool _isLoadingBenchmarking;
+
+    private Guid _selectedOrgId;
+    private string? _selectedBranchId;
+    private string? _selectedClassroomId;
+    private string _reportingPeriod = IntelligenceReportingPeriod.Last7Days;
+    private string? _selectedCategory;
+
+    private OrganizationIntelligenceReport? _report;
+    private bool _isLoading;
+    private string? _errorMessage;
+
+    private bool _isAddGoalModalOpen;
+    private BranchOperationalGoal _newGoal = new() { TargetDate = DateTime.UtcNow.Date.AddDays(30) };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var orgs = (await OrgService.GetOrganizationsAsync()).ToList();
+            _organizations = orgs;
+            var defaultOrg = orgs.FirstOrDefault();
+            if (defaultOrg != null)
+            {
+                _selectedOrgId = defaultOrg.Id;
+                await LoadBranchesAndClassroomsAsync();
+                await LoadBenchmarkingAsync();
+                await LoadReportAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private async Task LoadBenchmarkingAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+        _isLoadingBenchmarking = true;
+        try
+        {
+            _scorecards = await BenchmarkingService.GetBranchScorecardsAsync(_selectedOrgId);
+            _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to benchmark branches: {ex.Message}";
+        }
+        finally
+        {
+            _isLoadingBenchmarking = false;
+        }
+    }
+
+    private async Task OnOrgChangedAsync()
+    {
+        _selectedBranchId = null;
+        _selectedClassroomId = null;
+        await LoadBranchesAndClassroomsAsync();
+        await LoadBenchmarkingAsync();
+        await LoadReportAsync();
+    }
+
+    private Task OnBranchChangedAsync()
+    {
+        _selectedClassroomId = null;
+        FilterClassrooms();
+        return LoadReportAsync();
+    }
+
+    private async Task LoadBranchesAndClassroomsAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+
+        var branchList = (await BranchService.GetBranchesAsync(_selectedOrgId)).ToList();
+        _branches = branchList;
+
+        var classList = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+        _allClassrooms = classList;
+        FilterClassrooms();
+    }
+
+    private void FilterClassrooms()
+    {
+        if (Guid.TryParse(_selectedBranchId, out var bId))
+        {
+            _filteredClassrooms = _allClassrooms.Where(c => c.BranchId == bId).ToList();
+        }
+        else
+        {
+            var orgBranchIds = _branches.Select(b => b.Id).ToHashSet();
+            _filteredClassrooms = _allClassrooms.Where(c => orgBranchIds.Contains(c.BranchId)).ToList();
+        }
+    }
+
+    private async Task LoadReportAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var filter = new OrganizationIntelligenceFilter
+            {
+                OrganizationId = _selectedOrgId,
+                BranchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null,
+                ClassroomId = Guid.TryParse(_selectedClassroomId, out var cId) ? cId : null,
+                ReportingPeriod = _reportingPeriod,
+                Category = string.IsNullOrWhiteSpace(_selectedCategory) ? null : _selectedCategory
+            };
+
+            _report = await IntelService.GetIntelligenceReportAsync(filter);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public async Task GenerateFreshInsightsAsync()
+    {
+        if (_selectedOrgId == Guid.Empty) return;
+
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var filter = new OrganizationIntelligenceFilter
+            {
+                OrganizationId = _selectedOrgId,
+                BranchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null,
+                ClassroomId = Guid.TryParse(_selectedClassroomId, out var cId) ? cId : null,
+                ReportingPeriod = _reportingPeriod,
+                Category = string.IsNullOrWhiteSpace(_selectedCategory) ? null : _selectedCategory
+            };
+
+            _report = await IntelService.GenerateInsightsAsync(filter);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveGoal(BranchOperationalGoal goal)
+    {
+        if (string.IsNullOrWhiteSpace(goal.Title)) return;
+        try
+        {
+            goal.OrganizationId = _selectedOrgId;
+            await BenchmarkingService.CreateOperationalGoalAsync(goal);
+            _isAddGoalModalOpen = false;
+            _newGoal = new() { TargetDate = DateTime.UtcNow.Date.AddDays(30) };
+            _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save goal: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateGoalStatus(Guid goalId, string status)
+    {
+        try
+        {
+            await BenchmarkingService.UpdateGoalStatusAsync(goalId, status);
+            _operationalGoals = await BenchmarkingService.GetOperationalGoalsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to update goal: {ex.Message}";
+        }
+    }
+
+    private Task HandleGoalStatusChanged((Guid GoalId, string NewStatus) tuple) => UpdateGoalStatus(tuple.GoalId, tuple.NewStatus);
+
+    private double GetDomainBarWidth(int value)
+    {
+        if (_report?.CurriculumVariety.DomainDistribution == null || !_report.CurriculumVariety.DomainDistribution.Any())
+            return 0;
+
+        var max = _report.CurriculumVariety.DomainDistribution.Values.Max();
+        return max > 0 ? Math.Round((double)value / max * 100, 1) : 0;
+    }
+}
