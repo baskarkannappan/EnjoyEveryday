@@ -95,6 +95,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<OrganizationIntelligenceService>();
         services.AddScoped<IPlatformAdminService, PlatformAdminService>();
         services.AddScoped<PlatformAdminService>();
+        services.AddScoped<EnjoyEveryday.Application.Services.PlatformAdmin.IPlatformHealthCheckService, EnjoyEveryday.Application.Services.PlatformAdmin.PlatformHealthCheckService>();
+        services.AddScoped<EnjoyEveryday.Application.Services.PlatformAdmin.PlatformHealthCheckService>();
         services.AddScoped<IBillingService, BillingService>();
         services.AddScoped<BillingService>();
         services.AddScoped<IMaterialMarketplaceService, MaterialMarketplaceService>();

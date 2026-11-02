@@ -29,6 +29,9 @@ public static class InfrastructureServiceRegistration
         services.AddSingleton<IDbConnectionFactory>(factory);
         services.AddScoped<IDbUnitOfWork, DbUnitOfWork>();
 
+        // System Deployment Configuration
+        services.AddSingleton<EnjoyEveryday.Application.Services.PlatformAdmin.ISystemConfigurationService, EnjoyEveryday.Infrastructure.Configuration.SystemConfigurationService>();
+
         // Migrations
         services.AddScoped<SqlMigrationRunner>();
 

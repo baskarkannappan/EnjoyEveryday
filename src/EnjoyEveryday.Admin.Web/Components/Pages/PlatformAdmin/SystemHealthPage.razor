@@ -1,0 +1,479 @@
+@page "/health"
+@page "/platform/health"
+@page "/system-health"
+@using EnjoyEveryday.Application.Services.PlatformAdmin
+@using EnjoyEveryday.UI.Shared.Components
+@inject IPlatformHealthCheckService HealthCheckService
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>System Health Diagnostics — EnjoyEveryday</PageTitle>
+
+<div class="content system-health-page">
+    <PageHero Eyebrow="PLATFORM OPERATIONS"
+              Title="System Health Diagnostics"
+              Subtitle="Real-time connectivity verification, latency benchmarks, and operational status for platform databases, core APIs, and web applications.">
+        <RightContent>
+            <div class="header-controls">
+                <div class="refresh-selector">
+                    <span class="refresh-label">Auto-Refresh</span>
+                    <select class="filter-select" @bind="_refreshIntervalSeconds" @bind:after="OnRefreshIntervalChanged">
+                        <option value="0">Off (Manual)</option>
+                        <option value="15">Every 15s</option>
+                        <option value="30">Every 30s</option>
+                        <option value="60">Every 60s</option>
+                    </select>
+                </div>
+
+                <button class="btn primary @(_isChecking ? "checking" : "")" @onclick="() => RunHealthChecksAsync()" disabled="@_isChecking">
+                    @if (_isChecking)
+                    {
+                        <span class="spinner-inline"></span>
+                        <span>Diagnosing...</span>
+                    }
+                    else
+                    {
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                        </svg>
+                        <span>Run Check Now</span>
+                    }
+                </button>
+            </div>
+        </RightContent>
+    </PageHero>
+
+    <!-- OVERALL SYSTEM STATUS BANNER -->
+    @if (_lastReport != null)
+    {
+        <div class="status-banner @GetOverallBannerClass()">
+            <div class="status-banner-main">
+                <div class="status-beacon">
+                    <span class="beacon-dot"></span>
+                    <span class="beacon-pulse"></span>
+                </div>
+                <div class="status-text-group">
+                    <div class="status-headline">
+                        <h3>@GetOverallHeadline()</h3>
+                        <span class="status-pill @GetOverallStatusPillClass()">@_lastReport.OverallStatus.ToString().ToUpperInvariant()</span>
+                    </div>
+                    <p class="status-sub">
+                        Last assessed at <strong>@_lastReport.CheckedAt.ToLocalTime().ToString("T")</strong>
+                        • Diagnostic cycle completed in <strong>@_lastReport.TotalDurationMs ms</strong>
+                    </p>
+                </div>
+            </div>
+            <div class="status-counts">
+                <div class="count-badge count-healthy">
+                    <span class="count-val">@_lastReport.HealthyCount</span>
+                    <span class="count-lbl">Healthy</span>
+                </div>
+                @if (_lastReport.DegradedCount > 0)
+                {
+                    <div class="count-badge count-degraded">
+                        <span class="count-val">@_lastReport.DegradedCount</span>
+                        <span class="count-lbl">Degraded</span>
+                    </div>
+                }
+                @if (_lastReport.UnhealthyCount > 0)
+                {
+                    <div class="count-badge count-unhealthy">
+                        <span class="count-val">@_lastReport.UnhealthyCount</span>
+                        <span class="count-lbl">Unhealthy</span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- CONFIGURATION & SCOPE CONTROLS -->
+    <div class="config-panel">
+        <div class="config-header">
+            <div class="config-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+                <span>Diagnostics Scope &amp; Target Controls</span>
+            </div>
+            <div class="config-toggles-quick">
+                <label class="toggle-label">
+                    <input type="checkbox" @bind="_checkOnLanding" />
+                    <span>Run automatically on page land</span>
+                </label>
+                <button type="button" class="btn-text-link" @onclick="ToggleAdvancedConfig">
+                    @(_showAdvanced ? "Hide Advanced Settings ▲" : "Configure Endpoints & Timeouts ▼")
+                </button>
+                <a href="/settings" class="btn-text-link" style="text-decoration: none; margin-left: 10px;">⚙️ Full System Settings</a>
+            </div>
+        </div>
+
+        <div class="component-selector-row">
+            <span class="scope-tag">Monitored Services:</span>
+            <label class="check-chip @(_options.CheckDatabase ? "checked" : "")">
+                <input type="checkbox" @bind="_options.CheckDatabase" />
+                <span>PostgreSQL DB</span>
+            </label>
+            <label class="check-chip @(_options.CheckApi ? "checked" : "")">
+                <input type="checkbox" @bind="_options.CheckApi" />
+                <span>Backend REST API</span>
+            </label>
+            <label class="check-chip @(_options.CheckAdminUi ? "checked" : "")">
+                <input type="checkbox" @bind="_options.CheckAdminUi" />
+                <span>Platform Admin UI</span>
+            </label>
+            <label class="check-chip @(_options.CheckDaycareUi ? "checked" : "")">
+                <input type="checkbox" @bind="_options.CheckDaycareUi" />
+                <span>Daycare Web Portal</span>
+            </label>
+            <label class="check-chip @(_options.CheckAiGateway ? "checked" : "")">
+                <input type="checkbox" @bind="_options.CheckAiGateway" />
+                <span>AI Gateway</span>
+            </label>
+        </div>
+
+        @if (_showAdvanced)
+        {
+            <div class="advanced-config-tray">
+                <div class="form-grid">
+                    <div class="form-field">
+                        <label>Custom REST API URL</label>
+                        <input type="text" class="input-text" @bind="_options.CustomApiUrl" placeholder="Default from appsettings (https://localhost:7013)" />
+                    </div>
+                    <div class="form-field">
+                        <label>Custom Daycare Portal URL</label>
+                        <input type="text" class="input-text" @bind="_options.CustomDaycareUrl" placeholder="Default from appsettings (https://localhost:7003)" />
+                    </div>
+                    <div class="form-field">
+                        <label>Custom AI Gateway URL</label>
+                        <input type="text" class="input-text" @bind="_options.CustomAiUrl" placeholder="Default from appsettings (http://127.0.0.1:8000)" />
+                    </div>
+                    <div class="form-field field-sm">
+                        <label>Probe Timeout (sec)</label>
+                        <input type="number" class="input-text" @bind="_options.TimeoutSeconds" min="1" max="30" />
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- SERVICES STATUS GRID -->
+    @if (_lastReport != null)
+    {
+        <div class="services-grid">
+            @foreach (var comp in _lastReport.Components)
+            {
+                <div class="service-card card-@comp.Status.ToString().ToLowerInvariant()">
+                    <div class="service-card-top">
+                        <div class="service-meta">
+                            <span class="category-tag">@comp.Category</span>
+                            <h4 class="service-title">@comp.Name</h4>
+                            <div class="service-endpoint" title="@comp.Endpoint">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                                </svg>
+                                <span>@comp.Endpoint</span>
+                            </div>
+                        </div>
+
+                        <div class="service-status-pill pill-@comp.Status.ToString().ToLowerInvariant()">
+                            <span class="status-dot"></span>
+                            <span>@comp.Status.ToString()</span>
+                        </div>
+                    </div>
+
+                    <div class="service-card-metrics">
+                        <div class="metric-block">
+                            <span class="metric-name">Latency</span>
+                            <span class="metric-val @GetLatencyClass(comp.LatencyMs)">
+                                @(comp.Status == HealthStatusLevel.Skipped ? "—" : $"{comp.LatencyMs:F1} ms")
+                            </span>
+                        </div>
+                        <div class="metric-block">
+                            <span class="metric-name">Last Ping</span>
+                            <span class="metric-val">@comp.CheckedAt.ToLocalTime().ToString("HH:mm:ss")</span>
+                        </div>
+                    </div>
+
+                    <div class="service-card-body">
+                        <p class="service-desc">@comp.Details</p>
+
+                        @if (!string.IsNullOrWhiteSpace(comp.ErrorMessage))
+                        {
+                            <div class="service-error-box">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <span>@comp.ErrorMessage</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="service-card-actions">
+                        <button type="button" class="btn-card-action" @onclick="() => RunSingleProbeAsync(comp.Id)" disabled="@_isChecking">
+                            ↻ Re-test Service
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (_isChecking)
+    {
+        <LoadingState Text="Diagnosing platform components (PostgreSQL, REST API, Web UI, AI Gateway)..." />
+    }
+    else
+    {
+        <div class="empty-state-card">
+            <div class="empty-icon">🩺</div>
+            <h3>Diagnostics Ready</h3>
+            <p>Click "Run Check Now" above to evaluate connectivity across all registered platform services.</p>
+            <button class="btn primary" @onclick="() => RunHealthChecksAsync()">Run Initial Health Check</button>
+        </div>
+    }
+
+    <!-- DIAGNOSTIC HISTORY LOGS -->
+    @if (_historyLogs.Count > 0)
+    {
+        <div class="history-section">
+            <div class="history-header">
+                <h4>Recent Diagnostic Executions (This Session)</h4>
+                <button type="button" class="btn-text-link" @onclick="ClearHistory">Clear History</button>
+            </div>
+            <div class="table-container">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Overall Status</th>
+                            <th>Turnaround</th>
+                            <th>Healthy</th>
+                            <th>Degraded</th>
+                            <th>Unhealthy</th>
+                            <th>PostgreSQL</th>
+                            <th>REST API</th>
+                            <th>Admin UI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var entry in _historyLogs.Take(8))
+                        {
+                            <tr>
+                                <td>@entry.CheckedAt.ToLocalTime().ToString("HH:mm:ss")</td>
+                                <td>
+                                    <span class="history-badge badge-@entry.OverallStatus.ToString().ToLowerInvariant()">
+                                        @entry.OverallStatus
+                                    </span>
+                                </td>
+                                <td>@($"{entry.TotalDurationMs:F1} ms")</td>
+                                <td><span class="count-tag-healthy">@entry.HealthyCount</span></td>
+                                <td><span class="count-tag-degraded">@entry.DegradedCount</span></td>
+                                <td><span class="count-tag-unhealthy">@entry.UnhealthyCount</span></td>
+                                <td>@GetSubsystemStatusText(entry, "database")</td>
+                                <td>@GetSubsystemStatusText(entry, "api")</td>
+                                <td>@GetSubsystemStatusText(entry, "admin-ui")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _isChecking = false;
+    private bool _checkOnLanding = true;
+    private bool _showAdvanced = false;
+    private int _refreshIntervalSeconds = 0;
+    private System.Threading.Timer? _refreshTimer;
+
+    private HealthCheckOptions _options = new();
+    private SystemHealthReport? _lastReport;
+    private readonly List<SystemHealthReport> _historyLogs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_checkOnLanding)
+        {
+            await RunHealthChecksAsync();
+        }
+    }
+
+    private async Task RunHealthChecksAsync()
+    {
+        if (_isChecking) return;
+        _isChecking = true;
+
+        try
+        {
+            var report = await HealthCheckService.RunChecksAsync(_options);
+            _lastReport = report;
+            _historyLogs.Insert(0, report);
+            if (_historyLogs.Count > 25)
+            {
+                _historyLogs.RemoveAt(_historyLogs.Count - 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            _lastReport = new SystemHealthReport
+            {
+                OverallStatus = HealthStatusLevel.Unhealthy,
+                CheckedAt = DateTimeOffset.UtcNow,
+                Components = new List<ComponentHealthItem>
+                {
+                    new()
+                    {
+                        Id = "diagnostic-runner",
+                        Name = "Health Diagnostic Runner",
+                        Category = "Diagnostics",
+                        Status = HealthStatusLevel.Unhealthy,
+                        ErrorMessage = ex.Message,
+                        Details = "An unexpected exception halted the diagnostic execution."
+                    }
+                }
+            };
+        }
+        finally
+        {
+            _isChecking = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RunSingleProbeAsync(string componentId)
+    {
+        if (_isChecking) return;
+        _isChecking = true;
+
+        try
+        {
+            var singleOptions = new HealthCheckOptions
+            {
+                CheckDatabase = componentId == "database",
+                CheckApi = componentId == "api",
+                CheckAdminUi = componentId == "admin-ui",
+                CheckDaycareUi = componentId == "daycare-ui",
+                CheckAiGateway = componentId == "ai-agent",
+                TimeoutSeconds = _options.TimeoutSeconds,
+                CustomApiUrl = _options.CustomApiUrl,
+                CustomDaycareUrl = _options.CustomDaycareUrl,
+                CustomAiUrl = _options.CustomAiUrl
+            };
+
+            var singleReport = await HealthCheckService.RunChecksAsync(singleOptions);
+            var updatedItem = singleReport.Components.FirstOrDefault(c => c.Id == componentId);
+
+            if (_lastReport != null && updatedItem != null)
+            {
+                var idx = _lastReport.Components.FindIndex(c => c.Id == componentId);
+                if (idx >= 0)
+                {
+                    _lastReport.Components[idx] = updatedItem;
+                }
+                else
+                {
+                    _lastReport.Components.Add(updatedItem);
+                }
+
+                // Re-evaluate overall status
+                if (_lastReport.Components.Any(c => c.Status == HealthStatusLevel.Unhealthy && (c.Id == "database" || c.Id == "api")))
+                {
+                    _lastReport.OverallStatus = HealthStatusLevel.Unhealthy;
+                }
+                else if (_lastReport.Components.Any(c => c.Status == HealthStatusLevel.Unhealthy || c.Status == HealthStatusLevel.Degraded))
+                {
+                    _lastReport.OverallStatus = HealthStatusLevel.Degraded;
+                }
+                else
+                {
+                    _lastReport.OverallStatus = HealthStatusLevel.Healthy;
+                }
+            }
+            else
+            {
+                _lastReport = singleReport;
+            }
+        }
+        finally
+        {
+            _isChecking = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnRefreshIntervalChanged()
+    {
+        _refreshTimer?.Dispose();
+        _refreshTimer = null;
+
+        if (_refreshIntervalSeconds > 0)
+        {
+            _refreshTimer = new System.Threading.Timer(async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RunHealthChecksAsync();
+                });
+            }, null, TimeSpan.FromSeconds(_refreshIntervalSeconds), TimeSpan.FromSeconds(_refreshIntervalSeconds));
+        }
+    }
+
+    private void ToggleAdvancedConfig() => _showAdvanced = !_showAdvanced;
+
+    private void ClearHistory() => _historyLogs.Clear();
+
+    private string GetOverallBannerClass() => _lastReport?.OverallStatus switch
+    {
+        HealthStatusLevel.Healthy => "banner-healthy",
+        HealthStatusLevel.Degraded => "banner-degraded",
+        HealthStatusLevel.Unhealthy => "banner-unhealthy",
+        _ => "banner-skipped"
+    };
+
+    private string GetOverallHeadline() => _lastReport?.OverallStatus switch
+    {
+        HealthStatusLevel.Healthy => "All Core Platform Systems Operational",
+        HealthStatusLevel.Degraded => "Partial Degradation Detected — Auxiliary Services Affected",
+        HealthStatusLevel.Unhealthy => "Critical Alert: Core Infrastructure Offline or Unreachable",
+        _ => "System Status Unknown"
+    };
+
+    private string GetOverallStatusPillClass() => _lastReport?.OverallStatus switch
+    {
+        HealthStatusLevel.Healthy => "pill-healthy",
+        HealthStatusLevel.Degraded => "pill-degraded",
+        HealthStatusLevel.Unhealthy => "pill-unhealthy",
+        _ => "pill-skipped"
+    };
+
+    private string GetLatencyClass(double latencyMs)
+    {
+        if (latencyMs <= 0) return "lat-na";
+        if (latencyMs < 50) return "lat-fast";
+        if (latencyMs < 300) return "lat-moderate";
+        return "lat-slow";
+    }
+
+    private string GetSubsystemStatusText(SystemHealthReport report, string id)
+    {
+        var item = report.Components.FirstOrDefault(c => c.Id == id);
+        if (item == null) return "—";
+        return item.Status == HealthStatusLevel.Healthy 
+            ? $"✓ {item.LatencyMs:F0}ms" 
+            : item.Status.ToString();
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        _refreshTimer = null;
+    }
+}

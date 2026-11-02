@@ -1,45 +1,554 @@
 @page "/settings"
+@page "/platform/settings"
+@using EnjoyEveryday.Application.Services.PlatformAdmin
 @using EnjoyEveryday.UI.Shared.Components
+@inject ISystemConfigurationService ConfigService
 @rendermode InteractiveServer
 
-<PageTitle>System Settings — Platform Admin</PageTitle>
+<PageTitle>System &amp; Deployment Configuration — EnjoyEveryday</PageTitle>
 
-<div class="content">
+<div class="content settings-page">
     <PageHero Eyebrow="PLATFORM OPERATIONS"
-              Title="System &amp; Governance Settings"
-              Subtitle="Multi-tenant authentication parameters, AI provider keys, and backup policies.">
+              Title="System &amp; Deployment Configuration"
+              Subtitle="Configure distributed service endpoints, PostgreSQL database parameters, health monitoring policies, and generate cloud container configuration.">
         <RightContent>
-            <a href="/" class="btn secondary">← Back to Dashboard</a>
+            <a href="/health" class="btn secondary">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                <span>Live Health Check</span>
+            </a>
+            <button class="btn primary" @onclick="SaveConfigurationAsync" disabled="@_isSaving">
+                @if (_isSaving)
+                {
+                    <span class="spinner-inline"></span>
+                    <span>Saving...</span>
+                }
+                else
+                {
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    <span>Save Configuration</span>
+                }
+            </button>
         </RightContent>
     </PageHero>
 
-    <div style="max-width: 720px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 20px;">
-        <div>
-            <h4 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0 0 4px 0;">Google OpenID &amp; OAuth Authentication</h4>
-            <p style="font-size: 13px; color: var(--muted); margin: 0;">Multi-tenant SSO authentication for daycare directors and platform administrators.</p>
-            <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
-                <span style="background: var(--accent-light); color: var(--accent-dark); padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;">OAuth 2.0 Active</span>
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="alert-banner alert-success">
+            <div class="alert-icon">✓</div>
+            <div class="alert-text">
+                <strong>Saved Successfully!</strong>
+                <p>@_successMessage</p>
             </div>
+            <button type="button" class="alert-close" @onclick='() => _successMessage = null'>✕</button>
         </div>
+    }
 
-        <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
+    <!-- TAB NAVIGATION -->
+    <div class="tabs-nav">
+        <button type="button" class="tab-btn @(_activeTab == "endpoints" ? "active" : "")" @onclick='() => SetTab("endpoints")'>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <span>Service Endpoints (URLs)</span>
+        </button>
 
-        <div>
-            <h4 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0 0 4px 0;">AI Gateway &amp; Google ADK Configuration</h4>
-            <p style="font-size: 13px; color: var(--muted); margin: 0;">Model provider: Gemini 2.5 Flash with deterministic fallback.</p>
-            <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
-                <span style="background: var(--accent-light); color: var(--accent-dark); padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;">Human-in-the-Loop Enforced</span>
-            </div>
-        </div>
+        <button type="button" class="tab-btn @(_activeTab == "database" ? "active" : "")" @onclick='() => SetTab("database")'>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+            </svg>
+            <span>PostgreSQL Database</span>
+        </button>
 
-        <hr style="border: 0; border-top: 1px solid var(--border); margin: 4px 0;" />
+        <button type="button" class="tab-btn @(_activeTab == "policies" ? "active" : "")" @onclick='() => SetTab("policies")'>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+            <span>Diagnostics Policies</span>
+        </button>
 
-        <div>
-            <h4 style="font-size: 16px; font-weight: 750; color: var(--text); margin: 0 0 4px 0;">Tenant Isolation &amp; Encryption</h4>
-            <p style="font-size: 13px; color: var(--muted); margin: 0;">PostgreSQL Row-Level Security (RLS) and AES-256 child data field-level encryption.</p>
-            <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
-                <span style="background: var(--accent-light); color: var(--accent-dark); padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700;">AES-256 Active</span>
-            </div>
-        </div>
+        <button type="button" class="tab-btn @(_activeTab == "cloud" ? "active" : "")" @onclick='() => SetTab("cloud")'>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+            </svg>
+            <span>Cloud &amp; Deployment Snippets</span>
+        </button>
     </div>
+
+    <!-- TAB 1: SERVICE ENDPOINTS -->
+    @if (_activeTab == "endpoints")
+    {
+        <div class="tab-content">
+            <div class="section-intro">
+                <h3>Deployed Service Endpoints</h3>
+                <p>Configure the network locations for backend services and web applications. In distributed multi-host deployments, update these to internal cluster DNS or public secure domains.</p>
+            </div>
+
+            <div class="endpoint-cards-grid">
+                <!-- API CARD -->
+                <div class="config-card">
+                    <div class="card-top">
+                        <div class="card-icon-tag tag-api">REST API</div>
+                        <span class="card-env">Core Backend (:7013)</span>
+                    </div>
+                    <h4>EnjoyEveryday.Api Base URL</h4>
+                    <p class="card-subtext">Endpoint for authentication, CRUD operations, billing, and system background controllers.</p>
+                    <div class="input-action-group">
+                        <input type="text" class="input-text" @bind="_config.ApiUrl" placeholder="https://api.yourdomain.com" />
+                        <button type="button" class="btn secondary btn-test" @onclick='() => TestEndpointAsync(_config.ApiUrl, "healthz", "api")' disabled="@_testingKey.Contains("api")">
+                            @if (_testingKey.Contains("api")) { <span class="spinner-inline-dark"></span> } else { <span>Test Ping</span> }
+                        </button>
+                    </div>
+                    @if (_testResults.TryGetValue("api", out var apiTest))
+                    {
+                        <div class="test-feedback @(apiTest.Success ? "feedback-success" : "feedback-fail")">
+                            <span class="feedback-badge">@(apiTest.Success ? $"✓ HTTP 200 ({apiTest.LatencyMs:F1}ms)" : "✗ Failed")</span>
+                            <span class="feedback-msg">@apiTest.Message</span>
+                        </div>
+                    }
+                </div>
+
+                <!-- DAYCARE CARD -->
+                <div class="config-card">
+                    <div class="card-top">
+                        <div class="card-icon-tag tag-daycare">DAYCARE UI</div>
+                        <span class="card-env">Staff &amp; Org Portal (:7003)</span>
+                    </div>
+                    <h4>Daycare Web Portal Base URL</h4>
+                    <p class="card-subtext">The web portal accessed by daycare directors, lead educators, and branch administrators.</p>
+                    <div class="input-action-group">
+                        <input type="text" class="input-text" @bind="_config.DaycareUrl" placeholder="https://app.yourdomain.com" />
+                        <button type="button" class="btn secondary btn-test" @onclick='() => TestEndpointAsync(_config.DaycareUrl, "healthz", "daycare")' disabled="@_testingKey.Contains("daycare")">
+                            @if (_testingKey.Contains("daycare")) { <span class="spinner-inline-dark"></span> } else { <span>Test Ping</span> }
+                        </button>
+                    </div>
+                    @if (_testResults.TryGetValue("daycare", out var daycareTest))
+                    {
+                        <div class="test-feedback @(daycareTest.Success ? "feedback-success" : "feedback-fail")">
+                            <span class="feedback-badge">@(daycareTest.Success ? $"✓ Active ({daycareTest.LatencyMs:F1}ms)" : "✗ Failed")</span>
+                            <span class="feedback-msg">@daycareTest.Message</span>
+                        </div>
+                    }
+                </div>
+
+                <!-- PARENT CARD -->
+                <div class="config-card">
+                    <div class="card-top">
+                        <div class="card-icon-tag tag-parent">PARENT UI</div>
+                        <span class="card-env">Families &amp; Guardians (:7005)</span>
+                    </div>
+                    <h4>Parent Web Portal Base URL</h4>
+                    <p class="card-subtext">Family engagement portal for daily care, milestones, attendance, and fee invoices.</p>
+                    <div class="input-action-group">
+                        <input type="text" class="input-text" @bind="_config.ParentUrl" placeholder="https://parents.yourdomain.com" />
+                        <button type="button" class="btn secondary btn-test" @onclick='() => TestEndpointAsync(_config.ParentUrl, "healthz", "parent")' disabled="@_testingKey.Contains("parent")">
+                            @if (_testingKey.Contains("parent")) { <span class="spinner-inline-dark"></span> } else { <span>Test Ping</span> }
+                        </button>
+                    </div>
+                    @if (_testResults.TryGetValue("parent", out var parentTest))
+                    {
+                        <div class="test-feedback @(parentTest.Success ? "feedback-success" : "feedback-fail")">
+                            <span class="feedback-badge">@(parentTest.Success ? $"✓ Active ({parentTest.LatencyMs:F1}ms)" : "✗ Failed")</span>
+                            <span class="feedback-msg">@parentTest.Message</span>
+                        </div>
+                    }
+                </div>
+
+                <!-- AI AGENT CARD -->
+                <div class="config-card">
+                    <div class="card-top">
+                        <div class="card-icon-tag tag-ai">AI GATEWAY</div>
+                        <span class="card-env">FastAPI &amp; Gemini (:8000)</span>
+                    </div>
+                    <h4>AI Intelligence Gateway URL</h4>
+                    <p class="card-subtext">Auxiliary FastAPI service for curriculum planning suggestions with deterministic fallbacks.</p>
+                    <div class="input-action-group">
+                        <input type="text" class="input-text" @bind="_config.AiAgentUrl" placeholder="http://ai-service:8000" />
+                        <button type="button" class="btn secondary btn-test" @onclick='() => TestEndpointAsync(_config.AiAgentUrl, "health", "ai")' disabled="@_testingKey.Contains("ai")">
+                            @if (_testingKey.Contains("ai")) { <span class="spinner-inline-dark"></span> } else { <span>Test Ping</span> }
+                        </button>
+                    </div>
+                    @if (_testResults.TryGetValue("ai", out var aiTest))
+                    {
+                        <div class="test-feedback @(aiTest.Success ? "feedback-success" : "feedback-fail")">
+                            <span class="feedback-badge">@(aiTest.Success ? $"✓ Online ({aiTest.LatencyMs:F1}ms)" : "✗ Failed")</span>
+                            <span class="feedback-msg">@aiTest.Message</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- TAB 2: POSTGRESQL DATABASE -->
+    @if (_activeTab == "database")
+    {
+        <div class="tab-content">
+            <div class="section-intro">
+                <h3>PostgreSQL Database Connection Parameters</h3>
+                <p>Configure the central relational database cluster. All multi-tenant queries, Dapper repositories, and schema migrations communicate via these connection parameters.</p>
+            </div>
+
+            <div class="db-form-container">
+                <div class="form-row-2">
+                    <div class="field-group">
+                        <label>Database Host / Server IP</label>
+                        <input type="text" class="input-text" @bind="_config.DbHost" placeholder="localhost or postgres.internal" />
+                        <span class="field-hint">e.g., localhost, pg.internal, or aws-rds.cluster.com</span>
+                    </div>
+
+                    <div class="field-group">
+                        <label>Port</label>
+                        <input type="number" class="input-text" @bind="_config.DbPort" min="1" max="65535" />
+                        <span class="field-hint">Default local dev: 5433 • Standard cloud default: 5432</span>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="field-group">
+                        <label>Database Name</label>
+                        <input type="text" class="input-text" @bind="_config.DbName" placeholder="enjoyeveryday" />
+                    </div>
+
+                    <div class="field-group">
+                        <label>Database User</label>
+                        <input type="text" class="input-text" @bind="_config.DbUser" placeholder="postgres" />
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="field-group">
+                        <label>Password</label>
+                        <div class="password-wrapper">
+                            <input type="@(_showPassword ? "text" : "password")" class="input-text" @bind="_config.DbPassword" />
+                            <button type="button" class="btn-toggle-eye" @onclick="() => _showPassword = !_showPassword">
+                                @(_showPassword ? "Hide" : "Show")
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="field-group">
+                        <label>SSL Mode</label>
+                        <select class="input-text" @bind="_config.DbSslMode">
+                            <option value="Disable">Disable (Local Dev)</option>
+                            <option value="Prefer">Prefer</option>
+                            <option value="Require">Require (Cloud Recommended)</option>
+                            <option value="VerifyFull">VerifyFull (Strict CA Certificate)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="field-group">
+                        <label>Maximum Connection Pool Size</label>
+                        <input type="number" class="input-text" @bind="_config.DbMaxPoolSize" min="10" max="1000" />
+                        <span class="field-hint">Npgsql connection pool capacity (Default: 100)</span>
+                    </div>
+
+                    <div class="field-group">
+                        <label>Raw Connection String Override (Optional)</label>
+                        <input type="text" class="input-text" @bind="_config.RawConnectionString" placeholder="Leave empty to use structured fields above" />
+                    </div>
+                </div>
+
+                <!-- CONNECTION STRING PREVIEW -->
+                <div class="connstr-preview-card">
+                    <div class="connstr-header">
+                        <span class="connstr-title">Active Formatted Connection String Preview</span>
+                        <span class="connstr-security">🔒 Password Masked</span>
+                    </div>
+                    <code class="connstr-code">@GetMaskedConnectionString()</code>
+                </div>
+
+                <div class="db-actions-row">
+                    <button type="button" class="btn secondary" @onclick="TestDatabaseConnectionAsync" disabled="@_isTestingDb">
+                        @if (_isTestingDb)
+                        {
+                            <span class="spinner-inline-dark"></span>
+                            <span>Validating Connection...</span>
+                        }
+                        else
+                        {
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                            <span>Test PostgreSQL Connection</span>
+                        }
+                    </button>
+                </div>
+
+                @if (_dbTestResult != null)
+                {
+                    <div class="test-feedback @(_dbTestResult.Success ? "feedback-success" : "feedback-fail")" style="margin-top: 14px;">
+                        <span class="feedback-badge">@(_dbTestResult.Success ? $"✓ Connected ({_dbTestResult.LatencyMs:F1}ms)" : "✗ Failed")</span>
+                        <span class="feedback-msg">@_dbTestResult.Message</span>
+                        @if (!string.IsNullOrWhiteSpace(_dbTestResult.ErrorMessage))
+                        {
+                            <div class="feedback-err">@_dbTestResult.ErrorMessage</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- TAB 3: DIAGNOSTICS POLICIES -->
+    @if (_activeTab == "policies")
+    {
+        <div class="tab-content">
+            <div class="section-intro">
+                <h3>System Diagnostics &amp; Health Check Policies</h3>
+                <p>Define operational defaults for automated diagnostic probes and execution behavior when administrators open the health check console.</p>
+            </div>
+
+            <div class="policies-container">
+                <div class="policy-card">
+                    <div class="policy-info">
+                        <h4>Auto-Check on Page Landing</h4>
+                        <p>Automatically initiate diagnostic probe cycle when the Platform Admin navigates to <code>/health</code>.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" @bind="_config.AutoCheckOnLanding" />
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="policy-card">
+                    <div class="policy-info">
+                        <h4>Default Auto-Refresh Frequency</h4>
+                        <p>Standard periodic timer interval used for continuous background health checking.</p>
+                    </div>
+                    <select class="filter-select" @bind="_config.DefaultRefreshIntervalSeconds">
+                        <option value="0">Off (Manual on-demand only)</option>
+                        <option value="15">Every 15 Seconds</option>
+                        <option value="30">Every 30 Seconds</option>
+                        <option value="60">Every 60 Seconds</option>
+                        <option value="300">Every 5 Minutes</option>
+                    </select>
+                </div>
+
+                <div class="policy-card">
+                    <div class="policy-info">
+                        <h4>Probe Timeout Ceiling</h4>
+                        <p>Maximum seconds to wait before marking an unresponsive service or database query as Unhealthy.</p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="number" class="input-text" style="width: 80px;" @bind="_config.ProbeTimeoutSeconds" min="1" max="60" />
+                        <span style="font-size: 13px; color: var(--muted);">seconds</span>
+                    </div>
+                </div>
+
+                <div class="default-services-card">
+                    <h4>Default Monitored Subsystems</h4>
+                    <p style="font-size: 13px; color: var(--muted); margin: 0 0 12px;">Pre-selected components included when diagnostics run:</p>
+                    <div class="chips-row">
+                        <label class="check-chip @(_config.DefaultCheckDatabase ? "checked" : "")">
+                            <input type="checkbox" @bind="_config.DefaultCheckDatabase" />
+                            <span>PostgreSQL Database</span>
+                        </label>
+                        <label class="check-chip @(_config.DefaultCheckApi ? "checked" : "")">
+                            <input type="checkbox" @bind="_config.DefaultCheckApi" />
+                            <span>Backend REST API</span>
+                        </label>
+                        <label class="check-chip @(_config.DefaultCheckAdminUi ? "checked" : "")">
+                            <input type="checkbox" @bind="_config.DefaultCheckAdminUi" />
+                            <span>Platform Admin UI</span>
+                        </label>
+                        <label class="check-chip @(_config.DefaultCheckDaycareUi ? "checked" : "")">
+                            <input type="checkbox" @bind="_config.DefaultCheckDaycareUi" />
+                            <span>Daycare Web Portal</span>
+                        </label>
+                        <label class="check-chip @(_config.DefaultCheckAiGateway ? "checked" : "")">
+                            <input type="checkbox" @bind="_config.DefaultCheckAiGateway" />
+                            <span>AI Intelligence Gateway</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- TAB 4: CLOUD & DEPLOYMENT SNIPPETS -->
+    @if (_activeTab == "cloud")
+    {
+        <div class="tab-content">
+            <div class="section-intro">
+                <h3>Cloud Deployment Snippets (Generated from Current Settings)</h3>
+                <p>Copy and paste these pre-configured declarations directly into your production Docker, Kubernetes, or Linux host environments.</p>
+            </div>
+
+            <div class="snippets-grid">
+                <!-- DOCKER COMPOSE SNIPPET -->
+                <div class="snippet-card">
+                    <div class="snippet-header">
+                        <h4>Docker Compose Environment Configuration</h4>
+                        <button type="button" class="btn-copy" @onclick='() => CopyToClipboard("docker")'>
+                            @(_copiedKey == "docker" ? "✓ Copied" : "Copy YAML")
+                        </button>
+                    </div>
+                    <pre class="snippet-pre"><code>@GetDockerSnippet()</code></pre>
+                </div>
+
+                <!-- KUBERNETES MANIFEST SNIPPET -->
+                <div class="snippet-card">
+                    <div class="snippet-header">
+                        <h4>Kubernetes ConfigMap &amp; Secret Manifest</h4>
+                        <button type="button" class="btn-copy" @onclick='() => CopyToClipboard("k8s")'>
+                            @(_copiedKey == "k8s" ? "✓ Copied" : "Copy YAML")
+                        </button>
+                    </div>
+                    <pre class="snippet-pre"><code>@GetKubernetesSnippet()</code></pre>
+                </div>
+
+                <!-- LINUX CLI EXPORT SNIPPET -->
+                <div class="snippet-card">
+                    <div class="snippet-header">
+                        <h4>Linux / Cloud Shell Environment Variables (export)</h4>
+                        <button type="button" class="btn-copy" @onclick='() => CopyToClipboard("bash")'>
+                            @(_copiedKey == "bash" ? "✓ Copied" : "Copy Commands")
+                        </button>
+                    </div>
+                    <pre class="snippet-pre"><code>@GetBashSnippet()</code></pre>
+                </div>
+            </div>
+        </div>
+    }
 </div>
+
+@code {
+    private string _activeTab = "endpoints";
+    private SystemDeploymentConfig _config = new();
+    private bool _isSaving = false;
+    private bool _isTestingDb = false;
+    private bool _showPassword = false;
+    private string? _successMessage;
+    private string? _copiedKey;
+
+    private readonly HashSet<string> _testingKey = new();
+    private readonly Dictionary<string, ConnectionTestResult> _testResults = new();
+    private ConnectionTestResult? _dbTestResult;
+
+    protected override void OnInitialized()
+    {
+        _config = ConfigService.GetConfiguration();
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+        _successMessage = null;
+    }
+
+    private async Task SaveConfigurationAsync()
+    {
+        _isSaving = true;
+        _successMessage = null;
+
+        try
+        {
+            await ConfigService.UpdateConfigurationAsync(_config);
+            _successMessage = $"Configuration active as of {DateTime.Now:T}. All health diagnostics and platform services now target these parameters.";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task TestEndpointAsync(string url, string path, string key)
+    {
+        _testingKey.Add(key);
+        _testResults.Remove(key);
+
+        try
+        {
+            var res = await ConfigService.TestHttpEndpointAsync(url, path, _config.ProbeTimeoutSeconds);
+            _testResults[key] = res;
+        }
+        finally
+        {
+            _testingKey.Remove(key);
+        }
+    }
+
+    private async Task TestDatabaseConnectionAsync()
+    {
+        _isTestingDb = true;
+        _dbTestResult = null;
+
+        try
+        {
+            var connStr = ConfigService.BuildConnectionString(_config);
+            _dbTestResult = await ConfigService.TestDatabaseConnectionAsync(connStr, _config.ProbeTimeoutSeconds);
+        }
+        finally
+        {
+            _isTestingDb = false;
+        }
+    }
+
+    private string GetMaskedConnectionString()
+    {
+        var raw = ConfigService.BuildConnectionString(_config);
+        if (string.IsNullOrWhiteSpace(_config.DbPassword)) return raw;
+        return raw.Replace(_config.DbPassword, "••••••••");
+    }
+
+    private void CopyToClipboard(string key)
+    {
+        _copiedKey = key;
+    }
+
+    private string GetDockerSnippet() =>
+$@"services:
+  admin-web:
+    image: enjoyeveryday/admin-web:latest
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection={GetMaskedConnectionString()}
+      - Services__ApiUrl={_config.ApiUrl}
+      - Services__DaycareUrl={_config.DaycareUrl}
+      - Services__ParentUrl={_config.ParentUrl}
+      - AiAgent__BaseUrl={_config.AiAgentUrl}
+    ports:
+      - ""7004:8080""";
+
+    private string GetKubernetesSnippet() =>
+$@"apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enjoyeveryday-config
+data:
+  Services__ApiUrl: ""{_config.ApiUrl}""
+  Services__DaycareUrl: ""{_config.DaycareUrl}""
+  Services__ParentUrl: ""{_config.ParentUrl}""
+  AiAgent__BaseUrl: ""{_config.AiAgentUrl}""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: enjoyeveryday-secrets
+type: Opaque
+stringData:
+  ConnectionStrings__DefaultConnection: ""{ConfigService.BuildConnectionString(_config)}""";
+
+    private string GetBashSnippet() =>
+$@"# Set Linux / Container Environment Variables
+export ASPNETCORE_ENVIRONMENT=Production
+export ConnectionStrings__DefaultConnection=""{ConfigService.BuildConnectionString(_config)}""
+export Services__ApiUrl=""{_config.ApiUrl}""
+export Services__DaycareUrl=""{_config.DaycareUrl}""
+export Services__ParentUrl=""{_config.ParentUrl}""
+export AiAgent__BaseUrl=""{_config.AiAgentUrl}""";
+}
