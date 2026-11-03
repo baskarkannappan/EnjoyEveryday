@@ -9,6 +9,7 @@
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService ViewPreference
 @inject NavigationManager Navigation
 @rendermode InteractiveServer
 
@@ -59,7 +60,17 @@ else
     protected override async Task OnInitializedAsync()
     {
         Navigation.LocationChanged += HandleLocationChanged;
+        ViewPreference.OnViewChanged += HandlePreferenceChanged;
         await ResolveUserScopeAndDefaultViewAsync();
+    }
+
+    private async void HandlePreferenceChanged()
+    {
+        if (!string.IsNullOrEmpty(ViewPreference.CurrentView) && _currentView != ViewPreference.CurrentView)
+        {
+            _currentView = ViewPreference.CurrentView;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task ResolveUserScopeAndDefaultViewAsync()
@@ -72,7 +83,24 @@ else
             _assignedBranchIds = profile.AssignedBranchIds;
             _availableViews = profile.AvailableViews;
 
-            // Safe authorized default view (Role Hierarchy):
+            // 1. Check if URL query requested a specific authorized view
+            if (ApplyRequestedViewFromUrl())
+            {
+                return;
+            }
+
+            // 2. Check if active session preference is already set
+            if (!string.IsNullOrEmpty(ViewPreference.CurrentView))
+            {
+                var match = _availableViews.FirstOrDefault(v => v.Equals(ViewPreference.CurrentView, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    _currentView = match;
+                    return;
+                }
+            }
+
+            // 3. Safe authorized default view (Role Hierarchy fallback):
             if (profile.IsOrgAdmin)
             {
                 _currentView = "OrgAdmin";
@@ -90,8 +118,7 @@ else
                 _currentView = "Teacher";
             }
 
-            // Check if URL query requested a specific authorized view
-            ApplyRequestedViewFromUrl();
+            ViewPreference.SetCurrentView(_currentView);
         }
         catch (Exception ex)
         {
@@ -104,23 +131,34 @@ else
         }
     }
 
-    private void ApplyRequestedViewFromUrl()
+    private bool ApplyRequestedViewFromUrl()
     {
         var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var viewParam))
         {
             var requestedView = viewParam.ToString();
-            if (_availableViews.Any(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase)))
+            var match = _availableViews.FirstOrDefault(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
             {
-                _currentView = _availableViews.First(v => v.Equals(requestedView, StringComparison.OrdinalIgnoreCase));
+                _currentView = match;
+                ViewPreference.SetCurrentView(match);
+                return true;
             }
         }
+        return false;
     }
 
     private void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        ApplyRequestedViewFromUrl();
-        InvokeAsync(StateHasChanged);
+        if (ApplyRequestedViewFromUrl())
+        {
+            InvokeAsync(StateHasChanged);
+        }
+        else if (!string.IsNullOrEmpty(ViewPreference.CurrentView) && _currentView != ViewPreference.CurrentView)
+        {
+            _currentView = ViewPreference.CurrentView;
+            InvokeAsync(StateHasChanged);
+        }
     }
 
     private void HandleViewChanged(string newView)
@@ -128,6 +166,7 @@ else
         if (_availableViews.Contains(newView))
         {
             _currentView = newView;
+            ViewPreference.SetCurrentView(newView);
             Navigation.NavigateTo($"/?view={newView.ToLowerInvariant()}", forceLoad: false);
         }
     }
@@ -135,5 +174,6 @@ else
     public void Dispose()
     {
         Navigation.LocationChanged -= HandleLocationChanged;
+        ViewPreference.OnViewChanged -= HandlePreferenceChanged;
     }
 }

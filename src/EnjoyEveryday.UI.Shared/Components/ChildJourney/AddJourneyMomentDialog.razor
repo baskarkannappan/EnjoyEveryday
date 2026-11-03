@@ -1,11 +1,13 @@
 @namespace EnjoyEveryday.UI.Shared.Components.ChildJourney
 @using Microsoft.FluentUI.AspNetCore.Components
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Entities.Learning
 @using EnjoyEveryday.Application.Services
 
 @inject IChildJourneyService JourneyService
 @inject ChildService ChildService
 @inject ExperienceService ExperienceService
+@inject PlannerService PlannerService
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
@@ -17,24 +19,64 @@
                 <button class="modal-close" @onclick="CloseDialog" aria-label="Close dialog">✕</button>
         @if (_step == 1)
         {
-            <h3 class="dialog-title">What did you notice?</h3>
+            <h3 class="dialog-title">What did you notice?@(!string.IsNullOrEmpty(ChildName) ? $" — {ChildName}" : "")</h3>
             
-            @if (ExperienceId == null)
-            {
-                <div class="form-group">
-                    <label class="form-label">Which experience? (Optional)</label>
-                    <select class="form-select" @bind="_selectedDropdownExperienceId">
-                        <option value="">-- No specific experience --</option>
-                        @if (_allExperiences != null)
-                        {
-                            @foreach (var exp in _allExperiences)
-                            {
-                                <option value="@exp.Id">@exp.Title</option>
-                            }
-                        }
-                    </select>
+            @* DISPLAY CURRENTLY PLANNED EXPERIENCE FOR THE TEACHER / CLASSROOM *@
+            <div class="form-group planned-exp-section">
+                <div class="planned-exp-header">
+                    <label class="form-label">Planned Experience</label>
+                    @if (_selectedPlannedExperience != null && _selectedPlannedExperience.IsRunning)
+                    {
+                        <span class="exp-status-pill running">⚡ In Progress Now</span>
+                    }
+                    else if (_selectedPlannedExperience != null)
+                    {
+                        <span class="exp-status-pill planned">📅 Planned Today</span>
+                    }
                 </div>
-            }
+
+                @if (_plannedExperiences != null && _plannedExperiences.Any())
+                {
+                    <div class="planned-exp-selector-wrap">
+                        <select class="form-select planned-exp-select" @bind="_selectedPlannedScheduleId">
+                            @foreach (var exp in _plannedExperiences)
+                            {
+                                <option value="@exp.ScheduleId">
+                                    @exp.Title @(!string.IsNullOrWhiteSpace(exp.TimeRangeDisplay) ? $"({exp.TimeRangeDisplay})" : (!string.IsNullOrWhiteSpace(exp.TimeOfDay) ? $"({exp.TimeOfDay})" : ""))
+                                </option>
+                            }
+                            <option value="">-- No specific experience (Spontaneous Moment) --</option>
+                        </select>
+                        @if (_selectedPlannedExperience != null && !string.IsNullOrWhiteSpace(_selectedPlannedExperience.Description))
+                        {
+                            <div class="planned-exp-description">
+                                <span class="exp-desc-icon">🌿</span>
+                                <span class="exp-desc-text">@_selectedPlannedExperience.Description</span>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(ExperienceTitle))
+                {
+                    <div class="fixed-exp-badge">
+                        <span class="exp-badge-icon">🎨</span>
+                        <div class="exp-badge-info">
+                            <strong>@ExperienceTitle</strong>
+                            <small class="exp-badge-sub">Session in progress</small>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="no-planned-exp-banner">
+                        <span class="no-exp-icon">✨</span>
+                        <div class="no-exp-text">
+                            <strong>Spontaneous Learning Observation</strong>
+                            <small class="no-exp-sub">No experience currently planned for this classroom today.</small>
+                        </div>
+                    </div>
+                }
+            </div>
 
             @if (ClassroomId == null)
             {
@@ -163,6 +205,9 @@
     public Guid? ChildId { get; set; }
 
     [Parameter]
+    public string? ChildName { get; set; }
+
+    [Parameter]
     public Guid TeacherId { get; set; }
 
     [Parameter]
@@ -173,6 +218,12 @@
 
     [Parameter]
     public string? ExperienceTitle { get; set; }
+
+    [Parameter]
+    public Guid? ExperienceScheduleId { get; set; }
+
+    [Parameter]
+    public List<TodayActivityItemDto>? PlannedExperiences { get; set; }
 
     [Parameter]
     public Guid? ExperienceSessionId { get; set; }
@@ -196,8 +247,10 @@
 
     private List<Child>? _allChildren;
     private HashSet<Guid> _selectedChildIds = new();
-    private List<Experience>? _allExperiences;
-    private Guid? _selectedDropdownExperienceId;
+
+    private List<TodayActivityItemDto>? _plannedExperiences;
+    private Guid? _selectedPlannedScheduleId;
+    private TodayActivityItemDto? _selectedPlannedExperience => _plannedExperiences?.FirstOrDefault(p => p.ScheduleId == _selectedPlannedScheduleId);
 
     private List<Branch>? _allBranches;
     private List<Classroom>? _allClassrooms;
@@ -228,11 +281,14 @@
         {
             _selectedDropdownClassroomId = classId;
             _allChildren = (await ChildService.GetChildrenByClassroomAsync(classId)).ToList();
+            await LoadPlannedExperiencesForClassroomAsync(classId);
         }
         else
         {
             _selectedDropdownClassroomId = null;
             _allChildren = new List<Child>();
+            _plannedExperiences = new();
+            _selectedPlannedScheduleId = null;
         }
     }
 
@@ -254,15 +310,35 @@
         _step = 1;
         _observation = "";
         _photoUrl = "";
-        _isParentVisible = false;
+        _isParentVisible = true;
         _selectedAreas.Clear();
         _selectedChildIds.Clear();
-        _selectedDropdownExperienceId = null;
         _selectedBranchId = null;
         _selectedDropdownClassroomId = null;
+        _selectedPlannedScheduleId = null;
         
         _allAreas ??= (await JourneyService.GetDevelopmentAreasAsync()).ToList();
         
+        var effectiveClassroomId = ClassroomId ?? _selectedDropdownClassroomId;
+
+        // 1. Resolve planned experiences for the classroom (not all experiences from catalog!)
+        if (PlannedExperiences != null && PlannedExperiences.Any())
+        {
+            _plannedExperiences = PlannedExperiences;
+        }
+        else if (effectiveClassroomId.HasValue)
+        {
+            await LoadPlannedExperiencesForClassroomAsync(effectiveClassroomId.Value);
+        }
+        else
+        {
+            _plannedExperiences = new();
+        }
+
+        // 2. Pre-select currently planned or active experience
+        ResolveDefaultPlannedSelection();
+
+        // 3. Resolve children if classroom is known
         if (ClassroomId == null)
         {
             var orgs = await OrganizationService.GetOrganizationsAsync();
@@ -293,13 +369,51 @@
             }
         }
         
-        if (ExperienceId == null)
-        {
-            _allExperiences ??= (await ExperienceService.GetExperiencesAsync()).ToList();
-        }
-        
         _hideDialog = false;
         StateHasChanged();
+    }
+
+    private async Task LoadPlannedExperiencesForClassroomAsync(Guid classroomId)
+    {
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var feed = await PlannerService.GetTodayActivitiesFeedAsync(today, classroomId: classroomId);
+            _plannedExperiences = feed.Activities?.ToList() ?? new();
+        }
+        catch
+        {
+            _plannedExperiences = new();
+        }
+        ResolveDefaultPlannedSelection();
+    }
+
+    private void ResolveDefaultPlannedSelection()
+    {
+        if (_plannedExperiences == null || !_plannedExperiences.Any())
+        {
+            _selectedPlannedScheduleId = null;
+            return;
+        }
+
+        if (ExperienceScheduleId.HasValue && _plannedExperiences.Any(p => p.ScheduleId == ExperienceScheduleId.Value))
+        {
+            _selectedPlannedScheduleId = ExperienceScheduleId.Value;
+        }
+        else if (ExperienceId.HasValue && _plannedExperiences.Any(p => p.ExperienceId == ExperienceId.Value))
+        {
+            _selectedPlannedScheduleId = _plannedExperiences.First(p => p.ExperienceId == ExperienceId.Value).ScheduleId;
+        }
+        else
+        {
+            var activeRunning = _plannedExperiences.FirstOrDefault(p => p.IsRunning);
+            var nextPlanned = _plannedExperiences.FirstOrDefault(p => p.IsPending);
+            var defaultExp = activeRunning ?? nextPlanned ?? _plannedExperiences.FirstOrDefault();
+            if (defaultExp != null)
+            {
+                _selectedPlannedScheduleId = defaultExp.ScheduleId;
+            }
+        }
     }
 
     public async Task OpenForExperienceAsync(Guid experienceId, string title)
@@ -309,9 +423,46 @@
         await OpenAsync();
     }
 
+    public async Task OpenForChildAsync(
+        Guid childId, 
+        string? childName = null, 
+        Guid? classroomId = null, 
+        Guid? experienceId = null, 
+        string? experienceTitle = null,
+        Guid? experienceScheduleId = null,
+        List<TodayActivityItemDto>? plannedExperiences = null)
+    {
+        ChildId = childId;
+        ChildName = childName;
+        if (classroomId.HasValue) ClassroomId = classroomId;
+        if (experienceId.HasValue) ExperienceId = experienceId;
+        if (!string.IsNullOrEmpty(experienceTitle)) ExperienceTitle = experienceTitle;
+        if (experienceScheduleId.HasValue) ExperienceScheduleId = experienceScheduleId;
+        if (plannedExperiences != null) PlannedExperiences = plannedExperiences;
+        await OpenAsync();
+    }
+
+    public async Task OpenGeneralAsync(
+        Guid? classroomId = null, 
+        Guid? experienceId = null, 
+        string? experienceTitle = null,
+        Guid? experienceScheduleId = null,
+        List<TodayActivityItemDto>? plannedExperiences = null)
+    {
+        ChildId = null;
+        ChildName = null;
+        ClassroomId = classroomId;
+        ExperienceId = experienceId;
+        ExperienceTitle = experienceTitle;
+        ExperienceScheduleId = experienceScheduleId;
+        if (plannedExperiences != null) PlannedExperiences = plannedExperiences;
+        await OpenAsync();
+    }
+
     private void CloseDialog()
     {
         _hideDialog = true;
+        _photoUrl = "";
     }
 
     private void AppendObservation(string obs)
@@ -348,13 +499,25 @@
         try
         {
             var targetChildIds = ChildId.HasValue ? new[] { ChildId.Value } : _selectedChildIds.ToArray();
-            var targetExperienceId = ExperienceId ?? _selectedDropdownExperienceId;
-            var targetExperienceTitle = ExperienceTitle;
             var targetClassroomId = ClassroomId ?? _selectedDropdownClassroomId;
-            
-            if (ExperienceId == null && _selectedDropdownExperienceId != null && _allExperiences != null)
+
+            var targetScheduleId = _selectedPlannedScheduleId ?? ExperienceScheduleId;
+            Guid? targetExperienceId = ExperienceId;
+            string? targetExperienceTitle = ExperienceTitle;
+
+            if (_selectedPlannedExperience != null)
             {
-                targetExperienceTitle = _allExperiences.FirstOrDefault(e => e.Id == _selectedDropdownExperienceId)?.Title;
+                targetExperienceId = _selectedPlannedExperience.ExperienceId;
+                targetExperienceTitle = _selectedPlannedExperience.Title;
+                targetScheduleId = _selectedPlannedExperience.ScheduleId;
+            }
+            else if (targetScheduleId.HasValue && !targetExperienceId.HasValue)
+            {
+                var sch = await PlannerService.GetScheduleAsync(targetScheduleId.Value);
+                if (sch != null)
+                {
+                    targetExperienceId = sch.ExperienceId;
+                }
             }
             
             foreach (var targetChildId in targetChildIds)
@@ -365,7 +528,8 @@
                     TeacherId = TeacherId,
                     ClassroomId = targetClassroomId,
                     ExperienceId = targetExperienceId,
-                    Title = targetExperienceTitle, // Storing the experience title to resolve the missing context
+                    ExperienceScheduleId = targetScheduleId,
+                    Title = targetExperienceTitle,
                     ExperienceSessionId = ExperienceSessionId,
                     ExperienceParticipationId = ExperienceParticipationId,
                     JourneyType = "Observation",
@@ -379,12 +543,11 @@
                 
                 if (!string.IsNullOrEmpty(_photoUrl))
                 {
-                    // To keep it simple, we use the Evidence mechanism to store the photo URL
                     var evidence = new ChildJourneyEvidence
                     {
                         JourneyEntryId = entry.Id,
                         EvidenceType = "Photo",
-                        TextContent = _photoUrl, // Storing AVIF Base64 or URL in TextContent for simplicity
+                        TextContent = _photoUrl,
                         Visibility = _isParentVisible ? "Parent" : "InternalOnly"
                     };
                     await JourneyService.CreateJourneyEvidenceAsync(evidence);
@@ -403,3 +566,4 @@
         }
     }
 }
+

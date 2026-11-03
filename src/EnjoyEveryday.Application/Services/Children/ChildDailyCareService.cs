@@ -465,7 +465,9 @@ public class ChildDailyCareService : IChildDailyCareService
             branchId,
             date.ToDateTime(TimeOnly.MinValue),
             ct);
-        var attendances = attendancesList.ToDictionary(a => a.ChildId);
+        var attendances = attendancesList
+            .GroupBy(a => a.ChildId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.ArrivalTime ?? TimeSpan.Zero).First());
 
         var events = classroomId.HasValue
             ? (await _repository.GetEventsByClassroomAndDateAsync(_tenantContext.TenantId, classroomId.Value, date, ct)).ToList()
@@ -474,7 +476,9 @@ public class ChildDailyCareService : IChildDailyCareService
         var eventsByChild = events.GroupBy(e => e.ChildId).ToDictionary(g => g.Key, g => g.ToList());
 
         var activeNaps = classroomId.HasValue
-            ? (await _repository.GetActiveNapsByClassroomAsync(_tenantContext.TenantId, classroomId.Value, ct)).ToDictionary(n => n.ChildId)
+            ? (await _repository.GetActiveNapsByClassroomAsync(_tenantContext.TenantId, classroomId.Value, ct))
+                .GroupBy(n => n.ChildId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(n => n.StartTime).First())
             : new Dictionary<Guid, ChildNapSession>();
 
         var lowSupplies = (await _repository.GetLowSuppliesByBranchAsync(_tenantContext.TenantId, branchId, ct))

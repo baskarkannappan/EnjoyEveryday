@@ -8,6 +8,7 @@
 @inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService ViewPreference
 @implements IDisposable
 
 <nav class="custom-nav" style="padding: 10px 8px; height: 100%; display: flex; flex-direction: column;">
@@ -1001,6 +1002,7 @@
     protected override async Task OnInitializedAsync()
     {
         NavigationManager.LocationChanged += HandleLocationChanged;
+        ViewPreference.OnViewChanged += HandlePreferenceViewChanged;
         await ResolveNavigationScopeAsync();
         AutoExpandCurrentRoute();
 
@@ -1015,6 +1017,12 @@
         {
             Console.WriteLine($"[NavMenu] Error loading unread count: {ex.Message}");
         }
+    }
+
+    private async void HandlePreferenceViewChanged()
+    {
+        await ResolveNavigationScopeAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -1034,7 +1042,7 @@
         _availableViews = profile.AvailableViews;
         _availableViewsCount = _availableViews.Count;
 
-        // Detect active view from URL query if present and authorized
+        // 1. Detect active view from URL query if present and authorized
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
         if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var v))
         {
@@ -1043,20 +1051,45 @@
             if (match != null)
             {
                 _currentNavView = match;
+                ViewPreference.SetCurrentView(match);
                 return;
             }
         }
 
-        // Safe authorized default view
+        // 2. Active Session Preference (persisted across menu clicks!)
+        if (!string.IsNullOrEmpty(ViewPreference.CurrentView))
+        {
+            var match = _availableViews.FirstOrDefault(x => x.Equals(ViewPreference.CurrentView, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                _currentNavView = match;
+                return;
+            }
+        }
+
+        // 3. Safe authorized default view (Role Hierarchy fallback)
         if (_isOrgAdmin) _currentNavView = "OrgAdmin";
         else if (_isBranchAdmin) _currentNavView = "BranchAdmin";
         else if (_isLeadTeacher) _currentNavView = "LeadTeacher";
         else _currentNavView = "Teacher";
+
+        ViewPreference.SetCurrentView(_currentNavView);
     }
 
     private void HandleSwitchView(ChangeEventArgs e)
     {
         var targetUrl = e.Value?.ToString() ?? "/";
+        var uri = NavigationManager.ToAbsoluteUri(targetUrl);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var v))
+        {
+            var requested = v.ToString();
+            var match = _availableViews.FirstOrDefault(x => x.Equals(requested, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                ViewPreference.SetCurrentView(match);
+                _currentNavView = match;
+            }
+        }
         NavigationManager.NavigateTo(targetUrl, forceLoad: false);
     }
 
@@ -1082,6 +1115,7 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= HandleLocationChanged;
+        ViewPreference.OnViewChanged -= HandlePreferenceViewChanged;
         NotificationCenter.OnParentMessageReceived -= HandleIncomingMessage;
         NotificationCenter.OnMessagesRead -= HandleMessagesRead;
     }

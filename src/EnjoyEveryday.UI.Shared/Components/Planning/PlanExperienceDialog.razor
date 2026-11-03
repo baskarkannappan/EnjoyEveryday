@@ -67,7 +67,7 @@
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Classroom</label>
-                    <select @bind="ClassroomId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_isReadOnly || (_branchId == null && _branches.Any()))">
+                    <select value="@(_classroomId?.ToString() ?? "")" @onchange="OnClassroomChangedAsync" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_isReadOnly || (_branchId == null && _branches.Any()))">
                         <option value="">Select a Classroom...</option>
                         @foreach (var c in _classrooms.Where(c => _branchId == null || c.BranchId == _branchId))
                         {
@@ -75,6 +75,14 @@
                         }
                     </select>
                 </div>
+
+                @if (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue)
+                {
+                    <div style="background: #fff8eb; color: #92400e; padding: 10px 14px; border-radius: 8px; border: 1px solid #fde68a; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">⚠️</span>
+                        <span><strong>Day Schedule Full:</strong> This classroom already has both Morning and Evening experiences planned for this date. No additional sessions are allowed.</span>
+                    </div>
+                }
 
                 <div>
                     <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Primary Teacher</label>
@@ -90,26 +98,25 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Date</label>
-                        <input type="date" @bind="_date" @bind:format="yyyy-MM-dd" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <input type="date" value="@_date.ToString("yyyy-MM-dd")" @onchange="OnDateChangedAsync" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
                     </div>
                     <div>
                         <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Time of Day Category</label>
                         <select @bind="_timeOfDay" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
-                            <option value="Morning">Morning</option>
-                            <option value="Mid-Day">Mid-Day</option>
-                            <option value="Afternoon">Afternoon</option>
+                            <option value="Morning" disabled="@(_isMorningDisabled && !ScheduleId.HasValue)">Morning @(_isMorningDisabled && !ScheduleId.HasValue ? "(Already Planned)" : "")</option>
+                            <option value="Evening" disabled="@(_isEveningDisabled && !ScheduleId.HasValue)">Evening @(_isEveningDisabled && !ScheduleId.HasValue ? "(Already Planned)" : "")</option>
                         </select>
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Start Time (Optional)</label>
-                        <input type="time" @bind="_startTime" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Start Time (Operating: 8:00 AM - 7:00 PM)</label>
+                        <input type="time" @bind="_startTime" min="08:00" max="19:00" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
                     </div>
                     <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">End Time (Optional)</label>
-                        <input type="time" @bind="_endTime" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">End Time (Closing: 7:00 PM)</label>
+                        <input type="time" @bind="_endTime" min="08:00" max="19:00" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
                     </div>
                 </div>
 
@@ -132,7 +139,7 @@
                 <button type="button" class="secondary" @onclick="Close" style="padding: 9px 18px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Close</button>
                 @if (!_isReadOnly)
                 {
-                    <button type="button" class="primary" @onclick="Save" disabled="@_isSaving" style="padding: 9px 18px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    <button type="button" class="primary" @onclick="Save" disabled="@(_isSaving || (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue))" style="padding: 9px 18px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
                         @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
                     </button>
                 }
@@ -231,6 +238,75 @@
         }
     }
 
+    private bool _isMorningDisabled = false;
+    private bool _isEveningDisabled = false;
+    private bool _hasReachedClassroomDailyLimit => _isMorningDisabled && _isEveningDisabled;
+
+    private async Task OnClassroomChangedAsync(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var cId))
+        {
+            _classroomId = cId;
+        }
+        else
+        {
+            _classroomId = null;
+        }
+        _teacherId = null;
+        await CheckClassroomSlotAvailabilityAsync();
+    }
+
+    private async Task OnDateChangedAsync(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+        {
+            _date = dt;
+            await CheckClassroomSlotAvailabilityAsync();
+        }
+    }
+
+    private async Task CheckClassroomSlotAvailabilityAsync()
+    {
+        _isMorningDisabled = false;
+        _isEveningDisabled = false;
+
+        if (!_classroomId.HasValue) return;
+
+        try
+        {
+            var schedules = await PlannerService.GetSchedulesForDateAsync(DateOnly.FromDateTime(_date));
+            var roomSchedules = schedules.Where(s =>
+                s.ClassroomId == _classroomId.Value &&
+                (!ScheduleId.HasValue || s.Id != ScheduleId.Value) &&
+                !string.Equals(s.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            foreach (var s in roomSchedules)
+            {
+                var slot = s.TimeOfDay?.Trim().ToLowerInvariant() ?? "";
+                if (slot.Contains("morn"))
+                {
+                    _isMorningDisabled = true;
+                }
+                else
+                {
+                    _isEveningDisabled = true;
+                }
+            }
+
+            if (_isMorningDisabled && !_isEveningDisabled && _timeOfDay == "Morning")
+            {
+                _timeOfDay = "Evening";
+            }
+            else if (_isEveningDisabled && !_isMorningDisabled && _timeOfDay == "Evening")
+            {
+                _timeOfDay = "Morning";
+            }
+        }
+        catch
+        {
+        }
+    }
+
     public async Task Open()
     {
         _errorMessage = "";
@@ -268,6 +344,8 @@
             _notes = "";
             _isReadOnly = false;
         }
+
+        await CheckClassroomSlotAvailabilityAsync();
         
         IsOpen = true;
         StateHasChanged();
@@ -314,25 +392,52 @@
             return;
         }
 
+        if (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue)
+        {
+            _errorMessage = "This classroom already has both Morning and Evening experiences planned for this date.";
+            return;
+        }
+
         _isSaving = true;
 
         try
         {
             TimeSpan? startTs = _startTime.HasValue ? _startTime.Value.TimeOfDay : null;
             TimeSpan? endTs = _endTime.HasValue ? _endTime.Value.TimeOfDay : null;
+
+            var minOpen = new TimeSpan(8, 0, 0);
+            var maxClose = new TimeSpan(19, 0, 0);
             
-            if (startTs.HasValue && (startTs.Value.Hours < 8 || startTs.Value.Hours >= 17)) {
-                _errorMessage = "Start time must be between 8:00 AM and 5:00 PM.";
+            if (startTs.HasValue && (startTs.Value < minOpen || startTs.Value >= maxClose)) {
+                _errorMessage = "Start time must be within daycare operating hours (8:00 AM to 7:00 PM).";
                 _isSaving = false;
                 return;
             }
-            if (endTs.HasValue && (endTs.Value.Hours < 8 || endTs.Value.Hours >= 17 || (endTs.Value.Hours == 17 && endTs.Value.Minutes > 0))) {
-                _errorMessage = "End time must be between 8:00 AM and 5:00 PM.";
+            if (endTs.HasValue && (endTs.Value <= minOpen || endTs.Value > maxClose)) {
+                _errorMessage = "End time cannot be after daycare closing time (7:00 PM).";
                 _isSaving = false;
                 return;
             }
             if (startTs.HasValue && endTs.HasValue && startTs.Value >= endTs.Value) {
                 _errorMessage = "Start time must be before end time.";
+                _isSaving = false;
+                return;
+            }
+            if (startTs.HasValue && endTs.HasValue) {
+                var duration = (endTs.Value - startTs.Value).TotalMinutes;
+                if (duration < 15) {
+                    _errorMessage = "Experience duration must be at least 15 minutes.";
+                    _isSaving = false;
+                    return;
+                }
+                if (duration > 180) {
+                    _errorMessage = "Experience duration cannot exceed 3 hours. Please plan a reasonable activity duration.";
+                    _isSaving = false;
+                    return;
+                }
+            }
+            if (_date.Date == DateTime.Today && endTs.HasValue && endTs.Value <= DateTime.Now.TimeOfDay) {
+                _errorMessage = "Cannot plan an experience for a time window that has already passed today.";
                 _isSaving = false;
                 return;
             }

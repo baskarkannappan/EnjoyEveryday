@@ -2,15 +2,75 @@
 @inject IJSRuntime JSRuntime
 
 <div class="avif-image-uploader" style="@Style">
-    <label style="cursor: pointer; display: inline-block;">
-        <span class="upload-btn" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: var(--accent, #52745e); color: white; border-radius: 8px; font-size: 12.5px; font-weight: 700; box-shadow: 0 2px 6px rgba(85, 124, 108, 0.2); transition: all 0.15s ease;">
-            <i class="bi bi-camera"></i> @ButtonText
-        </span>
-        <input type="file" accept="image/*" @ref="_fileInput" @onchange="HandleFileSelected" style="display: none;" />
-    </label>
-    @if (_isProcessing)
+    @if (string.IsNullOrEmpty(Value))
     {
-        <span style="font-size: 12px; color: var(--muted, #6c7870); margin-left: 10px;">Converting to AVIF...</span>
+        <div class="uploader-actions-row">
+            <!-- 1. Mobile Camera Capture (triggers camera directly on mobile) -->
+            <label class="camera-btn" title="Take a photo with camera">
+                <span class="btn-content">
+                    <span class="btn-icon">📷</span>
+                    <span>Take Photo</span>
+                </span>
+                <input type="file"
+                       accept="image/*"
+                       capture="environment"
+                       @ref="_cameraInput"
+                       @onchange="HandleCameraCapture"
+                       style="display: none;" />
+            </label>
+
+            <!-- 2. Photo Library / File Picker -->
+            <label class="library-btn" title="Choose photo from library or files">
+                <span class="btn-content">
+                    <span class="btn-icon">🖼️</span>
+                    <span>@ButtonText</span>
+                </span>
+                <input type="file"
+                       accept="image/*"
+                       @ref="_fileInput"
+                       @onchange="HandleFileSelected"
+                       style="display: none;" />
+            </label>
+        </div>
+
+        @if (_isProcessing)
+        {
+            <div class="processing-bar">
+                <span class="spin-icon">⏳</span>
+                <span>Optimizing &amp; converting photo...</span>
+            </div>
+        }
+    }
+    else
+    {
+        <!-- Photo Preview Card -->
+        <div class="photo-preview-card">
+            <div class="preview-thumb-wrap">
+                <img src="@Value" alt="Attached moment photo" class="preview-thumb-img" />
+            </div>
+            <div class="preview-meta">
+                <div class="photo-status-badge">
+                    <span>✓</span>
+                    <span>Photo Attached</span>
+                </div>
+                <div class="preview-actions">
+                    <!-- Retake button with camera capture -->
+                    <label class="retake-label" title="Retake photo with camera">
+                        <span>📷 Retake</span>
+                        <input type="file"
+                               accept="image/*"
+                               capture="environment"
+                               @onchange="HandleCameraCapture"
+                               style="display: none;" />
+                    </label>
+                    <span class="meta-divider">•</span>
+                    <!-- Remove button -->
+                    <button type="button" class="btn-remove-photo" @onclick="RemovePhoto">
+                        ✕ Remove
+                    </button>
+                </div>
+            </div>
+        </div>
     }
 </div>
 
@@ -22,15 +82,26 @@
     public EventCallback<string> ValueChanged { get; set; }
     
     [Parameter]
-    public string ButtonText { get; set; } = "Upload Image";
+    public string ButtonText { get; set; } = "Choose Photo";
 
     [Parameter]
     public string Style { get; set; } = "";
 
     private ElementReference _fileInput;
+    private ElementReference _cameraInput;
     private bool _isProcessing = false;
 
+    private async Task HandleCameraCapture(ChangeEventArgs e)
+    {
+        await ProcessInputFile(_cameraInput);
+    }
+
     private async Task HandleFileSelected(ChangeEventArgs e)
+    {
+        await ProcessInputFile(_fileInput);
+    }
+
+    private async Task ProcessInputFile(ElementReference inputRef)
     {
         _isProcessing = true;
         StateHasChanged();
@@ -38,7 +109,7 @@
         try
         {
             // Call the JS interop to convert to AVIF base64 data url
-            var result = await JSRuntime.InvokeAsync<string>("window.imageConverter.convertToAvif", _fileInput);
+            var result = await JSRuntime.InvokeAsync<string>("window.imageConverter.convertToAvif", inputRef);
             
             if (!string.IsNullOrEmpty(result))
             {
@@ -55,5 +126,11 @@
             _isProcessing = false;
             StateHasChanged();
         }
+    }
+
+    private async Task RemovePhoto()
+    {
+        Value = null;
+        await ValueChanged.InvokeAsync(string.Empty);
     }
 }

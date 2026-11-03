@@ -6,6 +6,7 @@
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
+@using EnjoyEveryday.UI.Shared.Components.ChildJourney
 @using EnjoyEveryday.UI.Shared.Components.OperationsBoard
 @using Microsoft.FluentUI.AspNetCore.Components
 @using Icons = Microsoft.FluentUI.AspNetCore.Components.Icons
@@ -13,7 +14,10 @@
 @inject IDaycareOperationsBoardService OperationsBoardService
 @inject ClassroomService ClassroomService
 @inject ExecutionService ExecutionService
+@inject PlannerService PlannerService
 @inject IClassroomCommunicationService CommunicationService
+@inject IChildDailyCareService DailyCareService
+@inject AttendanceService AttendanceService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
@@ -61,18 +65,10 @@
         <div class="teacher-hero-header">
             <div class="header-top-row">
                 <div class="classroom-eyebrow">
-                    @if (IsLeadTeacher)
-                    {
-                        <span class="eyebrow-text">MY CLASSROOM • LEAD TEACHER COORDINATION • @(_activeClassroom?.Name?.ToUpperInvariant() ?? "CLASSROOM")</span>
-                    }
-                    else if (_teacherClassrooms.Count == 1)
-                    {
-                        <span class="eyebrow-text">MY CLASSROOM • @(_activeClassroom?.Name?.ToUpperInvariant() ?? "CLASSROOM")</span>
-                    }
-                    else
+                    @if (_teacherClassrooms.Count > 1)
                     {
                         <div class="classroom-dropdown-wrap">
-                            <span class="eyebrow-text">MY CLASSROOM •</span>
+                            <span class="eyebrow-text">MY CLASSROOM • @(IsLeadTeacher ? "LEAD TEACHER • " : "")</span>
                             <select class="classroom-select-pill" @onchange="HandleClassroomSelected" value="@(_selectedClassroomId?.ToString() ?? "")">
                                 @foreach (var room in _teacherClassrooms)
                                 {
@@ -81,23 +77,90 @@
                             </select>
                         </div>
                     }
+                    else if (IsLeadTeacher)
+                    {
+                        <span class="eyebrow-text">MY CLASSROOM • LEAD TEACHER COORDINATION • @(_activeClassroom?.Name?.ToUpperInvariant() ?? "CLASSROOM")</span>
+                    }
+                    else
+                    {
+                        <span class="eyebrow-text">MY CLASSROOM • @(_activeClassroom?.Name?.ToUpperInvariant() ?? "CLASSROOM")</span>
+                    }
                 </div>
 
-                @if (AvailableViews.Count > 1)
-                {
-                    <div class="role-override-wrapper">
-                        <select class="role-selector-pill" @onchange="e => OnChangeView.InvokeAsync(e.Value?.ToString() ?? string.Empty)" value="@(IsLeadTeacher ? "LeadTeacher" : "Teacher")">
-                            @foreach (var v in AvailableViews)
-                            {
-                                <option value="@v">@GetViewDisplayName(v) View</option>
-                            }
-                        </select>
-                    </div>
-                }
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button class="staff-break-pill @(_isOnBreak ? "break-active" : "")" @onclick="ToggleStaffBreak">
+                        <span>☕</span>
+                        <span>@(_isOnBreak ? "On Break (Click to Return)" : "Staff Break")</span>
+                    </button>
+
+                    @if (AvailableViews.Count > 1)
+                    {
+                        <div class="role-override-wrapper">
+                            <select class="role-selector-pill" @onchange="e => OnChangeView.InvokeAsync(e.Value?.ToString() ?? string.Empty)" value="@(IsLeadTeacher ? "LeadTeacher" : "Teacher")">
+                                @foreach (var v in AvailableViews)
+                                {
+                                    <option value="@v">@GetViewDisplayName(v) View</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                </div>
             </div>
 
+            @if (_isDaycareClosed)
+            {
+                <div class="daycare-closed-banner">
+                    <div class="closed-banner-left">
+                        <span class="closed-icon">🌙</span>
+                        <div>
+                            <div class="closed-title">Daycare is Closed for the Day</div>
+                            <div class="closed-subtitle">Operating hours ended at 7:00 PM. Classroom arrivals, attendance, and new learning sessions are closed until tomorrow morning.</div>
+                        </div>
+                    </div>
+                    <span class="closed-status-pill">CLOSED</span>
+                </div>
+            }
+
+            @if (_isOnBreak)
+            {
+                <div class="staff-break-banner">
+                    <div class="staff-break-banner-left">
+                        <span>☕</span>
+                        <span>Staff Break in Progress — Started at @(_breakStartTime?.ToString("h:mm tt") ?? "now"). Classroom ratio active.</span>
+                    </div>
+                    <button class="btn primary sm" @onclick="ToggleStaffBreak">✓ End Break &amp; Return</button>
+                </div>
+            }
+
             <h1 class="greeting-heading">@GetGreeting()!</h1>
-            @* <p class="greeting-subtitle">@(IsLeadTeacher ? $"Classroom coordination & teaching delivery for {(_activeClassroom?.Name ?? "your classroom")}." : "Let's make today a wonderful day for the children.")</p> *@
+            <p class="greeting-subtitle">@(_activeClassroom != null ? $"{_activeClassroom.Name} • {(_classroomChildren.Count(c => c.IsCheckedIn))} checked in today" : "Let's make today a wonderful day for the children.")</p>
+
+            @if (_teacherClassrooms.Count > 1)
+            {
+                <div class="multi-classroom-switcher-bar">
+                    <div class="classroom-switcher-title">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Door())" Color="Color.Custom" CustomColor="#52745e" />
+                        <span>Assigned Classrooms:</span>
+                    </div>
+                    <div class="classroom-switcher-tabs">
+                        @foreach (var room in _teacherClassrooms)
+                        {
+                            var isCurrent = room.Id == _selectedClassroomId;
+                            <button type="button" 
+                                    class="classroom-switch-btn @(isCurrent ? "active-room" : "")" 
+                                    @onclick="() => SelectClassroomAsync(room.Id)">
+                                <span class="room-icon">🏫</span>
+                                <span class="room-name">@room.Name</span>
+                                <span class="room-pill">@(string.IsNullOrEmpty(room.AgeGroup) ? "Room" : room.AgeGroup)</span>
+                                @if (isCurrent)
+                                {
+                                    <span class="active-indicator">● Active</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
         </div>
 
         <!-- ================= SECTION B: THREE STAT CARDS (Screenshot 1 Match) ================= -->
@@ -135,79 +198,279 @@
         <!-- ================= SECTION C: LEAD TEACHER COORDINATION SHORTCUTS ================= -->
         @if (IsLeadTeacher)
         {
-            <div class="lead-teacher-coordination-section" style="margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);">
-                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;">
+            <div class="lead-teacher-coordination-section">
+                <div class="coordination-header-row">
                     <div>
-                        <h2 style="font-size: 15px; font-weight: 800; color: var(--text, #26332d); margin: 0; display: flex; align-items: center; gap: 8px;">
-                            <span style="background: var(--accent-light); color: var(--accent-dark); border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.4px;">LEAD TEACHER</span>
+                        <h2 class="coordination-title">
+                            <span class="coordination-badge">LEAD TEACHER</span>
                             Classroom Delivery &amp; Team Coordination
                         </h2>
-                        <p style="font-size: 12px; color: var(--muted, #6c7870); margin: 2px 0 0;">Oversee classroom readiness, daily care logs, team tasks and staff coverage</p>
+                        <p class="coordination-sub">Oversee classroom readiness, daily care logs, team tasks and staff coverage</p>
                     </div>
                 </div>
 
-                <div class="coordination-shortcuts-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                <div class="coordination-shortcuts-grid">
                     <!-- 1. Classroom Readiness -->
-                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/classrooms")' style="padding: 12px 14px;">
-                        <div class="action-card-icon" style="background: #e6eee9; color: #276749;">
+                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/classrooms")'>
+                        <div class="action-card-icon icon-box-leaf">
                             <FluentIcon Value="@(new Icons.Regular.Size24.Building())" Color="Color.Custom" CustomColor="#276749" />
                         </div>
                         <div class="action-card-text">
-                            <div class="action-title" style="font-size: 13px;">Classroom Readiness</div>
-                            <div class="action-subtitle" style="font-size: 11px;">Environment &amp; room setup</div>
+                            <strong>Classroom Readiness</strong>
+                            <span>Environment &amp; room setup</span>
                         </div>
                     </div>
 
                     <!-- 2. Team Tasks & Handover -->
-                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")' style="padding: 12px 14px;">
-                        <div class="action-card-icon" style="background: #eef2ff; color: #3730a3;">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.PeopleTeam())" Color="Color.Custom" CustomColor="#3730a3" />
+                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")'>
+                        <div class="action-card-icon icon-box-blue">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.PeopleTeam())" Color="Color.Custom" CustomColor="#2b6cb0" />
                         </div>
                         <div class="action-card-text">
-                            <div class="action-title" style="font-size: 13px;">Team Tasks &amp; Handover</div>
-                            <div class="action-subtitle" style="font-size: 11px;">Classroom shift handover</div>
+                            <strong>Team Tasks &amp; Handover</strong>
+                            <span>Classroom shift handover</span>
                         </div>
                     </div>
 
                     <!-- 3. Review Daily Logs -->
-                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")' style="padding: 12px 14px;">
-                        <div class="action-card-icon" style="background: #fef3c7; color: #92400e;">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.ClipboardTask())" Color="Color.Custom" CustomColor="#92400e" />
+                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")'>
+                        <div class="action-card-icon icon-box-amber">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.ClipboardTask())" Color="Color.Custom" CustomColor="#8c5717" />
                         </div>
                         <div class="action-card-text">
-                            <div class="action-title" style="font-size: 13px;">Review Daily Logs</div>
-                            <div class="action-subtitle" style="font-size: 11px;">Verify teacher care logs</div>
+                            <strong>Review Daily Logs</strong>
+                            <span>Verify teacher care logs</span>
                         </div>
                     </div>
 
                     <!-- 4. Review Experience Feedback -->
-                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/experiences")' style="padding: 12px 14px;">
-                        <div class="action-card-icon" style="background: #ecfdf5; color: #065f46;">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.Sparkle())" Color="Color.Custom" CustomColor="#065f46" />
+                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/experiences")'>
+                        <div class="action-card-icon icon-box-teal">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.Sparkle())" Color="Color.Custom" CustomColor="#22543d" />
                         </div>
                         <div class="action-card-text">
-                            <div class="action-title" style="font-size: 13px;">Experience Feedback</div>
-                            <div class="action-subtitle" style="font-size: 11px;">Curriculum &amp; session notes</div>
+                            <strong>Experience Feedback</strong>
+                            <span>Curriculum &amp; session notes</span>
                         </div>
                     </div>
 
                     <!-- 5. Request Staff Coverage -->
-                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/roster")' style="padding: 12px 14px;">
-                        <div class="action-card-icon" style="background: #fee2e2; color: #991b1b;">
-                            <FluentIcon Value="@(new Icons.Regular.Size24.PersonCall())" Color="Color.Custom" CustomColor="#991b1b" />
+                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/roster")'>
+                        <div class="action-card-icon icon-box-purple">
+                            <FluentIcon Value="@(new Icons.Regular.Size24.PersonCall())" Color="Color.Custom" CustomColor="#553c9a" />
                         </div>
                         <div class="action-card-text">
-                            <div class="action-title" style="font-size: 13px;">Request Coverage</div>
-                            <div class="action-subtitle" style="font-size: 11px;">Staffing gaps &amp; coverage</div>
+                            <strong>Request Coverage</strong>
+                            <span>Staffing gaps &amp; coverage</span>
                         </div>
                     </div>
                 </div>
             </div>
         }
 
-        <!-- ================= SECTION D: PRIMARY TEACHING ACTION SHORTCUTS (6 TILES) ================= -->
+        <!-- ================= SECTION D: CLASSROOM LIVE ACTION COCKPIT ================= -->
+        <div class="cockpit-section">
+            <div class="cockpit-header">
+                <div class="cockpit-title-wrap">
+                    <h2>
+                        <FluentIcon Value="@(new Icons.Regular.Size20.PeopleCommunity())" Color="Color.Custom" CustomColor="#52745e" />
+                        Classroom Live Roster &amp; Action Cockpit
+                    </h2>
+                    <p>Execute attendance, diaper changes, meals, rest sessions, and moments with 1 tap.</p>
+                </div>
+                <div class="cockpit-batch-bar">
+                    <button class="batch-btn primary-batch" @onclick="MarkAllScheduledPresentAsync" title="Mark all expected children present">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
+                        <span>Check-In All</span>
+                    </button>
+                    <button class="batch-btn" @onclick="() => _showGroupSnackModal = true" title="Record group snack for all checked-in children">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Food())" Color="Color.Custom" CustomColor="#52745e" />
+                        <span>Group Snack</span>
+                    </button>
+                    <button class="batch-btn" @onclick="StartGroupNapAsync" title="Start rest time for all present awake children">
+                        <FluentIcon Value="@(new Icons.Regular.Size16.Bed())" Color="Color.Custom" CustomColor="#3730a3" />
+                        <span>Group Rest</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filter tabs -->
+            <div class="cockpit-filters">
+                <button class="cockpit-filter-pill @(_rosterFilter == "All" ? "active" : "")" @onclick='() => _rosterFilter = "All"'>
+                    All Children (@_classroomChildren.Count)
+                </button>
+                <button class="cockpit-filter-pill @(_rosterFilter == "Present" ? "active" : "")" @onclick='() => _rosterFilter = "Present"'>
+                    Present (@_classroomChildren.Count(c => c.IsCheckedIn))
+                </button>
+                <button class="cockpit-filter-pill @(_rosterFilter == "Expected" ? "active" : "")" @onclick='() => _rosterFilter = "Expected"'>
+                    Expected (@_classroomChildren.Count(c => !c.IsCheckedIn))
+                </button>
+                <button class="cockpit-filter-pill @(_rosterFilter == "Resting" ? "active" : "")" @onclick='() => _rosterFilter = "Resting"'>
+                    Resting (@_classroomChildren.Count(c => c.ActiveNapSession != null))
+                </button>
+            </div>
+
+            <!-- Roster Cards Grid -->
+            @if (!_classroomChildren.Any())
+            {
+                <div style="padding: 24px; text-align: center; color: var(--muted, #6c7870); font-size: 13.5px;">
+                    No children currently enrolled in @(_activeClassroom?.Name ?? "this classroom").
+                </div>
+            }
+            else
+            {
+                var filtered = GetFilteredChildren();
+                <div class="roster-grid">
+                    @foreach (var child in filtered)
+                    {
+                        bool isSleeping = child.ActiveNapSession != null;
+                        <div class="child-card @(isSleeping ? "is-resting" : "")">
+                            <div class="child-card-header">
+                                <div class="child-meta-left">
+                                    <div class="child-avatar">
+                                        @(GetChildInitials(child.ChildName))
+                                    </div>
+                                    <div class="child-name-wrap">
+                                        <h4 class="child-name">@child.ChildName</h4>
+                                        <div class="child-sub">
+                                            @if (child.IsCheckedIn && child.ArrivalTime.HasValue)
+                                            {
+                                                <span>Arrived @FormatTimeSpan(child.ArrivalTime.Value)</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@(child.AttendanceStatus ?? "Expected today")</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    @if (isSleeping)
+                                    {
+                                        <span class="child-badge badge-resting"><span class="pulse-dot"></span> Resting</span>
+                                    }
+                                    else if (child.IsCheckedIn)
+                                    {
+                                        <span class="child-badge badge-present">● Present</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="child-badge badge-expected">Expected</span>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (child.IsCheckedIn)
+                            {
+                                <!-- Routines Glance -->
+                                <div class="child-glance-row">
+                                    <div class="glance-chip @(child.LastDiaperEvent == null ? "empty-chip" : "")" title="Last Diaper Change">
+                                        <span>🧷</span>
+                                        <span>@(child.LastDiaperEvent != null ? $"{child.LastDiaperEvent.DiaperCondition ?? "Checked"} ({child.LastDiaperEvent.EventTime.ToLocalTime().ToString("h:mm tt")})" : "No diaper yet")</span>
+                                    </div>
+                                    <div class="glance-chip @(child.LastMealEvent == null ? "empty-chip" : "")" title="Last Meal/Snack">
+                                        <span>🍎</span>
+                                        <span>@(child.LastMealEvent != null ? $"{child.LastMealEvent.AmountConsumed ?? "Recorded"}" : "No meal yet")</span>
+                                    </div>
+                                    <div class="glance-chip @(!isSleeping ? "empty-chip" : "")" title="Rest Status">
+                                        <span>😴</span>
+                                        <span>@(isSleeping ? "Resting" : "Awake")</span>
+                                    </div>
+                                </div>
+
+                                <!-- Action Buttons Row -->
+                                <div class="child-actions-row">
+                                    <button class="child-action-btn @(_activeDiaperChildId == child.ChildId ? "active-action" : "")" 
+                                            @onclick="() => ToggleDiaperPopover(child.ChildId)" 
+                                            title="Record Diaper Change">
+                                        <span>🧷</span>
+                                        <span>Diaper</span>
+                                    </button>
+
+                                    <button class="child-action-btn @(_activeMealChildId == child.ChildId ? "active-action" : "")" 
+                                            @onclick="() => ToggleMealPopover(child.ChildId)" 
+                                            title="Record Meal or Snack">
+                                        <span>🍎</span>
+                                        <span>Meal</span>
+                                    </button>
+
+                                    <button class="child-action-btn @(isSleeping ? "active-action" : "")" 
+                                            @onclick="() => ToggleNapAsync(child)" 
+                                            title="@(isSleeping ? "Wake up child" : "Start nap timer")">
+                                        <span>@(isSleeping ? "⏰" : "😴")</span>
+                                        <span>@(isSleeping ? "Wake" : "Rest")</span>
+                                    </button>
+
+                                    <button class="child-action-btn" 
+                                            @onclick="() => OpenQuickMomentModalAsync(child)" 
+                                            title="Capture Moment or Observation">
+                                        <span>📸</span>
+                                        <span>Moment</span>
+                                    </button>
+
+                                    <button class="child-action-btn btn-checkout" 
+                                            @onclick="() => CheckOutChildAsync(child.ChildId)" 
+                                            title="Record Departure">
+                                        <span>🚪</span>
+                                        <span>Out</span>
+                                    </button>
+                                </div>
+
+                                <!-- Quick Diaper Popover -->
+                                @if (_activeDiaperChildId == child.ChildId)
+                                {
+                                    <div class="quick-popover">
+                                        <div class="quick-popover-title">
+                                            <span>Select Diaper Condition:</span>
+                                            <span style="cursor: pointer;" @onclick="() => _activeDiaperChildId = null">✕</span>
+                                        </div>
+                                        <div class="quick-popover-options">
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet")'>💧 Wet</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "BM")'>💩 BM / Dirty</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet & BM")'>💧💩 Both</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Clean/Dry")'>✨ Clean &amp; Dry</button>
+                                        </div>
+                                    </div>
+                                }
+
+                                <!-- Quick Meal Popover -->
+                                @if (_activeMealChildId == child.ChildId)
+                                {
+                                    <div class="quick-popover">
+                                        <div class="quick-popover-title">
+                                            <span>Select Amount Consumed:</span>
+                                            <span style="cursor: pointer;" @onclick="() => _activeMealChildId = null">✕</span>
+                                        </div>
+                                        <div class="quick-popover-options">
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "All (100%)")'>🥣 All (100%)</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Most (75%)")'>👍 Most (75%)</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Half (50%)")'>🥪 Half (50%)</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Some (25%)")'>🤏 Little (25%)</button>
+                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "None (0%)")'>❌ None</button>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <!-- Unchecked state: Large 1-tap Check-In button -->
+                                <button class="btn-checkin-large @(_isDaycareClosed ? "closed-btn" : "")" 
+                                        @onclick="() => CheckInChildAsync(child.ChildId)" 
+                                        title="@(_isDaycareClosed ? "Daycare is closed for the day (operating hours ended at 7:00 PM)" : "Check in child")">
+                                    <FluentIcon Value="@(_isDaycareClosed ? (Icon)new Icons.Regular.Size16.LockClosed() : (Icon)new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
+                                    <span>@(_isDaycareClosed ? "Closed (After 7 PM)" : "Check-In Now")</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- ================= SECTION E: MORE CLASSROOM SHORTCUTS ================= -->
         <div class="actions-section">
-            <h2 class="section-title">@(IsLeadTeacher ? "Teaching & Daily Care Duties" : "What would you like to do?")</h2>
+            <h2 class="section-title">@(IsLeadTeacher ? "Classroom Delivery Shortcuts" : "More Classroom Tools")</h2>
             <div class="actions-grid-3x2">
                 <!-- 1. Take Attendance (Signature Dark Sage Highlight) -->
                 <div class="action-card action-attendance-featured" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/attendance")'>
@@ -260,7 +523,7 @@
                 }
 
                 <!-- 3. Capture a Child Moment -->
-                <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/journey")'>
+                <div class="action-card" role="button" tabindex="0" @onclick="OpenGeneralMomentModalAsync">
                     <div class="action-card-icon">
                         <FluentIcon Value="@(new Icons.Regular.Size28.Camera())" Color="Color.Custom" CustomColor="#476a5b" />
                     </div>
@@ -506,6 +769,55 @@
     OnOpenFullSession="OpenActiveSession"
     OnClose="() => _isSessionPhotoModalOpen = false" />
 
+@* COMPREHENSIVE 2-STEP JOURNEY MOMENT DIALOG WITH MOBILE CAMERA CAPTURE *@
+<AddJourneyMomentDialog @ref="_momentDialog"
+                        ClassroomId="@_activeClassroom?.Id"
+                        TeacherId="@(UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001"))"
+                        OnSaved="OnMomentSavedAsync" />
+
+@* GROUP SNACK MODAL *@
+@if (_showGroupSnackModal)
+{
+    <div class="cockpit-modal-backdrop" @onclick="() => _showGroupSnackModal = false">
+        <div class="cockpit-modal" @onclick:stopPropagation="true">
+            <div class="cockpit-modal-header">
+                <h3>🍎 Record Group Snack / Meal</h3>
+                <button class="btn-xs secondary" @onclick="() => _showGroupSnackModal = false">✕</button>
+            </div>
+            <div class="cockpit-modal-body">
+                <p style="font-size: 13px; color: var(--muted); margin: 0;">
+                    Record a meal entry for all @(_classroomChildren.Count(c => c.IsCheckedIn)) currently checked-in children in @(_activeClassroom?.Name ?? "this room").
+                </p>
+                <div>
+                    <label style="font-size: 12px; font-weight: 750; color: var(--text); display: block; margin-bottom: 4px;">Meal Type</label>
+                    <select class="classroom-select-pill" style="width: 100%; padding: 7px 10px; font-size: 13px;" @bind="_groupSnackType">
+                        <option value="MorningSnack">Morning Snack</option>
+                        <option value="Lunch">Lunch</option>
+                        <option value="AfternoonSnack">Afternoon Snack</option>
+                        <option value="Breakfast">Breakfast</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 750; color: var(--text); display: block; margin-bottom: 4px;">Amount Consumed</label>
+                    <select class="classroom-select-pill" style="width: 100%; padding: 7px 10px; font-size: 13px;" @bind="_groupSnackAmount">
+                        <option value="All (100%)">All (100%)</option>
+                        <option value="Most (75%)">Most (75%)</option>
+                        <option value="Half (50%)">Half (50%)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 750; color: var(--text); display: block; margin-bottom: 4px;">Notes / Food Description</label>
+                    <input type="text" class="classroom-select-pill" style="width: 100%; padding: 7px 10px; font-size: 13px;" @bind="_groupSnackNotes" />
+                </div>
+            </div>
+            <div class="cockpit-modal-footer">
+                <button class="btn secondary sm" @onclick="() => _showGroupSnackModal = false">Cancel</button>
+                <button class="btn primary sm" @onclick="SaveGroupSnackAsync">Confirm Group Log</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public IReadOnlySet<Guid> AssignedClassroomIds { get; set; } = new HashSet<Guid>();
     [Parameter] public IReadOnlyList<string> AvailableViews { get; set; } = Array.Empty<string>();
@@ -518,6 +830,25 @@
     private Classroom? _activeClassroom => _teacherClassrooms.FirstOrDefault(c => c.Id == _selectedClassroomId);
     private Guid? _selectedClassroomId;
     private int _chatUnreadCount = 0;
+
+    // Classroom Live Cockpit State
+    private List<ClassroomChildCareStatusDto> _classroomChildren = new();
+    private string _rosterFilter = "All";
+    private Guid? _activeDiaperChildId;
+    private Guid? _activeMealChildId;
+
+    // Staff Break
+    private bool _isOnBreak = false;
+    private DateTimeOffset? _breakStartTime;
+
+    // Journey Moment Dialog
+    private AddJourneyMomentDialog? _momentDialog;
+
+    // Group Snack Modal
+    private bool _showGroupSnackModal = false;
+    private string _groupSnackType = "MorningSnack";
+    private string _groupSnackAmount = "All (100%)";
+    private string _groupSnackNotes = "Classroom fresh fruit & water";
 
     // Modals
     private bool _isSessionModalOpen = false;
@@ -613,6 +944,8 @@
                         }
                     }
                 }
+
+                await LoadClassroomLiveFeedAsync();
             }
 
             try
@@ -683,6 +1016,12 @@
 
     private async Task StartSession(Guid scheduleId)
     {
+        if (_isDaycareClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Daycare is closed for the day (operating hours ended at 7:00 PM). New activity sessions cannot be started until tomorrow morning.");
+            return;
+        }
+
         try
         {
             var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
@@ -746,5 +1085,401 @@
         }
         await NotificationService.ShowSuccessAsync("Session photos saved.");
         StateHasChanged();
+    }
+
+    // =========================================================================
+    // CLASSROOM LIVE COCKPIT ACTION HANDLERS
+    // =========================================================================
+
+    private async Task LoadClassroomLiveFeedAsync()
+    {
+        if (_activeClassroom == null) return;
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var feed = await DailyCareService.GetClassroomDailyCareFeedAsync(_activeClassroom.BranchId, _activeClassroom.Id, today);
+            _classroomChildren = feed.ClassroomOverview ?? new();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading live classroom care feed");
+        }
+    }
+
+    private void ToggleStaffBreak()
+    {
+        _isOnBreak = !_isOnBreak;
+        if (_isOnBreak)
+        {
+            _breakStartTime = TimeProvider.GetLocalNow();
+            _ = NotificationService.ShowInfoAsync("Staff break started. Take a moment to recharge! ☕");
+        }
+        else
+        {
+            _breakStartTime = null;
+            _ = NotificationService.ShowSuccessAsync("Welcome back to your classroom! 🌿");
+        }
+    }
+
+    private bool _isDaycareClosed => CheckIfDaycareClosed();
+
+    private bool CheckIfDaycareClosed()
+    {
+        var localNow = TimeProvider.GetLocalNow();
+        // Daycare closing time: 7:00 PM (19:00). Closed between 7:00 PM and 7:00 AM.
+        return localNow.Hour >= 19 || localNow.Hour < 7;
+    }
+
+    private async Task SelectClassroomAsync(Guid roomId)
+    {
+        if (_selectedClassroomId != roomId && _teacherClassrooms.Any(c => c.Id == roomId))
+        {
+            _selectedClassroomId = roomId;
+            await RefreshBoardAsync();
+        }
+    }
+
+    private async Task CheckInChildAsync(Guid childId)
+    {
+        if (_activeClassroom == null) return;
+        if (_isDaycareClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Daycare is closed for the day. New arrivals cannot be checked in after 7:00 PM.");
+            return;
+        }
+
+        try
+        {
+            var nowTime = TimeProvider.GetLocalNow().TimeOfDay;
+            await AttendanceService.MarkChildAttendanceAsync(new ChildAttendance
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantContext.TenantId,
+                BranchId = _activeClassroom.BranchId,
+                ClassroomId = _activeClassroom.Id,
+                ChildId = childId,
+                AttendanceDate = DateTime.Today,
+                Status = "Present",
+                ArrivalTime = nowTime,
+                RecordedByUserId = UserContext.UserId
+            });
+
+            await NotificationService.ShowSuccessAsync("Child checked in.");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task CheckOutChildAsync(Guid childId)
+    {
+        if (_activeClassroom == null) return;
+        try
+        {
+            var nowTime = TimeProvider.GetLocalNow().TimeOfDay;
+            await AttendanceService.MarkChildAttendanceAsync(new ChildAttendance
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantContext.TenantId,
+                BranchId = _activeClassroom.BranchId,
+                ClassroomId = _activeClassroom.Id,
+                ChildId = childId,
+                AttendanceDate = DateTime.Today,
+                Status = "CheckedOut",
+                DepartureTime = nowTime,
+                RecordedByUserId = UserContext.UserId
+            });
+
+            await NotificationService.ShowSuccessAsync("Departure recorded.");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task MarkAllScheduledPresentAsync()
+    {
+        if (_activeClassroom == null) return;
+        if (_isDaycareClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Daycare is closed for the day. Batch check-in cannot be recorded after 7:00 PM.");
+            return;
+        }
+
+        try
+        {
+            var notCheckedIn = _classroomChildren.Where(c => !c.IsCheckedIn).ToList();
+            if (!notCheckedIn.Any())
+            {
+                await NotificationService.ShowInfoAsync("All scheduled children are already checked in.");
+                return;
+            }
+
+            var nowTime = TimeProvider.GetLocalNow().TimeOfDay;
+            foreach (var ch in notCheckedIn)
+            {
+                await AttendanceService.MarkChildAttendanceAsync(new ChildAttendance
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = TenantContext.TenantId,
+                    BranchId = _activeClassroom.BranchId,
+                    ClassroomId = _activeClassroom.Id,
+                    ChildId = ch.ChildId,
+                    AttendanceDate = DateTime.Today,
+                    Status = "Present",
+                    ArrivalTime = nowTime,
+                    RecordedByUserId = UserContext.UserId
+                });
+            }
+
+            await NotificationService.ShowSuccessAsync($"Checked in {notCheckedIn.Count} children.");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private void ToggleDiaperPopover(Guid childId)
+    {
+        _activeMealChildId = null;
+        _activeDiaperChildId = _activeDiaperChildId == childId ? null : childId;
+    }
+
+    private void ToggleMealPopover(Guid childId)
+    {
+        _activeDiaperChildId = null;
+        _activeMealChildId = _activeMealChildId == childId ? null : childId;
+    }
+
+    private async Task QuickRecordDiaperAsync(Guid childId, string condition)
+    {
+        if (_activeClassroom == null) return;
+        try
+        {
+            await DailyCareService.RecordCareEventAsync(new ChildCareEvent
+            {
+                ChildId = childId,
+                ClassroomId = _activeClassroom.Id,
+                BranchId = _activeClassroom.BranchId,
+                EventType = CareEventTypes.DiaperChange,
+                DiaperCondition = condition,
+                EventTime = DateTime.UtcNow,
+                ParentVisible = true
+            });
+
+            _activeDiaperChildId = null;
+            await NotificationService.ShowSuccessAsync($"Diaper logged: {condition}");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task QuickRecordMealAsync(Guid childId, string amount)
+    {
+        if (_activeClassroom == null) return;
+        try
+        {
+            await DailyCareService.RecordCareEventAsync(new ChildCareEvent
+            {
+                ChildId = childId,
+                ClassroomId = _activeClassroom.Id,
+                BranchId = _activeClassroom.BranchId,
+                EventType = CareEventTypes.Meal,
+                MealType = "Snack",
+                AmountConsumed = amount,
+                EventTime = DateTime.UtcNow,
+                ParentVisible = true
+            });
+
+            _activeMealChildId = null;
+            await NotificationService.ShowSuccessAsync($"Meal logged: {amount}");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task ToggleNapAsync(ClassroomChildCareStatusDto child)
+    {
+        if (_activeClassroom == null) return;
+        try
+        {
+            if (child.ActiveNapSession == null)
+            {
+                await DailyCareService.StartNapAsync(child.ChildId, _activeClassroom.Id, null);
+                await NotificationService.ShowSuccessAsync($"{child.ChildName} rest started.");
+            }
+            else
+            {
+                await DailyCareService.WakeChildAsync(child.ChildId, "Woke naturally", null);
+                await NotificationService.ShowSuccessAsync($"{child.ChildName} woke up.");
+            }
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task<List<EnjoyEveryday.Domain.Entities.Learning.TodayActivityItemDto>> GetCurrentClassroomActivitiesAsync()
+    {
+        if (_activeClassroom == null) return new();
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var feed = await PlannerService.GetTodayActivitiesFeedAsync(today, classroomId: _activeClassroom.Id);
+            if (feed.Activities != null && feed.Activities.Any())
+            {
+                return feed.Activities;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not fetch planned activities feed for classroom");
+        }
+
+        // Fallback from TodayRhythm
+        return _board.TodayRhythm?
+            .Where(r => !r.IsCelebration)
+            .Select(r => new EnjoyEveryday.Domain.Entities.Learning.TodayActivityItemDto
+            {
+                ScheduleId = r.Id,
+                Title = r.Title,
+                TimeOfDay = r.TimeDisplay,
+                TimeRangeDisplay = r.TimeDisplay,
+                Status = r.Status,
+                ClassroomId = _activeClassroom.Id
+            }).ToList() ?? new();
+    }
+
+    private async Task OpenQuickMomentModalAsync(ClassroomChildCareStatusDto child)
+    {
+        _activeDiaperChildId = null;
+        _activeMealChildId = null;
+        if (_momentDialog != null)
+        {
+            var activities = await GetCurrentClassroomActivitiesAsync();
+            var activeExp = ActiveRunningExperience ?? NextPlannedExperience ?? _board.TodayRhythm?.FirstOrDefault(r => !r.IsCelebration);
+
+            await _momentDialog.OpenForChildAsync(
+                child.ChildId,
+                child.ChildName,
+                _activeClassroom?.Id,
+                experienceTitle: activeExp?.Title,
+                experienceScheduleId: activeExp?.Id,
+                plannedExperiences: activities);
+        }
+    }
+
+    private async Task OpenGeneralMomentModalAsync()
+    {
+        _activeDiaperChildId = null;
+        _activeMealChildId = null;
+        if (_momentDialog != null)
+        {
+            var activities = await GetCurrentClassroomActivitiesAsync();
+            var activeExp = ActiveRunningExperience ?? NextPlannedExperience ?? _board.TodayRhythm?.FirstOrDefault(r => !r.IsCelebration);
+
+            await _momentDialog.OpenGeneralAsync(
+                _activeClassroom?.Id,
+                experienceTitle: activeExp?.Title,
+                experienceScheduleId: activeExp?.Id,
+                plannedExperiences: activities);
+        }
+    }
+
+    private async Task OnMomentSavedAsync()
+    {
+        await NotificationService.ShowSuccessAsync("Journey moment and observation recorded!");
+        await RefreshBoardAsync();
+    }
+
+    private async Task SaveGroupSnackAsync()
+    {
+        if (_activeClassroom == null) return;
+        var presentIds = _classroomChildren.Where(c => c.IsCheckedIn).Select(c => c.ChildId).ToList();
+        if (!presentIds.Any())
+        {
+            await NotificationService.ShowInfoAsync("No children are currently checked in.");
+            _showGroupSnackModal = false;
+            return;
+        }
+
+        try
+        {
+            await DailyCareService.RecordBatchCareEventsAsync(
+                presentIds,
+                CareEventTypes.Meal,
+                _groupSnackAmount,
+                _groupSnackNotes,
+                parentVisible: true);
+
+            _showGroupSnackModal = false;
+            await NotificationService.ShowSuccessAsync($"Group snack recorded for {presentIds.Count} children.");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private async Task StartGroupNapAsync()
+    {
+        if (_activeClassroom == null) return;
+        var awakeIds = _classroomChildren.Where(c => c.IsCheckedIn && c.ActiveNapSession == null).Select(c => c.ChildId).ToList();
+        if (!awakeIds.Any())
+        {
+            await NotificationService.ShowInfoAsync("No awake children are checked in right now.");
+            return;
+        }
+
+        try
+        {
+            await DailyCareService.StartBatchNapAsync(awakeIds, _activeClassroom.Id, "Classroom rest time");
+            await NotificationService.ShowSuccessAsync($"Rest time started for {awakeIds.Count} children.");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private IEnumerable<ClassroomChildCareStatusDto> GetFilteredChildren()
+    {
+        return _rosterFilter switch
+        {
+            "Present" => _classroomChildren.Where(c => c.IsCheckedIn),
+            "Expected" => _classroomChildren.Where(c => !c.IsCheckedIn),
+            "Resting" => _classroomChildren.Where(c => c.ActiveNapSession != null),
+            _ => _classroomChildren
+        };
+    }
+
+    private string GetChildInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "C";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2) return $"{char.ToUpper(parts[0][0])}{char.ToUpper(parts[1][0])}";
+        return $"{char.ToUpper(parts[0][0])}";
+    }
+
+    private string FormatTimeSpan(TimeSpan ts)
+    {
+        var dt = DateTime.Today.Add(ts);
+        return dt.ToString("h:mm tt");
     }
 }

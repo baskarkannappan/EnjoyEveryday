@@ -117,7 +117,17 @@ public class ExecutionService
             throw new KeyNotFoundException("Schedule not found.");
             
         if (schedule.Status == "Completed")
-            throw new InvalidOperationException("Schedule is already completed.");
+        {
+            // Idempotent completion: schedule is already marked completed
+            var existingSession = await _sessionRepository.GetSessionByScheduleIdAsync(scheduleId, cancellationToken);
+            if (existingSession != null && existingSession.Status != "Completed")
+            {
+                existingSession.Status = "Completed";
+                existingSession.EndTime ??= DateTime.UtcNow.TimeOfDay;
+                await _sessionRepository.UpdateSessionAsync(existingSession, cancellationToken);
+            }
+            return;
+        }
 
         schedule.Status = "Completed";
         await _scheduleRepository.UpdateAsync(schedule);
