@@ -156,11 +156,18 @@
                             @foreach (var child in _classroomOverview)
                             {
                                 <option value="@child.ChildId" selected="@(child.ChildId == _selectedChildId)">
-                                    @child.ChildName @(child.IsCheckedIn ? "✓ (Checked In)" : "(Not Checked In)")
+                                    @child.ChildName @(child.IsCheckedIn ? "✓ (Checked In)" : $"({child.AttendanceStatus})")
                                 </option>
                             }
                         }
                     </select>
+                    @if (_selectedChildStatus != null && !_selectedChildStatus.IsCheckedIn)
+                    {
+                        <div style="margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: #fff8f0; border: 1px solid #fbd38d; color: #9c4221; font-size: 12px; display: flex; align-items: center; gap: 8px;">
+                            <span>⚠️</span>
+                            <span><strong>Care Logs Locked:</strong> @_selectedChildStatus.ChildName is @(_selectedChildStatus.AttendanceStatus ?? "not checked in"). Care logs and routines can only be recorded for children currently checked in.</span>
+                        </div>
+                    }
                 </div>
             }
             else
@@ -186,13 +193,20 @@
                         @foreach (var child in _classroomOverview)
                         {
                             var isSelected = _selectedChildIds.Contains(child.ChildId);
-                            <div class="bulk-child-chip @(isSelected ? "selected" : "")" 
-                                 @onclick="() => ToggleChildSelection(child.ChildId)">
+                            var canSelect = child.IsCheckedIn;
+                            <div class="bulk-child-chip @(isSelected ? "selected" : "") @(!canSelect ? "disabled-child-chip" : "")" 
+                                 @onclick="() => { if (canSelect) ToggleChildSelection(child.ChildId); }"
+                                 style="@(!canSelect ? "opacity: 0.55; cursor: not-allowed; background: #f8f9f7; border-style: dashed;" : "")"
+                                 title="@(canSelect ? "Click to select" : $"{child.ChildName} is {child.AttendanceStatus} — care logs locked")">
                                 <span class="chip-checkbox">@(isSelected ? "☑" : "☐")</span>
                                 <span class="chip-name">@child.ChildName</span>
                                 @if (child.IsCheckedIn)
                                 {
                                     <span class="chip-badge in">In</span>
+                                }
+                                else
+                                {
+                                    <span class="chip-badge out" style="background: #fed7d7; color: #9b2c2c; font-size: 10px; padding: 2px 5px; border-radius: 4px;">@(child.AttendanceStatus == "CheckedOut" ? "Out" : "Absent")</span>
                                 }
                             </div>
                         }
@@ -321,8 +335,8 @@
 
                 @if (!_isBulkMode)
                 {
-                    <button class="btn primary submit-btn" @onclick="SubmitQuickCareEntry" disabled="@(_isSubmitting || _selectedChildId == Guid.Empty)">
-                        @(_isSubmitting ? "Saving Entry..." : "Record care entry")
+                    <button class="btn primary submit-btn" @onclick="SubmitQuickCareEntry" disabled="@(_isSubmitting || _selectedChildId == Guid.Empty || _selectedChildStatus?.IsCheckedIn != true)">
+                        @(_isSubmitting ? "Saving Entry..." : (_selectedChildStatus?.IsCheckedIn != true ? "Child Not Checked In (Locked)" : "Record care entry"))
                     </button>
                 }
                 else
@@ -351,7 +365,7 @@
                 else if (_selectedChildId != Guid.Empty)
                 {
                     <div class="start-nap-box">
-                        <button class="btn secondary sm" @onclick="StartNapForChild">
+                        <button class="btn secondary sm" @onclick="StartNapForChild" disabled="@(_selectedChildStatus?.IsCheckedIn != true)">
                             🌙 Start Rest Session for @(_selectedChildStatus?.ChildName ?? "Child")
                         </button>
                     </div>

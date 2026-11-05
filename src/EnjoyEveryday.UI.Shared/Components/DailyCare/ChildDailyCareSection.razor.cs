@@ -266,6 +266,11 @@ public partial class ChildDailyCareSection : ComponentBase
     private async Task SubmitQuickCareEntry()
     {
         if (_selectedChildId == Guid.Empty) return;
+        if (_selectedChildStatus == null || !_selectedChildStatus.IsCheckedIn)
+        {
+            _statusMessage = $"Cannot record care event: {_selectedChildStatus?.ChildName ?? "Child"} is not checked in.";
+            return;
+        }
 
         _isSubmitting = true;
         try
@@ -321,6 +326,12 @@ public partial class ChildDailyCareSection : ComponentBase
     private async Task StartNapForChild()
     {
         if (_selectedChildId == Guid.Empty) return;
+        if (_selectedChildStatus == null || !_selectedChildStatus.IsCheckedIn)
+        {
+            _statusMessage = $"Cannot start rest session: {_selectedChildStatus?.ChildName ?? "Child"} is not checked in.";
+            return;
+        }
+
         await DailyCareService.StartNapAsync(_selectedChildId, _selectedClassroomId, "Rest session started by teacher.");
         _statusMessage = $"Nap session started for {_selectedChildStatus?.ChildName}.";
         await RefreshClassroomData();
@@ -360,6 +371,9 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private void ToggleChildSelection(Guid childId)
     {
+        var child = _classroomOverview.FirstOrDefault(c => c.ChildId == childId);
+        if (child == null || !child.IsCheckedIn) return;
+
         if (_selectedChildIds.Contains(childId))
             _selectedChildIds.Remove(childId);
         else
@@ -377,11 +391,8 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private void SelectAllChildren()
     {
-        _selectedChildIds.Clear();
-        foreach (var c in _classroomOverview)
-        {
-            _selectedChildIds.Add(c.ChildId);
-        }
+        // Enforce checked-in restriction: only checked in children can receive care events
+        SelectAllCheckedInChildren();
     }
 
     private void ClearSelectedChildren()
@@ -391,7 +402,11 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task SubmitBulkCareEntry()
     {
-        if (_selectedChildIds.Count == 0 || _isSubmitting) return;
+        var validCheckedInIds = _selectedChildIds
+            .Where(id => _classroomOverview.Any(c => c.ChildId == id && c.IsCheckedIn))
+            .ToList();
+
+        if (validCheckedInIds.Count == 0 || _isSubmitting) return;
 
         _isSubmitting = true;
         _statusMessage = null;
@@ -399,7 +414,7 @@ public partial class ChildDailyCareSection : ComponentBase
         try
         {
             var recorded = await DailyCareService.RecordBatchCareEventsAsync(
-                _selectedChildIds,
+                validCheckedInIds,
                 _selectedActivity,
                 _selectedDetail,
                 _entryNote,
@@ -422,13 +437,17 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task StartBulkNap()
     {
-        if (_selectedChildIds.Count == 0 || _isSubmitting) return;
+        var validCheckedInIds = _selectedChildIds
+            .Where(id => _classroomOverview.Any(c => c.ChildId == id && c.IsCheckedIn && c.ActiveNapSession == null))
+            .ToList();
+
+        if (validCheckedInIds.Count == 0 || _isSubmitting) return;
 
         _isSubmitting = true;
         try
         {
             var count = await DailyCareService.StartBatchNapAsync(
-                _selectedChildIds,
+                validCheckedInIds,
                 _selectedClassroomId,
                 "Classroom rest period started.");
 

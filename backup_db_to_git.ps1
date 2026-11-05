@@ -46,3 +46,4 @@ if ($status) {
 } else {
     Write-Host "No changes detected in database snapshot. Nothing to commit." -ForegroundColor Yellow
 }
+

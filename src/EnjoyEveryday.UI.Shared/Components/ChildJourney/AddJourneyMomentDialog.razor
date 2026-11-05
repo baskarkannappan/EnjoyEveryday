@@ -11,6 +11,8 @@
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
+@inject AttendanceService AttendanceService
+@inject TimeProvider TimeProvider
 
     @if (!_hideDialog)
     {
@@ -20,6 +22,13 @@
         @if (_step == 1)
         {
             <h3 class="dialog-title">What did you notice?@(!string.IsNullOrEmpty(ChildName) ? $" — {ChildName}" : "")</h3>
+
+            @if (ChildId != null && !_isSingleChildCheckedIn)
+            {
+                <div class="moment-not-checkedin-banner">
+                    <span>⚠️ <strong>Child Not Checked In:</strong> @(ChildName ?? "Child") is marked absent or not checked in today. Observations can only be recorded for children currently checked in.</span>
+                </div>
+            }
             
             @* DISPLAY CURRENTLY PLANNED EXPERIENCE FOR THE TEACHER / CLASSROOM *@
             <div class="form-group planned-exp-section">
@@ -119,9 +128,19 @@
                         {
                             @foreach (var child in _allChildren)
                             {
-                                <label class="child-chip @(_selectedChildIds.Contains(child.Id) ? "active" : "")">
-                                    <input type="checkbox" checked="@_selectedChildIds.Contains(child.Id)" @onchange="@(e => ToggleChild(child.Id, (bool)(e.Value ?? false)))" style="display:none;" />
+                                var isPresent = _presentChildIds.Contains(child.Id);
+                                <label class="child-chip @(_selectedChildIds.Contains(child.Id) ? "active" : "") @(!isPresent ? "chip-disabled" : "")"
+                                       title="@(isPresent ? "Checked in today" : "Child is absent or not checked in (cannot log moments)")">
+                                    <input type="checkbox" 
+                                           checked="@_selectedChildIds.Contains(child.Id)" 
+                                           disabled="@(!isPresent)"
+                                           @onchange="@(e => ToggleChild(child.Id, (bool)(e.Value ?? false)))" 
+                                           style="display:none;" />
                                     <span>@child.FirstName @child.LastName</span>
+                                    @if (!isPresent)
+                                    {
+                                        <span class="chip-status-text">(Absent/Out)</span>
+                                    }
                                 </label>
                             }
                         }
@@ -188,7 +207,7 @@
             
             @if (_step == 1)
             {
-                <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || (ChildId == null && !_selectedChildIds.Any()))">Next</button>
+                <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || (ChildId != null && !_isSingleChildCheckedIn) || (ChildId == null && !_selectedChildIds.Any()))">Next</button>
             }
             else
             {
@@ -247,6 +266,8 @@
 
     private List<Child>? _allChildren;
     private HashSet<Guid> _selectedChildIds = new();
+    private HashSet<Guid> _presentChildIds = new();
+    private bool _isSingleChildCheckedIn = true;
 
     private List<TodayActivityItemDto>? _plannedExperiences;
     private Guid? _selectedPlannedScheduleId;
@@ -281,12 +302,16 @@
         {
             _selectedDropdownClassroomId = classId;
             _allChildren = (await ChildService.GetChildrenByClassroomAsync(classId)).ToList();
+            var todayDate = TimeProvider.GetLocalNow().Date;
+            var presentIds = await AttendanceService.GetPresentChildIdsForClassroomAsync(classId, todayDate);
+            _presentChildIds = presentIds.ToHashSet();
             await LoadPlannedExperiencesForClassroomAsync(classId);
         }
         else
         {
             _selectedDropdownClassroomId = null;
             _allChildren = new List<Child>();
+            _presentChildIds.Clear();
             _plannedExperiences = new();
             _selectedPlannedScheduleId = null;
         }
@@ -339,6 +364,33 @@
         ResolveDefaultPlannedSelection();
 
         // 3. Resolve children if classroom is known
+        if (effectiveClassroomId.HasValue)
+        {
+            try
+            {
+                var todayDate = TimeProvider.GetLocalNow().Date;
+                var presentIds = await AttendanceService.GetPresentChildIdsForClassroomAsync(effectiveClassroomId.Value, todayDate);
+                _presentChildIds = presentIds.ToHashSet();
+            }
+            catch
+            {
+                _presentChildIds = new();
+            }
+        }
+        else
+        {
+            _presentChildIds.Clear();
+        }
+
+        if (ChildId.HasValue)
+        {
+            _isSingleChildCheckedIn = _presentChildIds.Contains(ChildId.Value);
+        }
+        else
+        {
+            _isSingleChildCheckedIn = true;
+        }
+
         if (ClassroomId == null)
         {
             var orgs = await OrganizationService.GetOrganizationsAsync();
@@ -489,8 +541,17 @@
 
     private void ToggleChild(Guid childId, bool isSelected)
     {
-        if (isSelected) _selectedChildIds.Add(childId);
-        else _selectedChildIds.Remove(childId);
+        if (isSelected)
+        {
+            if (_presentChildIds.Contains(childId))
+            {
+                _selectedChildIds.Add(childId);
+            }
+        }
+        else
+        {
+            _selectedChildIds.Remove(childId);
+        }
     }
 
     private async Task SaveJourneyMoment()
@@ -498,7 +559,16 @@
         _isSaving = true;
         try
         {
-            var targetChildIds = ChildId.HasValue ? new[] { ChildId.Value } : _selectedChildIds.ToArray();
+            var targetChildIds = ChildId.HasValue 
+                ? (_isSingleChildCheckedIn ? new[] { ChildId.Value } : Array.Empty<Guid>()) 
+                : _selectedChildIds.Where(id => _presentChildIds.Contains(id)).ToArray();
+
+            if (!targetChildIds.Any())
+            {
+                _hideDialog = true;
+                return;
+            }
+
             var targetClassroomId = ClassroomId ?? _selectedDropdownClassroomId;
 
             var targetScheduleId = _selectedPlannedScheduleId ?? ExperienceScheduleId;

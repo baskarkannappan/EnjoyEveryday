@@ -300,10 +300,13 @@
                     All Children (@_classroomChildren.Count)
                 </button>
                 <button class="cockpit-filter-pill @(_rosterFilter == "Present" ? "active" : "")" @onclick='() => _rosterFilter = "Present"'>
-                    Present (@_classroomChildren.Count(c => c.IsCheckedIn))
+                    Checked In (@_classroomChildren.Count(c => c.IsCheckedIn))
                 </button>
                 <button class="cockpit-filter-pill @(_rosterFilter == "Expected" ? "active" : "")" @onclick='() => _rosterFilter = "Expected"'>
-                    Expected (@_classroomChildren.Count(c => !c.IsCheckedIn))
+                    Awaiting Check-In (@_classroomChildren.Count(c => !c.IsCheckedIn && c.AttendanceStatus != "Absent" && c.AttendanceStatus != "CheckedOut"))
+                </button>
+                <button class="cockpit-filter-pill @(_rosterFilter == "OutAbsent" ? "active" : "")" @onclick='() => _rosterFilter = "OutAbsent"'>
+                    Absent / Checked Out (@_classroomChildren.Count(c => c.AttendanceStatus == "Absent" || c.AttendanceStatus == "CheckedOut"))
                 </button>
                 <button class="cockpit-filter-pill @(_rosterFilter == "Resting" ? "active" : "")" @onclick='() => _rosterFilter = "Resting"'>
                     Resting (@_classroomChildren.Count(c => c.ActiveNapSession != null))
@@ -353,6 +356,14 @@
                                     else if (child.IsCheckedIn)
                                     {
                                         <span class="child-badge badge-present">● Present</span>
+                                    }
+                                    else if (child.AttendanceStatus == "CheckedOut")
+                                    {
+                                        <span class="child-badge badge-departed">Checked Out</span>
+                                    }
+                                    else if (child.AttendanceStatus == "Absent")
+                                    {
+                                        <span class="child-badge badge-absent">Absent</span>
                                     }
                                     else
                                     {
@@ -452,14 +463,44 @@
                                     </div>
                                 }
                             }
+                            else if (child.AttendanceStatus == "CheckedOut")
+                            {
+                                <div class="child-locked-notice notice-departed">
+                                    <div class="locked-text">
+                                        <span>🚪</span>
+                                        <span>Checked out • Logs locked</span>
+                                    </div>
+                                    @if (!_isDaycareClosed)
+                                    {
+                                        <button class="btn-readmit" @onclick="() => CheckInChildAsync(child.ChildId)" title="Re-admit child if checked out in error">
+                                            Re-admit
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            else if (child.AttendanceStatus == "Absent")
+                            {
+                                <div class="child-locked-notice notice-absent">
+                                    <div class="locked-text">
+                                        <span>🚫</span>
+                                        <span>Absent today • Logs locked</span>
+                                    </div>
+                                    @if (!_isDaycareClosed)
+                                    {
+                                        <button class="btn-readmit" @onclick="() => CheckInChildAsync(child.ChildId)" title="Check in child if arrived late">
+                                            Mark Present
+                                        </button>
+                                    }
+                                </div>
+                            }
                             else
                             {
                                 <!-- Unchecked state: Large 1-tap Check-In button -->
                                 <button class="btn-checkin-large @(_isDaycareClosed ? "closed-btn" : "")" 
                                         @onclick="() => CheckInChildAsync(child.ChildId)" 
-                                        title="@(_isDaycareClosed ? "Daycare is closed for the day (operating hours ended at 7:00 PM)" : "Check in child")">
+                                        title="@(_isDaycareClosed ? "Daycare is closed for the day (operating hours ended at 7:00 PM)" : "Check in child to enable care and activity logs")">
                                     <FluentIcon Value="@(_isDaycareClosed ? (Icon)new Icons.Regular.Size16.LockClosed() : (Icon)new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
-                                    <span>@(_isDaycareClosed ? "Closed (After 7 PM)" : "Check-In Now")</span>
+                                    <span>@(_isDaycareClosed ? "Closed (After 7 PM)" : "Check-In Now to Log")</span>
                                 </button>
                             }
                         </div>
@@ -1260,6 +1301,14 @@
     private async Task QuickRecordDiaperAsync(Guid childId, string condition)
     {
         if (_activeClassroom == null) return;
+        var child = _classroomChildren.FirstOrDefault(c => c.ChildId == childId);
+        if (child == null || !child.IsCheckedIn)
+        {
+            _activeDiaperChildId = null;
+            await NotificationService.ShowWarningAsync($"{child?.ChildName ?? "Child"} is {child?.AttendanceStatus ?? "not checked in"}. Care logs can only be recorded for checked-in children.");
+            return;
+        }
+
         try
         {
             await DailyCareService.RecordCareEventAsync(new ChildCareEvent
@@ -1286,6 +1335,14 @@
     private async Task QuickRecordMealAsync(Guid childId, string amount)
     {
         if (_activeClassroom == null) return;
+        var child = _classroomChildren.FirstOrDefault(c => c.ChildId == childId);
+        if (child == null || !child.IsCheckedIn)
+        {
+            _activeMealChildId = null;
+            await NotificationService.ShowWarningAsync($"{child?.ChildName ?? "Child"} is {child?.AttendanceStatus ?? "not checked in"}. Care logs can only be recorded for checked-in children.");
+            return;
+        }
+
         try
         {
             await DailyCareService.RecordCareEventAsync(new ChildCareEvent
@@ -1313,6 +1370,12 @@
     private async Task ToggleNapAsync(ClassroomChildCareStatusDto child)
     {
         if (_activeClassroom == null) return;
+        if (!child.IsCheckedIn)
+        {
+            await NotificationService.ShowWarningAsync($"{child.ChildName} is {child.AttendanceStatus}. Rest logs can only be recorded for checked-in children.");
+            return;
+        }
+
         try
         {
             if (child.ActiveNapSession == null)
@@ -1368,6 +1431,12 @@
     {
         _activeDiaperChildId = null;
         _activeMealChildId = null;
+        if (!child.IsCheckedIn)
+        {
+            await NotificationService.ShowWarningAsync($"{child.ChildName} is {child.AttendanceStatus}. Observations can only be recorded for checked-in children.");
+            return;
+        }
+
         if (_momentDialog != null)
         {
             var activities = await GetCurrentClassroomActivitiesAsync();
@@ -1463,7 +1532,8 @@
         return _rosterFilter switch
         {
             "Present" => _classroomChildren.Where(c => c.IsCheckedIn),
-            "Expected" => _classroomChildren.Where(c => !c.IsCheckedIn),
+            "Expected" => _classroomChildren.Where(c => !c.IsCheckedIn && c.AttendanceStatus != "Absent" && c.AttendanceStatus != "CheckedOut"),
+            "OutAbsent" => _classroomChildren.Where(c => c.AttendanceStatus == "Absent" || c.AttendanceStatus == "CheckedOut"),
             "Resting" => _classroomChildren.Where(c => c.ActiveNapSession != null),
             _ => _classroomChildren
         };

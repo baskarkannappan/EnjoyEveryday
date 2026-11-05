@@ -75,3 +75,4 @@ Register-ScheduledTask `
 - Press `Win + R`, type `taskschd.msc`, and press Enter.
 - Look for `EnjoyEveryday_Daily_DB_Backup` in the Task Scheduler Library.
 - You can right-click it and choose **Run** anytime to test it manually.
+

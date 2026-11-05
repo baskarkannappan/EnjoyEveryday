@@ -51,7 +51,7 @@
                             <h3 class="section-heading">Children Participation</h3>
                             <p class="section-subheading">Track attendance and observations for today's experience.</p>
                         </div>
-                        <button class="btn secondary btn-sm" @onclick="() => OpenMomentDialog(null)">
+                        <button class="btn secondary btn-sm" @onclick="() => OpenMomentDialog(null)" disabled="@(!_presentChildIds.Any())" title="@(!_presentChildIds.Any() ? "No checked-in children to log observations for" : "Log bulk moment")">
                             + Log Bulk Moment
                         </button>
                     </div>
@@ -68,17 +68,17 @@
                         {
                             <div class="notice-banner">
                                 <span class="notice-icon">ℹ</span>
-                                <span>Attendance has not been recorded yet for this room today. You may proceed and log moments for present children.</span>
+                                <span>No children are currently checked in for this room today. Check in children from the Classroom Live Roster before logging observations or activities.</span>
                             </div>
                         }
 
                         <div class="children-cards-grid">
                             @foreach (var child in _children)
                             {
-                                var status = GetParticipationStatus(child.Id);
                                 var isPresent = _presentChildIds.Contains(child.Id);
+                                var status = isPresent ? GetParticipationStatus(child.Id) : "Absent";
                                 
-                                <div class="child-session-card @(status == "Participated" ? "card-participated" : "card-inactive")">
+                                <div class="child-session-card @(status == "Participated" && isPresent ? "card-participated" : "card-inactive")">
                                     <div class="child-card-top">
                                         <div class="child-info">
                                             <div class="child-avatar-badge">
@@ -87,19 +87,28 @@
                                             <div>
                                                 <strong class="child-name">@child.FirstName @child.LastName</strong>
                                                 <span class="child-status-badge @(isPresent ? "status-present" : "status-absent")">
-                                                    @(isPresent ? "Present Today" : "Absent / Not Marked")
+                                                    @(isPresent ? "Present Today" : "Absent / Not Checked In")
                                                 </span>
                                             </div>
                                         </div>
                                         
-                                        <select class="participation-select" value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))">
-                                            <option value="Participated">Participated</option>
-                                            <option value="Declined">Declined</option>
-                                            <option value="Absent">Absent</option>
-                                        </select>
+                                        @if (isPresent)
+                                        {
+                                            <select class="participation-select" value="@status" @onchange="@(e => UpdateStatus(child.Id, e.Value?.ToString() ?? "Participated"))">
+                                                <option value="Participated">Participated</option>
+                                                <option value="Declined">Declined</option>
+                                                <option value="Absent">Absent</option>
+                                            </select>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size: 11px; font-weight: 700; color: #a0aec0; background: #f7fafc; padding: 4px 8px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                                Logs Locked
+                                            </span>
+                                        }
                                     </div>
                                     
-                                    @if (status == "Participated")
+                                    @if (isPresent && status == "Participated")
                                     {
                                         <div class="child-actions-row">
                                             @if (_loggedChildIds.Contains(child.Id))
@@ -682,6 +691,12 @@
 
     private void UpdateStatus(Guid childId, string status)
     {
+        if (!_presentChildIds.Contains(childId) && status == "Participated")
+        {
+            // Absent or not checked in children cannot participate
+            return;
+        }
+
         if (_participations.TryGetValue(childId, out var p))
         {
             p.ParticipationStatus = status;
@@ -690,6 +705,11 @@
 
     private async Task OpenMomentDialog(Guid? childId = null)
     {
+        if (childId.HasValue && !_presentChildIds.Contains(childId.Value))
+        {
+            // Cannot log observation for absent or non-checked-in child
+            return;
+        }
         _selectedChildId = childId;
         await _momentDialog.OpenAsync();
     }
