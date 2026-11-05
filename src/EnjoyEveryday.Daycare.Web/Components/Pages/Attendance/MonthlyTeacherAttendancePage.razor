@@ -1,0 +1,171 @@
+@page "/attendance/monthly-teachers"
+@page "/management/attendance/monthly-teachers"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Entities.Attendance
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Daycare.Web.Services
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Attendance
+@inject AttendanceService AttendanceService
+@inject NavigationManager Navigation
+@inject IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@rendermode InteractiveServer
+
+<PageTitle>Staff Monthly Attendance — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="STAFF ATTENDANCE REGISTER"
+              Title="Staff &amp; Educators Monthly Attendance Register"
+              Subtitle="Comprehensive read-only monthly attendance register for teachers, educators, and daycare staff.">
+        <RightContent>
+            <a href="/management/attendance" class="btn secondary">
+                <span>Today's Daily Overview</span>
+            </a>
+            <a href="/attendance/monthly-children" class="btn secondary">
+                <span>🎒 Children Register</span>
+            </a>
+        </RightContent>
+    </PageHero>
+
+    <!-- Context Header: Organisation, Branch, Location, Month Switcher -->
+    <MonthlyAttendanceHeader 
+        OrganizationName="@_organizationName"
+        BranchName="@_branchName"
+        Location="@_location"
+        AccessibleBranches="@_accessibleBranches"
+        SelectedBranchId="@_selectedBranchId"
+        SelectedBranchIdChanged="OnBranchChanged"
+        SelectedYear="@_selectedYear"
+        SelectedMonth="@_selectedMonth"
+        MonthChanged="OnMonthChanged"
+        ActiveView="teachers"
+        ActiveViewChanged="OnActiveViewChanged"
+        ShowClassroomFilter="false"
+        IsOrgAdmin="@_isOrgAdmin" />
+
+    <!-- Teacher Attendance Register Grid -->
+    <MonthlyTeacherAttendanceGrid 
+        Rows="@_rows"
+        Summary="@_summary"
+        Year="@_selectedYear"
+        Month="@_selectedMonth"
+        IsLoading="@_isLoading" />
+</div>
+
+@code {
+    private bool _isAuthorized = false;
+    private bool _isOrgAdmin = false;
+    private bool _isLoading = true;
+
+    private string _organizationName = string.Empty;
+    private string _branchName = string.Empty;
+    private string _location = string.Empty;
+
+    private List<BranchLocationContextDto> _accessibleBranches = new();
+    private Guid _selectedBranchId = Guid.Empty;
+
+    private int _selectedYear = DateTime.Today.Year;
+    private int _selectedMonth = DateTime.Today.Month;
+
+    private List<TeacherMonthlyRegisterRow> _rows = new();
+    private MonthlyRegisterSummary _summary = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?')[0];
+        _isAuthorized = await PageAuth.EnsureAuthorizedAsync("/attendance");
+        if (!_isAuthorized) return;
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        _isOrgAdmin = profile.IsOrgAdmin;
+
+        await LoadAccessibleBranchesAsync();
+        await LoadRegisterDataAsync();
+    }
+
+    private async Task LoadAccessibleBranchesAsync()
+    {
+        var branches = (await AttendanceService.GetUserAccessibleBranchesAsync(_isOrgAdmin)).ToList();
+        _accessibleBranches = branches;
+
+        if (_accessibleBranches.Count > 0)
+        {
+            var primary = _accessibleBranches.FirstOrDefault(b => b.IsPrimary) ?? _accessibleBranches[0];
+            _selectedBranchId = primary.BranchId;
+            _organizationName = primary.OrganizationName;
+            _branchName = primary.BranchName;
+            _location = primary.Location;
+        }
+    }
+
+    private async Task LoadRegisterDataAsync()
+    {
+        if (_selectedBranchId == Guid.Empty)
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Update branch location info
+            var context = await AttendanceService.GetBranchLocationContextAsync(_selectedBranchId);
+            if (context != null)
+            {
+                _organizationName = context.OrganizationName;
+                _branchName = context.BranchName;
+                _location = context.Location;
+            }
+
+            // Load monthly teacher register from stored procedure
+            var (rows, summary) = await AttendanceService.GetMonthlyTeacherRegisterAsync(
+                _selectedBranchId, _selectedYear, _selectedMonth);
+
+            _rows = rows;
+            _summary = summary;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MonthlyTeacherAttendancePage] Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnBranchChanged(Guid branchId)
+    {
+        if (_selectedBranchId != branchId)
+        {
+            _selectedBranchId = branchId;
+            await LoadRegisterDataAsync();
+        }
+    }
+
+    private async Task OnMonthChanged((int Year, int Month) target)
+    {
+        if (_selectedYear != target.Year || _selectedMonth != target.Month)
+        {
+            _selectedYear = target.Year;
+            _selectedMonth = target.Month;
+            await LoadRegisterDataAsync();
+        }
+    }
+
+    private void OnActiveViewChanged(string view)
+    {
+        if (view == "children")
+        {
+            Navigation.NavigateTo("/attendance/monthly-children");
+        }
+    }
+}
+

@@ -18,12 +18,15 @@
 @inject IClassroomCommunicationService CommunicationService
 @inject IChildDailyCareService DailyCareService
 @inject AttendanceService AttendanceService
+@inject IEndOfDayService EndOfDayService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
 @inject Microsoft.Extensions.Logging.ILogger<TeacherWorkspace> Logger
+
+@implements IDisposable
 
 <PageTitle>My Classroom — EnjoyEveryday</PageTitle>
 
@@ -161,6 +164,97 @@
                     </div>
                 </div>
             }
+        </div>
+
+        <!-- ================= SECTION: DAYCARE PROGRESS TIMELINE ================= -->
+        <div class="day-timeline-card" aria-label="Daycare Day Timeline">
+            <div class="day-timeline-header">
+                <div class="timeline-title-wrap">
+                    <span class="timeline-pulse-dot @(_isDaycareClosed ? "closed" : "active")"></span>
+                    <span class="timeline-eyebrow">DAYCARE RHYTHM TIMELINE</span>
+                </div>
+                <div class="timeline-meta-wrap">
+                    @if (_isDaycareClosed)
+                    {
+                        <span class="timeline-closed-pill">🌙 Closed • End of Day Auto-Closed (7:00 PM)</span>
+                    }
+                    else
+                    {
+                        <span class="timeline-open-pill">Operating Hours: 7:00 AM – 7:00 PM • Auto-closes at 7:00 PM</span>
+                    }
+                </div>
+            </div>
+
+            <div class="day-timeline-track">
+                <!-- Node 1: (started) -->
+                <div class="timeline-node node-started @(_isDaycareClosed ? "completed" : "active")" title="Daycare operating day started at 7:00 AM">
+                    <div class="node-pill">
+                        <span class="node-icon">🌅</span>
+                        <span class="node-text">(started)</span>
+                    </div>
+                    <div class="node-time-wrap">
+                        <span class="node-time">7:00 AM</span>
+                        <span class="node-sub">Day Started</span>
+                    </div>
+                </div>
+
+                <!-- Connector 1 -->
+                <div class="timeline-connector" aria-hidden="true">
+                    <span class="arrow-symbol">➔</span>
+                </div>
+
+                <!-- Node 2: (6 children and 2 teacher present) -->
+                <div class="timeline-node node-present @(GetChildrenPresentCount() > 0 ? "active" : "")"
+                     @onclick='() => Navigation.NavigateTo("/management/attendance")'
+                     title="View Classroom Attendance Desk">
+                    <div class="node-pill">
+                        <span class="node-icon">👥</span>
+                        <span class="node-text">(@GetChildrenPresentCount() children and @GetTeachersPresentCount() teacher present)</span>
+                    </div>
+                    <div class="node-time-wrap">
+                        <span class="node-time">@GetAttendanceTimeDisplay()</span>
+                        <span class="node-sub">Live Roster</span>
+                    </div>
+                </div>
+
+                <!-- Connector 2 -->
+                <div class="timeline-connector" aria-hidden="true">
+                    <span class="arrow-symbol">➔</span>
+                </div>
+
+                <!-- Node 3: 4 activity planned (1 started) -->
+                <div class="timeline-node node-activities @(GetStartedActivitiesCount() > 0 ? "active" : "")"
+                     @onclick='() => Navigation.NavigateTo("/today-activities")'
+                     title="View Today's Activities">
+                    <div class="node-pill">
+                        <span class="node-icon">🎨</span>
+                        <span class="node-text">@GetPlannedActivitiesCount() activity planned (@GetStartedActivitiesCount() started)</span>
+                    </div>
+                    <div class="node-time-wrap">
+                        <span class="node-time">@GetActivityTimeDisplay()</span>
+                        <span class="node-sub">@(GetStartedActivitiesCount() > 0 ? $"{GetStartedActivitiesCount()} in progress" : "Scheduled")</span>
+                    </div>
+                </div>
+
+                <!-- Connector 3 -->
+                <div class="timeline-connector" aria-hidden="true">
+                    <span class="arrow-symbol">➔</span>
+                </div>
+
+                <!-- Node 4: (ended) -->
+                <div class="timeline-node node-ended @(_isDaycareClosed ? "completed" : "pending")"
+                     @onclick="HandleTimelineEndedClickAsync"
+                     title="@(_isDaycareClosed ? "Daycare day ended. Remaining attendances and active activities were auto-closed at 7:00 PM." : "At 7:00 PM closing time, any active activity is auto closed and open attendances are auto checked out.")">
+                    <div class="node-pill">
+                        <span class="node-icon">🌙</span>
+                        <span class="node-text">(ended)</span>
+                    </div>
+                    <div class="node-time-wrap">
+                        <span class="node-time">7:00 PM</span>
+                        <span class="node-sub">@(_isDaycareClosed ? "Closed" : "Auto-Close")</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ================= SECTION B: THREE STAT CARDS (Screenshot 1 Match) ================= -->
@@ -528,44 +622,20 @@
                     </div>
                 </div>
 
-                <!-- 2. Start Activity / Resume Activity -->
-                @if (ActiveRunningExperience != null)
-                {
-                    <div class="action-card" role="button" tabindex="0" @onclick="() => OpenActiveSession(ActiveRunningExperience.Id)">
-                        <div class="action-card-icon">
-                            <FluentIcon Value="@(new Icons.Filled.Size28.Play())" Color="Color.Custom" CustomColor="#476a5b" />
-                        </div>
-                        <div class="action-card-text">
-                            <div class="action-title">Resume Activity</div>
-                            <div class="action-subtitle">Active: @ActiveRunningExperience.Title</div>
-                        </div>
+                <!-- 2. Start Activity -->
+                <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/today-activities")'>
+                    <div class="action-card-icon">
+                        <FluentIcon Value="@(new Icons.Filled.Size28.Play())" Color="Color.Custom" CustomColor="#476a5b" />
+                    </div>
+                    <div class="action-card-text">
+                        <div class="action-title">Start Activity</div>
+                        <div class="action-subtitle">@(ActiveRunningExperience != null ? $"Active: {ActiveRunningExperience.Title}" : "Today's planned experiences")</div>
+                    </div>
+                    @if (ActiveRunningExperience != null)
+                    {
                         <span class="live-pill"><span class="pulse-dot"></span> Live</span>
-                    </div>
-                }
-                else if (NextPlannedExperience != null)
-                {
-                    <div class="action-card" role="button" tabindex="0" @onclick="() => StartSession(NextPlannedExperience.Id)">
-                        <div class="action-card-icon">
-                            <FluentIcon Value="@(new Icons.Filled.Size28.Play())" Color="Color.Custom" CustomColor="#476a5b" />
-                        </div>
-                        <div class="action-card-text">
-                            <div class="action-title">Start Activity</div>
-                            <div class="action-subtitle">Open today's experience</div>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/experiences")'>
-                        <div class="action-card-icon">
-                            <FluentIcon Value="@(new Icons.Regular.Size28.Library())" Color="Color.Custom" CustomColor="#476a5b" />
-                        </div>
-                        <div class="action-card-text">
-                            <div class="action-title">Start Activity</div>
-                            <div class="action-subtitle">Open experience library</div>
-                        </div>
-                    </div>
-                }
+                    }
+                </div>
 
                 <!-- 3. Capture a Child Moment -->
                 <div class="action-card" role="button" tabindex="0" @onclick="OpenGeneralMomentModalAsync">
@@ -910,6 +980,29 @@
     private RhythmScheduleItem? NextPlannedExperience => _board.TodayRhythm?.FirstOrDefault(r => 
         !r.IsCelebration && (r.Status == "Scheduled" || r.Status == "Planned" || r.Status == "Confirmed"));
 
+    private System.Threading.Timer? _autoCloseCheckTimer;
+
+    protected override void OnInitialized()
+    {
+        _autoCloseCheckTimer = new System.Threading.Timer(async _ =>
+        {
+            if (_isDaycareClosed)
+            {
+                await InvokeAsync(async () =>
+                {
+                    await CheckAndAutoCloseEndOfDayAsync();
+                    await RefreshBoardAsync();
+                    StateHasChanged();
+                });
+            }
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    public void Dispose()
+    {
+        _autoCloseCheckTimer?.Dispose();
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         await LoadTeacherClassroomsAsync();
@@ -968,6 +1061,11 @@
         _loading = true;
         try
         {
+            if (_isDaycareClosed)
+            {
+                await CheckAndAutoCloseEndOfDayAsync();
+            }
+
             if (_selectedClassroomId.HasValue)
             {
                 var filter = new OperationsBoardFilter
@@ -1030,6 +1128,120 @@
         if (_board.TeacherChildrenCareStatus != null && _board.TeacherChildrenCareStatus.Any(c => c.NeedsAttention)) tasks++;
         if (_board.Alerts != null && _board.Alerts.Any(a => a.Severity == "High")) tasks++;
         return Math.Max(tasks, 1);
+    }
+
+    private async Task CheckAndAutoCloseEndOfDayAsync()
+    {
+        if (!_isDaycareClosed) return;
+
+        try
+        {
+            var summary = await EndOfDayService.GetPendingSummaryAsync(
+                branchId: _activeClassroom?.BranchId,
+                date: DateTime.Today);
+
+            if (summary.TotalPendingCount > 0)
+            {
+                var closingTime = new TimeSpan(19, 0, 0); // 7:00 PM End of Day time
+                var report = await EndOfDayService.ExecuteEndOfDayProcessAsync(
+                    branchId: _activeClassroom?.BranchId,
+                    date: DateTime.Today,
+                    checkoutTime: closingTime);
+
+                Logger.LogInformation("End of day auto-close executed: {Message}", report.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking or executing auto close at end of day");
+        }
+    }
+
+    private int GetChildrenPresentCount()
+    {
+        if (_classroomChildren != null && _classroomChildren.Any())
+        {
+            return _classroomChildren.Count(c => c.IsCheckedIn);
+        }
+        return _board.CheckedInChildrenCount;
+    }
+
+    private int GetTeachersPresentCount()
+    {
+        if (_selectedClassroomId.HasValue && _board.Classrooms != null)
+        {
+            var room = _board.Classrooms.FirstOrDefault(c => c.ClassroomId == _selectedClassroomId.Value);
+            if (room != null && room.PresentStaff > 0)
+            {
+                return room.PresentStaff;
+            }
+        }
+        if (_board.PresentStaffCount > 0)
+        {
+            return _board.PresentStaffCount;
+        }
+        return 1;
+    }
+
+    private int GetPlannedActivitiesCount()
+    {
+        if (_board.TodayRhythm != null && _board.TodayRhythm.Any())
+        {
+            return _board.TodayRhythm.Count;
+        }
+        return Math.Max(_board.PlannedExperiencesCount, 0);
+    }
+
+    private int GetStartedActivitiesCount()
+    {
+        if (_board.TodayRhythm != null && _board.TodayRhythm.Any())
+        {
+            return _board.TodayRhythm.Count(r => r.Status == "InProgress" || r.Status == "Started" || r.Status == "Active");
+        }
+        return _board.InProgressExperiencesCount;
+    }
+
+    private string GetAttendanceTimeDisplay()
+    {
+        if (_classroomChildren != null && _classroomChildren.Any(c => c.IsCheckedIn && c.ArrivalTime.HasValue))
+        {
+            var earliest = _classroomChildren.Where(c => c.IsCheckedIn && c.ArrivalTime.HasValue).Min(c => c.ArrivalTime!.Value);
+            return FormatTimeSpan(earliest);
+        }
+        return "8:30 AM";
+    }
+
+    private string GetActivityTimeDisplay()
+    {
+        if (ActiveRunningExperience != null && !string.IsNullOrWhiteSpace(ActiveRunningExperience.TimeDisplay))
+        {
+            return ActiveRunningExperience.TimeDisplay;
+        }
+        if (NextPlannedExperience != null && !string.IsNullOrWhiteSpace(NextPlannedExperience.TimeDisplay) && NextPlannedExperience.TimeDisplay != "Today")
+        {
+            return NextPlannedExperience.TimeDisplay;
+        }
+        if (_board.TodayRhythm != null && _board.TodayRhythm.Any(r => !string.IsNullOrWhiteSpace(r.TimeDisplay)))
+        {
+            var first = _board.TodayRhythm.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.TimeDisplay));
+            if (first != null && !string.IsNullOrWhiteSpace(first.TimeDisplay))
+            {
+                return first.TimeDisplay;
+            }
+        }
+        return "10:30 AM";
+    }
+
+    private async Task HandleTimelineEndedClickAsync()
+    {
+        if (_isDaycareClosed)
+        {
+            await NotificationService.ShowInfoAsync("Daycare closed at 7:00 PM. Any active activities and attendances were auto-closed.");
+        }
+        else
+        {
+            await NotificationService.ShowInfoAsync("Daycare operating hours end at 7:00 PM. At end of day, any active activity is auto-closed and any open attendance is auto-marked with checkout time.");
+        }
     }
 
     private string GetGreeting()

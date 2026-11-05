@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dapper;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -57,31 +58,27 @@ public static class AuthEndpoints
             }
 
             using var conn = await db.CreateConnectionAsync();
-            var user = await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users WHERE normalized_email = 'ADMIN@LITTLESTARS.COM' LIMIT 1")
-                ?? await conn.QueryFirstOrDefaultAsync<dynamic>("SELECT id, email, display_name, first_name, last_name, tenant_id FROM users LIMIT 1");
-            if (user != null)
+            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
+                "fn_dev_login",
+                new { Email = "admin@littlestars.com" });
+
+            if (syncResult != null && syncResult.out_user_id.HasValue)
             {
-                string displayName = (string?)user.display_name ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(displayName))
-                    displayName = $"{user.first_name} {user.last_name}".Trim();
-                if (string.IsNullOrWhiteSpace(displayName))
-                    displayName = (string?)user.email ?? "Admin";
+                Guid userId = syncResult.out_user_id.Value;
+                Guid effectiveTenantId = syncResult.out_effective_tenant_id ?? syncResult.out_tenant_id ?? Guid.Empty;
+                Guid? activeOrgId = syncResult.out_active_org_id;
+                string displayName = syncResult.out_display_name ?? syncResult.out_email ?? "Admin";
 
                 var claims = new List<Claim>
                 {
-                    new Claim(ClaimTypes.NameIdentifier, user.id.ToString()),
+                    new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                     new Claim(ClaimTypes.Name, displayName),
                     new Claim("DisplayName", displayName),
-                    new Claim(ClaimTypes.Email, user.email),
-                    new Claim("TenantId", user.tenant_id.ToString())
+                    new Claim(ClaimTypes.Email, syncResult.out_email ?? "admin@littlestars.com"),
+                    new Claim("TenantId", effectiveTenantId.ToString())
                 };
 
-                var memberships = (await conn.QueryAsync<Guid>(
-                    "SELECT organization_id FROM organization_memberships WHERE user_id = @UserId AND status = 'Active'",
-                    new { UserId = (Guid)user.id })).ToList();
-                Guid? activeOrgId = memberships.FirstOrDefault();
-
-                await BuildAuthClaimsAsync(conn, claims, (Guid)user.id, activeOrgId);
+                await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
                 var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
                 await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
@@ -181,23 +178,16 @@ public static class AuthEndpoints
             }
 
             using var conn = await db.CreateConnectionAsync();
-            
-            if (organizationId.HasValue)
-            {
-                var isActive = await conn.ExecuteScalarAsync<bool>(
-                    "SELECT true FROM organization_memberships WHERE user_id = @UserId AND organization_id = @OrgId AND status = 'Active'",
-                    new { UserId = userId, OrgId = organizationId.Value });
+            var validation = await conn.QuerySingleFunctionAsync<OrgValidationResult>(
+                "fn_validate_and_set_organization",
+                new { UserId = userId, OrganizationId = organizationId });
 
-                if (!isActive) return Results.Redirect("/auth/access-denied?reason=invalid_org");
-            }
-            else
+            if (validation == null || !validation.is_valid)
             {
-                var isParent = await conn.ExecuteScalarAsync<bool>(
-                    "SELECT EXISTS(SELECT 1 FROM family_relationships WHERE user_id = @UserId)", 
-                    new { UserId = userId });
-                    
-                if (!isParent) return Results.Redirect("/auth/access-denied?reason=invalid_org");
+                return Results.Redirect("/auth/access-denied?reason=invalid_org");
             }
+
+            tenantId = validation.tenant_id?.ToString() ?? tenantId ?? string.Empty;
 
             var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value 
                 ?? context.User.FindFirst("DisplayName")?.Value 
@@ -242,22 +232,43 @@ public static class AuthEndpoints
             claims.Add(new Claim("ActiveOrganizationId", activeOrgId.Value.ToString()));
         }
 
-        var authClaims = await conn.QueryAsync<dynamic>(
-            "SELECT * FROM fn_get_user_auth_claims(@UserId, @ActiveOrgId)",
+        var authClaims = await conn.QueryFunctionAsync<AuthClaimRow>(
+            "fn_get_user_auth_claims",
             new { UserId = userId, ActiveOrgId = activeOrgId });
 
         foreach (var row in authClaims)
         {
-            string type = (string)row.claim_type;
-            string val = (string)row.claim_value;
-            if (type == "role")
+            if (row.claim_type == "role" && !string.IsNullOrWhiteSpace(row.claim_value))
             {
-                claims.Add(new Claim(ClaimTypes.Role, val));
+                claims.Add(new Claim(ClaimTypes.Role, row.claim_value));
             }
-            else if (type == "permission")
+            else if (row.claim_type == "permission" && !string.IsNullOrWhiteSpace(row.claim_value))
             {
-                claims.Add(new Claim("Permission", val));
+                claims.Add(new Claim("Permission", row.claim_value));
             }
         }
+    }
+
+    private sealed class AuthSyncResult
+    {
+        public string? out_status { get; set; }
+        public Guid? out_user_id { get; set; }
+        public Guid? out_tenant_id { get; set; }
+        public Guid? out_effective_tenant_id { get; set; }
+        public Guid? out_active_org_id { get; set; }
+        public string? out_email { get; set; }
+        public string? out_display_name { get; set; }
+    }
+
+    private sealed class OrgValidationResult
+    {
+        public bool is_valid { get; set; }
+        public Guid? tenant_id { get; set; }
+    }
+
+    private sealed class AuthClaimRow
+    {
+        public string? claim_type { get; set; }
+        public string? claim_value { get; set; }
     }
 }

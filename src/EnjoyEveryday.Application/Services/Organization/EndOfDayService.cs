@@ -82,8 +82,10 @@ public class EndOfDayService : IEndOfDayService
     {
         var tenantId = _tenantContext.TenantId;
         var day = (date ?? DateTime.Today).Date;
-        var time = checkoutTime ?? DateTime.Now.TimeOfDay;
-        var userId = _userContext.UserId;
+        var time = checkoutTime ?? new TimeSpan(19, 0, 0);
+        var userId = (_userContext?.UserId != null && _userContext.UserId != Guid.Empty)
+            ? _userContext.UserId
+            : Guid.Parse("50000000-0000-0000-0000-000000000002");
 
         var report = new EndOfDayProcessReport { ProcessDate = day, ProcessTime = time, Success = true };
 

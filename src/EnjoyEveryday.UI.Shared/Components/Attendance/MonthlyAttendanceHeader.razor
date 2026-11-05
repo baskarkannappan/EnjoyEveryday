@@ -1,0 +1,226 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Entities.Attendance
+
+<div class="monthly-header-card">
+    <div class="context-banner">
+        <div class="context-badges">
+            <div class="context-pill org-pill" title="Current Organisation">
+                <span class="pill-icon">🏛️</span>
+                <div class="pill-info">
+                    <span class="pill-label">ORGANISATION</span>
+                    <span class="pill-value">@(string.IsNullOrWhiteSpace(OrganizationName) ? "EnjoyEveryday" : OrganizationName)</span>
+                </div>
+            </div>
+
+            <div class="context-pill branch-pill" title="Selected Branch">
+                <span class="pill-icon">🏢</span>
+                <div class="pill-info">
+                    <span class="pill-label">BRANCH</span>
+                    @if (AccessibleBranches != null && AccessibleBranches.Count > 1 && IsOrgAdmin)
+                    {
+                        <select class="branch-select" @onchange="OnBranchSelectionChanged">
+                            @foreach (var b in AccessibleBranches)
+                            {
+                                <option value="@b.BranchId" selected="@(b.BranchId == SelectedBranchId)">@b.BranchName</option>
+                            }
+                        </select>
+                    }
+                    else
+                    {
+                        <span class="pill-value">@(string.IsNullOrWhiteSpace(BranchName) ? "Main Branch" : BranchName)</span>
+                    }
+                </div>
+            </div>
+
+            <div class="context-pill location-pill" title="Branch Location">
+                <span class="pill-icon">📍</span>
+                <div class="pill-info">
+                    <span class="pill-label">LOCATION</span>
+                    <span class="pill-value">@(string.IsNullOrWhiteSpace(Location) ? "Main Centre" : Location)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="header-right-actions">
+            <!-- Segmented View Mode Switcher -->
+            <div class="segmented-control" role="group" aria-label="Register Mode">
+                <button type="button" 
+                        class="seg-btn @(ActiveView == "children" ? "active" : "")" 
+                        @onclick='() => ChangeView("children")'>
+                    <span class="seg-icon">🎒</span>
+                    <span class="seg-text">Children Register</span>
+                </button>
+                <button type="button" 
+                        class="seg-btn @(ActiveView == "teachers" ? "active" : "")" 
+                        @onclick='() => ChangeView("teachers")'>
+                    <span class="seg-icon">👥</span>
+                    <span class="seg-text">Staff Register</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Calendar Month Navigation & Filters Row -->
+    <div class="month-controls-row">
+        <div class="calendar-nav-bar">
+            <button type="button" class="nav-arrow-btn" @onclick="PreviousMonth" title="Previous Month">
+                <span class="arrow-symbol">‹</span>
+            </button>
+
+            <div class="current-month-display">
+                <span class="calendar-icon">📅</span>
+                <span class="month-title">@CurrentMonthDisplay</span>
+                <select class="month-quick-jump" @onchange="OnMonthJumpChanged" title="Jump to month">
+                    @foreach (var option in MonthOptions)
+                    {
+                        <option value="@option.Key" selected="@(option.Year == SelectedYear && option.Month == SelectedMonth)">
+                            @option.Label
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <button type="button" class="nav-arrow-btn" @onclick="NextMonth" title="Next Month">
+                <span class="arrow-symbol">›</span>
+            </button>
+
+            @if (!IsCurrentMonth)
+            {
+                <button type="button" class="today-jump-btn" @onclick="JumpToCurrentMonth" title="Go to current month">
+                    Today
+                </button>
+            }
+        </div>
+
+        @if (ShowClassroomFilter && Classrooms != null && Classrooms.Count > 0)
+        {
+            <div class="filter-group classroom-filter">
+                <label for="classroom-select" class="filter-label">Classroom:</label>
+                <select id="classroom-select" class="filter-select" @onchange="OnClassroomChanged">
+                    <option value="" selected="@(!SelectedClassroomId.HasValue)">All Classrooms (@Classrooms.Count)</option>
+                    @foreach (var room in Classrooms)
+                    {
+                        <option value="@room.Id" selected="@(SelectedClassroomId == room.Id)">@room.Name</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string OrganizationName { get; set; } = string.Empty;
+    [Parameter] public string BranchName { get; set; } = string.Empty;
+    [Parameter] public string Location { get; set; } = string.Empty;
+    [Parameter] public List<BranchLocationContextDto> AccessibleBranches { get; set; } = new();
+    [Parameter] public Guid SelectedBranchId { get; set; }
+    [Parameter] public EventCallback<Guid> SelectedBranchIdChanged { get; set; }
+
+    [Parameter] public int SelectedYear { get; set; } = DateTime.Today.Year;
+    [Parameter] public int SelectedMonth { get; set; } = DateTime.Today.Month;
+    [Parameter] public EventCallback<(int Year, int Month)> MonthChanged { get; set; }
+
+    [Parameter] public string ActiveView { get; set; } = "children";
+    [Parameter] public EventCallback<string> ActiveViewChanged { get; set; }
+
+    [Parameter] public bool ShowClassroomFilter { get; set; } = true;
+    [Parameter] public List<Classroom>? Classrooms { get; set; }
+    [Parameter] public Guid? SelectedClassroomId { get; set; }
+    [Parameter] public EventCallback<Guid?> SelectedClassroomIdChanged { get; set; }
+
+    [Parameter] public bool IsOrgAdmin { get; set; }
+
+    private string CurrentMonthDisplay => new DateTime(SelectedYear, SelectedMonth, 1).ToString("MMMM yyyy");
+    private bool IsCurrentMonth => SelectedYear == DateTime.Today.Year && SelectedMonth == DateTime.Today.Month;
+
+    private record MonthOption(string Key, int Year, int Month, string Label);
+    private List<MonthOption> MonthOptions = new();
+
+    protected override void OnInitialized()
+    {
+        BuildMonthOptions();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (MonthOptions.Count == 0)
+        {
+            BuildMonthOptions();
+        }
+    }
+
+    private void BuildMonthOptions()
+    {
+        MonthOptions.Clear();
+        var current = DateTime.Today;
+        // 12 months in past to 6 months ahead
+        for (int i = -12; i <= 6; i++)
+        {
+            var dt = current.AddMonths(i);
+            MonthOptions.Add(new MonthOption($"{dt.Year}-{dt.Month}", dt.Year, dt.Month, dt.ToString("MMMM yyyy")));
+        }
+    }
+
+    private async Task PreviousMonth()
+    {
+        var prev = new DateTime(SelectedYear, SelectedMonth, 1).AddMonths(-1);
+        await MonthChanged.InvokeAsync((prev.Year, prev.Month));
+    }
+
+    private async Task NextMonth()
+    {
+        var next = new DateTime(SelectedYear, SelectedMonth, 1).AddMonths(1);
+        await MonthChanged.InvokeAsync((next.Year, next.Month));
+    }
+
+    private async Task JumpToCurrentMonth()
+    {
+        var now = DateTime.Today;
+        await MonthChanged.InvokeAsync((now.Year, now.Month));
+    }
+
+    private async Task OnMonthJumpChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(val))
+        {
+            var parts = val.Split('-');
+            if (parts.Length == 2 && int.TryParse(parts[0], out var y) && int.TryParse(parts[1], out var m))
+            {
+                await MonthChanged.InvokeAsync((y, m));
+            }
+        }
+    }
+
+    private async Task OnBranchSelectionChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var branchId))
+        {
+            await SelectedBranchIdChanged.InvokeAsync(branchId);
+        }
+    }
+
+    private async Task OnClassroomChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (Guid.TryParse(val, out var roomId))
+        {
+            await SelectedClassroomIdChanged.InvokeAsync(roomId);
+        }
+        else
+        {
+            await SelectedClassroomIdChanged.InvokeAsync(null);
+        }
+    }
+
+    private async Task ChangeView(string view)
+    {
+        if (ActiveView != view)
+        {
+            ActiveView = view;
+            await ActiveViewChanged.InvokeAsync(view);
+        }
+    }
+}
+

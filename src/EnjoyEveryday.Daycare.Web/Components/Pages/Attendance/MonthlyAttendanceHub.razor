@@ -1,0 +1,232 @@
+@page "/attendance/monthly"
+@page "/management/attendance/monthly"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Entities.Attendance
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Daycare.Web.Services
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Attendance
+@inject AttendanceService AttendanceService
+@inject ClassroomService ClassroomService
+@inject NavigationManager Navigation
+@inject IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@rendermode InteractiveServer
+
+<PageTitle>@(ActiveView == "children" ? "Children" : "Staff") Monthly Attendance — EnjoyEveryday</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="MONTHLY ATTENDANCE REGISTER"
+              Title="@(ActiveView == "children" ? "Children Monthly Attendance Register" : "Staff & Educators Monthly Attendance Register")"
+              Subtitle="Comprehensive read-only monthly attendance register adhering to daycare compliance standards.">
+        <RightContent>
+            <a href="/management/attendance" class="btn secondary">
+                <span>Today's Daily Overview</span>
+            </a>
+            @if (ActiveView == "children")
+            {
+                <button type="button" class="btn secondary" @onclick='() => SetActiveView("teachers")'>
+                    <span>👥 Switch to Staff</span>
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn secondary" @onclick='() => SetActiveView("children")'>
+                    <span>🎒 Switch to Children</span>
+                </button>
+            }
+        </RightContent>
+    </PageHero>
+
+    <!-- Context Header: Organisation, Branch, Location, Month Switcher -->
+    <MonthlyAttendanceHeader 
+        OrganizationName="@_organizationName"
+        BranchName="@_branchName"
+        Location="@_location"
+        AccessibleBranches="@_accessibleBranches"
+        SelectedBranchId="@_selectedBranchId"
+        SelectedBranchIdChanged="OnBranchChanged"
+        SelectedYear="@_selectedYear"
+        SelectedMonth="@_selectedMonth"
+        MonthChanged="OnMonthChanged"
+        ActiveView="@ActiveView"
+        ActiveViewChanged="SetActiveView"
+        ShowClassroomFilter="@(ActiveView == "children")"
+        Classrooms="@_classrooms"
+        SelectedClassroomId="@_selectedClassroomId"
+        SelectedClassroomIdChanged="OnClassroomChanged"
+        IsOrgAdmin="@_isOrgAdmin" />
+
+    @if (ActiveView == "children")
+    {
+        <MonthlyChildAttendanceGrid 
+            Rows="@_childRows"
+            Summary="@_childSummary"
+            Year="@_selectedYear"
+            Month="@_selectedMonth"
+            IsLoading="@_isLoading" />
+    }
+    else
+    {
+        <MonthlyTeacherAttendanceGrid 
+            Rows="@_teacherRows"
+            Summary="@_teacherSummary"
+            Year="@_selectedYear"
+            Month="@_selectedMonth"
+            IsLoading="@_isLoading" />
+    }
+</div>
+
+@code {
+    private bool _isAuthorized = false;
+    private bool _isOrgAdmin = false;
+    private bool _isLoading = true;
+
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? ViewQuery { get; set; }
+
+    private string ActiveView = "children";
+
+    private string _organizationName = string.Empty;
+    private string _branchName = string.Empty;
+    private string _location = string.Empty;
+
+    private List<BranchLocationContextDto> _accessibleBranches = new();
+    private Guid _selectedBranchId = Guid.Empty;
+    private List<Classroom> _classrooms = new();
+    private Guid? _selectedClassroomId = null;
+
+    private int _selectedYear = DateTime.Today.Year;
+    private int _selectedMonth = DateTime.Today.Month;
+
+    private List<ChildMonthlyRegisterRow> _childRows = new();
+    private MonthlyRegisterSummary _childSummary = new();
+
+    private List<TeacherMonthlyRegisterRow> _teacherRows = new();
+    private MonthlyRegisterSummary _teacherSummary = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isAuthorized = await PageAuth.EnsureAuthorizedAsync("/attendance");
+        if (!_isAuthorized) return;
+
+        if (!string.IsNullOrWhiteSpace(ViewQuery) && ViewQuery.Equals("teachers", StringComparison.OrdinalIgnoreCase))
+        {
+            ActiveView = "teachers";
+        }
+
+        var profile = await PageAuth.GetUserProfileAsync();
+        _isOrgAdmin = profile.IsOrgAdmin;
+
+        await LoadAccessibleBranchesAsync();
+        await LoadActiveDataAsync();
+    }
+
+    private async Task LoadAccessibleBranchesAsync()
+    {
+        var branches = (await AttendanceService.GetUserAccessibleBranchesAsync(_isOrgAdmin)).ToList();
+        _accessibleBranches = branches;
+
+        if (_accessibleBranches.Count > 0)
+        {
+            var primary = _accessibleBranches.FirstOrDefault(b => b.IsPrimary) ?? _accessibleBranches[0];
+            _selectedBranchId = primary.BranchId;
+            _organizationName = primary.OrganizationName;
+            _branchName = primary.BranchName;
+            _location = primary.Location;
+        }
+    }
+
+    private async Task LoadActiveDataAsync()
+    {
+        if (_selectedBranchId == Guid.Empty)
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var context = await AttendanceService.GetBranchLocationContextAsync(_selectedBranchId);
+            if (context != null)
+            {
+                _organizationName = context.OrganizationName;
+                _branchName = context.BranchName;
+                _location = context.Location;
+            }
+
+            if (ActiveView == "children")
+            {
+                var roomList = (await ClassroomService.GetClassroomsAsync(_selectedBranchId)).ToList();
+                _classrooms = roomList;
+
+                var (rows, summary) = await AttendanceService.GetMonthlyChildRegisterAsync(
+                    _selectedBranchId, _selectedYear, _selectedMonth, _selectedClassroomId);
+
+                _childRows = rows;
+                _childSummary = summary;
+            }
+            else
+            {
+                var (rows, summary) = await AttendanceService.GetMonthlyTeacherRegisterAsync(
+                    _selectedBranchId, _selectedYear, _selectedMonth);
+
+                _teacherRows = rows;
+                _teacherSummary = summary;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MonthlyAttendanceHub] Error loading register: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SetActiveView(string view)
+    {
+        if (ActiveView != view)
+        {
+            ActiveView = view;
+            await LoadActiveDataAsync();
+        }
+    }
+
+    private async Task OnBranchChanged(Guid branchId)
+    {
+        if (_selectedBranchId != branchId)
+        {
+            _selectedBranchId = branchId;
+            _selectedClassroomId = null;
+            await LoadActiveDataAsync();
+        }
+    }
+
+    private async Task OnMonthChanged((int Year, int Month) target)
+    {
+        if (_selectedYear != target.Year || _selectedMonth != target.Month)
+        {
+            _selectedYear = target.Year;
+            _selectedMonth = target.Month;
+            await LoadActiveDataAsync();
+        }
+    }
+
+    private async Task OnClassroomChanged(Guid? classroomId)
+    {
+        if (_selectedClassroomId != classroomId)
+        {
+            _selectedClassroomId = classroomId;
+            await LoadActiveDataAsync();
+        }
+    }
+}
+

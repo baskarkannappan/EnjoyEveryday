@@ -1,6 +1,9 @@
-# Operational Knowledge File (OKF): Architecture & Component Map
+# Open Knowledge Format (OKF): Architecture & Component Map
 
-This document is the operational guide for navigating, analyzing, and modifying the EnjoyEveryday platform. Use this map to locate components, services, and entities instantly without scanning the solution.
+> [!IMPORTANT]
+> **Mandatory Policy for AI Agents (Antigravity)**:
+> 1. **Refer to `.okf/` on Every Task**: The official, granular Open Knowledge Format catalog lives in [`.okf/`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/index.md). Agents MUST consult [`.okf/index.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/index.md) before performing exploratory code or database searches.
+> 2. **Continuous Maintenance Rule**: Whenever any new feature, stored procedure, database table, role rule, or route is created or refactored, the agent MUST update the corresponding `.okf/` document(s) in the same task to keep the knowledge catalog 100% current.
 
 ---
 

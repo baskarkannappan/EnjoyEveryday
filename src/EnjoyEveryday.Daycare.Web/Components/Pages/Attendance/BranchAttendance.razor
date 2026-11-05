@@ -29,20 +29,23 @@
         if (!authorized) return;
 
         var profile = await PageAuth.GetUserProfileAsync();
-        if (profile.IsBranchAdmin)
+        if (!profile.IsOrgAdmin && !profile.IsPlatformAdmin)
         {
-            var branches = await BranchService.GetBranchesAsync(profile.OrganizationId);
-            var target = branches.FirstOrDefault(b => b.Name.Equals(BranchName, StringComparison.OrdinalIgnoreCase));
-            if (target == null || !profile.AssignedBranchIds.Contains(target.Id))
+            if (profile.IsBranchAdmin)
             {
-                Nav.NavigateTo("/access-denied?reason=branch_mismatch", true);
+                var branches = await BranchService.GetBranchesAsync(profile.OrganizationId);
+                var target = branches.FirstOrDefault(b => b.Name.Equals(BranchName, StringComparison.OrdinalIgnoreCase));
+                if (target == null || !profile.AssignedBranchIds.Contains(target.Id))
+                {
+                    Nav.NavigateTo("/access-denied?reason=branch_mismatch", true);
+                    return;
+                }
+            }
+            else if (profile.IsTeacher)
+            {
+                Nav.NavigateTo("/access-denied?reason=unauthorized_role", true);
                 return;
             }
-        }
-        else if (profile.IsTeacher && !profile.IsOrgAdmin && !profile.IsPlatformAdmin)
-        {
-            Nav.NavigateTo("/access-denied?reason=unauthorized_role", true);
-            return;
         }
 
         _isAuthorized = true;

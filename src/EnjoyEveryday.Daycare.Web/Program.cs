@@ -90,6 +90,7 @@ builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.StorybookStorageSe
 builder.Services.AddScoped<EnjoyEveryday.Shared.Authorization.IOrganizationPermissionService, EnjoyEveryday.Daycare.Web.Services.OrganizationPermissionService>();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService, EnjoyEveryday.Daycare.Web.Services.PageAuthorizationService>();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService, EnjoyEveryday.Daycare.Web.Services.UserViewPreferenceService>();
+builder.Services.AddHostedService<EnjoyEveryday.Daycare.Web.Services.DaycareEndOfDayBackgroundService>();
 
 var app = builder.Build();
 

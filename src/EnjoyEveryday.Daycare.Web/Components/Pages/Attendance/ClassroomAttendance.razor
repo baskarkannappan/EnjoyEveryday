@@ -38,15 +38,29 @@
 
         if (classroom != null)
         {
-            if (profile.IsBranchAdmin && !profile.AssignedBranchIds.Contains(classroom.BranchId))
+            if (!profile.IsOrgAdmin && !profile.IsPlatformAdmin)
             {
-                Nav.NavigateTo("/access-denied?reason=branch_mismatch", true);
-                return;
-            }
-            if (profile.IsTeacher && !profile.IsOrgAdmin && !profile.IsPlatformAdmin && !profile.AssignedClassroomIds.Contains(classroom.Id))
-            {
-                Nav.NavigateTo("/access-denied?reason=classroom_mismatch", true);
-                return;
+                if (profile.IsBranchAdmin)
+                {
+                    if (!profile.AssignedBranchIds.Contains(classroom.BranchId))
+                    {
+                        Nav.NavigateTo("/access-denied?reason=branch_mismatch", true);
+                        return;
+                    }
+                }
+                else if (profile.IsTeacher)
+                {
+                    if (!profile.AssignedClassroomIds.Contains(classroom.Id))
+                    {
+                        Nav.NavigateTo("/access-denied?reason=classroom_mismatch", true);
+                        return;
+                    }
+                }
+                else
+                {
+                    Nav.NavigateTo("/access-denied?reason=unauthorized_role", true);
+                    return;
+                }
             }
 
             if (string.IsNullOrEmpty(BranchName))
@@ -55,6 +69,11 @@
                 var b = branches.FirstOrDefault(x => x.Id == classroom.BranchId);
                 if (b != null) BranchName = b.Name;
             }
+        }
+        else
+        {
+            Nav.NavigateTo("/access-denied?reason=unauthorized_classroom", true);
+            return;
         }
 
         _isAuthorized = true;

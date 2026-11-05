@@ -107,4 +107,44 @@ public class AttendanceRepository : IAttendanceRepository
             parameterNames: new[] { "TenantId", "Date::date" },
             cancellationToken: cancellationToken);
     }
+
+    public async Task<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto?> GetBranchLocationContextAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QuerySingleProcedureAsync<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto>(
+            "public.sp_get_branch_location_context",
+            new { p_tenant_id = tenantId, p_branch_id = branchId },
+            parameterNames: new[] { "p_tenant_id", "p_branch_id" },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto>> GetUserAccessibleBranchesAsync(Guid tenantId, Guid userId, bool isOrgAdmin, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryProcedureAsync<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto>(
+            "public.sp_get_user_accessible_branches",
+            new { p_tenant_id = tenantId, p_user_id = userId, p_is_org_admin = isOrgAdmin },
+            parameterNames: new[] { "p_tenant_id", "p_user_id", "p_is_org_admin" },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.MonthlyChildAttendanceRecordDto>> GetMonthlyChildAttendanceAsync(Guid tenantId, Guid branchId, int year, int month, Guid? classroomId = null, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryProcedureAsync<EnjoyEveryday.Domain.Entities.Attendance.MonthlyChildAttendanceRecordDto>(
+            "public.sp_get_monthly_child_attendance",
+            new { p_tenant_id = tenantId, p_branch_id = branchId, p_year = year, p_month = month, p_classroom_id = classroomId },
+            parameterNames: new[] { "p_tenant_id", "p_branch_id", "p_year", "p_month", "p_classroom_id" },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.MonthlyTeacherAttendanceRecordDto>> GetMonthlyTeacherAttendanceAsync(Guid tenantId, Guid branchId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryProcedureAsync<EnjoyEveryday.Domain.Entities.Attendance.MonthlyTeacherAttendanceRecordDto>(
+            "public.sp_get_monthly_teacher_attendance",
+            new { p_tenant_id = tenantId, p_branch_id = branchId, p_year = year, p_month = month },
+            parameterNames: new[] { "p_tenant_id", "p_branch_id", "p_year", "p_month" },
+            cancellationToken: cancellationToken);
+    }
 }

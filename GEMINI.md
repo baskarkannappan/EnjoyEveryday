@@ -217,18 +217,41 @@ When diagnosing and fixing data/database issues (especially when instructed not 
 
 ---
 
-## 12. Operational Knowledge File (OKF) & Rapid Feature Navigation
+## 12. Open Knowledge Format (OKF) & Continuous Knowledge Maintenance
 
-Always consult this map before searching the repository to find components and services instantly:
+This repository strictly adopts the **Open Knowledge Format (OKF)** specification (v0.2.0) located in the [`.okf/`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/index.md) root directory.
 
-| Feature Area | UI / Razor Location | Application Service | Domain Entity |
-|:---|:---|:---|:---|
-| **Teacher Workspace & Cockpit** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` | `IDaycareOperationsBoardService`<br>`IChildDailyCareService` | `ClassroomChildCareStatusDto` |
-| **Attendance & Gates** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Attendance/` | `AttendanceService` | `ChildAttendance` |
-| **Care Routines (Diapers, Meals, Naps)** | `src/EnjoyEveryday.UI.Shared/Components/DailyCare/ChildDailyCareSection.razor`<br>`src/EnjoyEveryday.Daycare.Web/Components/Pages/DailyCare/DailyCarePage.razor` | `IChildDailyCareService` | `ChildCareEvent`<br>`ChildNapSession` |
-| **Observations & Moments** | `src/EnjoyEveryday.UI.Shared/Components/ChildJourney/AddJourneyMomentDialog.razor` | `IChildJourneyService` | `ChildJourneyEntry` |
-| **Activity Session Runner** | `src/EnjoyEveryday.UI.Shared/Components/ActiveSessionModal/ActiveSessionModal.razor` | `ExecutionService`<br>`PlannerService` | `ExperienceSession`<br>`ExperienceParticipation` |
-| **Shift Handovers & Comms** | `TeacherWorkspace.razor` (modal)<br>`src/EnjoyEveryday.Daycare.Web/Components/Pages/ClassroomMessages/` | `IClassroomCommunicationService` | `TeacherHandover` |
-| **Classroom Schedules** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Planning/` | `PlannerService` | `ClassroomSchedule` |
+### Mandatory Operational Policies for All Agents (Including Antigravity):
+
+1. **Mandatory OKF Referral Before Exploration**:
+   - Every agent MUST consult the corresponding [`.okf/`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/index.md) bundle before performing exploratory code searches (`git grep`, directory walking).
+   - Look up component locations, repository contracts, and database procedures in `.okf/` first.
+
+2. **Mandatory Continuous Maintenance of OKF**:
+   - **Whenever a new feature is introduced, an existing flow is refactored, a database table/procedure is added or modified, or a security role/route is altered, the agent MUST update the corresponding `.okf/` document(s) in the same task.**
+   - Never leave `.okf/` stale. The knowledge catalog is the durable source of truth for the codebase.
+
+### Knowledge Bundle Directory Map
+
+* **Architecture**: [`.okf/architecture/index.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/architecture/index.md) (Multi-tenancy, Ports, UI Design System, AI Rules)
+* **Security & Auth**: [`.okf/security-and-auth/index.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/security-and-auth/index.md) (Role matrix, Route guards, Scope resolution)
+* **Operational Features**: [`.okf/features/index.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/index.md) (Attendance, Daily care, Roster, Safety, Admissions, Curriculum, Billing)
+* **Database**: [`.okf/database/index.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/database/index.md) (133-table schema catalog, Stored functions, Dev IDs)
+* **Troubleshooting**: [`.okf/troubleshooting/index.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/troubleshooting/index.md) (Common pitfalls, Build locks, Diagnostics runbook)
+
+### Quick Feature Navigation Reference
+
+| Feature Area | UI / Razor Location | Application Service | Domain Entity | OKF Concept Document |
+|:---|:---|:---|:---|:---|
+| **Teacher Workspace & Cockpit** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` | `IDaycareOperationsBoardService`<br>`IChildDailyCareService` | `ClassroomChildCareStatusDto` | [`.okf/features/daily-care.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/daily-care.md) |
+| **Attendance & Gates** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Attendance/` | `AttendanceService` | `ChildAttendance` | [`.okf/features/attendance.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/attendance.md) |
+| **Care Routines (Diapers, Meals, Naps)** | `src/EnjoyEveryday.UI.Shared/Components/DailyCare/ChildDailyCareSection.razor`<br>`src/EnjoyEveryday.Daycare.Web/Components/Pages/DailyCare/DailyCarePage.razor` | `IChildDailyCareService` | `ChildCareEvent`<br>`ChildNapSession` | [`.okf/features/daily-care.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/daily-care.md) |
+| **Staff Roster & Statutory Ratios** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Organization/StaffRosterPage.razor` | `StaffRosterService` | `TeacherAssignmentSummaryRecord`<br>`StaffLeave` | [`.okf/features/staff-roster-and-ratios.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/staff-roster-and-ratios.md) |
+| **Child Safety & Medical Alerts** | `src/EnjoyEveryday.UI.Shared/Components/DailyCare/ChildDailyCareSection.razor` | `ChildService` | `ChildMedicalProfile`<br>`ChildAllergy` | [`.okf/features/child-safety-and-medical.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/child-safety-and-medical.md) |
+| **Admissions & Enrollment** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Children/EnrollmentPipeline.razor` | `EnrollmentService` | `ChildEnrollmentApplication` | [`.okf/features/admissions-and-enrollment.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/admissions-and-enrollment.md) |
+| **Observations & Moments** | `src/EnjoyEveryday.UI.Shared/Components/ChildJourney/AddJourneyMomentDialog.razor` | `IChildJourneyService` | `ChildJourneyEntry` | [`.okf/features/learning-and-curriculum.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/learning-and-curriculum.md) |
+| **Activity Session Runner** | `src/EnjoyEveryday.UI.Shared/Components/ActiveSessionModal/ActiveSessionModal.razor` | `ExecutionService`<br>`PlannerService` | `ExperienceSession`<br>`ExperienceParticipation` | [`.okf/features/learning-and-curriculum.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/learning-and-curriculum.md) |
+| **Shift Handovers & Comms** | `TeacherWorkspace.razor` (modal)<br>`src/EnjoyEveryday.Daycare.Web/Components/Pages/ClassroomMessages/` | `IClassroomCommunicationService` | `TeacherHandover` | [`.okf/features/classroom-communications.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/classroom-communications.md) |
+| **Classroom Schedules** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Planning/` | `PlannerService` | `ClassroomSchedule` | [`.okf/features/learning-and-curriculum.md`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/learning-and-curriculum.md) |
 
 

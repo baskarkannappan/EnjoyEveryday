@@ -2,6 +2,7 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Domain.Entities.Attendance
+@using EnjoyEveryday.Shared.Authorization
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject AttendanceService AttendanceService
@@ -20,7 +21,7 @@
     </div>
     <div class="filters">
         <input class="control" type="date" value="@_filterDate.ToString("yyyy-MM-dd")" @onchange="OnDateFilterChanged">
-        <select class="control" @bind="typeFilter" @bind:event="oninput">
+        <select class="control" value="@typeFilter" @onchange="OnTypeFilterChanged">
             <option value="both">Children &amp; teachers</option>
             <option value="children">Children only</option>
             <option value="teachers">Teachers only</option>
@@ -37,9 +38,9 @@
 
     <div class="card">
         <div class="tabs">
-            <button class="tab @(currentTab == "classrooms" ? "active" : "")" @onclick="@(() => currentTab = "classrooms")">Classrooms</button>
-            <button class="tab @(currentTab == "children" ? "active" : "")" @onclick="@(() => currentTab = "children")">Children</button>
-            <button class="tab @(currentTab == "teachers" ? "active" : "")" @onclick="@(() => currentTab = "teachers")">Teachers</button>
+            <button class="tab @(currentTab == "classrooms" ? "active" : "")" @onclick='() => SetTab("classrooms")'>Classrooms</button>
+            <button class="tab @(currentTab == "children" ? "active" : "")" @onclick='() => SetTab("children")'>Children</button>
+            <button class="tab @(currentTab == "teachers" ? "active" : "")" @onclick='() => SetTab("teachers")'>Teachers</button>
         </div>
         
         @if (currentTab == "classrooms")
@@ -211,8 +212,6 @@
     private IEnumerable<AttendancePeopleTable.PersonRowItem> GetPeopleItems()
     {
         var result = _personRows.AsEnumerable();
-        if (typeFilter == "children" && currentTab == "teachers") return Enumerable.Empty<AttendancePeopleTable.PersonRowItem>();
-        if (typeFilter == "teachers" && currentTab == "children") return Enumerable.Empty<AttendancePeopleTable.PersonRowItem>();
         
         string targetType = currentTab == "teachers" ? "teachers" : "children";
         result = result.Where(p => p.Type == targetType);
@@ -227,7 +226,11 @@
         {
             if (currentTab == "teachers")
             {
-                result = result.Where(p => p.Room.Equals(ClassroomName, StringComparison.OrdinalIgnoreCase) || p.Room == "Teacher");
+                result = result.Where(p => 
+                    p.Room.Contains(ClassroomName, StringComparison.OrdinalIgnoreCase) || 
+                    p.Room.Equals("Teacher", StringComparison.OrdinalIgnoreCase) ||
+                    p.Room.Equals("Staff", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrEmpty(p.Room));
             }
             else
             {
@@ -236,6 +239,32 @@
         }
 
         return result;
+    }
+
+    private void SetTab(string tab)
+    {
+        currentTab = tab;
+        if (tab == "teachers" && typeFilter == "children")
+        {
+            typeFilter = "both";
+        }
+        else if (tab == "children" && typeFilter == "teachers")
+        {
+            typeFilter = "both";
+        }
+    }
+
+    private void OnTypeFilterChanged(ChangeEventArgs e)
+    {
+        typeFilter = e.Value?.ToString() ?? "both";
+        if (typeFilter == "teachers" && currentTab != "teachers")
+        {
+            currentTab = "teachers";
+        }
+        else if (typeFilter == "children" && currentTab != "children")
+        {
+            currentTab = "children";
+        }
     }
 
     private void OpenSecurePickupModal(AttendancePeopleTable.PersonRowItem person)
@@ -313,13 +342,23 @@
     {
         get
         {
-            var roles = UserContext.Roles ?? Enumerable.Empty<string>();
+            var roles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
             return roles.Any(r =>
-                r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Organization Admin", StringComparison.OrdinalIgnoreCase) ||
                 r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
-                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+                r.Equals("Org Admin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Branch Admin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Branch Director", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
+                || UserContext.HasPermission(Permissions.StaffManage)
+                || UserContext.HasPermission(Permissions.BranchManage)
+                || UserContext.HasPermission(Permissions.OrganizationManage);
         }
     }
 

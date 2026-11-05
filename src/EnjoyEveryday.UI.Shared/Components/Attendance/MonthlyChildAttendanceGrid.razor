@@ -1,0 +1,283 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Attendance
+@using EnjoyEveryday.Domain.Entities.Attendance
+
+<div class="monthly-register-container">
+    <!-- Top KPI Stats Row -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-icon-box" style="background: rgba(85, 124, 108, 0.12); color: var(--accent-dark, #3e6253);">
+                👥
+            </div>
+            <div class="kpi-details">
+                <span class="kpi-label">ENROLLED CHILDREN</span>
+                <span class="kpi-value">@Summary.TotalEnrolledOrStaff</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon-box" style="background: rgba(46, 125, 50, 0.12); color: #2e7d32;">
+                📊
+            </div>
+            <div class="kpi-details">
+                <span class="kpi-label">ATTENDANCE RATE</span>
+                <div class="kpi-rate-row">
+                    <span class="kpi-value">@Summary.OverallAttendanceRatePercent%</span>
+                    <span class="kpi-subtext">(@Summary.WorkingDaysElapsed working days)</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon-box" style="background: rgba(33, 150, 243, 0.12); color: #1565c0;">
+                ✅
+            </div>
+            <div class="kpi-details">
+                <span class="kpi-label">PRESENT LOGS</span>
+                <span class="kpi-value">@Summary.TotalPresentMarks</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-icon-box" style="background: rgba(239, 68, 68, 0.12); color: #b91c1c;">
+                ⚠️
+            </div>
+            <div class="kpi-details">
+                <span class="kpi-label">ABSENT / LATE</span>
+                <span class="kpi-value">@Summary.TotalAbsentMarks <span class="kpi-dim">absent</span> • @Summary.TotalLateMarks <span class="kpi-dim">late</span></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions, Legend & Filter Bar -->
+    <div class="register-toolbar">
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" 
+                   class="search-input" 
+                   placeholder="Filter child by name..." 
+                   @bind="SearchText" 
+                   @bind:event="oninput" />
+            @if (!string.IsNullOrEmpty(SearchText))
+            {
+                <button type="button" class="clear-search-btn" @onclick="() => SearchText = string.Empty">✕</button>
+            }
+        </div>
+
+        <!-- Legend Pills -->
+        <div class="legend-row">
+            <span class="legend-title">Legend:</span>
+            <div class="legend-item" title="Present / Checked Out"><span class="badge-mini status-p">P</span> Present</div>
+            <div class="legend-item" title="Arrived Late"><span class="badge-mini status-l">L</span> Late</div>
+            <div class="legend-item" title="Absent"><span class="badge-mini status-a">A</span> Absent</div>
+            <div class="legend-item" title="Excused Absence"><span class="badge-mini status-e">E</span> Excused</div>
+            <div class="legend-item" title="Weekend / Off"><span class="badge-mini status-w">-</span> Weekend</div>
+        </div>
+
+        <!-- View Mode Switcher on Mobile (Matrix vs Cards) -->
+        <div class="view-switch-box">
+            <button type="button" 
+                    class="view-mode-btn @(DisplayMode == "matrix" ? "active" : "")" 
+                    @onclick='() => DisplayMode = "matrix"'
+                    title="Register Matrix View">
+                📅 Table
+            </button>
+            <button type="button" 
+                    class="view-mode-btn @(DisplayMode == "cards" ? "active" : "")" 
+                    @onclick='() => DisplayMode = "cards"'
+                    title="Compact Cards View">
+                🪪 Cards
+            </button>
+        </div>
+    </div>
+
+    @if (IsLoading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading monthly attendance register...</p>
+        </div>
+    }
+    else if (FilteredRows.Count == 0)
+    {
+        <div class="empty-state">
+            <span class="empty-icon">🎒</span>
+            <h3>No Attendance Records Found</h3>
+            <p>There are no enrolled children or recorded attendances for this branch in @SummaryMonthName @Year.</p>
+        </div>
+    }
+    else if (DisplayMode == "matrix")
+    {
+        <!-- Matrix Register Table -->
+        <div class="register-scroll-wrapper">
+            <table class="register-table">
+                <thead>
+                    <tr>
+                        <th class="th-sno sticky-col col-sno">#</th>
+                        <th class="th-child sticky-col col-child">Child Name</th>
+                        @for (int d = 1; d <= Summary.DaysInMonth; d++)
+                        {
+                            var dt = new DateTime(Year, Month, d);
+                            bool isWeekend = dt.DayOfWeek == DayOfWeek.Saturday || dt.DayOfWeek == DayOfWeek.Sunday;
+                            bool isToday = dt.Date == DateTime.Today;
+
+                            <th class="th-day @(isWeekend ? "th-weekend" : "") @(isToday ? "th-today" : "")">
+                                <div class="day-num">@d</div>
+                                <div class="day-name">@dt.ToString("ddd")</div>
+                            </th>
+                        }
+                        <th class="th-sum th-pres" title="Total Present Days">P</th>
+                        <th class="th-sum th-late" title="Total Late Days">L</th>
+                        <th class="th-sum th-abs" title="Total Absent Days">A</th>
+                        <th class="th-sum th-pct" title="Attendance Percentage">% Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredRows)
+                    {
+                        <tr>
+                            <td class="td-sno sticky-col col-sno">@row.SerialNumber</td>
+                            <td class="td-child sticky-col col-child">
+                                <div class="child-identity">
+                                    <div class="child-avatar">
+                                        @if (!string.IsNullOrWhiteSpace(row.PhotoUrl))
+                                        {
+                                            <img src="@row.PhotoUrl" alt="@row.FullName" />
+                                        }
+                                        else
+                                        {
+                                            <span>@GetInitials(row.FirstName, row.LastName)</span>
+                                        }
+                                    </div>
+                                    <div class="child-text-group">
+                                        <div class="child-name">@row.FullName</div>
+                                        <div class="child-room-tag">@row.ClassroomName</div>
+                                    </div>
+                                </div>
+                            </td>
+
+                            @foreach (var cell in row.DailyCells)
+                            {
+                                <td class="td-day @cell.CssClass @(cell.IsToday ? "td-today" : "")" 
+                                    title="@cell.TooltipText">
+                                    @if (!string.IsNullOrWhiteSpace(cell.Code) && cell.Code != "-")
+                                    {
+                                        <span class="cell-pill @cell.CssClass">@cell.Code</span>
+                                    }
+                                    else if (cell.IsWeekend)
+                                    {
+                                        <span class="cell-weekend-mark">-</span>
+                                    }
+                                </td>
+                            }
+
+                            <td class="td-sum td-pres">@row.PresentCount</td>
+                            <td class="td-sum td-late">@row.LateCount</td>
+                            <td class="td-sum td-abs">@row.AbsentCount</td>
+                            <td class="td-sum td-pct">
+                                <span class="rate-badge @GetRateClass(row.AttendanceRatePercent)">
+                                    @row.AttendanceRatePercent%
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <!-- Mobile-friendly Card View -->
+        <div class="cards-grid">
+            @foreach (var row in FilteredRows)
+            {
+                <div class="child-card">
+                    <div class="card-header">
+                        <div class="child-identity">
+                            <div class="child-avatar">
+                                @if (!string.IsNullOrWhiteSpace(row.PhotoUrl))
+                                {
+                                    <img src="@row.PhotoUrl" alt="@row.FullName" />
+                                }
+                                else
+                                {
+                                    <span>@GetInitials(row.FirstName, row.LastName)</span>
+                                }
+                            </div>
+                            <div class="child-text-group">
+                                <h4 class="child-name">@row.FullName</h4>
+                                <span class="child-room-tag">@row.ClassroomName</span>
+                            </div>
+                        </div>
+
+                        <div class="card-rate">
+                            <span class="rate-badge @GetRateClass(row.AttendanceRatePercent)">
+                                @row.AttendanceRatePercent%
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="card-stats-row">
+                        <div class="card-stat">
+                            <span class="cs-label">Present:</span>
+                            <span class="cs-val text-green">@row.PresentCount d</span>
+                        </div>
+                        <div class="card-stat">
+                            <span class="cs-label">Late:</span>
+                            <span class="cs-val text-amber">@row.LateCount d</span>
+                        </div>
+                        <div class="card-stat">
+                            <span class="cs-label">Absent:</span>
+                            <span class="cs-val text-red">@row.AbsentCount d</span>
+                        </div>
+                    </div>
+
+                    <div class="mini-calendar-track">
+                        @foreach (var cell in row.DailyCells)
+                        {
+                            <div class="mini-day-cell @cell.CssClass @(cell.IsToday ? "mini-today" : "")" 
+                                 title="@cell.TooltipText">
+                                <div class="mini-day-num">@cell.DayNumber</div>
+                                <div class="mini-day-code">@(string.IsNullOrEmpty(cell.Code) ? (cell.IsWeekend ? "-" : "·") : cell.Code)</div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<ChildMonthlyRegisterRow> Rows { get; set; } = new();
+    [Parameter] public MonthlyRegisterSummary Summary { get; set; } = new();
+    [Parameter] public int Year { get; set; } = DateTime.Today.Year;
+    [Parameter] public int Month { get; set; } = DateTime.Today.Month;
+    [Parameter] public bool IsLoading { get; set; }
+
+    private string SearchText = "";
+    private string DisplayMode = "matrix"; // "matrix" or "cards"
+
+    private string SummaryMonthName => new DateTime(Year, Month, 1).ToString("MMMM");
+
+    private List<ChildMonthlyRegisterRow> FilteredRows =>
+        string.IsNullOrWhiteSpace(SearchText)
+            ? Rows
+            : Rows.Where(r => r.FullName.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
+                           || r.ClassroomName.Contains(SearchText, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private static string GetInitials(string first, string last)
+    {
+        var f = !string.IsNullOrWhiteSpace(first) ? first[0].ToString().ToUpperInvariant() : "";
+        var l = !string.IsNullOrWhiteSpace(last) ? last[0].ToString().ToUpperInvariant() : "";
+        return string.Concat(f, l);
+    }
+
+    private static string GetRateClass(double pct)
+    {
+        if (pct >= 85.0) return "rate-excellent";
+        if (pct >= 70.0) return "rate-good";
+        if (pct > 0.0) return "rate-attention";
+        return "rate-none";
+    }
+}
+
