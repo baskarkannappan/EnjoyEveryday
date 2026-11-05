@@ -215,3 +215,20 @@ When diagnosing and fixing data/database issues (especially when instructed not 
    - PostgreSQL schema changes, stored functions, and row updates take effect instantly in the running application.
    - Do NOT run `dotnet build` unless C# code or Razor files have been modified.
 
+---
+
+## 12. Operational Knowledge File (OKF) & Rapid Feature Navigation
+
+Always consult this map before searching the repository to find components and services instantly:
+
+| Feature Area | UI / Razor Location | Application Service | Domain Entity |
+|:---|:---|:---|:---|
+| **Teacher Workspace & Cockpit** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` | `IDaycareOperationsBoardService`<br>`IChildDailyCareService` | `ClassroomChildCareStatusDto` |
+| **Attendance & Gates** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Attendance/` | `AttendanceService` | `ChildAttendance` |
+| **Care Routines (Diapers, Meals, Naps)** | `src/EnjoyEveryday.UI.Shared/Components/DailyCare/ChildDailyCareSection.razor`<br>`src/EnjoyEveryday.Daycare.Web/Components/Pages/DailyCare/DailyCarePage.razor` | `IChildDailyCareService` | `ChildCareEvent`<br>`ChildNapSession` |
+| **Observations & Moments** | `src/EnjoyEveryday.UI.Shared/Components/ChildJourney/AddJourneyMomentDialog.razor` | `IChildJourneyService` | `ChildJourneyEntry` |
+| **Activity Session Runner** | `src/EnjoyEveryday.UI.Shared/Components/ActiveSessionModal/ActiveSessionModal.razor` | `ExecutionService`<br>`PlannerService` | `ExperienceSession`<br>`ExperienceParticipation` |
+| **Shift Handovers & Comms** | `TeacherWorkspace.razor` (modal)<br>`src/EnjoyEveryday.Daycare.Web/Components/Pages/ClassroomMessages/` | `IClassroomCommunicationService` | `TeacherHandover` |
+| **Classroom Schedules** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Planning/` | `PlannerService` | `ClassroomSchedule` |
+
+
