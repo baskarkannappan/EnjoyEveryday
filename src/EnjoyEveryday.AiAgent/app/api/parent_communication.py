@@ -73,10 +73,9 @@ async def generate_parent_communication(
 
     compact_payload = json.dumps(context_payload, separators=(',', ':'))
     prompt = f"Please prepare a parent communication draft based strictly on this verified evidence:\n{compact_payload}"
-    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await provider.generate_json(
+        raw_result = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=PARENT_COMMUNICATION_INSTRUCTION,
             tenant_context=context,

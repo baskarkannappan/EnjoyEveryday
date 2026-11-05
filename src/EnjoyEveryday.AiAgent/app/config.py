@@ -1,6 +1,9 @@
 import os
 from dataclasses import dataclass
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 @dataclass(frozen=True)
 class Settings:
@@ -13,6 +16,7 @@ class Settings:
     DEFAULT_MODEL: str = os.getenv("AI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"))
     DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", os.getenv("GEMINI_TIMEOUT_SECONDS", "45")))
     MAX_RETRIES: int = int(os.getenv("AI_MAX_RETRIES", os.getenv("GEMINI_MAX_RETRIES", "2")))
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)
 
     # Server-to-server security
     SERVICE_SECRET: Optional[str] = os.getenv("AI_SERVICE_SECRET", None)

@@ -72,10 +72,9 @@ async def generate_organization_intelligence(
 
     compact_payload = json.dumps(req.model_dump(), separators=(',', ':'))
     prompt = f"Please provide executive-level organization intelligence insights based strictly on these metrics:\n{compact_payload}"
-    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await provider.generate_json(
+        raw_result = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=ORGANIZATION_INTELLIGENCE_INSTRUCTION,
             tenant_context=context,

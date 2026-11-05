@@ -8,6 +8,7 @@ from app.security.rate_limiter import rate_limiter
 
 async def get_tenant_context(
     x_tenant_api_key: Optional[str] = Header(default=None, alias="X-Tenant-Api-Key"),
+    x_openai_api_key: Optional[str] = Header(default=None, alias="X-OpenAI-Api-Key"),
     x_tenant_id: Optional[str] = Header(default=None, alias="X-Tenant-Id"),
     x_service_token: Optional[str] = Header(default=None, alias="X-Service-Token"),
     x_correlation_id: Optional[str] = Header(default=None, alias="X-Correlation-Id"),
@@ -15,6 +16,7 @@ async def get_tenant_context(
     # Safe extraction when called directly as function
     svc_token = x_service_token if isinstance(x_service_token, str) else None
     t_key = x_tenant_api_key if isinstance(x_tenant_api_key, str) else None
+    o_key = x_openai_api_key if isinstance(x_openai_api_key, str) else None
     t_id = x_tenant_id if isinstance(x_tenant_id, str) else None
     corr_id = x_correlation_id if isinstance(x_correlation_id, str) else None
 
@@ -53,9 +55,12 @@ async def get_tenant_context(
     # 4. Check tenant rate limit
     await rate_limiter.check_and_record(resolved_tenant_id)
 
+    resolved_openai_key = (o_key.strip() if o_key and o_key.strip() else None) or settings.OPENAI_API_KEY
+
     return TenantContext(
         tenant_id=resolved_tenant_id,
         gemini_api_key=clean_key,
         caller_service=x_service_token,
-        correlation_id=correlation_id
+        correlation_id=correlation_id,
+        openai_api_key=resolved_openai_key
     )

@@ -8,6 +8,7 @@ class TenantContext:
     gemini_api_key: str
     caller_service: Optional[str] = None
     correlation_id: str = ""
+    openai_api_key: Optional[str] = None
 
     def __post_init__(self):
         if not self.correlation_id:

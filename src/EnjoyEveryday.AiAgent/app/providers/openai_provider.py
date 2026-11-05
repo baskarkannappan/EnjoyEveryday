@@ -40,9 +40,13 @@ class OpenAIProvider:
         preferred_model = model_name or self._working_model or "gpt-4o-mini"
         await rate_limiter.acquire_concurrency(tenant_context.tenant_id)
 
+        key = tenant_context.openai_api_key or tenant_context.gemini_api_key
+        if not key or not key.strip():
+            raise HTTPException(status_code=401, detail="OpenAI API key is missing or not configured.")
+
         try:
             headers = {
-                "Authorization": f"Bearer {tenant_context.gemini_api_key}",
+                "Authorization": f"Bearer {key.strip()}",
                 "Content-Type": "application/json"
             }
             payload = {

@@ -30,9 +30,19 @@ EnjoyEveryday operates with a **Rules-First Architecture**. AI enhances human ex
 8. **No Vector Bloat**: Standard relational indices are used. No `pgvector` or extraneous vector stores without proven, measured justification.
 9. **Zero Operational Downtime**: Essential daycare operations (check-in, diaper logs, emergency pickup) remain 100% functional when AI services are offline or rate-limited.
 
-## Supported Gemini Production Models
-* **Default / Primary**: `gemini-3.5-flash-lite` (High-throughput, ultra-fast generation for studio ideation and weekly planning).
-* **Secondary**: `gemini-3.1-flash-lite` (Frontier performance with cost-efficiency).
-* **Fallbacks**: `gemini-3.5-flash`, `gemini-flash-lite-latest`, `gemini-flash-latest`.
-* **API Key Encryption**: Keys are encrypted at rest with AES-256 in `tenants.encrypted_ai_api_key` and decrypted per-tenant on API invocation.
+## 3-Tier Multi-Provider Generation Cascade
+Every AI service endpoint (`/api/ideas`, `/api/improve`, `/api/materials`, `/api/recommendations`, `/api/journey/insights`, `/api/weekly-plan`, `/api/parent/draft`, `/api/organization/kpi-intel`) is routed through `ai_provider_registry.generate_with_failover`:
+
+1. **Tier 1 (Google Gemini)**:
+   * **Primary**: `gemini-3.5-flash-lite` (High-throughput, ultra-fast generation for studio ideation and weekly planning).
+   * **Secondary**: `gemini-3.1-flash-lite` (Frontier performance with cost-efficiency).
+   * **Model Fallbacks**: `gemini-3.5-flash`, `gemini-flash-lite-latest`, `gemini-flash-latest`.
+2. **Tier 2 (OpenAI Automatic Failover)**:
+   * If Gemini encounters an authentication rejection, quota limit, or temporary 503 outage, the engine automatically attempts execution with **OpenAI (`gpt-4o-mini`)** using the configured OpenAI key.
+3. **Tier 3 (Deterministic Safe Fallback)**:
+   * If both Google Gemini and OpenAI fail or are offline, the engine builds deterministic pedagogical fallback templates directly from the prompt keywords so that no user request ever hangs, crashes, or fails.
+
+## API Key Encryption & Configuration
+* Primary Gemini key is encrypted at rest with AES-256 in `tenants.encrypted_ai_api_key` and decrypted per-tenant.
+* OpenAI fallback key is configured via `OPENAI_API_KEY` in `src/EnjoyEveryday.AiAgent/.env` or passed via `X-OpenAI-Api-Key` request header.
 

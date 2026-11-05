@@ -53,10 +53,9 @@ async def get_weekly_plan(
 
     compact_payload = json.dumps(context_payload, separators=(',', ':'))
     prompt = f"Please generate a balanced Monday-Friday weekly plan draft using these candidate experiences:\n{compact_payload}"
-    provider = ai_provider_registry.get_provider()
 
     try:
-        raw_result = await provider.generate_json(
+        raw_result = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=WEEKLY_PLAN_INSTRUCTION,
             tenant_context=context,

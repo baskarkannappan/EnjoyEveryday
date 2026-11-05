@@ -44,10 +44,8 @@ async def get_recommendations(
     compact_context = json.dumps(context_payload, separators=(',', ':'))
     prompt = f"Please recommend suitable experiences using this context and evidence:\n{compact_context}"
 
-    provider = ai_provider_registry.get_provider()
-
     try:
-        raw_recs = await provider.generate_json(
+        raw_recs = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=RECOMMENDATIONS_INSTRUCTION,
             tenant_context=context,

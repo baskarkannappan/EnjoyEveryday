@@ -145,17 +145,15 @@ async def generate_ideas(
         return cached_ideas
 
     prompt = f"Learning Theme / Starting Idea: {req.idea.strip()}"
-    provider = ai_provider_registry.get_provider()
-    
     try:
-        raw_suggestions = await provider.generate_json(
+        raw_suggestions = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=IDEAS_INSTRUCTION,
             tenant_context=context,
             temperature=0.6
         )
     except Exception as ex:
-        logger.warning(f"AI generation failed for /api/ideas: {ex}. Building deterministic safe fallback.")
+        logger.warning(f"AI generation failed for /api/ideas across all providers: {ex}. Building deterministic safe fallback.")
         clean_topic = extract_clean_topic(req.idea)
         raw_suggestions = [
             {
@@ -229,10 +227,9 @@ async def improve_experience(
 
     compact_dna = json.dumps(req.experienceDna, separators=(',', ':'))
     prompt = f"Improvement Request: {req.requestContext.strip()}\n\nCurrent Experience DNA:\n{compact_dna}"
-    provider = ai_provider_registry.get_provider()
     
     try:
-        raw_result = await provider.generate_json(
+        raw_result = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=IMPROVE_INSTRUCTION,
             tenant_context=context,
@@ -279,9 +276,8 @@ async def extract_materials(
 
     compact_dna = json.dumps(req.experienceDna, separators=(',', ':'))
     prompt = f"Experience Design:\n{compact_dna}"
-    provider = ai_provider_registry.get_provider()
     try:
-        raw_mats = await provider.generate_json(
+        raw_mats = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
             system_instruction=MATERIALS_INSTRUCTION,
             tenant_context=context,
