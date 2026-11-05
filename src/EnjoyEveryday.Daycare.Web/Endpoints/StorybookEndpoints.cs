@@ -1,7 +1,10 @@
 using System;
+using System.IO;
 using System.Text;
+using System.Text.Json;
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Daycare.Web.Services;
+using EnjoyEveryday.Domain.Entities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -28,6 +31,73 @@ public static class StorybookEndpoints
             }
 
             return Results.Content(html, "text/html; charset=utf-8");
+        });
+
+        endpoints.MapGet("/api/experiences/{id:guid}/storybook/prompt", async (
+            Guid id,
+            ExperienceService experienceService,
+            StorybookStorageService storybookService,
+            HttpContext context) =>
+        {
+            var exp = await experienceService.GetExperienceByIdAsync(id, context.RequestAborted);
+            if (exp == null) return Results.NotFound("Experience not found.");
+
+            ExperienceDna dna;
+            try
+            {
+                dna = JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload ?? "{}", new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ExperienceDna();
+            }
+            catch
+            {
+                dna = new ExperienceDna();
+            }
+
+            var prompt = storybookService.GetGeminiPrompt(exp, dna);
+            return Results.Text(prompt, "text/plain; charset=utf-8");
+        });
+
+        endpoints.MapGet("/api/experiences/{id:guid}/storybook/image", (
+            Guid id,
+            StorybookStorageService storybookService) =>
+        {
+            var imagePath = storybookService.GetGridImagePath(id);
+            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
+            {
+                return Results.NotFound("No storybook grid image uploaded yet.");
+            }
+
+            var ext = Path.GetExtension(imagePath).ToLowerInvariant();
+            var mime = ext == ".jpg" || ext == ".jpeg" ? "image/jpeg" : "image/png";
+            return Results.File(imagePath, mime);
+        });
+
+        endpoints.MapPost("/api/experiences/{id:guid}/storybook/image", async (
+            Guid id,
+            HttpRequest request,
+            StorybookStorageService storybookService) =>
+        {
+            if (!request.HasFormContentType || request.Form.Files.Count == 0)
+            {
+                return Results.BadRequest("Please upload an image file.");
+            }
+
+            var file = request.Form.Files[0];
+            if (file.Length == 0) return Results.BadRequest("File is empty.");
+            if (file.Length > 25 * 1024 * 1024) return Results.BadRequest("File exceeds 25MB limit.");
+
+            using var stream = file.OpenReadStream();
+            var success = await storybookService.SaveGridImageAsync(id, stream, file.ContentType, request.HttpContext.RequestAborted);
+            if (!success) return Results.Problem("Failed to save image.");
+
+            return Results.Ok(new { success = true, url = $"/api/experiences/{id}/storybook/image" });
+        });
+
+        endpoints.MapDelete("/api/experiences/{id:guid}/storybook/image", (
+            Guid id,
+            StorybookStorageService storybookService) =>
+        {
+            var deleted = storybookService.DeleteGridImage(id);
+            return Results.Ok(new { success = deleted });
         });
 
         endpoints.MapGet("/api/experiences/{id:guid}/storybook/download", async (

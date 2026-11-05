@@ -28,6 +28,9 @@
             <button class="studio-btn studio-btn-secondary" @onclick="GenerateStorybookInteractiveAsync" style="border-color: var(--accent, #557c6c); color: var(--accent-dark, #3e6253); background: var(--accent-light, #e6eee9); font-weight: 700;">
                 📖 Generate Storybook
             </button>
+            <button class="studio-btn studio-btn-secondary" @onclick="CopyGeminiStorybookPromptAsync" title="Copy Master Prompt for Google Gemini to generate 6-panel illustrated picture book">
+                ✨ Copy Gemini Storybook Prompt
+            </button>
             @if (_experience.Status != "Published")
             {
                 <button class="studio-btn studio-btn-secondary" @onclick="OpenHistoryDialog">
@@ -493,6 +496,26 @@
         }
     }
 
+    private async Task CopyGeminiStorybookPromptAsync()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_experience.Title) || _experience.Title == "New Experience")
+            {
+                await ToastService.ShowErrorToastAsync("Please provide an experience title first.");
+                return;
+            }
+
+            var prompt = StorybookGenerationService.BuildGeminiStorybookPrompt(_experience, _dna);
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt);
+            await ToastService.ShowSuccessToastAsync("✨ Gemini Storybook Prompt copied! Paste into gemini.google.com");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorToastAsync($"Error copying prompt: {ex.Message}");
+        }
+    }
+
     private async Task GenerateIdeasAsync()
     {
         if (string.IsNullOrWhiteSpace(_ideaInput)) return;
@@ -514,10 +537,11 @@
         }
     }
 
-    private void ApplySuggestion(ExperienceFullData suggestion)
+    private async Task ApplySuggestion(ExperienceFullData suggestion)
     {
         suggestion.ApplyTo(_experience, _dna);
-        _ = SaveDraftAsync();
+        StateHasChanged();
+        await SaveDraftAsync();
     }
 
     private void AddMaterial()

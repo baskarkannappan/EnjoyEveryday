@@ -35,7 +35,12 @@ class ExperienceValidator:
         for f in cls.REQUIRED_ROOT_FIELDS:
             val = get_ci(data, f)
             if f in ["Materials", "DevelopmentalGoals"]:
-                cleaned[f] = val if isinstance(val, list) else []
+                if isinstance(val, list):
+                    cleaned[f] = [str(x).strip() for x in val if str(x).strip()]
+                elif isinstance(val, str) and val.strip():
+                    cleaned[f] = [x.strip() for x in val.split(",") if x.strip()]
+                else:
+                    cleaned[f] = []
             elif f in ["AgeMin", "AgeMax", "GroupSizeMin", "GroupSizeMax"]:
                 try:
                     cleaned[f] = int(val) if val is not None else (3 if "Age" in f else 4)
@@ -111,9 +116,21 @@ class ExperienceValidator:
                 if s and s.lower() not in seen:
                     seen.add(s.lower())
                     clean_mats.append(s)
+            if not clean_mats:
+                # Check MaterialSetup or create fallback materials based on title
+                setup_items = exec_guide.get("MaterialSetup", [])
+                for item in setup_items:
+                    for part in str(item).split(","):
+                        p = part.strip()
+                        if p and p.lower() not in seen:
+                            seen.add(p.lower())
+                            clean_mats.append(p)
+                if not clean_mats:
+                    title = cleaned.get("Title", "Activity")
+                    clean_mats = [f"{title} props", "Child-safe work trays", "Visual prompt cards"]
             cleaned["Materials"] = clean_mats
         else:
-            cleaned["Materials"] = []
+            cleaned["Materials"] = ["Child-safe work trays", "Sensory bins", "Visual prompt cards"]
 
         return cleaned
 

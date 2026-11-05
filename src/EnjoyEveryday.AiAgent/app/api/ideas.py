@@ -26,31 +26,16 @@ def extract_clean_topic(raw_text: str) -> str:
     clean = re.sub(r'^(Exploring|The Playful World of|The Playful World Of|The Magic of)\s+', '', clean, flags=re.IGNORECASE)
     clean = re.sub(r':\s*(Creative Tactile Studio|Child-Led Creative Studio|Sensory Touch & Texture Lab|Outdoor Nature Studio|Adventure Studio).*$', '', clean, flags=re.IGNORECASE)
     clean = re.sub(r'\s*(Discovery Adventure)$', '', clean, flags=re.IGNORECASE)
+    clean = clean.strip()
     
-    clean_lower = clean.lower()
-    if "animal" in clean_lower or "fish" in clean_lower:
-        if any(w in clean_lower for w in ["paper", "glue", "paste", "cut", "pattern"]):
-            return "Animal & Fish Paper Collage"
-        return "Wildlife & Animal Shapes"
-    if "water" in clean_lower:
-        return "Water Flow & Splash"
-    if "block" in clean_lower or "build" in clean_lower:
-        return "Block Architecture & Building"
-    if "clay" in clean_lower or "sand" in clean_lower or "dough" in clean_lower:
-        return "Tactile Clay Sculpting"
-    if "paint" in clean_lower or "color" in clean_lower:
-        return "Vibrant Color Studio"
-    if "leaf" in clean_lower or "nature" in clean_lower or "plant" in clean_lower:
-        return "Botanical Nature Treasures"
-        
     words = clean.split()
-    if len(words) > 5:
-        stopwords = {"there", "are", "is", "a", "an", "the", "in", "on", "kids", "will", "predefined", "certain", "place", "places", "of", "and", "to", "for", "with", "they", "new", "experience"}
-        meaningful = [w.strip(".,;:?!") for w in words if w.lower().strip(".,;:?!") not in stopwords]
-        if meaningful:
-            return " ".join(meaningful[:3]).title()
-        return "Tactile Wonder Studio"
-        
+    if len(words) <= 5 and not any(clean.lower().startswith(p) for p in ["there are", "teacher will", "in a", "kids will"]):
+        return clean.title()
+
+    stopwords = {"there", "are", "is", "a", "an", "the", "in", "on", "kids", "will", "predefined", "certain", "place", "places", "of", "and", "to", "for", "with", "they", "new", "experience", "teacher", "ask", "pick", "up"}
+    meaningful = [w.strip(".,;:?!") for w in words if w.lower().strip(".,;:?!") not in stopwords]
+    if meaningful:
+        return " ".join(meaningful[:4]).title()
     return clean.title()
 
 def build_improved_fallback(existing_data: Dict[str, Any], request_context: str) -> Dict[str, Any]:

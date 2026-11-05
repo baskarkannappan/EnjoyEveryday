@@ -43,9 +43,9 @@ public class ExperienceFullData
         if (GroupSizeMin > 0) dna.GroupSizeMin = GroupSizeMin;
         if (GroupSizeMax > 0) dna.GroupSizeMax = GroupSizeMax;
         if (!string.IsNullOrWhiteSpace(Environment)) dna.Environment = Environment;
-        if (DevelopmentalGoals != null && DevelopmentalGoals.Count > 0) dna.DevelopmentalGoals = DevelopmentalGoals;
-        if (Materials != null) dna.Materials = Materials;
-        if (ExecutionGuide != null) dna.ExecutionGuide = ExecutionGuide;
+        if (DevelopmentalGoals != null && DevelopmentalGoals.Count > 0) dna.DevelopmentalGoals = new List<string>(DevelopmentalGoals);
+        if (Materials != null && Materials.Count > 0) dna.Materials = new List<string>(Materials);
+        if (ExecutionGuide != null && ExecutionGuide.Phases.Count > 0) dna.ExecutionGuide = ExecutionGuide;
     }
 }
 

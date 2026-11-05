@@ -59,54 +59,118 @@ public static class StandaloneHtmlGenerator
                 string teacherScript;
                 string wonderPrompt;
 
+                var pChildren = !string.IsNullOrWhiteSpace(p.ChildrenDo) ? p.ChildrenDo.Trim().TrimEnd('.') + "." : "";
+                var pTeacher = !string.IsNullOrWhiteSpace(p.TeacherDoes) ? p.TeacherDoes.Trim().TrimEnd('.') + "." : "";
+                var pName = !string.IsNullOrWhiteSpace(p.Name) ? p.Name.Trim() : $"Step {i + 1}";
+                var isAdventureOrQuest = cleanTitle.IndexOf("quest", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         cleanTitle.IndexOf("rescue", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         cleanTitle.IndexOf("adventure", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         cleanTitle.IndexOf("explore", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         cleanTitle.IndexOf("sea", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         cleanTitle.IndexOf("fish", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         cleanTitle.IndexOf("reef", StringComparison.OrdinalIgnoreCase) >= 0;
+
                 if (i == 0)
                 {
                     sceneKey = "gathering";
                     icon = "🌿";
-                    narrative = $"Welcome the children warmly onto the circle rug. Lay out tactile materials within easy reach. Invite curious little hands to explore textures and share observations before construction begins.";
+                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
+                        ? $"Welcome the children warmly into {pName}. {pChildren} {pTeacher}"
+                        : $"Welcome the children warmly into {pName}. Invite curious little hands and eyes to make their first discoveries.";
+
                     teacherScript = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.TeacherIntroduction)
                         ? dna.ExecutionGuide.TeacherIntroduction
-                        : $"\"Welcome, explorers! Look at what's waiting in our basket today. What do your fingers notice when you touch these materials?\"";
-                    wonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does this feel like in your hands? Have you ever seen this before?";
+                        : (!string.IsNullOrWhiteSpace(pTeacher) && pTeacher.Contains("\"")
+                            ? pTeacher
+                            : $"\"Welcome, explorers! Look at all the wonderful colors we see today. What do your eyes and fingers notice?\"");
+
+                    wonderPrompt = !string.IsNullOrWhiteSpace(challenge)
+                        ? $"Can you guess what exciting quest is waiting for us today? {challenge}"
+                        : "What curious secrets do you think are waiting to be discovered?";
                 }
                 else if (i == count - 1)
                 {
                     sceneKey = "reflection";
                     icon = "🌟";
-                    narrative = $"Gather back together into a cozy reflection circle. Celebrate each child's creativity and effort with warmth. {accomplishment}. The memories made today will stay warmly in our hearts.";
-                    teacherScript = $"\"Let's celebrate our wonderful creations! Who would like to show what surprised them most while building today?\"";
-                    wonderPrompt = !string.IsNullOrWhiteSpace(reflection) ? reflection : "What was your favorite part of today's adventure? Who would you like to share this story with?";
+                    var cleanAccomplish = accomplishment.Trim().TrimEnd('.');
+                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
+                        ? $"Gather together to celebrate each child's discovery: {pChildren} {pTeacher} {cleanAccomplish}."
+                        : $"Gather back together into a cozy reflection circle. Celebrate each child's discovery and effort with warmth. {cleanAccomplish}.";
+
+                    if (!string.IsNullOrWhiteSpace(pTeacher) && pTeacher.Contains("\""))
+                    {
+                        teacherScript = pTeacher;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(reflection) && reflection.Contains("?"))
+                    {
+                        teacherScript = $"\"Let's celebrate our wonderful teamwork! {reflection}\"";
+                    }
+                    else
+                    {
+                        teacherScript = $"\"Look at what we accomplished together! Who would like to share their favorite discovery from today?\"";
+                    }
+
+                    wonderPrompt = !string.IsNullOrWhiteSpace(reflection)
+                        ? reflection
+                        : (!string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What was your favorite part of today's adventure?");
                 }
                 else if (count == 3) // middle phase for a 3-step experience
                 {
-                    sceneKey = "explore";
-                    icon = "🎨";
-                    narrative = $"The room fills with the happy hum of active creation. {create}. Little hands mold, balance, test, and arrange materials into brand new worlds.";
-                    teacherScript = $"\"Look what happens when these two materials meet! There are no wrong answers here—what would you like to invent next?\"";
-                    wonderPrompt = challenge;
+                    sceneKey = isAdventureOrQuest ? "challenge" : "explore";
+                    icon = isAdventureOrQuest ? "🔍" : "🎨";
+                    var cleanCreate = create.Trim().TrimEnd('.');
+                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
+                        ? $"The quest is in full swing! {pChildren} {pTeacher} {cleanCreate}."
+                        : $"The room fills with focused energy. {cleanCreate}.";
+
+                    if (!string.IsNullOrWhiteSpace(pTeacher) && pTeacher.Contains("\""))
+                    {
+                        teacherScript = pTeacher;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(challenge))
+                    {
+                        teacherScript = $"\"{challenge.TrimEnd('?')}. Take your time, look closely, and let's see what you find!\"";
+                    }
+                    else
+                    {
+                        teacherScript = $"\"Look at what's happening right before our eyes! Tell me about what you are discovering.\"";
+                    }
+
+                    wonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask)
+                        ? dna.ExecutionGuide.Ask
+                        : (!string.IsNullOrWhiteSpace(challenge) ? challenge : "What clues are you using to make your discoveries?");
                 }
                 else if (i == 1 && count >= 4)
                 {
                     sceneKey = "challenge";
                     icon = "🔍";
-                    narrative = $"Pose the gentle wonder challenge: {challenge}. There are no right or wrong answers—only open invitations to experiment, hypothesize, and create.";
-                    teacherScript = $"\"I wonder what secret worlds we can build if we work together? What happens if we try this?\"";
+                    narrative = !string.IsNullOrWhiteSpace(pChildren)
+                        ? $"Present the hands-on challenge: {pChildren} {challenge}"
+                        : $"Pose the gentle wonder challenge: {challenge}. There are no right or wrong answers—only open invitations to explore and discover.";
+
+                    teacherScript = !string.IsNullOrWhiteSpace(challenge)
+                        ? $"\"I wonder what will happen if we take on this challenge together? {challenge}\""
+                        : $"\"I wonder what secret discoveries we can make if we work together? What happens if we try this?\"";
+
                     wonderPrompt = challenge;
                 }
                 else if (i == 2 && count >= 4)
                 {
                     sceneKey = "explore";
                     icon = "🎨";
-                    narrative = $"Deep creative flow takes over. Children sort, build, balance, and problem-solve together with focused, joyful energy.";
-                    teacherScript = $"\"You found a whole new way to connect those pieces! Tell me about what's happening in your creation.\"";
-                    wonderPrompt = "Look what happens when these textures combine! What story is your creation telling?";
+                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
+                        ? $"Deep flow takes over: {pChildren} {pTeacher} {create.Trim().TrimEnd('.')}."
+                        : $"Deep creative flow takes over. Children explore, sort, and collaborate with focused, joyful energy.";
+
+                    teacherScript = $"\"You are making such exciting discoveries! Tell me about what you found.\"";
+                    wonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does your discovery tell us?";
                 }
                 else
                 {
                     sceneKey = "magic";
                     icon = "✨";
-                    narrative = $"A breakthrough moment of discovery! {magic}. A shared ripple of delight touches every heart in the room.";
-                    teacherScript = $"\"You discovered that all on your own! How did that happen? Can we try it together?\"";
+                    narrative = $"A breakthrough moment of discovery! {magic.Trim().TrimEnd('.')}. A shared ripple of delight touches every heart in the room.";
+                    teacherScript = $"\"You discovered that all on your own! How did that happen? Can you show our friends?\"";
                     wonderPrompt = "Did you see that? What made it happen? Can we do it again?";
                 }
 
@@ -209,6 +273,16 @@ public static class StandaloneHtmlGenerator
 
     public static string GenerateStorybookHtml(Experience exp, ExperienceDna dna)
     {
+        return GenerateStorybookHtml(exp, dna, false, null, exp?.Id);
+    }
+
+    public static string GenerateStorybookHtml(
+        Experience exp, 
+        ExperienceDna dna, 
+        bool hasGridImage, 
+        string? geminiPrompt, 
+        Guid? experienceId)
+    {
         var cleanTitle = CleanTitle(exp.Title);
         var chapters = BuildChapters(exp, dna);
         var ageRange = dna.AgeMin > 0 && dna.AgeMax > 0 ? $"{dna.AgeMin}-{dna.AgeMax} yrs" : "3-5 yrs";
@@ -238,7 +312,10 @@ public static class StandaloneHtmlGenerator
             dna.ExecutionGuide?.Ask ?? "",
             dna.ExecutionGuide?.Try ?? "",
             chapters,
-            versionText
+            versionText,
+            hasGridImage,
+            geminiPrompt,
+            experienceId ?? exp.Id
         );
     }
 
@@ -253,7 +330,10 @@ public static class StandaloneHtmlGenerator
         string askQuestions,
         string tryThis,
         List<StoryChapter> chapters,
-        string versionInfo = "")
+        string versionInfo = "",
+        bool hasGridImage = false,
+        string? geminiPrompt = null,
+        Guid? experienceId = null)
     {
         var sb = new StringBuilder();
 
@@ -404,6 +484,146 @@ public static class StandaloneHtmlGenerator
       border: 1px solid var(--border);
       margin-bottom: 22px;
       width: fit-content;
+    }
+
+    /* Gemini AI Storyboard Studio Toolbar */
+    .ai-toolbar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      margin-bottom: 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      box-shadow: var(--shadow);
+    }
+    .ai-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ai-toolbar-title {
+      font-weight: 750;
+      font-size: 13.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ai-toolbar-tag {
+      background: var(--accent-light);
+      color: var(--accent-dark);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .ai-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .btn-ai {
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+    .btn-ai:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(62, 98, 83, 0.25);
+    }
+    .btn-ai-outline {
+      background: white;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+    }
+    .btn-ai-outline:hover {
+      background: var(--surface-soft);
+      border-color: #cbd3c9;
+    }
+
+    /* 6-Panel Illustrated Grid Showcase */
+    .grid-showcase-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+    .grid-showcase-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .grid-showcase-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .grid-image-frame {
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #fafbfa;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    }
+    .storybook-grid-img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 13px;
+    }
+    .toast-popup {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--text);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 13.5px;
+      font-weight: 600;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s ease;
+      pointer-events: none;
+    }
+    .toast-popup.visible {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     .view-toggle-btn {
@@ -857,6 +1077,43 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("      </div>");
         sb.AppendLine("    </header>");
 
+        // AI Storyboard Studio Toolbar
+        sb.AppendLine("    <div class=\"ai-toolbar\">");
+        sb.AppendLine("      <div class=\"ai-toolbar-left\">");
+        sb.AppendLine("        <div class=\"ai-toolbar-title\">");
+        sb.AppendLine("          <span>✨</span>");
+        sb.AppendLine("          <span>Gemini 3D Storyboard Studio</span>");
+        sb.AppendLine("        </div>");
+        sb.AppendLine("        <span class=\"ai-toolbar-tag\">100% Free Web Flow</span>");
+        sb.AppendLine("      </div>");
+        sb.AppendLine("      <div class=\"ai-toolbar-actions\">");
+        sb.AppendLine("        <button class=\"btn-ai\" onclick=\"copyGeminiPrompt()\">📋 Copy Prompt for Gemini</button>");
+        sb.AppendLine("        <a href=\"https://gemini.google.com\" target=\"_blank\" class=\"btn-ai-outline\">↗ Open Gemini Web</a>");
+        sb.AppendLine("        <button class=\"btn-ai-outline\" onclick=\"document.getElementById('imgUploadInput').click()\">📷 Upload 6-Panel Image</button>");
+        sb.AppendLine("        <input type=\"file\" id=\"imgUploadInput\" accept=\"image/*\" style=\"display: none;\" onchange=\"uploadStoryboardImage(this)\" />");
+        sb.AppendLine("      </div>");
+        sb.AppendLine("    </div>");
+
+        // Illustrated Grid Showcase (if uploaded)
+        if (hasGridImage && experienceId.HasValue)
+        {
+            sb.AppendLine("    <div class=\"grid-showcase-card\">");
+            sb.AppendLine("      <div class=\"grid-showcase-header\">");
+            sb.AppendLine("        <div class=\"grid-showcase-title\">");
+            sb.AppendLine("          <span>🎨</span>");
+            sb.AppendLine("          <span>6-Page Illustrated Storybook (Pixar-Inspired 3D Scene)</span>");
+            sb.AppendLine("        </div>");
+            sb.AppendLine("        <div style=\"display: flex; gap: 8px;\">");
+            sb.AppendLine($"          <a href=\"/api/experiences/{experienceId.Value}/storybook/image\" target=\"_blank\" class=\"btn-ai-outline\">🔍 View Full Size</a>");
+            sb.AppendLine("          <button class=\"btn-ai-outline\" onclick=\"document.getElementById('imgUploadInput').click()\">🔄 Replace Image</button>");
+            sb.AppendLine("        </div>");
+            sb.AppendLine("      </div>");
+            sb.AppendLine("      <div class=\"grid-image-frame\">");
+            sb.AppendLine($"        <img src=\"/api/experiences/{experienceId.Value}/storybook/image\" alt=\"6-Panel Storybook Grid\" class=\"storybook-grid-img\" />");
+            sb.AppendLine("      </div>");
+            sb.AppendLine("    </div>");
+        }
+
         // View Mode Switcher
         sb.AppendLine("    <div class=\"view-toggle-bar\">");
         sb.AppendLine("      <button class=\"view-toggle-btn active\" id=\"btnModeSplit\" onclick=\"setMode('split')\">📋 Activity Manual</button>");
@@ -1144,9 +1401,74 @@ public static class StandaloneHtmlGenerator
     });
 
     renderCurrentChapter();
-  </script>
-</body>
-</html>");
+
+    function copyGeminiPrompt() {
+      const promptText = document.getElementById('geminiPromptData')?.value || '';
+      if (!promptText) {
+        showToast('Prompt not available.');
+        return;
+      }
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(promptText).then(() => {
+          showToast('✨ Gemini Master Prompt copied to clipboard! Paste into gemini.google.com');
+        }).catch(() => {
+          fallbackCopy(promptText);
+        });
+      } else {
+        fallbackCopy(promptText);
+      }
+    }
+
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('✨ Gemini Master Prompt copied to clipboard!');
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastNotification');
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.add('visible');
+      setTimeout(() => toast.classList.remove('visible'), 4000);
+    }
+
+    async function uploadStoryboardImage(input) {
+      if (!input.files || input.files.length === 0) return;
+      const file = input.files[0];
+      const expId = document.getElementById('experienceIdData')?.value;
+      if (!expId) return;
+
+      const fd = new FormData();
+      fd.append('file', file);
+      showToast('Uploading illustrated storyboard image...');
+
+      try {
+        const res = await fetch('/api/experiences/' + expId + '/storybook/image', {
+          method: 'POST',
+          body: fd
+        });
+        if (res.ok) {
+          showToast('🎉 Illustrated storyboard uploaded successfully! Reloading...');
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          showToast('Failed to upload image. Please try again.');
+        }
+      } catch (e) {
+        showToast('Upload error: ' + e.message);
+      }
+    }
+  </script>");
+
+        sb.AppendLine($"  <textarea id=\"geminiPromptData\" style=\"display:none;\">{HttpUtility.HtmlEncode(geminiPrompt ?? "")}</textarea>");
+        sb.AppendLine($"  <input type=\"hidden\" id=\"experienceIdData\" value=\"{experienceId?.ToString() ?? ""}\" />");
+        sb.AppendLine("  <div id=\"toastNotification\" class=\"toast-popup\"></div>");
+        sb.AppendLine("</body>");
+        sb.AppendLine("</html>");
 
         return sb.ToString();
     }

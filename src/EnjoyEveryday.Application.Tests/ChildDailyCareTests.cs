@@ -647,4 +647,39 @@ public class MockAttendanceRepository : IAttendanceRepository
     {
         return Task.FromResult<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>>(Enumerable.Empty<EnjoyEveryday.Domain.Entities.Attendance.AttendanceAttentionAlertDto>());
     }
+
+    public Task<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto?> GetBranchLocationContextAsync(Guid tenantId, Guid branchId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto?>(new EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto
+        {
+            BranchId = branchId,
+            BranchName = "Main Branch",
+            Location = "Main Campus",
+            IsPrimary = true
+        });
+    }
+
+    public Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto>> GetUserAccessibleBranchesAsync(Guid tenantId, Guid userId, bool isOrgAdmin, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto>>(new[]
+        {
+            new EnjoyEveryday.Domain.Entities.Attendance.BranchLocationContextDto
+            {
+                BranchId = Guid.NewGuid(),
+                BranchName = "Main Branch",
+                Location = "Main Campus",
+                IsPrimary = true
+            }
+        });
+    }
+
+    public Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.MonthlyChildAttendanceRecordDto>> GetMonthlyChildAttendanceAsync(Guid tenantId, Guid branchId, int year, int month, Guid? classroomId = null, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.MonthlyChildAttendanceRecordDto>>(Enumerable.Empty<EnjoyEveryday.Domain.Entities.Attendance.MonthlyChildAttendanceRecordDto>());
+    }
+
+    public Task<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.MonthlyTeacherAttendanceRecordDto>> GetMonthlyTeacherAttendanceAsync(Guid tenantId, Guid branchId, int year, int month, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<EnjoyEveryday.Domain.Entities.Attendance.MonthlyTeacherAttendanceRecordDto>>(Enumerable.Empty<EnjoyEveryday.Domain.Entities.Attendance.MonthlyTeacherAttendanceRecordDto>());
+    }
 }

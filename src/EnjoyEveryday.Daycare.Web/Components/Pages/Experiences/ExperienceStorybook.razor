@@ -8,11 +8,14 @@
 @using EnjoyEveryday.Domain.Entities.Learning
 @using System.Text.Json
 @using EnjoyEveryday.UI.Shared.Components
+@using Microsoft.AspNetCore.Components.Forms
 
 @inject ExperienceService ExperienceService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
 @inject EnjoyEveryday.Daycare.Web.Services.StorybookStorageService StorybookStorageService
+@inject EnjoyEveryday.Application.Services.Ai.IStorybookGenerationService StorybookGenerationService
+@inject Microsoft.FluentUI.AspNetCore.Components.INotificationService ToastService
 
 <PageTitle>@(string.IsNullOrEmpty(_experience?.Title) ? "Activity Playbook" : $"{_experience.Title} — Playbook") — EnjoyEveryday</PageTitle>
 
@@ -108,6 +111,54 @@
                     <span>Print Manual</span>
                 </button>
             </div>
+        </div>
+
+        <!-- Gemini 3D Storyboard Studio Bar -->
+        <div class="deck-card" style="margin-bottom: 24px; padding: 18px 24px; background: var(--surface, #ffffff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(135deg, var(--accent, #557c6c), var(--accent-dark, #3e6253)); color: white; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
+                        🎨
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <h3 style="margin: 0; font-size: 15px; font-weight: 800; color: var(--text, #26332d);">Gemini 3D Storyboard Studio</h3>
+                            <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e6253); font-size: 11px; font-weight: 750; padding: 2px 8px; border-radius: 999px;">100% Free Web Flow</span>
+                        </div>
+                        <p style="margin: 2px 0 0; font-size: 12.5px; color: var(--muted, #6c7870);">Generate 6-page Pixar-style cartoon illustrations with Google Gemini for free, then drop the image below.</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn primary" style="padding: 8px 16px; font-size: 13px; font-weight: 700; border-radius: 11px;" @onclick="CopyGeminiPromptAsync">
+                        📋 Copy Prompt for Gemini
+                    </button>
+                    <button type="button" class="btn secondary" style="padding: 8px 14px; font-size: 13px; font-weight: 700; border-radius: 11px;" @onclick="OpenGeminiWebAsync">
+                        ↗ Open Gemini Web
+                    </button>
+                    <label class="btn secondary" style="padding: 8px 14px; font-size: 13px; font-weight: 700; border-radius: 11px; cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 6px;">
+                        📷 Upload 6-Panel Image
+                        <InputFile OnChange="HandleImageUploadAsync" accept="image/*" style="display: none;" />
+                    </label>
+                </div>
+            </div>
+
+            @if (_hasGridImage && !string.IsNullOrEmpty(_gridImageUrl))
+            {
+                <div style="margin-top: 18px; border-top: 1px solid var(--border, #e4e7df); padding-top: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                        <span style="font-size: 13.5px; font-weight: 750; color: var(--text, #26332d); display: flex; align-items: center; gap: 6px;">
+                            <span>🖼️</span> 6-Page Illustrated Picture Book (Pixar-Inspired 3D Scene)
+                        </span>
+                        <div style="display: flex; gap: 8px;">
+                            <a href="@_gridImageUrl" target="_blank" class="btn secondary" style="padding: 5px 12px; font-size: 12px;">🔍 Full Size</a>
+                            <button type="button" class="btn secondary" style="padding: 5px 12px; font-size: 12px; color: #9b2c2c;" @onclick="RemoveGridImageAsync">🗑️ Remove Image</button>
+                        </div>
+                    </div>
+                    <div style="border-radius: 14px; overflow: hidden; border: 1px solid var(--border, #e4e7df); box-shadow: 0 4px 20px rgba(0,0,0,0.06); text-align: center; background: #fafbfa;">
+                        <img src="@_gridImageUrl" alt="Illustrated Storyboard Grid" style="width: 100%; height: auto; max-height: 560px; object-fit: contain; display: block; margin: 0 auto;" />
+                    </div>
+                </div>
+            }
         </div>
 
         <!-- Split View Layout -->
@@ -343,6 +394,9 @@
     private int _currentChapterIndex = 1;
     private bool _fadeAnimation = true;
     private StorybookDisplayMode _displayMode = StorybookDisplayMode.ChildStory;
+    private bool _hasGridImage = false;
+    private string? _gridImageUrl;
+    private bool _isUploadingImage = false;
 
     private void SetDisplayMode(StorybookDisplayMode mode)
     {
@@ -351,7 +405,6 @@
     }
 
     private List<StoryChapter> _chapters = new();
-
 
     protected override async Task OnInitializedAsync()
     {
@@ -379,11 +432,79 @@
                     }
                 }
                 BuildChapters();
+                CheckGridImage();
             }
         }
         finally
         {
             _isLoading = false;
+        }
+    }
+
+    private void CheckGridImage()
+    {
+        _hasGridImage = StorybookStorageService.HasStoredGridImage(ExperienceId);
+        _gridImageUrl = _hasGridImage ? $"/api/experiences/{ExperienceId}/storybook/image?t={DateTime.UtcNow.Ticks}" : null;
+    }
+
+    private async Task CopyGeminiPromptAsync()
+    {
+        if (_experience == null) return;
+        var prompt = StorybookGenerationService.BuildGeminiStorybookPrompt(_experience, _dna);
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", prompt);
+        await ToastService.ShowSuccessToastAsync("✨ Gemini Master Prompt copied to clipboard! Paste into gemini.google.com");
+    }
+
+    private async Task OpenGeminiWebAsync()
+    {
+        await JS.InvokeVoidAsync("open", "https://gemini.google.com", "_blank");
+    }
+
+    private async Task HandleImageUploadAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        if (file.Size > 25 * 1024 * 1024)
+        {
+            await ToastService.ShowErrorToastAsync("Image size cannot exceed 25MB.");
+            return;
+        }
+
+        _isUploadingImage = true;
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 25 * 1024 * 1024);
+            var saved = await StorybookStorageService.SaveGridImageAsync(ExperienceId, stream, file.ContentType);
+            if (saved)
+            {
+                CheckGridImage();
+                await ToastService.ShowSuccessToastAsync("🎉 6-page illustrated storybook saved successfully!");
+            }
+            else
+            {
+                await ToastService.ShowErrorToastAsync("Could not save the image. Please try again.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorToastAsync($"Error uploading image: {ex.Message}");
+        }
+        finally
+        {
+            _isUploadingImage = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveGridImageAsync()
+    {
+        var deleted = StorybookStorageService.DeleteGridImage(ExperienceId);
+        if (deleted)
+        {
+            CheckGridImage();
+            await ToastService.ShowSuccessToastAsync("Illustrated image removed. Storybook reverted to blueprint mode.");
+            StateHasChanged();
         }
     }
 

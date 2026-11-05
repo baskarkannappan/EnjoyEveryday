@@ -28,29 +28,37 @@ public class AiIdeaService : IAiIdeaService
         try
         {
             var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
-            if (!string.IsNullOrEmpty(apiKey))
+            if (string.IsNullOrEmpty(apiKey))
             {
-                var request = new { idea = ideaInput };
-                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/ideas");
-                message.Headers.Add("X-Tenant-Api-Key", apiKey);
-                message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
-                message.Content = JsonContent.Create(request);
+                apiKey = "DEFAULT_AI_KEY";
+            }
 
-                var response = await _httpClient.SendAsync(message);
-                if (response.IsSuccessStatusCode)
+            var request = new { idea = ideaInput };
+            using var message = new HttpRequestMessage(HttpMethod.Post, "api/ideas");
+            message.Headers.Add("X-Tenant-Api-Key", apiKey);
+            message.Headers.Add("X-Tenant-Id", _tenantContext.TenantId != Guid.Empty ? _tenantContext.TenantId.ToString() : "10000000-0000-0000-0000-000000000001");
+            message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
+            message.Content = JsonContent.Create(request);
+
+            var response = await _httpClient.SendAsync(message);
+            if (response.IsSuccessStatusCode)
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var result = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(options);
+                if (result?.Suggestions != null && result.Suggestions.Count > 0)
                 {
-                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    var result = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(options);
-                    if (result?.Suggestions != null && result.Suggestions.Count > 0)
-                    {
-                        return result.Suggestions;
-                    }
+                    return result.Suggestions;
                 }
             }
+            else
+            {
+                var errContent = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"[AiIdeaService /api/ideas] Status: {response.StatusCode}, Body: {errContent}");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback handled below
+            Console.WriteLine($"[AiIdeaService /api/ideas Exception] {ex.Message}");
         }
 
         return GenerateFallbackIdeas(ideaInput);
@@ -61,25 +69,33 @@ public class AiIdeaService : IAiIdeaService
         try
         {
             var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
-            if (!string.IsNullOrEmpty(apiKey))
+            if (string.IsNullOrEmpty(apiKey))
             {
-                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/improve");
-                message.Headers.Add("X-Tenant-Api-Key", apiKey);
-                message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
-                message.Content = JsonContent.Create(request);
+                apiKey = "DEFAULT_AI_KEY";
+            }
 
-                var response = await _httpClient.SendAsync(message);
-                if (response.IsSuccessStatusCode)
-                {
-                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    var result = await response.Content.ReadFromJsonAsync<ExperienceImprovementResult>(options);
-                    if (result != null) return result;
-                }
+            using var message = new HttpRequestMessage(HttpMethod.Post, "api/improve");
+            message.Headers.Add("X-Tenant-Api-Key", apiKey);
+            message.Headers.Add("X-Tenant-Id", _tenantContext.TenantId != Guid.Empty ? _tenantContext.TenantId.ToString() : "10000000-0000-0000-0000-000000000001");
+            message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
+            message.Content = JsonContent.Create(request);
+
+            var response = await _httpClient.SendAsync(message);
+            if (response.IsSuccessStatusCode)
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var result = await response.Content.ReadFromJsonAsync<ExperienceImprovementResult>(options);
+                if (result != null) return result;
+            }
+            else
+            {
+                var errContent = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"[AiIdeaService /api/improve] Status: {response.StatusCode}, Body: {errContent}");
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback handled below
+            Console.WriteLine($"[AiIdeaService /api/improve Exception] {ex.Message}");
         }
 
         return GenerateFallbackImprovement(experienceDna, requestContext);
@@ -136,12 +152,17 @@ public class AiIdeaService : IAiIdeaService
 
         if (isPlayful)
         {
-            improvedTitle = $"The Playful World of {title}";
-            improvedDesc = $"Children embark on an imaginative, playful quest centered on {title.ToLowerInvariant()}, turning curiosity into open-ended roleplay, hands-on construction, and joyful teamwork.";
+            improvedTitle = title.StartsWith("The Playful", StringComparison.OrdinalIgnoreCase) ? title : $"{title}: Playful Adventure";
+            improvedDesc = !string.IsNullOrWhiteSpace(baseData.Description)
+                ? $"{baseData.Description} Enhanced with playful storytelling, game mechanics, and joyful teamwork."
+                : $"Children embark on an imaginative, playful quest centered on {title.ToLowerInvariant()}, turning curiosity into open-ended roleplay, hands-on construction, and joyful teamwork.";
             reason = "Infused playful imagination, game-like exploration moments, and responsive child-led discovery into the experience.";
-            baseData.Challenge = $"Can you and your friends build a secret wonder-world using our materials?";
-            baseData.ChildChoice = "Children choose their own playful role (builder, detective, storyteller, or decorator) and pick their favorite tools.";
-            baseData.MagicMoment = "The room fills with laughter as children test their creation and discover a surprise feature together.";
+            if (string.IsNullOrWhiteSpace(baseData.Challenge))
+                baseData.Challenge = $"Can you and your friends complete a playful challenge using our {title.ToLowerInvariant()} materials?";
+            else
+                baseData.Challenge = $"{baseData.Challenge} Can we make it a fun game?";
+            baseData.ChildChoice = "Children choose their own playful role (explorer, builder, storyteller, or helper) and pick their favorite tools.";
+            baseData.MagicMoment = "The room fills with excitement and laughter as children discover a playful surprise together.";
         }
         else if (isChoice)
         {
@@ -198,29 +219,32 @@ public class AiIdeaService : IAiIdeaService
         try
         {
             var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
-            if (!string.IsNullOrEmpty(apiKey))
+            if (string.IsNullOrEmpty(apiKey))
             {
-                var request = new { experienceDna };
-                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/materials");
-                message.Headers.Add("X-Tenant-Api-Key", apiKey);
-                message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
-                message.Content = JsonContent.Create(request);
+                apiKey = "DEFAULT_AI_KEY";
+            }
 
-                var response = await _httpClient.SendAsync(message);
-                if (response.IsSuccessStatusCode)
+            var request = new { experienceDna };
+            using var message = new HttpRequestMessage(HttpMethod.Post, "api/materials");
+            message.Headers.Add("X-Tenant-Api-Key", apiKey);
+            message.Headers.Add("X-Tenant-Id", _tenantContext.TenantId != Guid.Empty ? _tenantContext.TenantId.ToString() : "10000000-0000-0000-0000-000000000001");
+            message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
+            message.Content = JsonContent.Create(request);
+
+            var response = await _httpClient.SendAsync(message);
+            if (response.IsSuccessStatusCode)
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var result = await response.Content.ReadFromJsonAsync<AiMaterialsResponse>(options);
+                if (result?.Materials != null && result.Materials.Count > 0)
                 {
-                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    var result = await response.Content.ReadFromJsonAsync<AiMaterialsResponse>(options);
-                    if (result?.Materials != null && result.Materials.Count > 0)
-                    {
-                        return result.Materials;
-                    }
+                    return result.Materials;
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback handled below
+            Console.WriteLine($"[AiIdeaService /api/materials Exception] {ex.Message}");
         }
 
         return GenerateFallbackMaterials(experienceDna);

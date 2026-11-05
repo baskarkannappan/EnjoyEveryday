@@ -36,7 +36,7 @@ async def get_tenant_context(
         )
 
     clean_key = t_key.strip()
-    if len(clean_key) < 15:
+    if len(clean_key) < 10 and clean_key != "DEFAULT_AI_KEY":
         raise HTTPException(
             status_code=401,
             detail="Invalid X-Tenant-Api-Key format provided."
@@ -55,11 +55,20 @@ async def get_tenant_context(
     # 4. Check tenant rate limit
     await rate_limiter.check_and_record(resolved_tenant_id)
 
-    resolved_openai_key = (o_key.strip() if o_key and o_key.strip() else None) or settings.OPENAI_API_KEY
+    # Smart key classification: detect OpenAI vs Gemini keys vs default
+    if clean_key == "DEFAULT_AI_KEY" or clean_key == "default":
+        resolved_gemini_key = settings.GEMINI_API_KEY
+        resolved_openai_key = settings.OPENAI_API_KEY
+    elif clean_key.startswith("sk-"):
+        resolved_openai_key = clean_key
+        resolved_gemini_key = settings.GEMINI_API_KEY or clean_key
+    else:
+        resolved_gemini_key = clean_key
+        resolved_openai_key = (o_key.strip() if o_key and o_key.strip() else None) or settings.OPENAI_API_KEY
 
     return TenantContext(
         tenant_id=resolved_tenant_id,
-        gemini_api_key=clean_key,
+        gemini_api_key=resolved_gemini_key,
         caller_service=x_service_token,
         correlation_id=correlation_id,
         openai_api_key=resolved_openai_key

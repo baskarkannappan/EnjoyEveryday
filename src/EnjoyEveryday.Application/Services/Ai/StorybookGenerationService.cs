@@ -11,6 +11,7 @@ public interface IStorybookGenerationService
 {
     Storybook GenerateStorybook(Experience exp, ExperienceDna dna);
     StorybookValidationResult ValidateStorybook(Storybook storybook);
+    string BuildGeminiStorybookPrompt(Experience exp, ExperienceDna dna);
 }
 
 public class StorybookGenerationService : IStorybookGenerationService
@@ -414,5 +415,149 @@ public class StorybookGenerationService : IStorybookGenerationService
         var d = desc.Trim();
         d = Regex.Replace(d, @"the playful world of the playful world of", "the playful world of", RegexOptions.IgnoreCase);
         return d;
+    }
+
+    public string BuildGeminiStorybookPrompt(Experience exp, ExperienceDna dna)
+    {
+        var ageMin = dna.AgeMin > 0 ? dna.AgeMin : 3;
+        var ageMax = dna.AgeMax > 0 ? dna.AgeMax : 4;
+        var duration = dna.ExecutionGuide?.SuggestedDurationMinutes > 0 ? dna.ExecutionGuide.SuggestedDurationMinutes : 25;
+        var env = !string.IsNullOrWhiteSpace(dna.Environment) ? dna.Environment : "Indoor";
+        var groupMin = dna.GroupSizeMin > 0 ? dna.GroupSizeMin : 6;
+        var groupMax = dna.GroupSizeMax > 0 ? dna.GroupSizeMax : 18;
+
+        var phases = dna.ExecutionGuide?.Phases ?? new List<ExecutionPhase>();
+        var phase1 = phases.Count > 0 ? phases[0] : new ExecutionPhase { Name = "Story Introduction & Setup", DurationMinutes = 5, ChildrenDo = "Look closely and explore initial materials", TeacherDoes = "Set an enthusiastic, adventurous stage" };
+        var phase2 = phases.Count > 1 ? phases[1] : new ExecutionPhase { Name = "Hands-On Adventure", DurationMinutes = 15, ChildrenDo = "Search and interact with materials", TeacherDoes = "Guide and encourage children with curious questions" };
+        var phase3 = phases.Count > 2 ? phases[2] : new ExecutionPhase { Name = "Joy & Celebration", DurationMinutes = 5, ChildrenDo = "Gather and celebrate discoveries", TeacherDoes = "Lead a gentle reflection circle" };
+
+        var prep = dna.ExecutionGuide?.Preparation != null && dna.ExecutionGuide.Preparation.Count > 0
+            ? string.Join("\n", dna.ExecutionGuide.Preparation.Select(p => p.StartsWith("-") ? p : $"- {p}"))
+            : "- Prepare child-safe materials\n- Set up classroom space at child height";
+
+        var setup = dna.ExecutionGuide?.EnvironmentSetup != null && dna.ExecutionGuide.EnvironmentSetup.Count > 0
+            ? string.Join("\n", dna.ExecutionGuide.EnvironmentSetup.Select(s => s.StartsWith("-") ? s : $"- {s}"))
+            : "- Clear floor or table area for the activity\n- Place materials within easy reach";
+
+        var watch = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Watch) ? dna.ExecutionGuide.Watch : "Observe child curiosity, sensory exploration, and peer cooperation.";
+        var ask = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What clues did you notice today?";
+        var tryPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Try) ? dna.ExecutionGuide.Try : "Try exploring together with a partner!";
+        var mission = !string.IsNullOrWhiteSpace(exp.Description) ? exp.Description : "Children become explorers on a mission of tactile curiosity and playful learning.";
+        var discover = !string.IsNullOrWhiteSpace(dna.Create) ? dna.Create : "A vibrant display where children discover colors, shapes, and textures.";
+        var challenge = !string.IsNullOrWhiteSpace(dna.Challenge) ? dna.Challenge : "Can you discover the hidden surprise and bring it back?";
+        var joyMoment = !string.IsNullOrWhiteSpace(dna.MagicMoment) ? dna.MagicMoment : "The eruption of giggles when children make an exciting discovery.";
+
+        return $@"# Role
+Act as a professional children's storybook author, preschool educational content designer, and 3D cartoon illustrator.
+
+# Objective
+Convert the classroom experience provided below into a beautiful, colorful, engaging illustrated children's storybook for children aged {ageMin}–{ageMax}.
+
+The storybook must visually communicate the entire experience so that a daycare teacher can use it to introduce the activity and guide children through it.
+
+# Visual Style
+- Beautiful, high-quality 3D cartoon illustrations.
+- Pixar-inspired warmth and visual storytelling (do not copy existing characters).
+- Bright, vibrant, cheerful pastel colors.
+- Cute, expressive children with friendly facial expressions.
+- Safe, welcoming preschool environment.
+- Consistent characters, clothing, hairstyles, and visual appearance across all pages.
+- Rich backgrounds with attractive details.
+- Professional children's picture-book illustration quality.
+
+# Storybook Structure
+Create a 6-page illustrated storybook arranged in a visually appealing 2-column × 3-row grid.
+
+Page 1 – Story Introduction:
+Introduce the adventure with an attractive title, children, and a visually exciting scene.
+
+Page 2 – Discover:
+Show children discovering the materials, environment, or central concept of the activity.
+
+Page 3 – The Challenge:
+Illustrate children starting the main activity and exploring.
+
+Page 4 – Let's Do It:
+Show children actively participating in the main activity.
+
+Page 5 – Joy and Celebration:
+Show children sharing their discoveries, interacting, and celebrating.
+
+Page 6 – Happy Ending:
+Create a beautiful concluding illustration with a positive message and a sense of achievement.
+
+# Text Requirements
+- Use simple English suitable for children aged {ageMin}–{ageMax}.
+- Use short sentences.
+- Use playful, encouraging language.
+- Include simple questions that teachers can ask children.
+- Make the text large, clear, and readable.
+- Avoid spelling mistakes and unnecessary text.
+- Each page should have a page number.
+
+# Important Illustration Rules
+- Maintain the same children and teacher throughout all pages.
+- Each page must represent a different stage of the experience.
+- Show realistic classroom materials and age-appropriate activities.
+- Illustrations should clearly communicate what children are expected to do.
+- Do not overcrowd the illustrations.
+- Keep text inside attractive storybook-style text panels.
+- Use a consistent visual design throughout the book.
+
+# Output
+Generate one high-resolution illustrated storybook image containing all six pages in a 2-column × 3-row grid.
+
+Make it look like a professionally published preschool picture book, not a presentation, poster, infographic, or classroom worksheet.
+
+# CLASSROOM EXPERIENCE
+EXPERIENCE
+{exp.Title}
+Age {ageMin}-{ageMax}
+{duration} min
+{env}
+{groupMin}-{groupMax} children
+TODAY'S MISSION
+{mission}
+
+DISCOVER
+{discover}
+
+CHALLENGE
+{challenge}
+
+JOY MOMENT
+{joyMoment}
+
+HOW TO RUN THIS EXPERIENCE
+{duration} minutes
+BEFORE CHILDREN ARRIVE
+{prep}
+SET UP
+{setup}
+LET'S BEGIN
+{phase1.Name} — {phase1.DurationMinutes} min
+Children: {phase1.ChildrenDo}
+Teacher: {phase1.TeacherDoes}
+
+{phase2.Name} — {phase2.DurationMinutes} min
+Children: {phase2.ChildrenDo}
+Teacher: {phase2.TeacherDoes}
+
+{phase3.Name} — {phase3.DurationMinutes} min
+Children: {phase3.ChildrenDo}
+Teacher: {phase3.TeacherDoes}
+
+TEACHER EYES
+WATCH: {watch}
+
+ASK: {ask}
+
+TRY: {tryPrompt}
+
+IF THINGS CHANGE
+Offer sensory adjustments and simpler steps for children who need extra support.
+CAPTURE A LITTLE MOMENT
+Look for: Quietly join a child in exploration, celebrating their focus and curious discoveries.
+";
     }
 }

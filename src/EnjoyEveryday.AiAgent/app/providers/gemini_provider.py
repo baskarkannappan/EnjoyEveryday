@@ -18,8 +18,9 @@ class GeminiProvider:
 
     # Production models in order of priority (fast, accurate, cost-effective)
     FALLBACK_MODELS: List[str] = [
-        "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
         "gemini-3.5-flash",
         "gemini-flash-lite-latest",
         "gemini-flash-latest"

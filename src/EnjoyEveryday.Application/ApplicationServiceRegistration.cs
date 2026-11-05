@@ -71,7 +71,7 @@ public static class ApplicationServiceRegistration
                 ?? config["Providers:AI:BaseUrl"] 
                 ?? "http://127.0.0.1:8000";
 
-            var timeoutSeconds = 15;
+            var timeoutSeconds = 45;
             if (int.TryParse(config["AiAgent:TimeoutSeconds"] ?? config["Providers:AI:TimeoutSeconds"], out var t) && t > 0)
             {
                 timeoutSeconds = t;

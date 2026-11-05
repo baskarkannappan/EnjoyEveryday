@@ -32,4 +32,7 @@ EnjoyEveryday provides an activity runner and pedagogical curriculum framework r
 * **`PlannerService`**: Generates and stores weekly draft planning items, binds activities to classrooms and age tiers.
 * **`ExecutionService`**: Manages live `ExperienceSession` states (`Scheduled`, `InProgress`, `Completed`) and participant attendance (`ExperienceParticipation`).
 * **`IChildJourneyService`**: Logs developmental milestone progress linked to EYFS / Early Learning Standards.
+* **`StandaloneHtmlGenerator` & `StorybookStorageService`**: Generates and caches visual pedagogical storybooks at `/api/experiences/{id}/storybook` dynamically incorporating execution phases, inquiry wonder prompts, and spoken scripts without static craft boilerplate. Supports 6-panel Pixar-style illustrated picture books via Gemini master prompts (`/api/experiences/{id}/storybook/prompt`) and image uploads (`/api/experiences/{id}/storybook/image`).
+* **`IStorybookGenerationService`**: Encapsulates `BuildGeminiStorybookPrompt` formatting 6-panel 2x3 grid prompts for Google Gemini web generation.
+* **`AiIdeaService` (`http://127.0.0.1:8000`)**: Orchestrates Gemini (`gemini-3.1-flash-lite`) for idea generation (`/api/ideas`) and pedagogical improvements (`/api/improve`), with 45s resilient failover.
 
