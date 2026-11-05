@@ -179,6 +179,20 @@ public static class AuthEndpoints
                 {
                     userId = (Guid)existingUser.id;
 
+                    // If user was previously soft-deactivated but has an enrolled child or family relationship, reactivate them
+                    var hasChildOrGuardianship = await conn.ExecuteScalarAsync<bool>(@"
+                        SELECT EXISTS(
+                            SELECT 1 FROM children c 
+                            WHERE c.is_active = TRUE 
+                              AND ((c.draft_data::jsonb)->>'parentEmail' ILIKE @Email 
+                                   OR c.id IN (SELECT child_id FROM family_relationships WHERE user_id = @UserId))
+                        )", new { Email = email, UserId = userId });
+
+                    if (hasChildOrGuardianship || !existingUser.is_active)
+                    {
+                        await conn.ExecuteAsync("UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE id = @UserId", new { UserId = userId });
+                    }
+
                     await conn.ExecuteAsync(@"
                         INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
                         VALUES ('Google', @ProviderKey, @UserId, NOW())

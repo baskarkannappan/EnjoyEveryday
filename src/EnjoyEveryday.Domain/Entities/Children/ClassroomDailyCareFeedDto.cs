@@ -25,6 +25,7 @@ public class ClassroomChildCareStatusDto
     public bool IsCheckedIn { get; set; }
     public string AttendanceStatus { get; set; } = "Not Checked In";
     public TimeSpan? ArrivalTime { get; set; }
+    public TimeSpan? DepartureTime { get; set; }
 
     public ChildCareEvent? LastDiaperEvent { get; set; }
     public ChildCareEvent? LastMealEvent { get; set; }

@@ -309,7 +309,7 @@
                     Absent / Checked Out (@_classroomChildren.Count(c => c.AttendanceStatus == "Absent" || c.AttendanceStatus == "CheckedOut"))
                 </button>
                 <button class="cockpit-filter-pill @(_rosterFilter == "Resting" ? "active" : "")" @onclick='() => _rosterFilter = "Resting"'>
-                    Resting (@_classroomChildren.Count(c => c.ActiveNapSession != null))
+                    Resting (@_classroomChildren.Count(c => c.IsCheckedIn && c.ActiveNapSession != null))
                 </button>
             </div>
 
@@ -326,7 +326,7 @@
                 <div class="roster-grid">
                     @foreach (var child in filtered)
                     {
-                        bool isSleeping = child.ActiveNapSession != null;
+                        bool isSleeping = child.IsCheckedIn && child.ActiveNapSession != null;
                         <div class="child-card @(isSleeping ? "is-resting" : "")">
                             <div class="child-card-header">
                                 <div class="child-meta-left">
@@ -339,6 +339,10 @@
                                             @if (child.IsCheckedIn && child.ArrivalTime.HasValue)
                                             {
                                                 <span>Arrived @FormatTimeSpan(child.ArrivalTime.Value)</span>
+                                            }
+                                            else if (child.AttendanceStatus == "CheckedOut")
+                                            {
+                                                <span>Departed @(child.DepartureTime.HasValue ? FormatTimeSpan(child.DepartureTime.Value) : "")</span>
                                             }
                                             else
                                             {
@@ -1534,7 +1538,7 @@
             "Present" => _classroomChildren.Where(c => c.IsCheckedIn),
             "Expected" => _classroomChildren.Where(c => !c.IsCheckedIn && c.AttendanceStatus != "Absent" && c.AttendanceStatus != "CheckedOut"),
             "OutAbsent" => _classroomChildren.Where(c => c.AttendanceStatus == "Absent" || c.AttendanceStatus == "CheckedOut"),
-            "Resting" => _classroomChildren.Where(c => c.ActiveNapSession != null),
+            "Resting" => _classroomChildren.Where(c => c.IsCheckedIn && c.ActiveNapSession != null),
             _ => _classroomChildren
         };
     }

@@ -82,3 +82,4 @@ EnjoyEveryday (Root)
      ```
 2. **Database Changes Require No Rebuilds**:
    - SQL schema, stored procedures, and row edits take effect immediately in PostgreSQL without recompiling C# or Razor.
+

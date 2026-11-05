@@ -20,6 +20,7 @@ public class ClassroomChildCareStatus
     public bool IsCheckedIn { get; set; }
     public string AttendanceStatus { get; set; } = "Not Checked In";
     public TimeSpan? ArrivalTime { get; set; }
+    public TimeSpan? DepartureTime { get; set; }
 
     // Last recorded summaries
     public ChildCareEvent? LastDiaperEvent { get; set; }
@@ -467,7 +468,11 @@ public class ChildDailyCareService : IChildDailyCareService
             ct);
         var attendances = attendancesList
             .GroupBy(a => a.ChildId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.ArrivalTime ?? TimeSpan.Zero).First());
+            .ToDictionary(
+                g => g.Key, 
+                g => g.OrderByDescending(a => a.Status == "CheckedOut" ? 2 : (a.Status == "Present" ? 1 : 0))
+                      .ThenByDescending(a => a.DepartureTime ?? a.ArrivalTime ?? TimeSpan.Zero)
+                      .First());
 
         var events = classroomId.HasValue
             ? (await _repository.GetEventsByClassroomAndDateAsync(_tenantContext.TenantId, classroomId.Value, date, ct)).ToList()
@@ -475,8 +480,10 @@ public class ChildDailyCareService : IChildDailyCareService
 
         var eventsByChild = events.GroupBy(e => e.ChildId).ToDictionary(g => g.Key, g => g.ToList());
 
+        var targetDateTime = date.ToDateTime(TimeOnly.MinValue);
         var activeNaps = classroomId.HasValue
             ? (await _repository.GetActiveNapsByClassroomAsync(_tenantContext.TenantId, classroomId.Value, ct))
+                .Where(n => n.StartTime.Date == targetDateTime.Date)
                 .GroupBy(n => n.ChildId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(n => n.StartTime).First())
             : new Dictionary<Guid, ChildNapSession>();
@@ -503,6 +510,7 @@ public class ChildDailyCareService : IChildDailyCareService
                 IsCheckedIn = string.Equals(att?.Status, "Present", StringComparison.OrdinalIgnoreCase),
                 AttendanceStatus = att?.Status ?? "Not Checked In",
                 ArrivalTime = att?.ArrivalTime,
+                DepartureTime = att?.DepartureTime,
                 LastDiaperEvent = childEvents.Where(e => e.EventType == CareEventTypes.DiaperChange).OrderByDescending(e => e.EventTime).FirstOrDefault(),
                 LastMealEvent = childEvents.Where(e => e.EventType == CareEventTypes.Meal).OrderByDescending(e => e.EventTime).FirstOrDefault(),
                 ActiveNapSession = nap,
@@ -830,6 +838,7 @@ public class ChildDailyCareService : IChildDailyCareService
             IsCheckedIn = c.IsCheckedIn,
             AttendanceStatus = c.AttendanceStatus,
             ArrivalTime = c.ArrivalTime,
+            DepartureTime = c.DepartureTime,
             LastDiaperEvent = c.LastDiaperEvent,
             LastMealEvent = c.LastMealEvent,
             ActiveNapSession = c.ActiveNapSession,

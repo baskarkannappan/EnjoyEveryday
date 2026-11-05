@@ -119,10 +119,17 @@ public class AttendanceService
             ? (await _teacherRepository.GetAllAsync(tenantId, ct)).ToList()
             : new List<Teacher>();
 
+        var deduplicatedChildAtt = childAtt
+            .GroupBy(a => a.ChildId)
+            .Select(g => g.OrderByDescending(a => a.Status == "CheckedOut" ? 2 : (a.Status == "Present" ? 1 : 0))
+                          .ThenByDescending(a => a.DepartureTime ?? a.ArrivalTime ?? TimeSpan.Zero)
+                          .First())
+            .ToList();
+
         var classRows = classrooms.Select(c => {
             var expectedC = allChildren.Count(ch => ch.ClassroomId == c.Id);
-            var presentC = childAtt.Count(a => a.ClassroomId == c.Id && (a.Status == "Present" || a.Status == "Late"));
-            var pendingC = childAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked");
+            var presentC = deduplicatedChildAtt.Count(a => a.ClassroomId == c.Id && (a.Status == "Present" || a.Status == "Late"));
+            var pendingC = deduplicatedChildAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked");
 
             var expectedT = 2;
             var presentT = teacherAtt.Count(a => a.Status == "Present" || a.Status == "Late");
@@ -156,7 +163,7 @@ public class AttendanceService
         foreach (var child in allChildren)
         {
             var cr = classrooms.FirstOrDefault(c => c.Id == child.ClassroomId);
-            var att = childAtt.FirstOrDefault(a => a.ChildId == child.Id);
+            var att = deduplicatedChildAtt.FirstOrDefault(a => a.ChildId == child.Id);
             personRows.Add(new PersonAttendanceRosterDto {
                 Id = child.Id,
                 Name = $"{child.FirstName} {child.LastName}",
