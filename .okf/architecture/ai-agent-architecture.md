@@ -30,3 +30,9 @@ EnjoyEveryday operates with a **Rules-First Architecture**. AI enhances human ex
 8. **No Vector Bloat**: Standard relational indices are used. No `pgvector` or extraneous vector stores without proven, measured justification.
 9. **Zero Operational Downtime**: Essential daycare operations (check-in, diaper logs, emergency pickup) remain 100% functional when AI services are offline or rate-limited.
 
+## Supported Gemini Production Models
+* **Default / Primary**: `gemini-3.5-flash-lite` (High-throughput, ultra-fast generation for studio ideation and weekly planning).
+* **Secondary**: `gemini-3.1-flash-lite` (Frontier performance with cost-efficiency).
+* **Fallbacks**: `gemini-3.5-flash`, `gemini-flash-lite-latest`, `gemini-flash-latest`.
+* **API Key Encryption**: Keys are encrypted at rest with AES-256 in `tenants.encrypted_ai_api_key` and decrypted per-tenant on API invocation.
+
