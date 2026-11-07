@@ -8,6 +8,7 @@
 @inject ExperienceService ExperienceService
 @inject FeedbackService FeedbackService
 @inject PlannerService PlannerService
+@inject ExecutionService ExecutionService
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
@@ -22,21 +23,41 @@
               Subtitle="What happened matters more than simply completing the activity.">
     </PageHero>
 
+    @if (IsDaycareClosed)
+    {
+        <div class="closed-daycare-banner">
+            <span class="closed-banner-icon">🌙</span>
+            <div>
+                <div class="closed-banner-title">Classroom &amp; Daycare Closed — Harvest Actions Locked</div>
+                <div class="closed-banner-sub">@_closedReason Rating experiences, logging child moments, and recording or modifying feedback are prohibited while the classroom is closed.</div>
+            </div>
+        </div>
+    }
+
     <div class="action-required-panel">
         <h3>Action Required</h3>
         <p>You ran these experiences recently. How did they go?</p>
         <div class="pending-actions-grid">
             @if (_experiences.Any()) {
                 foreach(var exp in _experiences.Where(e => e.Status != "Idea" && e.Status != "Draft").Take(2)) {
-                    <button class="btn-pending primary-pending" @onclick="() => OpenFeedbackDialogFor(exp.Id.ToString())">
+                    <button class="btn-pending primary-pending"
+                            disabled="@IsDaycareClosed"
+                            title="@(IsDaycareClosed ? _closedReason : $"Rate {exp.Title}")"
+                            @onclick="() => OpenFeedbackDialogFor(exp.Id.ToString())">
                         ⭐ Rate "@exp.Title"
                     </button>
                 }
             }
-            <button class="btn-pending" @onclick="OpenMomentDialog">
+            <button class="btn-pending"
+                    disabled="@IsDaycareClosed"
+                    title="@(IsDaycareClosed ? _closedReason : "Log Child Moment")"
+                    @onclick="OpenMomentDialog">
                 📸 Log Child Moment
             </button>
-            <button class="btn-pending" @onclick="OpenFeedbackDialog">
+            <button class="btn-pending"
+                    disabled="@IsDaycareClosed"
+                    title="@(IsDaycareClosed ? _closedReason : "Log Other Feedback")"
+                    @onclick="OpenFeedbackDialog">
                 + Log Other Feedback
             </button>
         </div>
@@ -49,7 +70,10 @@
     <h3 class="section-title">Experience Performance</h3>
 
     <div class="harvest-layout">
-        <ExperiencePerformanceGrid Items="@_performanceItems" OnViewClick="OnViewClick" />
+        <ExperiencePerformanceGrid Items="@_performanceItems"
+                                   IsActionDisabled="@IsDaycareClosed"
+                                   DisabledReason="@_closedReason"
+                                   OnViewClick="OnViewClick" />
 
         <TeacherFeedbackList Items="@_feedbackItems"
                              OnItemClick="EditFeedback" />
@@ -107,6 +131,8 @@
 
     private Guid? _currentFeedbackId;
     private bool _isModalOpen = false;
+    private string _closedReason = string.Empty;
+    private bool IsDaycareClosed => ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out _closedReason);
 
     protected override async Task OnInitializedAsync()
     {
@@ -135,8 +161,13 @@
         StateHasChanged();
     }
 
-    private void OpenFeedbackDialog()
+    private async Task OpenFeedbackDialog()
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         _currentFeedbackId = null;
         _isModalOpen = true;
         _feedbackText = string.Empty;
@@ -144,8 +175,13 @@
         if (_experiences.Any()) { _selectedExperienceId = _experiences.First().Id.ToString(); }
     }
 
-    private void OpenFeedbackDialogFor(string experienceId)
+    private async Task OpenFeedbackDialogFor(string experienceId)
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         _currentFeedbackId = null;
         _isModalOpen = true;
         _feedbackText = string.Empty;
@@ -155,6 +191,11 @@
 
     private async Task OpenMomentDialog()
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         await _addMomentDialog.OpenAsync();
     }
 
@@ -163,8 +204,13 @@
         StateHasChanged();
     }
 
-    private void EditFeedback(FeedbackItem item)
+    private async Task EditFeedback(FeedbackItem item)
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         var feedback = _feedbacks.FirstOrDefault(f => f.Id == item.Id);
         if (feedback != null)
         {
@@ -177,6 +223,11 @@
 
     private async Task DeleteFeedback()
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         if (_currentFeedbackId.HasValue)
         {
             try
@@ -197,6 +248,11 @@
 
     private async Task ConfirmFeedback()
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         if (string.IsNullOrEmpty(_selectedExperienceId) || string.IsNullOrEmpty(_feedbackText)) return;
 
         try
@@ -281,6 +337,11 @@
 
     private async Task OnViewClick(ExperiencePerformanceItem item)
     {
+        if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
+        {
+            await NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
         if (item.ExperienceId != Guid.Empty)
         {
             await _addMomentDialog.OpenForExperienceAsync(item.ExperienceId, item.Title);

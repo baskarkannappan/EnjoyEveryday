@@ -89,11 +89,15 @@ public class ClassroomCommunicationService : IClassroomCommunicationService
             limit: 100,
             cancellationToken: ct)).ToList();
 
-        // Children in tenant
-        var children = (await _childRepo.GetAllAsync(tenantId, ct)).ToList();
+        // Children in tenant or scoped classroom
+        IEnumerable<Child> children;
         if (classroomId.HasValue && classroomId.Value != Guid.Empty)
         {
-            children = children.Where(c => c.ClassroomId == classroomId.Value).ToList();
+            children = await _childRepo.GetByClassroomIdAsync(tenantId, classroomId.Value, ct);
+        }
+        else
+        {
+            children = await _childRepo.GetAllAsync(tenantId, ct);
         }
         var childrenLookup = children.ToDictionary(c => c.Id);
 

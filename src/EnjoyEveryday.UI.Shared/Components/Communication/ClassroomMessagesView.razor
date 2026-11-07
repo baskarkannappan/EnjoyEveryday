@@ -63,6 +63,7 @@
                                ActiveBranch="_activeBranch"
                                ActiveParentName="@_activeParentName"
                                Messages="_messages"
+                               IsLoadingMessages="_isLoadingMessages"
                                OnBackToConversations="ClearSelectedConversation"
                                OnApproveDraft="HandleApproveDraftAsync"
                                OnDiscardDraft="HandleDiscardDraftAsync" />
@@ -83,6 +84,7 @@
     [Parameter] public Func<ParentMessageNotification, Task>? OnNotificationSent { get; set; }
 
     private bool _loading = true;
+    private bool _isLoadingMessages = false;
     private bool _isSending = false;
     private string _searchQuery = "";
     private Guid? _selectedClassroomId;
@@ -204,10 +206,8 @@
             _totalUnread = feed.TotalUnreadCount;
             FilterConversations();
 
-            if (_filteredConversations.Any() && _selectedChildId == null)
-            {
-                await SelectConversationAsync(_filteredConversations.First().ChildId);
-            }
+            // Do not load full messages data on initial load.
+            // Messages are only loaded on-demand when the user clicks/selects a specific child.
         }
         catch (Exception ex)
         {
@@ -223,6 +223,10 @@
     {
         _selectedClassroomId = classroomId;
         FilterConversations();
+        if (_selectedChildId.HasValue && !_filteredConversations.Any(c => c.ChildId == _selectedChildId.Value))
+        {
+            ClearSelectedConversation();
+        }
     }
 
     private void HandleSearchQueryChanged(string query)
@@ -254,6 +258,10 @@
     public async Task SelectConversationAsync(Guid childId)
     {
         _selectedChildId = childId;
+        _isLoadingMessages = true;
+        _messages.Clear(); // Only load the selected child's messages
+        StateHasChanged();
+
         var convo = _allConversations.FirstOrDefault(c => c.ChildId == childId);
         if (convo != null)
         {
@@ -279,8 +287,19 @@
             _activeClassroom = _classrooms.FirstOrDefault(c => c.Id == _activeChild.ClassroomId.Value);
         }
 
-        _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(childId)).ToList();
-        await CommunicationService.MarkConversationAsReadByEducatorAsync(childId);
+        try
+        {
+            _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(childId)).ToList();
+            await CommunicationService.MarkConversationAsReadByEducatorAsync(childId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading messages for child {ChildId}", childId);
+        }
+        finally
+        {
+            _isLoadingMessages = false;
+        }
 
         StateHasChanged();
         await ScrollToBottomAsync();

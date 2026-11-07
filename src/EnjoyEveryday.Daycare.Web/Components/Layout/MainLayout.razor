@@ -1,11 +1,13 @@
 @inherits LayoutComponentBase
 @using Microsoft.FluentUI.AspNetCore.Components
+@inject NavigationManager NavigationManager
+@implements IDisposable
 
 <FluentLayout>
     <!-- MOBILE ONLY HEADER -->
     <FluentLayoutItem Area="LayoutArea.Header" class="mobile-header">
         <FluentStack VerticalAlignment="VerticalAlignment.Center" HorizontalGap="15">
-            <FluentLayoutHamburger />
+            <FluentLayoutHamburger @ref="_hamburger" />
             <div style="display: flex; gap: 8px; align-items: center;">
                 <div style="width: 24px; height: 24px; border-radius: 6px; background: var(--accent-light); color: var(--accent-dark); display: grid; place-items: center; font-size: 14px;">
                     ✨
@@ -16,7 +18,9 @@
     </FluentLayoutItem>
 
     <FluentLayoutItem Area="LayoutArea.Navigation" Width="228px">
-        <NavMenu />
+        <CascadingValue Value="CloseMobileMenuAsync" Name="CloseMobileMenu">
+            <NavMenu />
+        </CascadingValue>
     </FluentLayoutItem>
 
     <FluentLayoutItem Area="LayoutArea.Content">
@@ -27,3 +31,37 @@
 </FluentLayout>
 
 <FluentProviders />
+
+@code {
+    private FluentLayoutHamburger? _hamburger;
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.LocationChanged += HandleLocationChanged;
+    }
+
+    private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        await CloseMobileMenuAsync();
+    }
+
+    private async Task CloseMobileMenuAsync()
+    {
+        if (_hamburger is not null)
+        {
+            try
+            {
+                await _hamburger.HideAsync();
+            }
+            catch
+            {
+                // Ignore if hamburger dialog is not currently open
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= HandleLocationChanged;
+    }
+}

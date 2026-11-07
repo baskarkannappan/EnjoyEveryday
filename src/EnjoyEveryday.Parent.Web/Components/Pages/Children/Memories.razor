@@ -24,33 +24,137 @@ else if (SessionState.SelectedChild == null)
 }
 else
 {
-    <!-- HEADER -->
+    <!-- HEADER WITH CALENDAR FILTER -->
     <ParentPageHeader Eyebrow="MEMORIES & PHOTOS"
                       Title="@($"{SessionState.SelectedChild.FirstName}'s Memories & Photos")"
-                      Subtitle="Explore classroom moments, celebration photos, and learning discoveries captured by educators." />
+                      Subtitle="Explore classroom moments, celebration photos, and learning discoveries captured by educators.">
+        <RightContent>
+            <div class="memories-date-filter-box">
+                <label class="memories-date-label" for="memoriesCalendarInput">
+                    <span>📅</span>
+                    <span>Filter by Date</span>
+                </label>
+                <div class="memories-date-controls">
+                    <input id="memoriesCalendarInput"
+                           type="date"
+                           class="memories-date-input"
+                           value="@(_selectedDate?.ToString("yyyy-MM-dd") ?? string.Empty)"
+                           @onchange="OnDateFilterChanged" />
+                    @if (_selectedDate.HasValue)
+                    {
+                        <button type="button"
+                                class="btn-clear-date"
+                                title="Show all dates"
+                                @onclick="ClearDateFilter">
+                            All Dates ✕
+                        </button>
+                    }
+                </div>
+            </div>
+        </RightContent>
+    </ParentPageHeader>
 
-    <!-- MEDIA GALLERY -->
-    <MediaGallery Items="@_mediaItems" 
-                  ShowFilters="true" 
+    <!-- MEDIA GALLERY (10 ITEMS PER PAGE + PAGINATION) -->
+    <MediaGallery Items="@FilteredByDateItems" 
+                  ShowFilters="true"
+                  PageSize="10"
+                  SelectedDate="@_selectedDate"
+                  OnClearDate="ClearDateFilter"
                   OnSelectMedia="OpenMediaViewer" />
 
     <!-- FULL SCREEN ACCESSIBLE LIGHTBOX VIEWER -->
     <MediaViewer IsOpen="@_viewerOpen"
                  CurrentItem="@_activeItem"
                  HasPrevious="@(ActiveItemIndex > 0)"
-                 HasNext="@(ActiveItemIndex < (_mediaItems.Count - 1))"
+                 HasNext="@(ActiveItemIndex < (FilteredByDateItems.Count - 1))"
                  OnClose="CloseMediaViewer"
                  OnPrevious="NavigatePrevious"
                  OnNext="NavigateNext" />
 }
 
+<style>
+    .memories-date-filter-box {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 8px 12px;
+    }
+
+    .memories-date-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .memories-date-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .memories-date-input {
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        padding: 5px 10px;
+        height: 32px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--text, #26332d);
+        outline: none;
+        cursor: pointer;
+        box-sizing: border-box;
+    }
+
+    .memories-date-input:focus {
+        border-color: var(--accent, #52745e);
+        box-shadow: 0 0 0 2px rgba(82, 116, 94, 0.16);
+    }
+
+    .btn-clear-date {
+        background: var(--accent-light, #e6eee9);
+        border: 1px solid #c8dacd;
+        border-radius: 8px;
+        padding: 5px 10px;
+        height: 32px;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--accent-dark, #3e6253);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+    }
+
+    .btn-clear-date:hover {
+        background: var(--accent, #52745e);
+        border-color: var(--accent-dark, #3e6253);
+        color: #ffffff;
+    }
+</style>
+
 @code {
     private List<MediaItemModel> _mediaItems = new();
+    private DateOnly? _selectedDate;
     private bool _loading = true;
     private bool _viewerOpen;
     private MediaItemModel? _activeItem;
 
-    private int ActiveItemIndex => _activeItem != null ? _mediaItems.IndexOf(_activeItem) : -1;
+    private IReadOnlyList<MediaItemModel> FilteredByDateItems =>
+        _selectedDate.HasValue
+            ? _mediaItems.Where(m =>
+                DateOnly.FromDateTime(m.Date.Date) == _selectedDate.Value ||
+                DateOnly.FromDateTime(m.Date.LocalDateTime) == _selectedDate.Value).ToList()
+            : _mediaItems;
+
+    private int ActiveItemIndex => _activeItem != null ? FilteredByDateItems.ToList().IndexOf(_activeItem) : -1;
 
     protected override async Task OnInitializedAsync()
     {
@@ -62,6 +166,24 @@ else
     {
         await LoadMemoriesAsync();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnDateFilterChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(val) && DateOnly.TryParse(val, out var parsedDate))
+        {
+            _selectedDate = parsedDate;
+        }
+        else
+        {
+            _selectedDate = null;
+        }
+    }
+
+    private void ClearDateFilter()
+    {
+        _selectedDate = null;
     }
 
     private async Task LoadMemoriesAsync()
@@ -113,19 +235,21 @@ else
 
     private void NavigatePrevious()
     {
+        var list = FilteredByDateItems;
         var idx = ActiveItemIndex;
         if (idx > 0)
         {
-            _activeItem = _mediaItems[idx - 1];
+            _activeItem = list[idx - 1];
         }
     }
 
     private void NavigateNext()
     {
+        var list = FilteredByDateItems;
         var idx = ActiveItemIndex;
-        if (idx >= 0 && idx < _mediaItems.Count - 1)
+        if (idx >= 0 && idx < list.Count - 1)
         {
-            _activeItem = _mediaItems[idx + 1];
+            _activeItem = list[idx + 1];
         }
     }
 

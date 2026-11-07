@@ -25,5 +25,7 @@ tags:
 
 ## UI Endpoints
 * **Cockpit Handover Modal**: Accessed from `TeacherWorkspace.razor` via the "+ Handover" action button.
-* **Classroom Messages**: `src/EnjoyEveryday.Daycare.Web/Components/Pages/ClassroomMessages/`.
+* **Classroom Messages**: `src/EnjoyEveryday.Daycare.Web/Components/Pages/Communication/ClassroomMessages.razor` wrapping `ClassroomMessagesView.razor`.
+* **On-Demand Loading**: `ClassroomMessagesView` loads conversation metadata on initialization without auto-selecting the first child. Messages are loaded on-demand only when a teacher explicitly clicks a child conversation, preventing unnecessary tenant-wide message payload loading.
+
 

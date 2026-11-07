@@ -29,3 +29,8 @@ tags:
 * **Nap Sessions**: `ChildNapSession` (`StartTime`, `EndTime`, `Quality`).
 * **Handovers**: `TeacherHandover` (`ShiftType`, `Notes`, `ClassroomId`, `AuthorUserId`).
 
+## Mobile Ergonomics & Navigation
+* **Compact Mobile Care Entry**: `ChildDailyCareSection.razor.css` enforces a 3-column (`repeat(3, minmax(0, 1fr)) !important`) grid for `.activity-tiles-grid` with compact tile padding and typography on viewports `<= 768px`, so all 6 care activities (`Diaper change`, `Meal`, `Sleep / rest`, `Toileting`, `Hygiene`, `Comfort`) fit above the fold on mobile devices (`375px` width).
+* **Auto-Closing Mobile Navigation Drawer**: `MainLayout.razor` (`Daycare.Web` and `Admin.Web`) binds `@ref="_hamburger"` on `<FluentLayoutHamburger>` and calls `_hamburger.HideAsync()` both on `NavigationManager.LocationChanged` and via a cascading `CloseMobileMenu` callback triggered when any `.nav-group` item in `NavMenu.razor` is clicked.
+
+

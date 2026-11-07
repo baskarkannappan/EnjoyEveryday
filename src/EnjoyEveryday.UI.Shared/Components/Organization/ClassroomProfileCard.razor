@@ -134,8 +134,15 @@
         }
         else
         {
+            var orderedHistory = ExperienceHistory.OrderByDescending(s => s.SessionDate).ToList();
+            var totalCount = orderedHistory.Count;
+            var totalPages = (int)Math.Ceiling(totalCount / (double)_pageSize);
+            if (totalPages < 1) totalPages = 1;
+            if (_currentPage > totalPages) _currentPage = totalPages;
+            var pagedHistory = orderedHistory.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
+
             <div class="history-list">
-                @foreach (var session in ExperienceHistory.OrderByDescending(s => s.SessionDate))
+                @foreach (var session in pagedHistory)
                 {
                     var expTitle = ExperiencesDict.ContainsKey(session.ExperienceId) 
                         ? ExperiencesDict[session.ExperienceId] 
@@ -148,12 +155,33 @@
                                 @(session.StartTime?.ToString(@"hh\:mm") ?? "-") to @(session.EndTime?.ToString(@"hh\:mm") ?? "-")
                             </div>
                         </div>
-                        <span class="status-badge active">
+                        <span class="status-badge @(session.Status.ToLowerInvariant())">
                             @session.Status
                         </span>
                     </div>
                 }
             </div>
+
+            @if (totalPages > 1)
+            {
+                <div class="history-pagination">
+                    <button type="button" 
+                            class="pagination-btn" 
+                            disabled="@(_currentPage <= 1)" 
+                            @onclick="() => SetPage(_currentPage - 1)">
+                        ← Previous
+                    </button>
+                    <span class="pagination-info">
+                        Page @_currentPage of @totalPages (@totalCount total)
+                    </span>
+                    <button type="button" 
+                            class="pagination-btn" 
+                            disabled="@(_currentPage >= totalPages)" 
+                            @onclick="() => SetPage(_currentPage + 1)">
+                        Next →
+                    </button>
+                </div>
+            }
         }
     </div>
 </div>
@@ -163,4 +191,24 @@
     [Parameter, EditorRequired] public ClassroomWizardModel Model { get; set; } = default!;
     [Parameter] public List<ExperienceSession>? ExperienceHistory { get; set; }
     [Parameter] public Dictionary<Guid, string> ExperiencesDict { get; set; } = new();
+
+    private int _currentPage = 1;
+    private int _pageSize = 5;
+
+    protected override void OnParametersSet()
+    {
+        if (ExperienceHistory != null)
+        {
+            var maxPages = (int)Math.Ceiling(ExperienceHistory.Count / (double)_pageSize);
+            if (maxPages > 0 && _currentPage > maxPages)
+            {
+                _currentPage = maxPages;
+            }
+        }
+    }
+
+    private void SetPage(int page)
+    {
+        _currentPage = page;
+    }
 }
