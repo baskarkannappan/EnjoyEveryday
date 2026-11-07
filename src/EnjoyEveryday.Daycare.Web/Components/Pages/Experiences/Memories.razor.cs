@@ -63,6 +63,15 @@ public partial class Memories : ComponentBase
         "Daily Care"
     };
 
+    private const int PageSize = 10;
+    private int _currentPage = 1;
+    private bool _hasNextPage = false;
+
+    private int TotalDisplayedMemoriesCount =>
+        _hasNextPage
+            ? (_currentPage * PageSize) + 1
+            : ((_currentPage - 1) * PageSize) + _memories.Count;
+
     private Guid SelectedBranchId
     {
         get => _selectedBranchId;
@@ -74,6 +83,8 @@ public partial class Memories : ComponentBase
                 _selectedClassroomId = Guid.Empty;
                 _selectedChildId = Guid.Empty;
                 _selectedChild = null;
+                _currentPage = 1;
+                _hasNextPage = false;
                 _memories.Clear();
             }
         }
@@ -89,6 +100,8 @@ public partial class Memories : ComponentBase
                 _selectedClassroomId = value;
                 _selectedChildId = Guid.Empty;
                 _selectedChild = null;
+                _currentPage = 1;
+                _hasNextPage = false;
                 _memories.Clear();
             }
         }
@@ -104,7 +117,8 @@ public partial class Memories : ComponentBase
                 _selectedChildId = value;
                 _selectedChild = _children.FirstOrDefault(c => c.Id == value);
                 _selectedClassroomName = _classrooms.FirstOrDefault(c => c.Id == _selectedChild?.ClassroomId)?.Name ?? "";
-                _ = LoadMemoriesForChildAsync();
+                _currentPage = 1;
+                _ = InvokeAsync(LoadMemoriesForChildAsync);
             }
         }
     }
@@ -175,7 +189,12 @@ public partial class Memories : ComponentBase
 
             if (_children.Any())
             {
-                SelectedChildId = _children.First().Id;
+                var firstChild = _children.First();
+                _selectedChildId = firstChild.Id;
+                _selectedChild = firstChild;
+                _selectedClassroomName = _classrooms.FirstOrDefault(c => c.Id == _selectedChild.ClassroomId)?.Name ?? "";
+                _currentPage = 1;
+                await LoadMemoriesForChildAsync();
             }
         }
         catch (Exception ex)
@@ -189,6 +208,8 @@ public partial class Memories : ComponentBase
         if (_selectedChildId == Guid.Empty)
         {
             _memories.Clear();
+            _hasNextPage = false;
+            StateHasChanged();
             return;
         }
 
@@ -196,11 +217,14 @@ public partial class Memories : ComponentBase
         if (_children.All(c => c.Id != _selectedChildId))
         {
             _memories.Clear();
+            _hasNextPage = false;
+            StateHasChanged();
             return;
         }
 
         _isLoading = true;
         _errorMessage = null;
+        StateHasChanged();
 
         try
         {
@@ -208,12 +232,21 @@ public partial class Memories : ComponentBase
             {
                 Category = _selectedCategory == "All" ? null : _selectedCategory,
                 SearchQuery = string.IsNullOrWhiteSpace(_searchQuery) ? null : _searchQuery.Trim(),
-                Limit = 100,
-                Offset = 0
+                Limit = PageSize + 1,
+                Offset = (_currentPage - 1) * PageSize
             };
 
-            var results = await MemoryService.GetChildMemoriesAsync(_selectedChildId, query);
-            _memories = results.ToList();
+            var results = (await MemoryService.GetChildMemoriesAsync(_selectedChildId, query)).ToList();
+            if (results.Count > PageSize)
+            {
+                _hasNextPage = true;
+                _memories = results.Take(PageSize).ToList();
+            }
+            else
+            {
+                _hasNextPage = false;
+                _memories = results;
+            }
         }
         catch (Exception ex)
         {
@@ -222,12 +255,28 @@ public partial class Memories : ComponentBase
         finally
         {
             _isLoading = false;
+            StateHasChanged();
         }
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (!_hasNextPage || _isLoading) return;
+        _currentPage++;
+        await LoadMemoriesForChildAsync();
+    }
+
+    private async Task PrevPageAsync()
+    {
+        if (_currentPage <= 1 || _isLoading) return;
+        _currentPage--;
+        await LoadMemoriesForChildAsync();
     }
 
     private async Task FilterByCategoryAsync(string category)
     {
         _selectedCategory = category;
+        _currentPage = 1;
         await LoadMemoriesForChildAsync();
     }
 
@@ -235,6 +284,7 @@ public partial class Memories : ComponentBase
     {
         if (e.Key == "Enter")
         {
+            _currentPage = 1;
             await LoadMemoriesForChildAsync();
         }
     }
@@ -242,6 +292,7 @@ public partial class Memories : ComponentBase
     private async Task ClearSearchAsync()
     {
         _searchQuery = "";
+        _currentPage = 1;
         await LoadMemoriesForChildAsync();
     }
 

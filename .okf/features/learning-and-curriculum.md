@@ -23,14 +23,17 @@ EnjoyEveryday provides an activity runner and pedagogical curriculum framework r
 | View | Location | Purpose |
 |:---|:---|:---|
 | **Planner** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Planning/` | Weekly and monthly classroom calendar schedules |
+| **Experience Library & Storybooks** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Experiences/Experiences.razor` (`/experiences`) | Paginated 3-row (`PageSize = 9` in a 3-column grid) experience catalog with Previous/Next pagination controls, filter/search reset to page 1, and Scandinavian theme-aligned `ExperienceCard` components (`src/EnjoyEveryday.UI.Shared/Components/ExperienceCard/`) |
 | **Today's Activities** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/TodayActivities.razor` (`/today-activities`) | Vertical chronological daily rhythm of assigned activities; accessible from Home "More Classroom Tools" → Start Activity |
 | **Studio** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Experiences/ExperienceStudio.razor` | Curating and authoring activity templates |
 | **Active Session Runner** | `src/EnjoyEveryday.UI.Shared/Components/ActiveSessionModal/ActiveSessionModal.razor` | Live activity guidance in the classroom (step timer, materials, child observations) |
-| **Memories & Moments** | `src/EnjoyEveryday.UI.Shared/Components/ChildJourney/AddJourneyMomentDialog.razor` | Tagging learning moments and milestones to children |
+| **Memories & Moments Stream** | `src/EnjoyEveryday.Daycare.Web/Components/Pages/Experiences/Memories.razor` (`/memories`) | Paginated chronological memory stream (`PageSize = 10`, with Previous/Next server-side pagination via `IMemoryService.GetChildMemoriesAsync` / `fn_get_child_memories`) |
+| **Add Moment Dialog** | `src/EnjoyEveryday.UI.Shared/Components/ChildJourney/AddJourneyMomentDialog.razor` | Tagging learning moments and milestones to children |
 
 ## Key Services (`EnjoyEveryday.Application.Services`)
-* **`PlannerService`**: Generates and stores weekly draft planning items, binds activities to classrooms and age tiers.
-* **`ExecutionService`**: Manages live `ExperienceSession` states (`Scheduled`, `InProgress`, `Completed`) and participant attendance (`ExperienceParticipation`).
+* **`PlannerService`**: Generates and stores weekly draft planning items, binds activities to classrooms and age tiers. Enforces `IsDaycareClosedForPlanning` so no experience can be scheduled, updated, or completed on a closed daycare day (weekends Saturday/Sunday, past dates, or today if operating hours have ended `>= 7:00 PM` or End-of-Day has been run).
+* **`ExecutionService`**: Manages live `ExperienceSession` states (`Scheduled`, `InProgress`, `Completed`) and participant attendance (`ExperienceParticipation`). Enforces `IsDaycareClosedForActivity` in `StartExperienceAsync`, `CompleteExperienceAsync`, and `CompleteExperienceWithParticipationsAsync` so starting or ending any activity is prohibited whenever the daycare is closed (weekends, outside 7:00 AM – 7:00 PM operating hours, non-current dates, or after End-of-Day closure).
+* **`IMemoryService` / `MemoryService`**: Queries `public.fn_get_child_memories` via `MemoryRepository` with server-side pagination (`Limit = 11`, `Offset = (_currentPage - 1) * 10`) to display 10 records per page with Previous/Next navigation and avoid loading large base64 evidence payloads all at once.
 * **`IChildJourneyService`**: Logs developmental milestone progress linked to EYFS / Early Learning Standards.
 * **`StandaloneHtmlGenerator` & `StorybookStorageService`**: Generates and caches visual pedagogical storybooks at `/api/experiences/{id}/storybook` dynamically incorporating execution phases, inquiry wonder prompts, and spoken scripts without static craft boilerplate. Supports 6-panel Pixar-style illustrated picture books via Gemini master prompts (`/api/experiences/{id}/storybook/prompt`) and image uploads (`/api/experiences/{id}/storybook/image`).
 * **`IStorybookGenerationService`**: Encapsulates `BuildGeminiStorybookPrompt` formatting 6-panel 2x3 grid prompts for Google Gemini web generation.

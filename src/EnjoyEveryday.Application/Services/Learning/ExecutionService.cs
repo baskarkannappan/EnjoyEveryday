@@ -14,6 +14,7 @@ public class ExecutionService
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
     private readonly IUserContext _userContext;
+    private readonly IEndOfDayService? _endOfDayService;
 
     public ExecutionService(
         IExperienceScheduleRepository scheduleRepository,
@@ -23,6 +24,19 @@ public class ExecutionService
         ITenantContext tenantContext,
         IAuditService auditService,
         IUserContext userContext)
+        : this(scheduleRepository, feedbackRepository, sessionRepository, teacherRepository, tenantContext, auditService, userContext, null)
+    {
+    }
+
+    public ExecutionService(
+        IExperienceScheduleRepository scheduleRepository,
+        IExperienceFeedbackRepository feedbackRepository,
+        IExperienceSessionRepository sessionRepository,
+        ITeacherRepository teacherRepository,
+        ITenantContext tenantContext,
+        IAuditService auditService,
+        IUserContext userContext,
+        IEndOfDayService? endOfDayService)
     {
         _scheduleRepository = scheduleRepository;
         _feedbackRepository = feedbackRepository;
@@ -31,6 +45,40 @@ public class ExecutionService
         _tenantContext = tenantContext;
         _auditService = auditService;
         _userContext = userContext;
+        _endOfDayService = endOfDayService;
+    }
+
+    public bool IsDaycareClosedForActivity(DateOnly? scheduleDate, out string reason)
+    {
+        reason = string.Empty;
+        var targetDate = scheduleDate ?? DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(targetDate, branchId: null, includeTimeOfDayCheckForToday: true, out reason))
+        {
+            return true;
+        }
+
+        if (targetDate != today)
+        {
+            reason = $"Cannot start or end an activity for {targetDate:MMM d, yyyy}. Activities can only be started or ended on an active operating day.";
+            return true;
+        }
+
+        if (targetDate.DayOfWeek == DayOfWeek.Saturday || targetDate.DayOfWeek == DayOfWeek.Sunday)
+        {
+            reason = $"The daycare is closed on {targetDate:dddd, MMM d, yyyy} (weekend non-operating day). Cannot start or end any activity.";
+            return true;
+        }
+
+        var now = DateTime.Now;
+        if (now.Hour >= 19 || now.Hour < 7)
+        {
+            reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM). Cannot start or end any activity.";
+            return true;
+        }
+
+        return false;
     }
 
     public async Task<Guid> StartExperienceAsync(Guid scheduleId, Guid teacherId, CancellationToken cancellationToken = default)
@@ -41,6 +89,9 @@ public class ExecutionService
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
         if (schedule == null || schedule.TenantId != tenantId)
             throw new KeyNotFoundException("Schedule not found.");
+
+        if (IsDaycareClosedForActivity(schedule.ScheduledDate, out var closedReason))
+            throw new InvalidOperationException($"Cannot start activity when daycare is closed: {closedReason}");
 
         if (schedule.Status == "Started" || schedule.Status == "Active" || schedule.Status == "Completed")
             throw new InvalidOperationException($"Cannot start schedule in {schedule.Status} status.");
@@ -115,7 +166,10 @@ public class ExecutionService
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
         if (schedule == null || schedule.TenantId != tenantId)
             throw new KeyNotFoundException("Schedule not found.");
-            
+
+        if (IsDaycareClosedForActivity(schedule.ScheduledDate, out var closedReason))
+            throw new InvalidOperationException($"Cannot end or complete activity when daycare is closed: {closedReason}");
+
         if (schedule.Status == "Completed")
         {
             // Idempotent completion: schedule is already marked completed
@@ -163,7 +217,10 @@ public class ExecutionService
 
     public async Task CompleteExperienceWithParticipationsAsync(Guid scheduleId, Guid teacherId, int stars, string rating, string? notes, IEnumerable<ExperienceParticipation> participations, CancellationToken cancellationToken = default)
     {
-        // if (!_userContext.HasPermission("experience.execute")) throw new UnauthorizedAccessException("Requires experience.execute permission.");
+        var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
+        if (schedule != null && IsDaycareClosedForActivity(schedule.ScheduledDate, out var closedReason))
+            throw new InvalidOperationException($"Cannot end or complete activity when daycare is closed: {closedReason}");
+
         var session = await _sessionRepository.GetSessionByScheduleIdAsync(scheduleId, cancellationToken);
         if (session != null)
         {

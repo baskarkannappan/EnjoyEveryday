@@ -38,6 +38,9 @@ public interface IEndOfDayService
 {
     Task<EndOfDayPendingSummary> GetPendingSummaryAsync(Guid? branchId = null, DateTime? date = null, CancellationToken cancellationToken = default);
     Task<EndOfDayProcessReport> ExecuteEndOfDayProcessAsync(Guid? branchId = null, DateTime? date = null, TimeSpan? checkoutTime = null, CancellationToken cancellationToken = default);
+    bool IsDayClosedByEndOfDay(Guid? branchId = null, DateTime? date = null);
+    bool IsDaycareClosedForDate(DateTime date, Guid? branchId, bool includeTimeOfDayCheckForToday, out string reason);
+    bool IsDaycareClosedForDate(DateOnly date, Guid? branchId, bool includeTimeOfDayCheckForToday, out string reason);
 }
 
 public class EndOfDayService : IEndOfDayService
@@ -46,6 +49,7 @@ public class EndOfDayService : IEndOfDayService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IAuditService _auditService;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid TenantId, DateOnly Date), bool> _closedDates = new();
 
     public EndOfDayService(IEndOfDayRepository repository, ITenantContext tenantContext, IUserContext userContext, IAuditService auditService)
     {
@@ -53,6 +57,59 @@ public class EndOfDayService : IEndOfDayService
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
+    }
+
+    public bool IsDayClosedByEndOfDay(Guid? branchId = null, DateTime? date = null)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var day = DateOnly.FromDateTime((date ?? DateTime.Today).Date);
+        return _closedDates.ContainsKey((tenantId, day));
+    }
+
+    public bool IsDaycareClosedForDate(DateTime date, Guid? branchId, bool includeTimeOfDayCheckForToday, out string reason)
+    {
+        return IsDaycareClosedForDate(DateOnly.FromDateTime(date.Date), branchId, includeTimeOfDayCheckForToday, out reason);
+    }
+
+    public bool IsDaycareClosedForDate(DateOnly date, Guid? branchId, bool includeTimeOfDayCheckForToday, out string reason)
+    {
+        reason = string.Empty;
+
+        // 1. Non-working days (Weekends: Saturday & Sunday)
+        if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+        {
+            reason = $"The daycare is closed on {date:dddd, MMM d, yyyy} (weekend non-operating day).";
+            return true;
+        }
+
+        // 2. Explicitly closed via End-of-Day process
+        var tenantId = _tenantContext?.TenantId ?? Guid.Empty;
+        if (tenantId != Guid.Empty && _closedDates.ContainsKey((tenantId, date)))
+        {
+            reason = $"The daycare is already closed for {date:MMM d, yyyy} (End of Day process has been completed).";
+            return true;
+        }
+
+        // 3. Past dates are closed for live operations
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (date < today)
+        {
+            reason = $"The daycare day for {date:MMM d, yyyy} has already ended and is closed.";
+            return true;
+        }
+
+        // 4. Operating hours check if checking today's live state (Closed after 7:00 PM / 19:00 or before 7:00 AM)
+        if (includeTimeOfDayCheckForToday && date == today)
+        {
+            var now = DateTime.Now;
+            if (now.Hour >= 19 || now.Hour < 7)
+            {
+                reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM).";
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public async Task<EndOfDayPendingSummary> GetPendingSummaryAsync(Guid? branchId = null, DateTime? date = null, CancellationToken cancellationToken = default)
@@ -122,6 +179,8 @@ public class EndOfDayService : IEndOfDayService
         }
 
         report.Message = $"End of day process executed. Checked out {report.TeachersCheckedOutCount} educators, {report.ChildrenCheckedOutCount} children, and auto-closed {report.ActivitiesClosedCount + report.EventsClosedCount} activities & events.";
+
+        _closedDates[(tenantId, DateOnly.FromDateTime(day))] = true;
 
         await _auditService.LogAsync(new AuditEntry
         {

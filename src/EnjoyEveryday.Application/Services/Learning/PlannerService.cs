@@ -26,6 +26,7 @@ public class PlannerService
     private readonly IBranchRepository? _branchRepository;
     private readonly ITeacherRepository? _teacherRepository;
     private readonly IAccessScopeRepository? _accessScopeRepository;
+    private readonly IEndOfDayService? _endOfDayService;
     private readonly Microsoft.Extensions.Logging.ILogger<PlannerService>? _logger;
 
     public PlannerService(IExperienceScheduleRepository scheduleRepository, IUserContext userContext)
@@ -40,7 +41,7 @@ public class PlannerService
         ITenantContext? tenantContext,
         IUserContext userContext,
         IMaterialMarketplaceService? materialService)
-        : this(scheduleRepository, experienceRepository, eventRepository, tenantContext, userContext, materialService, null, null, null, null)
+        : this(scheduleRepository, experienceRepository, eventRepository, tenantContext, userContext, materialService, null, null, null, null, null)
     {
     }
 
@@ -55,7 +56,8 @@ public class PlannerService
         IBranchRepository? branchRepository,
         ITeacherRepository? teacherRepository,
         IAccessScopeRepository? accessScopeRepository,
-        Microsoft.Extensions.Logging.ILogger<PlannerService>? logger = null)
+        Microsoft.Extensions.Logging.ILogger<PlannerService>? logger = null,
+        IEndOfDayService? endOfDayService = null)
     {
         _scheduleRepository = scheduleRepository;
         _experienceRepository = experienceRepository;
@@ -68,6 +70,7 @@ public class PlannerService
         _teacherRepository = teacherRepository;
         _accessScopeRepository = accessScopeRepository;
         _logger = logger;
+        _endOfDayService = endOfDayService;
     }
 
     public async Task<IEnumerable<ExperienceSchedule>> GetMonthlyScheduleAsync(Guid classroomId, int year, int month)
@@ -375,6 +378,11 @@ public class PlannerService
         var schedule = await _scheduleRepository.GetByIdAsync(scheduleId);
         if (schedule != null)
         {
+            if (IsDaycareClosedForPlanning(schedule.ScheduledDate, out var closedReason))
+            {
+                throw new InvalidOperationException($"Cannot complete or end activity when the daycare is closed: {closedReason}");
+            }
+
             schedule.Status = "Completed";
             if (!string.IsNullOrWhiteSpace(notes))
             {
@@ -411,6 +419,37 @@ public class PlannerService
         return "Evening";
     }
 
+    public bool IsDaycareClosedForPlanning(DateOnly scheduledDate, out string reason)
+    {
+        reason = string.Empty;
+
+        // 1. Check via EndOfDayService if available
+        bool isToday = scheduledDate == DateOnly.FromDateTime(DateTime.Today);
+        if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(scheduledDate, branchId: null, includeTimeOfDayCheckForToday: isToday, out reason))
+        {
+            return true;
+        }
+
+        // 2. Fallback deterministic check for weekends & operating hours
+        if (scheduledDate.DayOfWeek == DayOfWeek.Saturday || scheduledDate.DayOfWeek == DayOfWeek.Sunday)
+        {
+            reason = $"Cannot plan an experience for {scheduledDate:dddd, MMM d, yyyy} because the daycare is closed on weekends.";
+            return true;
+        }
+
+        if (isToday)
+        {
+            var now = DateTime.Now;
+            if (now.Hour >= 19 || now.Hour < 7)
+            {
+                reason = "Cannot plan an experience for today because the daycare is closed (operating hours ended at 7:00 PM).";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async Task ValidateScheduleConflictsAsync(
         Guid classroomId,
         DateOnly scheduledDate,
@@ -420,10 +459,14 @@ public class PlannerService
         TimeSpan? endTime,
         Guid? excludeScheduleId = null)
     {
-        // 1. Date reasonableness
+        // 1. Date reasonableness & Daycare Closed prohibition
         if (scheduledDate < DateOnly.FromDateTime(DateTime.Today))
         {
             throw new ArgumentException("Cannot schedule an experience for a past date.");
+        }
+        if (IsDaycareClosedForPlanning(scheduledDate, out var closedReason))
+        {
+            throw new InvalidOperationException($"Cannot plan any experience for {scheduledDate:MMM d, yyyy}: {closedReason}");
         }
         if (scheduledDate == DateOnly.FromDateTime(DateTime.Today) && endTime.HasValue && endTime.Value <= DateTime.Now.TimeOfDay)
         {

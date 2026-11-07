@@ -126,12 +126,84 @@ public class ResourceAuthorizer : IResourceAuthorizer
 
     public async Task<IReadOnlyList<Child>> FilterAccessibleChildrenAsync(IEnumerable<Child> children, string permission, CancellationToken ct = default)
     {
-        var result = new List<Child>();
-        foreach (var child in children)
+        var childList = children.ToList();
+        if (childList.Count == 0) return Array.Empty<Child>();
+        if (!IsTenantReady() || !_user.IsAuthenticated || _user.UserId == Guid.Empty || string.IsNullOrWhiteSpace(permission))
+            return Array.Empty<Child>();
+
+        var activeOrg = _user.OrganizationId;
+        var membershipActive = activeOrg.HasValue
+            && await _scopes.HasActiveMembershipAsync(_tenant.TenantId, activeOrg.Value, _user.UserId, ct);
+
+        if (!membershipActive)
         {
-            // Defence in depth: a repository bug returning another tenant's row is dropped here.
+            var supportDecision = await EvaluateSupportAsync(permission, ct);
+            if (!supportDecision.Allowed) return Array.Empty<Child>();
+            return childList.Where(c => c.TenantId == _tenant.TenantId).ToList();
+        }
+
+        var org = activeOrg!.Value;
+        if (!_user.HasPermission(permission) || Permissions.PlatformOnly.Contains(permission))
+            return Array.Empty<Child>();
+
+        var roles = await _scopes.GetOrganizationRoleNamesAsync(_tenant.TenantId, org, _user.UserId, ct);
+        if (roles.Count == 0) return Array.Empty<Child>();
+
+        bool hasOrgScope = roles.Any(r => RoleTemplates.ScopeOf(r) == RoleScope.Organization);
+        bool hasBranchScope = roles.Any(r => RoleTemplates.ScopeOf(r) == RoleScope.Branch);
+        bool hasClassroomScope = roles.Any(r => RoleTemplates.ScopeOf(r) == RoleScope.Classroom);
+        bool hasFamilyScope = roles.Any(r => RoleTemplates.ScopeOf(r) == RoleScope.Family);
+
+        IReadOnlySet<Guid>? assignedBranches = hasBranchScope
+            ? await _scopes.GetAssignedBranchIdsAsync(_tenant.TenantId, org, _user.UserId, ct)
+            : null;
+        IReadOnlySet<Guid>? assignedClassrooms = hasClassroomScope
+            ? await _scopes.GetAssignedClassroomIdsAsync(_tenant.TenantId, _user.UserId, ct)
+            : null;
+
+        // If user only has classroom scope and all children already have ClassroomId populated in the active org, we can filter without N+1 DB calls!
+        var result = new List<Child>(childList.Count);
+        foreach (var child in childList)
+        {
             if (child.TenantId != _tenant.TenantId) continue;
-            if (await CanAccessChildAsync(child.Id, permission, ct)) result.Add(child);
+
+            if (hasOrgScope && child.ClassroomId.HasValue)
+            {
+                // Verify classroom/child belongs to active org or evaluate scope once
+                var scope = await _scopes.GetChildScopeAsync(_tenant.TenantId, child.Id, ct);
+                if (scope != null && (scope.OrganizationId == null || scope.OrganizationId == org))
+                    result.Add(child);
+                continue;
+            }
+
+            if (hasClassroomScope && child.ClassroomId.HasValue && assignedClassrooms != null && assignedClassrooms.Contains(child.ClassroomId.Value))
+            {
+                result.Add(child);
+                continue;
+            }
+
+            // Fallback to full scope check for unplaced children, branch scope, or family scope
+            var childScope = await _scopes.GetChildScopeAsync(_tenant.TenantId, child.Id, ct);
+            if (childScope == null) continue;
+            var unplaced = childScope.OrganizationId == null && childScope.BranchId == null && childScope.ClassroomId == null;
+            if (!unplaced && childScope.OrganizationId != org) continue;
+
+            if (hasOrgScope)
+            {
+                result.Add(child);
+            }
+            else if (hasBranchScope && childScope.BranchId.HasValue && assignedBranches != null && assignedBranches.Contains(childScope.BranchId.Value))
+            {
+                result.Add(child);
+            }
+            else if (hasClassroomScope && childScope.ClassroomId.HasValue && assignedClassrooms != null && assignedClassrooms.Contains(childScope.ClassroomId.Value))
+            {
+                result.Add(child);
+            }
+            else if (hasFamilyScope && await _scopes.HasVerifiedGuardianRelationshipAsync(_tenant.TenantId, _user.UserId, child.Id, ct))
+            {
+                result.Add(child);
+            }
         }
         return result;
     }

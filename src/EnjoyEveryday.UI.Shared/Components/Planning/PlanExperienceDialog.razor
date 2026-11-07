@@ -26,6 +26,14 @@
                 </div>
             }
 
+            @if (!_isReadOnly && IsDateClosedForPlanning(_date, out var closedDateWarning))
+            {
+                <div style="background: #fff5f5; color: #9b2c2c; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #fed7d7; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">🌙</span>
+                    <span><strong>Daycare Closed:</strong> @closedDateWarning</span>
+                </div>
+            }
+
             @if (_isReadOnly)
             {
                 <div style="background: #f4eee1; color: #5a4b2a; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5dac4; font-size: 13px; display: flex; align-items: center; gap: 8px;">
@@ -130,8 +138,9 @@
             <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e6e0; align-items: center; flex-wrap: wrap;">
                 @if (ScheduleId.HasValue && !_isReadOnly)
                 {
+                    var isClosed = IsDateClosedForPlanning(_date, out _);
                     <div style="display: flex; gap: 8px; margin-right: auto; flex-wrap: wrap;">
-                        <button type="button" class="secondary" @onclick="CompletePlan" style="padding: 9px 15px; border: 1px solid #c8dacd; background: #eaf2ec; color: #3e6253; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 13px;">✓ Mark Completed</button>
+                        <button type="button" class="secondary" @onclick="CompletePlan" disabled="@isClosed" style="padding: 9px 15px; border: 1px solid #c8dacd; background: #eaf2ec; color: #3e6253; border-radius: 8px; cursor: @(isClosed ? "not-allowed" : "pointer"); opacity: @(isClosed ? "0.5" : "1"); font-weight: 700; font-size: 13px;">✓ Mark Completed</button>
                         <button type="button" class="secondary" @onclick="CancelPlan" style="padding: 9px 13px; border: 1px solid #fed7d7; background: #fff5f5; color: #9b2c2c; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;">Cancel Plan</button>
                         <button type="button" class="secondary" @onclick="Delete" style="padding: 9px 13px; border: 1px solid #e1e6e0; background: white; color: #7c877f; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;">Delete</button>
                     </div>
@@ -139,7 +148,8 @@
                 <button type="button" class="secondary" @onclick="Close" style="padding: 9px 18px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Close</button>
                 @if (!_isReadOnly)
                 {
-                    <button type="button" class="primary" @onclick="Save" disabled="@(_isSaving || (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue))" style="padding: 9px 18px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    var isClosedForSave = IsDateClosedForPlanning(_date, out _);
+                    <button type="button" class="primary" @onclick="Save" disabled="@(_isSaving || isClosedForSave || (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue))" style="padding: 9px 18px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: @(isClosedForSave ? "not-allowed" : "pointer"); opacity: @(isClosedForSave ? "0.5" : "1"); font-weight: 600;">
                         @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
                     </button>
                 }
@@ -241,6 +251,11 @@
     private bool _isMorningDisabled = false;
     private bool _isEveningDisabled = false;
     private bool _hasReachedClassroomDailyLimit => _isMorningDisabled && _isEveningDisabled;
+
+    private bool IsDateClosedForPlanning(DateTime dt, out string reason)
+    {
+        return PlannerService.IsDaycareClosedForPlanning(DateOnly.FromDateTime(dt), out reason);
+    }
 
     private async Task OnClassroomChangedAsync(ChangeEventArgs e)
     {
@@ -392,6 +407,12 @@
             return;
         }
 
+        if (IsDateClosedForPlanning(_date, out var closedPlanReason))
+        {
+            _errorMessage = closedPlanReason;
+            return;
+        }
+
         if (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue)
         {
             _errorMessage = "This classroom already has both Morning and Evening experiences planned for this date.";
@@ -491,11 +512,23 @@
     {
         if (ScheduleId.HasValue)
         {
-            await PlannerService.CompleteScheduleAsync(ScheduleId.Value, _notes);
-            await Close();
-            if (OnPlanCreated.HasDelegate)
+            if (IsDateClosedForPlanning(_date, out var closedReason))
             {
-                await OnPlanCreated.InvokeAsync(_classroomId ?? Guid.Empty);
+                _errorMessage = closedReason;
+                return;
+            }
+            try
+            {
+                await PlannerService.CompleteScheduleAsync(ScheduleId.Value, _notes);
+                await Close();
+                if (OnPlanCreated.HasDelegate)
+                {
+                    await OnPlanCreated.InvokeAsync(_classroomId ?? Guid.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = ex.Message;
             }
         }
     }

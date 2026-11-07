@@ -373,7 +373,7 @@
                     <p>Execute attendance, diaper changes, meals, rest sessions, and moments with 1 tap.</p>
                 </div>
                 <div class="cockpit-batch-bar">
-                    <button class="batch-btn primary-batch" @onclick="MarkAllScheduledPresentAsync" title="Mark all expected children present">
+                    <button class="batch-btn primary-batch" @onclick="MarkAllScheduledPresentAsync" disabled="@_isDaycareClosed" style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Mark all expected children present")">
                         <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
                         <span>Check-In All</span>
                     </button>
@@ -520,7 +520,9 @@
 
                                     <button class="child-action-btn btn-checkout" 
                                             @onclick="() => CheckOutChildAsync(child.ChildId)" 
-                                            title="Record Departure">
+                                            disabled="@_isDaycareClosed"
+                                            style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                            title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Record Departure")">
                                         <span>🚪</span>
                                         <span>Out</span>
                                     </button>
@@ -799,16 +801,16 @@
                                                 <FluentIcon Value="@(new Icons.Regular.Size16.Camera())" Color="Color.Custom" CustomColor="#52745e" />
                                                 <span>Photos @(item.PhotoUrls?.Length > 0 ? $"({item.PhotoUrls.Length})" : "")</span>
                                             </button>
-                                            <button class="btn primary btn-xs" @onclick="() => CloseSession(item.Id)">
+                                            <button class="btn primary btn-xs" @onclick="() => CloseSession(item.Id)" disabled="@_isDaycareClosed" style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(_isDaycareClosed ? "Daycare is closed — cannot end activity" : "End Session")">
                                                 <span>End Session</span>
                                             </button>
-                                            <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)">
+                                            <button class="btn secondary btn-xs" @onclick="() => OpenActiveSession(item.Id)" disabled="@_isDaycareClosed" style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")">
                                                 <span>Resume &rarr;</span>
                                             </button>
                                         }
                                         else if (isPlanned)
                                         {
-                                            <button class="btn primary btn-xs" @onclick="() => StartSession(item.Id)">
+                                            <button class="btn primary btn-xs" @onclick="() => StartSession(item.Id)" disabled="@_isDaycareClosed" style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(_isDaycareClosed ? "Daycare is closed — cannot start activity" : "Start")">
                                                 <FluentIcon Value="@(new Icons.Filled.Size16.Play())" Color="Color.Custom" CustomColor="#ffffff" />
                                                 <span>Start</span>
                                             </button>
@@ -1294,6 +1296,12 @@
 
     private async Task CloseSession(Guid scheduleId)
     {
+        if (_isDaycareClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Daycare is closed. Activities cannot be started or ended while the daycare is closed.");
+            return;
+        }
+
         try
         {
             var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.Parse("50000000-0000-0000-0000-000000000001");
@@ -1383,6 +1391,14 @@
     private bool CheckIfDaycareClosed()
     {
         var localNow = TimeProvider.GetLocalNow();
+        if (localNow.DayOfWeek == DayOfWeek.Saturday || localNow.DayOfWeek == DayOfWeek.Sunday)
+        {
+            return true;
+        }
+        if (EndOfDayService.IsDayClosedByEndOfDay(_activeClassroom?.BranchId, localNow.Date))
+        {
+            return true;
+        }
         // Daycare closing time: 7:00 PM (19:00). Closed between 7:00 PM and 7:00 AM.
         return localNow.Hour >= 19 || localNow.Hour < 7;
     }
@@ -1433,6 +1449,11 @@
     private async Task CheckOutChildAsync(Guid childId)
     {
         if (_activeClassroom == null) return;
+        if (_isDaycareClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Daycare is closed. Child attendance and departure cannot be performed while the daycare is closed.");
+            return;
+        }
         try
         {
             var nowTime = TimeProvider.GetLocalNow().TimeOfDay;

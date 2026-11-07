@@ -168,12 +168,16 @@
 
             <!-- Modal Footer -->
             <div class="session-modal-footer">
-                @if (_showParticipationWarning)
+                @if (!string.IsNullOrEmpty(_sessionClosedError))
+                {
+                    <span class="warning-text" style="color: #9b2c2c;">@_sessionClosedError</span>
+                }
+                else if (_showParticipationWarning)
                 {
                     <span class="warning-text">No participation recorded. Click again to confirm completion.</span>
                 }
                 <button class="btn secondary" @onclick="CloseDialog">Close (Keep Active)</button>
-                <button class="btn primary btn-end-save" @onclick="TryEndSession">
+                <button class="btn primary btn-end-save" @onclick="TryEndSession" disabled="@IsDaycareClosedForModal" style="@(IsDaycareClosedForModal ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsDaycareClosedForModal ? "Daycare is closed — cannot end session" : "End Session & Save")">
                     ✓ End Session &amp; Save
                 </button>
             </div>
@@ -715,9 +719,17 @@
     }
 
     private bool _showParticipationWarning = false;
+    private string _sessionClosedError = "";
+    private bool IsDaycareClosedForModal => ExecutionService.IsDaycareClosedForActivity(null, out _);
 
     private async Task TryEndSession()
     {
+        _sessionClosedError = "";
+        if (ExecutionService.IsDaycareClosedForActivity(null, out var closedReason))
+        {
+            _sessionClosedError = closedReason;
+            return;
+        }
         bool hasParticipants = _participations.Values.Any(p => p.ParticipationStatus == "Participated");
         if (!hasParticipants && !_showParticipationWarning && _children.Any())
         {
@@ -735,6 +747,11 @@
             try
             {
                 await ExecutionService.CompleteExperienceWithParticipationsAsync(ScheduleId, TeacherId, _stars, _rating, _notes, _participations.Values);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _sessionClosedError = ex.Message;
+                return;
             }
             catch (Exception)
             {

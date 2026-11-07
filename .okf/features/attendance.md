@@ -40,7 +40,9 @@ tags:
 ### 1. Child Check-In & Departure
 * **Mark Present**: Dropdown in `AttendancePeopleTable` or bulk action "Mark selected present".
 * **Departure / Pickup**: Clicking "Check Out" opens `SecurePickupModal.razor`. Requires collector name, relationship, and verification method (PIN, ID Check, Signature).
-* **End of Day**: `EndOfDayProcessModal.razor` and `DaycareEndOfDayBackgroundService` auto-close unclosed records at end of day (7:00 PM). Unclosed child attendances are marked with `departure_time = '19:00:00'` and status `CheckedOut`. Unclosed teacher attendances are marked with `clock_out_time = '19:00:00'` and status `ClockedOut`. Remaining active activities are marked `Completed`.
+* **End of Day & Closed-Day Prohibitions**:
+  * `EndOfDayProcessModal.razor` and `DaycareEndOfDayBackgroundService` auto-close unclosed records at end of day (7:00 PM). Unclosed child attendances are marked with `departure_time = '19:00:00'` and status `CheckedOut`. Unclosed teacher attendances are marked with `clock_out_time = '19:00:00'` and status `ClockedOut`. Remaining active activities are marked `Completed`.
+  * **Daycare Closed-State Enforcement (`AttendanceService`, `SecurePickupService`, `BranchDetailSection.razor`, `AttendancePeopleTable.razor`, `TeacherWorkspace.razor`)**: When the daycare is closed (weekends Saturday/Sunday, before 7:00 AM or at/after 7:00 PM, past dates, or after End-of-Day execution via `EndOfDayService.IsDaycareClosedForDate`), all attendance operations (check-in, check-out, status changes, bulk marking present, and secure pickup departure recording) for children, teachers, and staff are strictly prohibited and locked in both application services and UI components.
 * **Teacher Workspace Rhythm Timeline**: In `TeacherWorkspace.razor` (for Teacher, Lead Teacher, Educator), a live timeline displays the daycare rhythm: `(started) ➔ (X children and Y teacher present) ➔ Z activity planned (W started) ➔ (ended)`. On end of day (>= 7:00 PM), the system automatically triggers auto-closure.
 
 ### 2. Teacher Attendance & Roster

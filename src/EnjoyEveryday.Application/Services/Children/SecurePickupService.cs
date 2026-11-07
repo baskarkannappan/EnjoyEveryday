@@ -86,19 +86,22 @@ public class SecurePickupService : ISecurePickupService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext? _userContext;
     private readonly IAuditService _auditService;
+    private readonly IEndOfDayService? _endOfDayService;
 
     public SecurePickupService(
         ISecurePickupRepository pickupRepository,
         IAttendanceRepository attendanceRepository,
         ITenantContext tenantContext,
         IUserContext? userContext = null,
-        IAuditService? auditService = null)
+        IAuditService? auditService = null,
+        IEndOfDayService? endOfDayService = null)
     {
         _pickupRepository = pickupRepository;
         _attendanceRepository = attendanceRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService ?? new NullAuditService();
+        _endOfDayService = endOfDayService;
     }
 
     public async Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid childId, DateTime? date = null, CancellationToken ct = default)
@@ -199,6 +202,25 @@ public class SecurePickupService : ISecurePickupService
 
     public async Task<RecordChildDepartureResponse> VerifyAndRecordChildDepartureAsync(RecordChildDepartureRequest request, CancellationToken ct = default)
     {
+        // 0. Check if daycare is closed
+        var now = DateTime.Now;
+        if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(now.Date, request.BranchId, true, out var eodClosedReason))
+        {
+            return new RecordChildDepartureResponse
+            {
+                Success = false,
+                ErrorMessage = $"Daycare is closed: {eodClosedReason}"
+            };
+        }
+        if (now.DayOfWeek == DayOfWeek.Saturday || now.DayOfWeek == DayOfWeek.Sunday || now.Hour < 7 || now.Hour >= 19)
+        {
+            return new RecordChildDepartureResponse
+            {
+                Success = false,
+                ErrorMessage = "Daycare is closed. Child attendance and departure cannot be performed while the daycare is closed."
+            };
+        }
+
         // 1. Check for custody restriction block
         var activeRestrictions = await _pickupRepository.GetActiveCustodyRestrictionsAsync(_tenantContext.TenantId, request.ChildId, ct);
         

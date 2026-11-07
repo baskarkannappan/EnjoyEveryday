@@ -357,6 +357,11 @@ public partial class ExperiencePlanning : ComponentBase
             _ = NotificationService.ShowWarningAsync("Cannot create or modify experiences for past dates.");
             return;
         }
+        if (PlannerService.IsDaycareClosedForPlanning(date, out var closedReason))
+        {
+            _ = NotificationService.ShowWarningAsync(closedReason);
+            return;
+        }
 
         _wizardDefaultDate = date;
         _wizardScheduleId = null;
@@ -395,11 +400,19 @@ public partial class ExperiencePlanning : ComponentBase
     private DateOnly GetDefaultPlanDate()
     {
         var today = DateTime.Today;
-        if (today.Year == _currentDate.Year && today.Month == _currentDate.Month)
+        DateOnly candidate = (today.Year == _currentDate.Year && today.Month == _currentDate.Month)
+            ? DateOnly.FromDateTime(today)
+            : new DateOnly(_currentDate.Year, _currentDate.Month, 1);
+
+        for (int i = 0; i < 7; i++)
         {
-            return DateOnly.FromDateTime(today);
+            if (!PlannerService.IsDaycareClosedForPlanning(candidate, out _))
+            {
+                return candidate;
+            }
+            candidate = candidate.AddDays(1);
         }
-        return new DateOnly(_currentDate.Year, _currentDate.Month, 1);
+        return candidate;
     }
 
     private void ClosePlanWizard()

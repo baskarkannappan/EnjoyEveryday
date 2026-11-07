@@ -20,12 +20,13 @@ public class AttendanceService
     private readonly IBranchRepository? _branchRepository;
     private readonly IUserContext? _userContext;
     private readonly ITenantPreferencesService? _tenantPreferencesService;
+    private readonly IEndOfDayService? _endOfDayService;
 
     public AttendanceService(
         IAttendanceRepository attendanceRepository,
         IClassroomRepository classroomRepository,
         ITenantContext tenantContext)
-        : this(attendanceRepository, classroomRepository, tenantContext, null, null, null, null, null)
+        : this(attendanceRepository, classroomRepository, tenantContext, null, null, null, null, null, null)
     {
     }
 
@@ -37,7 +38,7 @@ public class AttendanceService
         ITeacherRepository? teacherRepository,
         IBranchRepository? branchRepository,
         IUserContext? userContext)
-        : this(attendanceRepository, classroomRepository, tenantContext, childRepository, teacherRepository, branchRepository, userContext, null)
+        : this(attendanceRepository, classroomRepository, tenantContext, childRepository, teacherRepository, branchRepository, userContext, null, null)
     {
     }
 
@@ -49,7 +50,8 @@ public class AttendanceService
         ITeacherRepository? teacherRepository,
         IBranchRepository? branchRepository,
         IUserContext? userContext,
-        ITenantPreferencesService? tenantPreferencesService)
+        ITenantPreferencesService? tenantPreferencesService,
+        IEndOfDayService? endOfDayService = null)
     {
         _attendanceRepository = attendanceRepository;
         _classroomRepository = classroomRepository;
@@ -59,6 +61,46 @@ public class AttendanceService
         _branchRepository = branchRepository;
         _userContext = userContext;
         _tenantPreferencesService = tenantPreferencesService;
+        _endOfDayService = endOfDayService;
+    }
+
+    public bool IsDaycareClosedForAttendance(DateTime date, Guid? branchId, out string reason)
+    {
+        reason = string.Empty;
+        var day = DateOnly.FromDateTime(date.Date);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(day, branchId, includeTimeOfDayCheckForToday: true, out reason))
+        {
+            return true;
+        }
+
+        if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday)
+        {
+            reason = $"The daycare is closed on {day:dddd, MMM d, yyyy} (weekend non-operating day). Attendance cannot be performed for children, teachers, or staff.";
+            return true;
+        }
+
+        if (day < today)
+        {
+            reason = $"The daycare day for {day:MMM d, yyyy} has already ended and is closed. Attendance cannot be modified.";
+            return true;
+        }
+
+        if (day > today)
+        {
+            reason = $"Cannot perform attendance for a future date ({day:MMM d, yyyy}) before the daycare opens.";
+            return true;
+        }
+
+        var now = DateTime.Now;
+        if (now.Hour >= 19 || now.Hour < 7)
+        {
+            reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM). Attendance for children, teachers, and staff is prohibited while closed.";
+            return true;
+        }
+
+        return false;
     }
 
     public async Task<IEnumerable<ChildAttendance>> GetChildAttendanceAsync(Guid branchId, DateTime date)
@@ -73,6 +115,11 @@ public class AttendanceService
     
     public async Task MarkChildAttendanceAsync(ChildAttendance attendance)
     {
+        if (IsDaycareClosedForAttendance(attendance.AttendanceDate, attendance.BranchId, out var closedReason))
+        {
+            throw new InvalidOperationException($"Cannot record child attendance when daycare is closed: {closedReason}");
+        }
+
         attendance.TenantId = _tenantContext.TenantId;
         if (attendance.Id == Guid.Empty) attendance.Id = Guid.NewGuid();
         await _attendanceRepository.RecordChildAttendanceAsync(attendance);
@@ -80,6 +127,11 @@ public class AttendanceService
 
     public async Task MarkTeacherAttendanceAsync(TeacherAttendance attendance)
     {
+        if (IsDaycareClosedForAttendance(attendance.AttendanceDate, attendance.BranchId, out var closedReason))
+        {
+            throw new InvalidOperationException($"Cannot record staff/teacher attendance when daycare is closed: {closedReason}");
+        }
+
         attendance.TenantId = _tenantContext.TenantId;
         if (attendance.Id == Guid.Empty) attendance.Id = Guid.NewGuid();
         await _attendanceRepository.RecordTeacherAttendanceAsync(attendance);
@@ -263,6 +315,11 @@ public class AttendanceService
 
     public async Task BulkMarkAttendanceAsync(BulkMarkAttendanceRequest request, Guid recordedByUserId, CancellationToken ct = default)
     {
+        if (IsDaycareClosedForAttendance(request.Date, request.BranchId, out var closedReason))
+        {
+            throw new InvalidOperationException($"Cannot perform attendance when daycare is closed: {closedReason}");
+        }
+
         var tenantId = _tenantContext.TenantId;
         foreach (var item in request.Items)
         {

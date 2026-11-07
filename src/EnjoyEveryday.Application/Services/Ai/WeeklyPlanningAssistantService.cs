@@ -302,6 +302,15 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
                 }
             }
 
+            // Skip or block closed dates
+            if (_plannerService.IsDaycareClosedForPlanning(item.ScheduledDate, out var closedReason))
+            {
+                item.ValidationStatus = "Warning";
+                item.ValidationNotes = closedReason;
+                await _repository.UpdateDraftItemAsync(item, cancellationToken);
+                continue;
+            }
+
             // Resolve valid Teacher ID if current user is in teachers table; otherwise null (FK constraint)
             Guid? teacherId = null;
             if (_teacherRepository != null)

@@ -190,9 +190,16 @@
     {
         if (_currentScheduleId.HasValue)
         {
-            await PlannerService.CompleteScheduleAsync(_currentScheduleId.Value);
-            await LoadSchedules();
-            CloseDialog();
+            try
+            {
+                await PlannerService.CompleteScheduleAsync(_currentScheduleId.Value);
+                await LoadSchedules();
+                CloseDialog();
+            }
+            catch (Exception)
+            {
+                // Ignored if daycare closed
+            }
         }
     }
 
@@ -204,6 +211,7 @@
     private async Task ConfirmSchedule()
     {
         if (string.IsNullOrEmpty(_dialogSelectedExperienceId) || string.IsNullOrEmpty(_selectedClassroomId)) return;
+        if (PlannerService.IsDaycareClosedForPlanning(_dialogDate, out _)) return;
         var expId = Guid.Parse(_dialogSelectedExperienceId);
         var clsId = Guid.Parse(_selectedClassroomId);
         

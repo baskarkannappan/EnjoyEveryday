@@ -6,7 +6,7 @@
         <thead>
             <tr>
                 <th>
-                    @if (CurrentTab != "teachers" || CanEditTeacherAttendance)
+                    @if (!IsDaycareClosed && (CurrentTab != "teachers" || CanEditTeacherAttendance))
                     {
                         <input type="checkbox" @onchange="HandleSelectAllChanged" aria-label="Select all">
                     }
@@ -22,7 +22,7 @@
             @foreach(var p in People)
             {
                 bool isTeacher = p.Type == "teachers";
-                bool isReadOnlyRow = isTeacher && !CanEditTeacherAttendance;
+                bool isReadOnlyRow = IsDaycareClosed || (isTeacher && !CanEditTeacherAttendance);
 
                 <tr>
                     <td>
@@ -81,11 +81,15 @@
                                     }
                                 </div>
                             }
-                            else
+                            else if (!isReadOnlyRow)
                             {
                                 <button class="btn secondary" style="padding: 3px 8px; font-size: 11px; font-weight: 700; border-color: #52745e; color: #365844; background: #eaf2ec; border-radius: 6px;" @onclick="() => OnOpenPickupModal.InvokeAsync(p)">
                                     <i class="bi bi-shield-check"></i> Check Out
                                 </button>
+                            }
+                            else
+                            {
+                                <span style="color: #6c7870;">—</span>
                             }
                         }
                         else if (p.Type == "children" && (p.Status == "CheckedOut" || p.Status == "Checked Out"))
@@ -172,6 +176,9 @@
 
     [Parameter]
     public bool CanEditTeacherAttendance { get; set; }
+
+    [Parameter]
+    public bool IsDaycareClosed { get; set; }
 
     [Parameter]
     public IReadOnlyList<string> AvailableStatuses { get; set; } = new[] { "Present", "Late", "Absent", "Excused", "Not marked" };
