@@ -1,0 +1,135 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+
+<div class="child-delight-card" @onclick="HandleClick">
+    <!-- Joyful Yellow Sunburst / Sparkles (Top-Left) -->
+    <div class="sunburst-deco" aria-hidden="true">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 8 20 L 2 18" stroke="#facc15" stroke-width="3" stroke-linecap="round"/>
+            <path d="M 14 12 L 8 5" stroke="#facc15" stroke-width="3" stroke-linecap="round"/>
+            <path d="M 20 8 L 21 1" stroke="#facc15" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+    </div>
+
+    <!-- Child Photo / Avatar -->
+    <div class="child-avatar-wrap">
+        @if (!string.IsNullOrWhiteSpace(PhotoUrl))
+        {
+            <img src="@PhotoUrl" class="child-avatar-img" alt="@Name" />
+        }
+        else
+        {
+            <div class="child-avatar-placeholder">
+                <span>@GetInitials()</span>
+            </div>
+        }
+    </div>
+
+    <!-- Child Name -->
+    <h3 class="child-card-name" title="@Name">@Name</h3>
+
+    <!-- Subtitle (Age & Gender) -->
+    <p class="child-card-meta">
+        @GetMetaText()
+    </p>
+
+    <!-- Status Pill Badge -->
+    <div class="child-status-pill-wrap">
+        <span class="child-status-pill @GetStatusClass()">
+            <span class="status-check">✓</span>
+            <span>@(string.IsNullOrWhiteSpace(Status) ? "Enrolled" : Status)</span>
+        </span>
+    </div>
+
+    <!-- Bottom Pastel Wave Decoration -->
+    <div class="card-bottom-wave" aria-hidden="true">
+        <svg viewBox="0 0 300 70" preserveAspectRatio="none">
+            <path d="M 0 35 C 80 55 180 15 300 35 L 300 70 L 0 70 Z" fill="#eff6ff" opacity="0.85"/>
+        </svg>
+    </div>
+
+    <!-- Circular Navigation Arrow Button (Bottom-Right) -->
+    <button type="button" class="child-action-btn" @onclick="HandleActionClick" @onclick:stopPropagation="true" title="View Profile">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+    </button>
+</div>
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public string? PhotoUrl { get; set; }
+    [Parameter] public string? Initials { get; set; }
+    [Parameter] public DateTime? DateOfBirth { get; set; }
+    [Parameter] public int? AgeInMonths { get; set; }
+    [Parameter] public string? Gender { get; set; }
+    [Parameter] public string Status { get; set; } = "Enrolled";
+    [Parameter] public string? ClassroomName { get; set; }
+    [Parameter] public string? BranchName { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public EventCallback OnActionClick { get; set; }
+
+    private string GetInitials()
+    {
+        if (!string.IsNullOrWhiteSpace(Initials)) return Initials;
+        if (string.IsNullOrWhiteSpace(Name)) return "C";
+        var parts = Name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2) return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+        return parts[0][0].ToString().ToUpper();
+    }
+
+    private string GetMetaText()
+    {
+        var parts = new List<string>();
+
+        if (AgeInMonths.HasValue)
+        {
+            parts.Add($"Age: {AgeInMonths.Value} mos");
+        }
+        else if (DateOfBirth.HasValue)
+        {
+            var months = (int)Math.Max(0, (DateTime.UtcNow - DateOfBirth.Value).TotalDays / 30.4375);
+            parts.Add($"Age: {months} mos");
+        }
+
+        if (!string.IsNullOrWhiteSpace(Gender))
+        {
+            parts.Add(Gender);
+        }
+        else if (!string.IsNullOrWhiteSpace(ClassroomName) && ClassroomName != "Unassigned")
+        {
+            parts.Add(ClassroomName);
+        }
+
+        return parts.Count > 0 ? string.Join(" • ", parts) : "Registered Child";
+    }
+
+    private string GetStatusClass()
+    {
+        var s = Status?.ToLowerInvariant() ?? "";
+        if (s.Contains("inactive") || s.Contains("withdrawn")) return "status-inactive";
+        if (s.Contains("wait")) return "status-waitlist";
+        return "status-enrolled";
+    }
+
+    private async Task HandleClick()
+    {
+        if (OnClick.HasDelegate)
+        {
+            await OnClick.InvokeAsync();
+        }
+    }
+
+    private async Task HandleActionClick()
+    {
+        if (OnActionClick.HasDelegate)
+        {
+            await OnActionClick.InvokeAsync();
+        }
+        else if (OnClick.HasDelegate)
+        {
+            await OnClick.InvokeAsync();
+        }
+    }
+}
+

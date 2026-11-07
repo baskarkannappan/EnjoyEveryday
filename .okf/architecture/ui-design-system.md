@@ -77,5 +77,9 @@ Key interactive cards in EnjoyEveryday adopt a rounded, early-childhood crafted 
 * **`ClassroomCard` (`src/EnjoyEveryday.UI.Shared/Components/Home/ClassroomCard/`)**:
   * 3D glossy emerald sphere avatar with classroom initial and twinkling yellow stars.
   * Progress / occupancy bar (`100% Complete`), `✓ Active` pill badge, and `View Details →` pill CTA.
+* **`ChildCard` (`src/EnjoyEveryday.UI.Shared/Components/ChildCard/`)**:
+  * `border-radius: 24px;` with top-left joyful sunburst / sparkle lines and bottom pastel wave.
+  * Large circular child photo avatar with soft shadow and white ring border.
+  * Child name, age / gender / classroom meta text, centered status pill (`✓ Enrolled`), and bottom-right circular navigation arrow button (`→`).
 
 
