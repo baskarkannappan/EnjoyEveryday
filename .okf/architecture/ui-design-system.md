@@ -57,3 +57,25 @@ EnjoyEveryday is a daycare and early-childhood education management platform.
   * Bottom DOM spacer (`.mobile-bottom-spacer`): `display: block; height: calc(76px + env(safe-area-inset-bottom, 0px));` to physically guarantee scroll space across all mobile WebKit and Chromium engines.
   * Nav bar height: `height: calc(64px + env(safe-area-inset-bottom, 0px))` with `padding-bottom: env(safe-area-inset-bottom, 0px)`.
 
+## 6. Delight-Crafted Cards System (24px Radius & Whimsical Visuals)
+Key interactive cards in EnjoyEveryday adopt a rounded, early-childhood crafted look with cheerful organic decorations:
+* **`ExperienceCard` (`src/EnjoyEveryday.UI.Shared/Components/ExperienceCard/`)**:
+  * `border-radius: 22px;` with subtle whimsical rainbow & twinkling stars corner decoration.
+  * Soft pastel category pill badge (`💖 Creative Art`, `🌿 Nature`, etc.) and `✓ Published` status pill.
+  * Attributes ribbon with pill badges for age (`👥 3-4 yrs`), duration (`⏱ 15 min`), setting (`🏠 Indoor`), and session runs (`🛡 1 run`).
+  * Pill action buttons: `📖 Storybook` pill button and deep forest sage `View Activity →` pill CTA (`border-radius: 999px;`).
+* **`CelebrationCard` (`src/EnjoyEveryday.UI.Shared/Components/CelebrationCard/`)**:
+  * `border-radius: 22px;` with festive party popper / confetti horn corner illustration SVG.
+  * Pill tags: `🏆 Celebration` (soft pink) and `✓ Completed` (soft mint green).
+  * Unified date, time, and location pill bar (`📅 Oct 21, 2026 • 🕒 1:00 • 📍 Daycare Center`).
+  * Deep forest green pill CTA: `View Details →`.
+* **`AdmissionsApplicationCard` (`src/EnjoyEveryday.UI.Shared/Components/Admissions/`)**:
+  * `border-radius: 24px;` with soft rainbow corner accent.
+  * Circular avatar with verified green check badge `✓`, large child name, and status pill (`✓ Enrolled Active`).
+  * 2x2 grid with icon containers (Parent/Guardian, Contact, Room & Schedule, Tuition Plan).
+  * Tour scheduled green pill strip and collapsible admissions notes box.
+* **`ClassroomCard` (`src/EnjoyEveryday.UI.Shared/Components/Home/ClassroomCard/`)**:
+  * 3D glossy emerald sphere avatar with classroom initial and twinkling yellow stars.
+  * Progress / occupancy bar (`100% Complete`), `✓ Active` pill badge, and `View Details →` pill CTA.
+
+
