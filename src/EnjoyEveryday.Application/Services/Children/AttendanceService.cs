@@ -68,35 +68,9 @@ public class AttendanceService
     {
         reason = string.Empty;
         var day = DateOnly.FromDateTime(date.Date);
-        var today = DateOnly.FromDateTime(DateTime.Today);
 
         if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(day, branchId, includeTimeOfDayCheckForToday: true, out reason))
         {
-            return true;
-        }
-
-        if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday)
-        {
-            reason = $"The daycare is closed on {day:dddd, MMM d, yyyy} (weekend non-operating day). Attendance cannot be performed for children, teachers, or staff.";
-            return true;
-        }
-
-        if (day < today)
-        {
-            reason = $"The daycare day for {day:MMM d, yyyy} has already ended and is closed. Attendance cannot be modified.";
-            return true;
-        }
-
-        if (day > today)
-        {
-            reason = $"Cannot perform attendance for a future date ({day:MMM d, yyyy}) before the daycare opens.";
-            return true;
-        }
-
-        var now = DateTime.Now;
-        if (now.Hour >= 19 || now.Hour < 7)
-        {
-            reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM). Attendance for children, teachers, and staff is prohibited while closed.";
             return true;
         }
 

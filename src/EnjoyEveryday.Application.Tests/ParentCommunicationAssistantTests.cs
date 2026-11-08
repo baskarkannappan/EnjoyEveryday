@@ -381,6 +381,15 @@ public class ParentCommunicationAssistantTests
             return Task.CompletedTask;
         }
 
+        public Task MarkAsReadByParentAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+        {
+            foreach (var comm in Comms.Values.Where(c => c.TenantId == tenantId && c.ChildId == childId))
+            {
+                comm.DeliveryStatus = "Read";
+            }
+            return Task.CompletedTask;
+        }
+
         public Task<bool> ApproveDraftAsync(Guid tenantId, Guid id, Guid approvedByUserId, CancellationToken cancellationToken = default)
         {
             if (Comms.TryGetValue(id, out var comm) && comm.TenantId == tenantId)
@@ -480,6 +489,9 @@ public class ParentCommunicationAssistantTests
         public Task<IEnumerable<Event>> GetApprovedEventsForChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default) => Task.FromResult(Enumerable.Empty<Event>());
         public Task<Person?> GetPersonByUserIdAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default) => Task.FromResult<Person?>(null);
         public Task UpdatePersonContactAsync(Guid tenantId, Guid personId, string? mobilePhone, string? preferredContactMethod, string? preferredLanguage, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> IsPrivacyAndTrustApprovedAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task ApprovePrivacyAndTrustAsync(Guid tenantId, Guid childId, string approvedByName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default) => Task.FromResult<DateTimeOffset?>(DateTimeOffset.UtcNow);
     }
 
     private class MockAuditService : IAuditService

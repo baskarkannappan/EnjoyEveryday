@@ -94,6 +94,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IPlatformAdminRepository, PlatformAdminRepository>();
         services.AddScoped<IAgentTokenRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentTokenRepository>();
         services.AddScoped<IAgentWebhookRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentWebhookRepository>();
+        services.AddScoped<IDaycareAnnouncementRepository, DaycareAnnouncementRepository>();
 
         // Razorpay Payment Gateway
         services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(

@@ -9,9 +9,11 @@
 @inject ISystemLookupCatalog LookupCatalog
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject ISecurePickupService SecurePickupService
 @using EnjoyEveryday.Shared.Tenancy
 @using EnjoyEveryday.Shared.Authorization
 @inject IUserContext UserContext
+@inject ITenantContext TenantContext
 
 <div class="enrollment-container">
     <div class="enrollment-header">
@@ -225,18 +227,78 @@
             else if (currentStep == 8)
             {
                 <h3>Authorized Pickup</h3>
-                <p style="font-size: 13px; color: #7c877f; margin-bottom: 20px;">Who is authorized to pick up the child? (Guardians are automatically authorized).</p>
-                <div class="field">
-                    <label>Pickup Person Name</label>
-                    <input type="text" @bind="pickupName" />
-                </div>
-                <div class="field">
-                    <label>Relationship</label>
-                    <input type="text" @bind="pickupRelationship" />
-                </div>
-                <div class="field">
-                    <label>Pickup Code (Optional Security Pin)</label>
-                    <input type="text" @bind="pickupCode" />
+                <p style="font-size: 13px; color: #7c877f; margin-bottom: 20px;">
+                    Who is authorized to pick up the child? Designated individuals are verified during departure handover and synchronized across parent and educator portals.
+                </p>
+
+                @if (_authorizedPickupsList?.Any() == true)
+                {
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="font-size: 13.5px; font-weight: 750; color: #26332d; margin-bottom: 10px;">Registered Authorized Contacts</h4>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            @foreach (var pk in _authorizedPickupsList)
+                            {
+                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: #ffffff; border: 1px solid #e1e6e0; border-radius: 12px;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <div style="width: 36px; height: 36px; border-radius: 50%; background: #e6eee9; color: #3e6253; display: flex; align-items: center; justify-content: center; font-weight: 750; font-size: 14px;">
+                                            @(string.IsNullOrWhiteSpace(pk.FullName) ? "G" : pk.FullName.Substring(0, 1).ToUpper())
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: 750; font-size: 13.5px; color: #26332d;">
+                                                @pk.FullName
+                                                <span style="font-size: 11px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; font-weight: 700; background: @(pk.IsPrimaryGuardian ? "#e6eee9" : "#f5f5ef"); color: @(pk.IsPrimaryGuardian ? "#3e6253" : "#6c7870");">
+                                                    @(pk.IsPrimaryGuardian ? "Primary Guardian" : "Authorized Pickup")
+                                                </span>
+                                            </div>
+                                            <div style="font-size: 12px; color: #6c7870; margin-top: 2px;">
+                                                @pk.Relationship @(!string.IsNullOrWhiteSpace(pk.Phone) ? $"· {pk.Phone}" : "") @(!string.IsNullOrWhiteSpace(pk.PickupCode) ? $"· PIN: {pk.PickupCode}" : "")
+                                            </div>
+                                        </div>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(pk.Notes))
+                                    {
+                                        <div style="font-size: 11.5px; color: #7c877f; max-width: 200px; text-align: right;">
+                                            @pk.Notes
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div style="background: #f8f9f5; border: 1px solid #e1e6e0; border-radius: 14px; padding: 16px; margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px; font-size: 13.5px; font-weight: 750; color: #26332d;">Add Authorized Pickup Contact</h4>
+                    <div class="field">
+                        <label>Pickup Person Full Name *</label>
+                        <input type="text" @bind="pickupName" placeholder="e.g. Grandma Helen or John Doe" />
+                    </div>
+                    <div class="field">
+                        <label>Relationship *</label>
+                        <input type="text" @bind="pickupRelationship" placeholder="e.g. Mother, Father, Grandparent, Nanny" />
+                    </div>
+                    <div class="field">
+                        <label>Contact Phone Number</label>
+                        <input type="text" @bind="pickupPhone" placeholder="Mobile phone for identity verification" />
+                    </div>
+                    <div class="field">
+                        <label>Pickup Code (Optional Security PIN)</label>
+                        <input type="text" @bind="pickupCode" placeholder="Optional 4-digit PIN" />
+                    </div>
+                    <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="wizardIsPrimary" @bind="pickupIsPrimary" style="width: 16px; height: 16px; accent-color: #557c6c;" />
+                        <label for="wizardIsPrimary" style="font-size: 12.5px; font-weight: 700; color: #26332d; cursor: pointer; margin: 0;">
+                            Mark as Primary Guardian Contact (Mandatory for at least one pickup)
+                        </label>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(pickupName))
+                    {
+                        <div style="margin-top: 14px;">
+                            <button type="button" class="primary" style="padding: 7px 16px; font-size: 12px; font-weight: 700; border-radius: 9px;" @onclick="SaveCurrentPickupContactAsync">
+                                ＋ Save Authorized Contact
+                            </button>
+                        </div>
+                    }
                 </div>
             }
             else if (currentStep == 9)
@@ -454,6 +516,7 @@
                 currentStep = Math.Min(calculatedStep, 10);
                 maxAllowedStep = currentStep;
             }
+            await LoadPickupsAsync();
         }
     }
 
@@ -495,7 +558,10 @@
 
     private string pickupName = "";
     private string pickupRelationship = "";
+    private string pickupPhone = "";
     private string pickupCode = "";
+    private bool pickupIsPrimary = false;
+    private List<AuthorizedPickupDto> _authorizedPickupsList = new();
 
     private bool consentPhoto = false;
     private bool consentMedical = false;
@@ -551,6 +617,11 @@
             }
         }
 
+        if (currentStep == 8 && !string.IsNullOrWhiteSpace(pickupName))
+        {
+            await SaveCurrentPickupContactAsync();
+        }
+
         if (currentStep < 10) 
         {
             currentStep++;
@@ -601,6 +672,54 @@
         }
         
         NavigationManager.NavigateTo("/children");
+    }
+
+    private async Task LoadPickupsAsync()
+    {
+        var childId = Id ?? _draftChild?.Id;
+        if (childId.HasValue && childId.Value != Guid.Empty)
+        {
+            try
+            {
+                var tenantId = _draftChild?.TenantId ?? TenantContext.TenantId;
+                if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+                var profile = await SecurePickupService.GetChildPickupSecurityProfileAsync(tenantId, childId.Value);
+                if (profile != null)
+                {
+                    _authorizedPickupsList = profile.AuthorizedPickups.ToList();
+                }
+            }
+            catch { }
+        }
+    }
+
+    private async Task SaveCurrentPickupContactAsync()
+    {
+        var childId = Id ?? _draftChild?.Id;
+        if (!childId.HasValue || string.IsNullOrWhiteSpace(pickupName)) return;
+
+        var dto = new AuthorizedPickupDto
+        {
+            Id = Guid.NewGuid(),
+            ChildId = childId.Value,
+            FullName = pickupName.Trim(),
+            Relationship = string.IsNullOrWhiteSpace(pickupRelationship) ? "Authorized Pickup" : pickupRelationship.Trim(),
+            Phone = pickupPhone?.Trim() ?? "",
+            PickupCode = pickupCode?.Trim() ?? "",
+            IsActive = true,
+            IsPrimaryGuardian = pickupIsPrimary || !_authorizedPickupsList.Any(p => p.IsPrimaryGuardian)
+        };
+
+        var tenantId = _draftChild?.TenantId ?? TenantContext.TenantId;
+        if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+
+        await SecurePickupService.SaveAuthorizedPickupAsync(tenantId, childId.Value, dto);
+        await LoadPickupsAsync();
+        pickupName = "";
+        pickupRelationship = "";
+        pickupPhone = "";
+        pickupCode = "";
+        pickupIsPrimary = false;
     }
 
     private async Task DeleteChild()

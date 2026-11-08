@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @namespace EnjoyEveryday.Parent.Web.Components.Pages.Communication
 @inject IParentService ParentService
+@inject IDaycareAnnouncementService AnnouncementService
 @inject ParentSessionState SessionState
 @inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
@@ -39,6 +40,24 @@ else
             </div>
         </RightContent>
     </ParentPageHeader>
+
+    <!-- DAYCARE ANNOUNCEMENT BROADCAST BANNER -->
+    @if (_announcements?.Any() == true)
+    {
+        <div class="messages-announcement-banner">
+            @foreach (var ann in _announcements.Take(2))
+            {
+                <div class="announcement-pill @(ann.IsUrgent ? "urgent" : "")">
+                    <span class="announcement-tag @(ann.IsUrgent ? "tag-urgent" : "")">
+                        @(ann.IsUrgent ? "🚨 URGENT" : $"📢 {ann.Tag.ToUpper()}")
+                    </span>
+                    <strong class="announcement-title">@ann.Title:</strong>
+                    <span class="announcement-body">@ann.Content</span>
+                    <span class="announcement-time">@ann.CreatedAt.ToLocalTime().ToString("MMM dd")</span>
+                </div>
+            }
+        </div>
+    }
 
     <div class="chat-container">
         <!-- QUIET HOURS BANNER -->
@@ -285,6 +304,69 @@ else
         border-top: 1px solid var(--border, #e4e7df);
     }
 
+    .messages-announcement-banner {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+
+    .announcement-pill {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 10px 16px;
+        font-size: 13px;
+        box-shadow: 0 2px 6px rgba(40, 55, 47, 0.04);
+    }
+
+    .announcement-pill.urgent {
+        background: #fffdf8;
+        border: 1.5px solid #f59e0b;
+        border-left: 4px solid #d97706;
+    }
+
+    .announcement-tag {
+        font-size: 10.5px;
+        font-weight: 800;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 2px 7px;
+        border-radius: 5px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .announcement-tag.tag-urgent {
+        background: #fef3c7;
+        color: #b45309;
+    }
+
+    .announcement-title {
+        font-weight: 750;
+        color: var(--text, #26332d);
+        white-space: nowrap;
+    }
+
+    .announcement-body {
+        color: #4b5e52;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .announcement-time {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
     @@media (max-width: 768px) {
         .chat-container {
             min-height: unset;
@@ -299,11 +381,21 @@ else
             overflow: visible;
             padding: 14px 12px;
         }
+
+        .announcement-pill {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+        .announcement-body {
+            white-space: normal;
+        }
     }
 </style>
 
 @code {
     private List<ParentChatMessage> _messages = new();
+    private List<DaycareAnnouncement> _announcements = new();
     private bool _loading = true;
     private bool _isSending = false;
     private string? _errorMessage;
@@ -314,14 +406,28 @@ else
         SessionState.OnChildChanged += OnChildSelectionChanged;
         Localization.OnLanguageChanged += StateHasChanged;
         RealtimeNotificationCenter.OnEducatorMessageReceived += HandleLiveIncomingEducatorMessage;
+        await LoadAnnouncementsAsync();
         await LoadMessagesAsync();
         _ = StartPollingLoopAsync();
     }
 
     private async void OnChildSelectionChanged()
     {
+        await LoadAnnouncementsAsync();
         await LoadMessagesAsync();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAnnouncementsAsync()
+    {
+        if (SessionState.SelectedChild == null) return;
+        try
+        {
+            var tenantId = SessionState.SelectedChild.TenantId != Guid.Empty ? SessionState.SelectedChild.TenantId : Guid.Parse("10000000-0000-0000-0000-000000000001");
+            var items = await AnnouncementService.GetAnnouncementsAsync(tenantId, SessionState.SelectedChild.OrganizationId, SessionState.SelectedChild.BranchId);
+            _announcements = items.ToList();
+        }
+        catch { }
     }
 
     private async Task StartPollingLoopAsync()
@@ -341,6 +447,11 @@ else
                     if (hasChanges)
                     {
                         _messages = msgs;
+                        try
+                        {
+                            await ParentService.MarkMessagesAsReadAsync(SessionState.SelectedChild.ChildId);
+                        }
+                        catch { }
                         await InvokeAsync(StateHasChanged);
                         _ = ScrollToBottomAsync();
                     }
@@ -367,6 +478,17 @@ else
             _loading = true;
             var msgs = await ParentService.GetChildMessagesAsync(SessionState.SelectedChild.ChildId, take: 50);
             _messages = msgs.ToList();
+            
+            // Mark educator messages as read so the unread count clears across portals
+            try
+            {
+                await ParentService.MarkMessagesAsReadAsync(SessionState.SelectedChild.ChildId);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Parent Messages] Error marking as read: {ex.Message}");
+            }
+
             _ = ScrollToBottomAsync();
         }
         catch (Exception ex)

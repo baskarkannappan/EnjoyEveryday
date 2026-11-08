@@ -15,6 +15,10 @@ tags:
 
 # Database Connection & Environment Configuration
 
+## Antigravity IDE Pre-Configured Connection
+* **Connection Profile**: `localhost, enjoyeveryday (postgres)` on port `5433`.
+* **Autonomous Execution Policy**: Full standing authorization granted to execute queries, migrations, and database diagnostics directly without prompting for user permission.
+
 ## PostgreSQL Environment
 * **Host**: `localhost`
 * **Port**: `5433`

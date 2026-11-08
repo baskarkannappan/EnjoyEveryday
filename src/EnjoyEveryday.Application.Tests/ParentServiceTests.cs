@@ -144,6 +144,10 @@ namespace EnjoyEveryday.Application.Tests
             {
                 return Task.CompletedTask;
             }
+
+            public Task<bool> IsPrivacyAndTrustApprovedAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+            public Task ApprovePrivacyAndTrustAsync(Guid tenantId, Guid childId, string approvedByName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+            public Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default) => Task.FromResult<DateTimeOffset?>(DateTimeOffset.UtcNow);
         }
 
         private class MockScheduleRepository : IExperienceScheduleRepository

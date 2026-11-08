@@ -52,29 +52,9 @@ public class ExecutionService
     {
         reason = string.Empty;
         var targetDate = scheduleDate ?? DateOnly.FromDateTime(DateTime.Today);
-        var today = DateOnly.FromDateTime(DateTime.Today);
 
         if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(targetDate, branchId: null, includeTimeOfDayCheckForToday: true, out reason))
         {
-            return true;
-        }
-
-        if (targetDate != today)
-        {
-            reason = $"Cannot start or end an activity for {targetDate:MMM d, yyyy}. Activities can only be started or ended on an active operating day.";
-            return true;
-        }
-
-        if (targetDate.DayOfWeek == DayOfWeek.Saturday || targetDate.DayOfWeek == DayOfWeek.Sunday)
-        {
-            reason = $"The daycare is closed on {targetDate:dddd, MMM d, yyyy} (weekend non-operating day). Cannot start or end any activity.";
-            return true;
-        }
-
-        var now = DateTime.Now;
-        if (now.Hour >= 19 || now.Hour < 7)
-        {
-            reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM). Cannot start or end any activity.";
             return true;
         }
 

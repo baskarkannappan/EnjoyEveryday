@@ -226,6 +226,15 @@ public class ParentCommunicationRepository : IParentCommunicationRepository
             cancellationToken: cancellationToken);
     }
 
+    public async Task MarkAsReadByParentAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_mark_parent_communications_read_by_parent",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
+    }
+
     public async Task<bool> ApproveDraftAsync(Guid tenantId, Guid id, Guid approvedByUserId, CancellationToken cancellationToken = default)
     {
         const string sql = """

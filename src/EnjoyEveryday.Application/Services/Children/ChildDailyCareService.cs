@@ -81,6 +81,7 @@ public interface IChildDailyCareService
     Task<ChildNapSession?> GetActiveNapAsync(Guid childId, CancellationToken ct = default);
     Task<IEnumerable<ClassroomChildCareStatus>> GetClassroomOverviewAsync(Guid branchId, Guid? classroomId, DateOnly date, CancellationToken ct = default);
     Task<IEnumerable<ChildTimelineEntry>> GetChildCareTimelineAsync(Guid childId, DateOnly date, CancellationToken ct = default);
+    Task<IEnumerable<ChildTimelineEntry>> GetChildCareTimelineAsync(Guid tenantId, Guid childId, DateOnly date, CancellationToken ct = default);
     Task<IEnumerable<ChildCareEvent>> GetChildCareEventsAsync(Guid childId, CancellationToken ct = default);
     Task<ChildCarePlan?> GetChildCarePlanAsync(Guid childId, CancellationToken ct = default);
     Task<Guid> SaveCarePlanAsync(ChildCarePlan plan, CancellationToken ct = default);
@@ -88,6 +89,7 @@ public interface IChildDailyCareService
     Task<IEnumerable<ChildCareSupply>> GetLowSuppliesAsync(Guid branchId, CancellationToken ct = default);
     Task<Guid> UpdateSupplyStatusAsync(ChildCareSupply supply, CancellationToken ct = default);
     Task<ParentDailyCareReport> GetParentDailyCareReportAsync(Guid childId, DateOnly date, CancellationToken ct = default);
+    Task<ParentDailyCareReport> GetParentDailyCareReportAsync(Guid tenantId, Guid childId, DateOnly date, CancellationToken ct = default);
     Task<Guid> SubmitHandoverAsync(TeacherHandover handover, CancellationToken ct = default);
     Task AcknowledgeHandoverAsync(Guid handoverId, string? notes, CancellationToken ct = default);
     Task<IEnumerable<TeacherHandover>> GetClassroomHandoversAsync(Guid classroomId, DateOnly date, CancellationToken ct = default);
@@ -527,15 +529,21 @@ public class ChildDailyCareService : IChildDailyCareService
 
     public async Task<IEnumerable<ChildTimelineEntry>> GetChildCareTimelineAsync(Guid childId, DateOnly date, CancellationToken ct = default)
     {
+        return await GetChildCareTimelineAsync(_tenantContext.TenantId, childId, date, ct);
+    }
+
+    public async Task<IEnumerable<ChildTimelineEntry>> GetChildCareTimelineAsync(Guid tenantId, Guid childId, DateOnly date, CancellationToken ct = default)
+    {
+        var effectiveTenantId = tenantId != Guid.Empty ? tenantId : _tenantContext.TenantId;
         var entries = new List<ChildTimelineEntry>();
 
         // 1. Attendance Check-In
-        var child = await _childRepository.GetByIdAsync(_tenantContext.TenantId, childId, ct);
+        var child = await _childRepository.GetByIdAsync(effectiveTenantId, childId, ct);
         if (child != null)
         {
             var (branchId, _) = await ResolveChildScopeAsync(child, ct);
             var attList = await _attendanceRepository.GetChildAttendanceByDateAsync(
-                _tenantContext.TenantId,
+                effectiveTenantId,
                 branchId,
                 date.ToDateTime(TimeOnly.MinValue),
                 ct);
@@ -558,7 +566,7 @@ public class ChildDailyCareService : IChildDailyCareService
         }
 
         // 2. Persisted Child Care Events
-        var careEvents = await _repository.GetEventsByChildAndDateAsync(_tenantContext.TenantId, childId, date, ct);
+        var careEvents = await _repository.GetEventsByChildAndDateAsync(effectiveTenantId, childId, date, ct);
         foreach (var ev in careEvents)
         {
             var title = ev.EventType switch
@@ -691,16 +699,22 @@ public class ChildDailyCareService : IChildDailyCareService
 
     public async Task<ParentDailyCareReport> GetParentDailyCareReportAsync(Guid childId, DateOnly date, CancellationToken ct = default)
     {
-        var child = await _childRepository.GetByIdAsync(_tenantContext.TenantId, childId, ct);
+        return await GetParentDailyCareReportAsync(_tenantContext.TenantId, childId, date, ct);
+    }
+
+    public async Task<ParentDailyCareReport> GetParentDailyCareReportAsync(Guid tenantId, Guid childId, DateOnly date, CancellationToken ct = default)
+    {
+        var effectiveTenantId = tenantId != Guid.Empty ? tenantId : _tenantContext.TenantId;
+        var child = await _childRepository.GetByIdAsync(effectiveTenantId, childId, ct);
         if (child == null)
             throw new KeyNotFoundException("Child record not found.");
 
-        var timeline = (await GetChildCareTimelineAsync(childId, date, ct))
+        var timeline = (await GetChildCareTimelineAsync(effectiveTenantId, childId, date, ct))
             .Where(e => e.IsParentVisible)
             .ToList();
 
         var diaperCount = timeline.Count(e => e.Category == CareEventTypes.DiaperChange);
-        var naps = await _repository.GetNapsByChildAndDateAsync(_tenantContext.TenantId, childId, date, ct);
+        var naps = await _repository.GetNapsByChildAndDateAsync(effectiveTenantId, childId, date, ct);
         var totalRest = naps.Where(n => n.ParentVisible && n.DurationMinutes.HasValue).Sum(n => n.DurationMinutes!.Value);
 
         var lunchEvent = timeline.FirstOrDefault(e => e.Title.Contains("Lunch", StringComparison.OrdinalIgnoreCase));
@@ -713,7 +727,7 @@ public class ChildDailyCareService : IChildDailyCareService
             ? moodEvent.Title.Replace("Comfort observation (", "").Replace(")", "") 
             : (timeline.Any() ? "Content & Settled" : "Not recorded yet");
 
-        var supplies = (await _repository.GetSuppliesByChildAsync(_tenantContext.TenantId, childId, ct))
+        var supplies = (await _repository.GetSuppliesByChildAsync(effectiveTenantId, childId, ct))
             .Where(s => s.Status == "Low" || s.Status == "Depleted")
             .ToList();
 

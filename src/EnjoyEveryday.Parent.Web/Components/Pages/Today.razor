@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @namespace EnjoyEveryday.Parent.Web.Components.Pages
 @inject IParentService ParentService
+@inject IDaycareAnnouncementService AnnouncementService
 @inject ParentSessionState SessionState
 @inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
@@ -26,6 +27,26 @@ else if (SessionState.SelectedChild == null)
 }
 else
 {
+    <!-- DAYCARE ANNOUNCEMENTS BROADCAST BANNER -->
+    @if (_announcements?.Any() == true)
+    {
+        <div class="today-announcements-broadcast">
+            @foreach (var ann in _announcements.Take(2))
+            {
+                <div class="announcement-broadcast-card @(ann.IsUrgent ? "urgent" : "")">
+                    <span class="announcement-broadcast-badge @(ann.IsUrgent ? "badge-urgent" : "")">
+                        @(ann.IsUrgent ? "🚨 URGENT NOTICE" : $"📢 {ann.Tag.ToUpper()}")
+                    </span>
+                    <div class="announcement-broadcast-text">
+                        <strong class="announcement-broadcast-title">@ann.Title:</strong>
+                        <span class="announcement-broadcast-body">@ann.Content</span>
+                    </div>
+                    <span class="announcement-broadcast-date">@ann.CreatedAt.ToLocalTime().ToString("MMM dd")</span>
+                </div>
+            }
+        </div>
+    }
+
     <!-- HERO HEADER -->
     <ParentPageHeader Eyebrow="@($"TODAY · {DateTime.Today:dddd, MMMM dd, yyyy}".ToUpper())"
                       Title="@($"{SessionState.SelectedChild.FirstName}'s Day")"
@@ -96,15 +117,35 @@ else
                 <span class="chip-counter">@_summary.UnreadMessagesCount</span>
             }
         </NavLink>
-        <NavLink href="/family-profile" class="action-chip">
+        <button class="action-chip" @onclick="() => _showPrivacyModal = true">
             <span class="chip-icon">🔒</span>
             <span>@Localization.T("Nav.TrustCenter")</span>
-            @if (_summary?.PendingConsentCount > 0)
+            @if (!_isPrivacyApproved || _summary?.PendingConsentCount > 0)
             {
                 <span class="chip-counter alert">!</span>
             }
-        </NavLink>
+        </button>
     </div>
+
+    @if (!_isPrivacyApproved && SessionState.SelectedChild != null)
+    {
+        <div class="today-action-alerts privacy-alert-banner" style="background: #fef8ee; border: 1px solid #fbd38d; border-left: 5px solid #d97706; margin-bottom: 16px;">
+            <div class="alert-icon" style="color: #d97706;">🛡️</div>
+            <div class="alert-content" style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <strong style="color: #92400e;">Privacy &amp; Trust Center Approval Required</strong>
+                        <p style="margin: 2px 0 0; font-size: 12px; color: #78350f;">
+                            Please review and accept the child data privacy &amp; custody terms for @(SessionState.SelectedChild.FirstName) to activate full system trust compliance.
+                        </p>
+                    </div>
+                    <button class="primary" style="padding: 6px 14px; font-size: 12px; border-radius: 9px; font-weight: 700; white-space: nowrap;" @onclick="() => _showPrivacyModal = true">
+                        Review &amp; Approve &rarr;
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 
     @if (_summary != null && (_summary.UnreadMessagesCount > 0 || _summary.PendingConsentCount > 0 || _summary.UnpaidInvoicesCount > 0))
     {
@@ -241,16 +282,74 @@ else
     </div>
 
     <!-- EVERYDAY ACTION MODALS -->
-    <ReportAbsenceModal @bind-IsOpen="_showAbsenceModal"
-                        ChildId="SessionState.SelectedChild.ChildId"
-                        ChildName="@SessionState.SelectedChild.FirstName" />
-
-    <InvoicesListModal @bind-IsOpen="_showInvoicesModal"
-                       ChildId="SessionState.SelectedChild.ChildId" />
-
-    <AuthorizedPickupsModal @bind-IsOpen="_showPickupsModal"
+    @if (SessionState.SelectedChild != null)
+    {
+        <ReportAbsenceModal @bind-IsOpen="_showAbsenceModal"
                             ChildId="SessionState.SelectedChild.ChildId"
                             ChildName="@SessionState.SelectedChild.FirstName" />
+
+        <InvoicesListModal @bind-IsOpen="_showInvoicesModal"
+                           ChildId="SessionState.SelectedChild.ChildId" />
+
+        <AuthorizedPickupsModal @bind-IsOpen="_showPickupsModal"
+                                ChildId="SessionState.SelectedChild.ChildId"
+                                ChildName="@SessionState.SelectedChild.FirstName" />
+    }
+
+    @if (_showPrivacyModal)
+    {
+        <div class="modal-backdrop" @onclick="() => _showPrivacyModal = false">
+            <div class="modal-card" style="max-width: 520px;" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <div>
+                        <span class="modal-eyebrow">SAFETY &amp; TRUST CENTER</span>
+                        <h3 class="modal-title">Privacy &amp; Custody Trust Acceptance</h3>
+                    </div>
+                    <button class="close-btn" @onclick="() => _showPrivacyModal = false">✕</button>
+                </div>
+                <div class="modal-body" style="padding: 20px; font-size: 13px; line-height: 1.5; color: var(--text, #26332d); max-height: 65vh; overflow-y: auto;">
+                    <p style="margin-top: 0;">
+                        To protect <strong>@(SessionState.SelectedChild?.FirstName ?? "your child")</strong> and ensure verified compliance across educators, branch staff, and administration, please review and accept the child data privacy terms:
+                    </p>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin: 16px 0;">
+                        <div style="display: flex; gap: 10px; background: var(--surface-soft, #f8f9f5); padding: 12px; border-radius: 10px; border: 1px solid var(--border, #e4e7df);">
+                            <span style="font-size: 18px;">📷</span>
+                            <div>
+                                <strong>Photo &amp; Media Privacy</strong>
+                                <p style="margin: 2px 0 0; font-size: 12px; color: var(--muted, #6c7870);">Photos and learning moments are strictly restricted to verified family and teachers. Never exposed publicly.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; background: var(--surface-soft, #f8f9f5); padding: 12px; border-radius: 10px; border: 1px solid var(--border, #e4e7df);">
+                            <span style="font-size: 18px;">👥</span>
+                            <div>
+                                <strong>Authorized Pickup &amp; Custody</strong>
+                                <p style="margin: 2px 0 0; font-size: 12px; color: var(--muted, #6c7870);">Children are released only to verified guardians and registered pickup contacts with ID or PIN verification.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px; background: var(--surface-soft, #f8f9f5); padding: 12px; border-radius: 10px; border: 1px solid var(--border, #e4e7df);">
+                            <span style="font-size: 18px;">📑</span>
+                            <div>
+                                <strong>Safeguarding &amp; Regulatory Rights</strong>
+                                <p style="margin: 2px 0 0; font-size: 12px; color: var(--muted, #6c7870);">Attendance and observations are securely maintained in full compliance with education standards.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; align-items: flex-start; gap: 8px; margin-top: 14px; padding: 10px; background: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0;">
+                        <span style="color: #166534; font-size: 14px;">✓</span>
+                        <span style="font-size: 11.5px; color: #166534;">By clicking approve, you grant official parent acknowledgment for the current school term. This status is permanently logged and immediately visible to teachers and staff.</span>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 14px 20px; display: flex; justify-content: flex-end; gap: 10px; background: var(--surface-soft, #f8f9f5); border-top: 1px solid var(--border, #e4e7df);">
+                    <button class="btn secondary" @onclick="() => _showPrivacyModal = false">Cancel</button>
+                    <button class="primary" disabled="@_isApprovingPrivacy" @onclick="ApprovePrivacyModalAsync">
+                        @(_isApprovingPrivacy ? "Approving..." : "✓ Accept & Approve Privacy & Trust")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 <style>
@@ -540,19 +639,95 @@ else
         cursor: pointer;
     }
 
+    .today-announcements-broadcast {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .announcement-broadcast-card {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 14px;
+        padding: 12px 18px;
+        box-shadow: 0 2px 8px rgba(40, 55, 47, 0.04);
+    }
+
+    .announcement-broadcast-card.urgent {
+        background: #fffdf8;
+        border: 1.5px solid #f59e0b;
+        border-left: 5px solid #d97706;
+    }
+
+    .announcement-broadcast-badge {
+        font-size: 11px;
+        font-weight: 800;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 3px 8px;
+        border-radius: 6px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .announcement-broadcast-badge.badge-urgent {
+        background: #fef3c7;
+        color: #b45309;
+    }
+
+    .announcement-broadcast-text {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        color: var(--text, #26332d);
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        flex-wrap: wrap;
+    }
+
+    .announcement-broadcast-title {
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .announcement-broadcast-body {
+        color: #4b5e52;
+    }
+
+    .announcement-broadcast-date {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
     @@media (max-width: 640px) {
         .today-columns-grid {
             grid-template-columns: 1fr;
+        }
+        .announcement-broadcast-card {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
         }
     }
 </style>
 
 @code {
     private ChildDailySummary? _summary;
+    private List<DaycareAnnouncement> _announcements = new();
     private bool _loading = true;
     private bool _showAbsenceModal = false;
     private bool _showPickupsModal = false;
     private bool _showInvoicesModal = false;
+    private bool _isPrivacyApproved = true;
+    private bool _showPrivacyModal = false;
+    private bool _isApprovingPrivacy = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -590,6 +765,16 @@ else
         {
             _loading = true;
             _summary = await ParentService.GetChildDailySummaryAsync(SessionState.SelectedChild.ChildId, DateTime.Today);
+            _isPrivacyApproved = await ParentService.IsPrivacyAndTrustApprovedAsync(SessionState.SelectedChild.ChildId);
+
+            try
+            {
+                var tenantId = SessionState.SelectedChild?.TenantId ?? Guid.Parse("10000000-0000-0000-0000-000000000001");
+                if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+                var annList = await AnnouncementService.GetAnnouncementsAsync(tenantId, SessionState.SelectedChild?.OrganizationId, SessionState.SelectedChild?.BranchId);
+                _announcements = annList.ToList();
+            }
+            catch { }
         }
         catch (Exception ex)
         {
@@ -599,6 +784,29 @@ else
         finally
         {
             _loading = false;
+        }
+    }
+
+    private async Task ApprovePrivacyModalAsync()
+    {
+        if (SessionState.SelectedChild == null) return;
+        try
+        {
+            _isApprovingPrivacy = true;
+            var person = await ParentService.GetParentProfileAsync();
+            var name = person != null ? $"{person.FirstName} {person.LastName}".Trim() : "Parent Guardian";
+            await ParentService.ApprovePrivacyAndTrustAsync(SessionState.SelectedChild.ChildId, name);
+            _isPrivacyApproved = true;
+            _showPrivacyModal = false;
+            await LoadSummaryAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERROR ApprovePrivacyModal] {ex.Message}");
+        }
+        finally
+        {
+            _isApprovingPrivacy = false;
         }
     }
 

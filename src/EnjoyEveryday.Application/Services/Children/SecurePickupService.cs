@@ -74,9 +74,13 @@ public class RecordChildDepartureResponse
 public interface ISecurePickupService
 {
     Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid childId, DateTime? date = null, CancellationToken ct = default);
+    Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid tenantId, Guid childId, DateTime? date = null, CancellationToken ct = default);
     Task<RecordChildDepartureResponse> VerifyAndRecordChildDepartureAsync(RecordChildDepartureRequest request, CancellationToken ct = default);
     Task<IEnumerable<AuthorizedPickupDto>> GetAuthorizedPickupsForChildAsync(Guid childId, CancellationToken ct = default);
+    Task<IEnumerable<AuthorizedPickupDto>> GetAuthorizedPickupsForChildAsync(Guid tenantId, Guid childId, CancellationToken ct = default);
     Task AddAuthorizedPickupAsync(AuthorizedPickup pickup, CancellationToken ct = default);
+    Task<AuthorizedPickupDto> SaveAuthorizedPickupAsync(Guid tenantId, Guid childId, AuthorizedPickupDto dto, CancellationToken ct = default);
+    Task<bool> DeleteAuthorizedPickupAsync(Guid tenantId, Guid childId, Guid pickupId, CancellationToken ct = default);
 }
 
 public class SecurePickupService : ISecurePickupService
@@ -106,14 +110,20 @@ public class SecurePickupService : ISecurePickupService
 
     public async Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid childId, DateTime? date = null, CancellationToken ct = default)
     {
+        return await GetChildPickupSecurityProfileAsync(_tenantContext.TenantId, childId, date, ct);
+    }
+
+    public async Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid tenantId, Guid childId, DateTime? date = null, CancellationToken ct = default)
+    {
         DateTime targetDate = date ?? DateTime.Today;
+        var effectiveTenantId = tenantId != Guid.Empty ? tenantId : _tenantContext.TenantId;
 
         // 1. Fetch child profile
-        var child = await _pickupRepository.GetChildPickupHeaderAsync(_tenantContext.TenantId, childId, ct);
+        var child = await _pickupRepository.GetChildPickupHeaderAsync(effectiveTenantId, childId, ct);
         if (child == null) return null;
 
         // 2. Fetch custody restrictions
-        var rawRestrictions = await _pickupRepository.GetActiveCustodyRestrictionsAsync(_tenantContext.TenantId, childId, ct);
+        var rawRestrictions = await _pickupRepository.GetActiveCustodyRestrictionsAsync(effectiveTenantId, childId, ct);
         var restrictions = rawRestrictions.Select(r => new CustodyRestrictionDto
         {
             Id = r.Id,
@@ -125,7 +135,7 @@ public class SecurePickupService : ISecurePickupService
         }).ToList();
 
         // 3. Fetch explicit authorized pickups
-        var rawPickups = await _pickupRepository.GetAuthorizedPickupsAsync(_tenantContext.TenantId, childId, ct);
+        var rawPickups = await _pickupRepository.GetAuthorizedPickupsAsync(effectiveTenantId, childId, ct);
         var pickups = rawPickups.Select(p => new AuthorizedPickupDto
         {
             Id = p.Id,
@@ -145,7 +155,7 @@ public class SecurePickupService : ISecurePickupService
         }).ToList();
 
         // 4. Fetch family relationships (parents & legal guardians)
-        var rawFamily = await _pickupRepository.GetFamilyPickupRelationshipsAsync(_tenantContext.TenantId, childId, ct);
+        var rawFamily = await _pickupRepository.GetFamilyPickupRelationshipsAsync(effectiveTenantId, childId, ct);
         foreach (var f in rawFamily)
         {
             Guid personId = f.PersonId;
@@ -185,7 +195,7 @@ public class SecurePickupService : ISecurePickupService
         }
 
         // 5. Fetch today's attendance record
-        var todayAtt = await _pickupRepository.GetTodayAttendanceAsync(_tenantContext.TenantId, childId, targetDate, ct);
+        var todayAtt = await _pickupRepository.GetTodayAttendanceAsync(effectiveTenantId, childId, targetDate, ct);
 
         return new ChildPickupSecurityProfile
         {
@@ -210,14 +220,6 @@ public class SecurePickupService : ISecurePickupService
             {
                 Success = false,
                 ErrorMessage = $"Daycare is closed: {eodClosedReason}"
-            };
-        }
-        if (now.DayOfWeek == DayOfWeek.Saturday || now.DayOfWeek == DayOfWeek.Sunday || now.Hour < 7 || now.Hour >= 19)
-        {
-            return new RecordChildDepartureResponse
-            {
-                Success = false,
-                ErrorMessage = "Daycare is closed. Child attendance and departure cannot be performed while the daycare is closed."
             };
         }
 
@@ -306,7 +308,12 @@ public class SecurePickupService : ISecurePickupService
 
     public async Task<IEnumerable<AuthorizedPickupDto>> GetAuthorizedPickupsForChildAsync(Guid childId, CancellationToken ct = default)
     {
-        var profile = await GetChildPickupSecurityProfileAsync(childId, null, ct);
+        return await GetAuthorizedPickupsForChildAsync(_tenantContext.TenantId, childId, ct);
+    }
+
+    public async Task<IEnumerable<AuthorizedPickupDto>> GetAuthorizedPickupsForChildAsync(Guid tenantId, Guid childId, CancellationToken ct = default)
+    {
+        var profile = await GetChildPickupSecurityProfileAsync(tenantId, childId, null, ct);
         return profile?.AuthorizedPickups ?? Enumerable.Empty<AuthorizedPickupDto>();
     }
 
@@ -316,5 +323,30 @@ public class SecurePickupService : ISecurePickupService
         if (pickup.Id == Guid.Empty) pickup.Id = Guid.NewGuid();
 
         await _pickupRepository.AddAuthorizedPickupAsync(pickup, ct);
+    }
+
+    public async Task<AuthorizedPickupDto> SaveAuthorizedPickupAsync(Guid tenantId, Guid childId, AuthorizedPickupDto dto, CancellationToken ct = default)
+    {
+        var record = await _pickupRepository.SaveAuthorizedPickupWithPersonAsync(
+            tenantId, childId, dto.Id, dto.PersonId, dto.FullName, dto.Relationship, dto.Phone, dto.PickupCode, dto.Notes, ct);
+
+        return new AuthorizedPickupDto
+        {
+            Id = record.Id,
+            ChildId = record.ChildId,
+            PersonId = record.PersonId,
+            FullName = record.FullName,
+            Relationship = record.Relationship ?? "Authorized Pickup",
+            Phone = record.Phone,
+            PickupCode = record.PickupCode,
+            Notes = record.Notes,
+            IsActive = record.IsActive,
+            IsRegisteredPickup = true
+        };
+    }
+
+    public async Task<bool> DeleteAuthorizedPickupAsync(Guid tenantId, Guid childId, Guid pickupId, CancellationToken ct = default)
+    {
+        return await _pickupRepository.DeleteAuthorizedPickupAsync(tenantId, childId, pickupId, ct);
     }
 }

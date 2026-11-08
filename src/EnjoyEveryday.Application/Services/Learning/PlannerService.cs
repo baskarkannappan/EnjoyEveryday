@@ -416,35 +416,20 @@ public class PlannerService
         if (string.IsNullOrWhiteSpace(timeOfDay)) return "Morning";
         var lower = timeOfDay.Trim().ToLowerInvariant();
         if (lower.Contains("morn")) return "Morning";
-        return "Evening";
+        if (lower.Contains("mid") || lower.Contains("noon")) return "Mid-Day";
+        if (lower.Contains("after")) return "Afternoon";
+        if (lower.Contains("even")) return "Evening";
+        return timeOfDay.Trim();
     }
 
     public bool IsDaycareClosedForPlanning(DateOnly scheduledDate, out string reason)
     {
         reason = string.Empty;
-
-        // 1. Check via EndOfDayService if available
         bool isToday = scheduledDate == DateOnly.FromDateTime(DateTime.Today);
+
         if (_endOfDayService != null && _endOfDayService.IsDaycareClosedForDate(scheduledDate, branchId: null, includeTimeOfDayCheckForToday: isToday, out reason))
         {
             return true;
-        }
-
-        // 2. Fallback deterministic check for weekends & operating hours
-        if (scheduledDate.DayOfWeek == DayOfWeek.Saturday || scheduledDate.DayOfWeek == DayOfWeek.Sunday)
-        {
-            reason = $"Cannot plan an experience for {scheduledDate:dddd, MMM d, yyyy} because the daycare is closed on weekends.";
-            return true;
-        }
-
-        if (isToday)
-        {
-            var now = DateTime.Now;
-            if (now.Hour >= 19 || now.Hour < 7)
-            {
-                reason = "Cannot plan an experience for today because the daycare is closed (operating hours ended at 7:00 PM).";
-                return true;
-            }
         }
 
         return false;
@@ -468,7 +453,7 @@ public class PlannerService
         {
             throw new InvalidOperationException($"Cannot plan any experience for {scheduledDate:MMM d, yyyy}: {closedReason}");
         }
-        if (scheduledDate == DateOnly.FromDateTime(DateTime.Today) && endTime.HasValue && endTime.Value <= DateTime.Now.TimeOfDay)
+        if (_endOfDayService?.IsBypassedForTesting() != true && scheduledDate == DateOnly.FromDateTime(DateTime.Today) && endTime.HasValue && endTime.Value <= DateTime.Now.TimeOfDay)
         {
             throw new ArgumentException("Cannot plan an experience for a time window that has already passed today.");
         }
@@ -504,30 +489,10 @@ public class PlannerService
             }
         }
 
-        // 4. Session Slot Limit (Morning & Evening only - maximum 2 per classroom per day)
+        // 4. Time Overlap and Teacher Conflicts
         var normalizedSlot = NormalizeTimeOfDaySlot(timeOfDay);
         var existingSchedules = (await _scheduleRepository.GetByDateAsync(scheduledDate)).ToList();
 
-        var classroomSchedules = existingSchedules.Where(s =>
-            s.ClassroomId == classroomId &&
-            (!excludeScheduleId.HasValue || s.Id != excludeScheduleId.Value) &&
-            !string.Equals(s.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
-
-        if (classroomSchedules.Count >= 2)
-        {
-            throw new InvalidOperationException($"Classroom already has both Morning and Evening experiences planned for {scheduledDate:MMM d, yyyy}. No additional sessions are allowed.");
-        }
-
-        foreach (var existing in classroomSchedules)
-        {
-            var existingSlot = NormalizeTimeOfDaySlot(existing.TimeOfDay);
-            if (string.Equals(normalizedSlot, existingSlot, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException($"This classroom already has a {existingSlot} experience scheduled for {scheduledDate:MMM d, yyyy}. Only one Morning and one Evening experience is allowed per day.");
-            }
-        }
-
-        // 5. Overlap and Teacher Conflicts
         foreach (var existing in existingSchedules)
         {
             if (excludeScheduleId.HasValue && existing.Id == excludeScheduleId.Value) continue;
@@ -536,7 +501,7 @@ public class PlannerService
             bool timeOverlaps = false;
             if (startTime.HasValue && endTime.HasValue && existing.PlannedStartTime.HasValue && existing.PlannedEndTime.HasValue)
             {
-                timeOverlaps = startTime < existing.PlannedEndTime && endTime > existing.PlannedStartTime;
+                timeOverlaps = startTime.Value < existing.PlannedEndTime.Value && endTime.Value > existing.PlannedStartTime.Value;
             }
             else
             {
@@ -545,14 +510,18 @@ public class PlannerService
 
             if (timeOverlaps)
             {
+                var timeDesc = (existing.PlannedStartTime.HasValue && existing.PlannedEndTime.HasValue)
+                    ? $"{DateTime.Today.Add(existing.PlannedStartTime.Value):hh:mm tt} - {DateTime.Today.Add(existing.PlannedEndTime.Value):hh:mm tt}"
+                    : existing.TimeOfDay;
+
                 if (existing.ClassroomId == classroomId)
                 {
-                    throw new InvalidOperationException($"Classroom already has an experience scheduled for this time ({timeOfDay}).");
+                    throw new InvalidOperationException($"Classroom already has an experience scheduled for this time ({timeDesc}). Please choose a different open time slot.");
                 }
 
                 if (primaryTeacherId.HasValue && existing.PrimaryTeacherId.HasValue && existing.PrimaryTeacherId == primaryTeacherId)
                 {
-                    throw new InvalidOperationException($"Teacher is already assigned to another experience during this time ({timeOfDay}). A teacher can be present in only one planned schedule event at a time.");
+                    throw new InvalidOperationException($"Teacher is already assigned to another experience during this time ({timeDesc}). A teacher can be present in only one planned schedule event at a time.");
                 }
             }
         }

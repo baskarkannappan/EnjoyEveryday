@@ -30,4 +30,7 @@ public interface IParentRepository
     Task<IEnumerable<Event>> GetApprovedEventsForChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default);
     Task<Person?> GetPersonByUserIdAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default);
     Task UpdatePersonContactAsync(Guid tenantId, Guid personId, string? mobilePhone, string? preferredContactMethod, string? preferredLanguage, CancellationToken cancellationToken = default);
+    Task<bool> IsPrivacyAndTrustApprovedAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default);
+    Task ApprovePrivacyAndTrustAsync(Guid tenantId, Guid childId, string approvedByName, CancellationToken cancellationToken = default);
+    Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default);
 }

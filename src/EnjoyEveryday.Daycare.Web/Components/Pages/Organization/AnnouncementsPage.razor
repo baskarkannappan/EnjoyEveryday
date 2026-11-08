@@ -1,0 +1,947 @@
+@page "/announcements"
+@page "/management/announcements"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Services
+@inject IDaycareAnnouncementService AnnouncementService
+@inject BranchService BranchService
+@inject OrganizationService OrganizationService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IAppNotificationService NotificationService
+
+<PageTitle>Daycare Announcements — EnjoyEveryday</PageTitle>
+
+<div class="content announcements-container">
+    <PageHero Eyebrow="COMMUNICATION &amp; BROADCASTS"
+              Title="Daycare Announcements"
+              Subtitle="Create, broadcast, and manage official daycare center announcements, seasonal notices, and urgent alerts synced across parent and educator portals.">
+        <RightContent>
+            <button class="primary" @onclick="OpenCreateModal">
+                ＋ Publish Announcement
+            </button>
+        </RightContent>
+    </PageHero>
+
+    <!-- FILTER & SEARCH ROW -->
+    <div class="filter-row">
+        <div class="tabs-group">
+            <button class="status-tab @(_activeStatusTab == "Active" ? "active" : "")" @onclick='() => SetStatusTab("Active")'>
+                Active Broadcasts (@_announcements.Count(a => a.IsActive))
+            </button>
+            <button class="status-tab @(_activeStatusTab == "Deactivated" ? "active" : "")" @onclick='() => SetStatusTab("Deactivated")'>
+                Deactivated / Removed (@_announcements.Count(a => !a.IsActive))
+            </button>
+        </div>
+
+        <div class="filter-controls">
+            <div class="filter-group">
+                <label class="filter-label">Branch:</label>
+                <select class="filter-select" @bind="_selectedBranchFilter" @bind:after="ApplyFilter">
+                    <option value="">All Branches</option>
+                    @foreach (var br in _branches)
+                    {
+                        <option value="@br.Id.ToString()">@br.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label class="filter-label">Category:</label>
+                <select class="filter-select" @bind="_selectedTagFilter" @bind:after="ApplyFilter">
+                    <option value="">All Categories</option>
+                    <option value="Notice">Notice</option>
+                    <option value="Reminder">Reminder</option>
+                    <option value="Urgent Alert">Urgent Alert</option>
+                    <option value="Weather">Weather / Safety</option>
+                    <option value="Event">Event / Celebration</option>
+                    <option value="Policy">Policy Update</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- ANNOUNCEMENTS LIST -->
+    @if (_loading)
+    {
+        <LoadingState Message="Loading announcements..." MinHeightPx="180" />
+    }
+    else if (!_filteredAnnouncements.Any())
+    {
+        <div class="empty-announcements-card">
+            <div class="empty-icon">📢</div>
+            <h3>@(_activeStatusTab == "Active" ? "No Active Announcements" : "No Deactivated Announcements")</h3>
+            <p>@(_activeStatusTab == "Active" 
+                ? "No active published announcements match the selected filter. Click 'Publish Announcement' above to broadcast a new update to families." 
+                : "No announcements are currently in the deactivated archive.")</p>
+        </div>
+    }
+    else
+    {
+        <div class="announcements-grid">
+            @foreach (var ann in _filteredAnnouncements)
+            {
+                <div class="announcement-card @(ann.IsUrgent ? "urgent-card" : "") @(!ann.IsActive ? "deactivated-card" : "")">
+                    <div class="announcement-card-header">
+                        <div class="announcement-badge-wrap">
+                            @if (!ann.IsActive)
+                            {
+                                <span class="badge-deactivated">🚫 DEACTIVATED</span>
+                            }
+                            else if (ann.IsUrgent)
+                            {
+                                <span class="badge-urgent">🚨 URGENT ALERT</span>
+                            }
+                            <span class="badge-tag">@ann.Tag</span>
+                            <span class="badge-scope">
+                                @(ann.BranchId.HasValue 
+                                    ? $"Branch: {_branches.FirstOrDefault(b => b.Id == ann.BranchId.Value)?.Name ?? "Center"}" 
+                                    : "Organization-Wide (All Branches)")
+                            </span>
+                        </div>
+                        <div class="announcement-actions">
+                            @if (ann.IsActive)
+                            {
+                                <button class="btn-deactivate" title="Deactivate and remove from all parent & educator screens" @onclick="() => DeactivateAnnouncement(ann.Id)">
+                                    🚫 Deactivate
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn-reactivate" title="Reactivate and broadcast back to parent screens" @onclick="() => ReactivateAnnouncement(ann.Id)">
+                                    ↻ Reactivate
+                                </button>
+                            }
+                            <button class="delete-ann-btn" title="Delete announcement permanently" @onclick="() => DeleteAnnouncement(ann.Id)">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+
+                    <h2 class="announcement-title">@ann.Title</h2>
+                    <p class="announcement-body">@ann.Content</p>
+
+                    <div class="announcement-footer">
+                        <div class="author-info">
+                            <span>Posted by <strong>@(ann.AuthorName ?? "Daycare Administration")</strong></span>
+                            @if (!string.IsNullOrWhiteSpace(ann.AuthorRole))
+                            {
+                                <span class="author-role-pill">@ann.AuthorRole</span>
+                            }
+                            <span class="dot">•</span>
+                            <span>@ann.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy · h:mm tt")</span>
+                        </div>
+                        <div class="sync-status">
+                            @if (ann.IsActive)
+                            {
+                                <span class="dot-online"></span>
+                                <span>Live on Parent Portal</span>
+                            }
+                            else
+                            {
+                                <span class="dot-offline"></span>
+                                <span style="color: #991b1b; font-weight: 700;">Removed from Screens</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- CREATE ANNOUNCEMENT MODAL -->
+@if (_showCreateModal)
+{
+    <div class="modal-backdrop" @onclick="CloseCreateModal">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">OFFICIAL BROADCAST</div>
+                    <h3 class="modal-title">Publish Daycare Announcement</h3>
+                </div>
+                <button class="close-btn" @onclick="CloseCreateModal">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="error-banner">
+                        <span>⚠️ @_errorMessage</span>
+                    </div>
+                }
+
+                <div class="form-field">
+                    <label>Announcement Headline / Title *</label>
+                    <input type="text" class="form-input" @bind="_formTitle" placeholder="e.g. Seasonal Weather Reminder or Spring Parent-Teacher Conference" />
+                </div>
+
+                <div class="form-row">
+                    <div class="form-field">
+                        <label>Category / Tag *</label>
+                        <select class="form-select" @bind="_formTag">
+                            <option value="Notice">Notice</option>
+                            <option value="Reminder">Reminder</option>
+                            <option value="Urgent Alert">Urgent Alert</option>
+                            <option value="Weather">Weather / Safety</option>
+                            <option value="Event">Event / Celebration</option>
+                            <option value="Policy">Policy Update</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label>Target Scope *</label>
+                        <select class="form-select" @bind="_formBranchId">
+                            <option value="">Organization-Wide (All Branches)</option>
+                            @foreach (var br in _branches)
+                            {
+                                <option value="@br.Id.ToString()">Branch: @br.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <label>Announcement Message Body *</label>
+                    <textarea class="form-textarea" rows="4" @bind="_formContent" placeholder="Write the announcement details to be delivered to parents..."></textarea>
+                </div>
+
+                <div class="urgent-toggle-field">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="_formIsUrgent" />
+                        <div>
+                            <strong>Mark as Urgent Broadcast</strong>
+                            <p>Urgent announcements display immediately as a highlighted alert banner at the top of the Parent Home and Messages pages.</p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="secondary" @onclick="CloseCreateModal">Cancel</button>
+                <button class="primary" disabled="@_isSubmitting" @onclick="SubmitAnnouncement">
+                    @(_isSubmitting ? "Publishing..." : "Publish Announcement")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .announcements-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding-bottom: 40px;
+    }
+
+    .filter-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin: 20px 0;
+        background: var(--surface, #ffffff);
+        padding: 14px 20px;
+        border-radius: var(--radius, 18px);
+        border: 1px solid var(--border, #e4e7df);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .tabs-group {
+        display: flex;
+        gap: 8px;
+    }
+
+    .status-tab {
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .status-tab:hover {
+        color: var(--text, #26332d);
+        background: #ffffff;
+    }
+
+    .status-tab.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border-color: #c8dacd;
+    }
+
+    .filter-controls {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .filter-label {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+    }
+
+    .filter-select {
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 9px;
+        padding: 6px 12px;
+        font-size: 13px;
+        color: var(--text, #26332d);
+        background: var(--surface-soft, #f8f9f5);
+        outline: none;
+    }
+
+    .empty-announcements-card {
+        background: var(--surface, #ffffff);
+        border: 1px dashed var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 48px;
+        text-align: center;
+        margin-top: 20px;
+    }
+
+    .empty-icon {
+        font-size: 36px;
+        margin-bottom: 12px;
+    }
+
+    .empty-announcements-card h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+    }
+
+    .empty-announcements-card p {
+        margin: 0;
+        font-size: 13.5px;
+        color: var(--muted, #6c7870);
+        max-width: 480px;
+        margin: 0 auto;
+    }
+
+    .announcements-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .announcement-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 22px 24px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .announcement-card.urgent-card {
+        border-left: 5px solid #d97706;
+        background: #fffdf8;
+    }
+
+    .announcement-card.deactivated-card {
+        opacity: 0.82;
+        background: #fafaf8;
+        border: 1px dashed #d1d5db;
+    }
+
+    .announcement-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-deactivate {
+        background: #fff1f2;
+        border: 1px solid #fecdd3;
+        color: #be123c;
+        border-radius: 8px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .btn-deactivate:hover {
+        background: #ffe4e6;
+        color: #9f1239;
+        border-color: #fda4af;
+    }
+
+    .btn-reactivate {
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        color: #065f46;
+        border-radius: 8px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .btn-reactivate:hover {
+        background: #d1fae5;
+        color: #047857;
+    }
+
+    .badge-deactivated {
+        font-size: 10.5px;
+        font-weight: 800;
+        background: #fee2e2;
+        color: #991b1b;
+        padding: 3px 8px;
+        border-radius: 6px;
+        letter-spacing: 0.3px;
+    }
+
+    .dot-offline {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ef4444;
+    }
+
+    .announcement-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+    }
+
+    .announcement-badge-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .badge-urgent {
+        font-size: 10.5px;
+        font-weight: 800;
+        background: #fef3c7;
+        color: #b45309;
+        padding: 3px 8px;
+        border-radius: 6px;
+        letter-spacing: 0.3px;
+    }
+
+    .badge-tag {
+        font-size: 11px;
+        font-weight: 750;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 3px 8px;
+        border-radius: 6px;
+    }
+
+    .badge-scope {
+        font-size: 11px;
+        font-weight: 600;
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+        border: 1px solid var(--border, #e4e7df);
+        padding: 3px 8px;
+        border-radius: 6px;
+    }
+
+    .delete-ann-btn {
+        background: transparent;
+        border: none;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        font-size: 16px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .delete-ann-btn:hover {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .announcement-title {
+        font-size: 17px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 0 0 8px;
+        letter-spacing: -0.3px;
+    }
+
+    .announcement-body {
+        font-size: 13.5px;
+        color: #3e5045;
+        line-height: 1.55;
+        margin: 0 0 16px;
+    }
+
+    .announcement-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 14px;
+        border-top: 1px solid var(--border, #e4e7df);
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+    }
+
+    .author-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .author-role-pill {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 6px;
+        padding: 1px 6px;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .dot {
+        font-size: 8px;
+        opacity: 0.5;
+    }
+
+    .sync-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--accent-dark, #3e6253);
+    }
+
+    .dot-online {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #10b981;
+    }
+
+    /* MODAL STYLES */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+    }
+
+    .modal-dialog {
+        background: var(--surface, #ffffff);
+        border-radius: var(--radius, 18px);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+        width: 100%;
+        max-width: 580px;
+        overflow: hidden;
+        border: 1px solid var(--border, #e4e7df);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+
+    .modal-eyebrow {
+        font-size: 10.5px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        color: var(--accent, #557c6c);
+    }
+
+    .modal-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        margin: 2px 0 0;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        font-size: 16px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        padding: 4px;
+    }
+
+    .modal-body {
+        padding: 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .error-banner {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex: 1;
+    }
+
+    .form-field label {
+        font-size: 12.5px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .form-row {
+        display: flex;
+        gap: 14px;
+    }
+
+    .form-input, .form-select, .form-textarea {
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        background: var(--surface-soft, #f8f9f5);
+        outline: none;
+        font-family: inherit;
+        box-sizing: border-box;
+        width: 100%;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+        border-color: var(--accent, #557c6c);
+        background: #ffffff;
+    }
+
+    .urgent-toggle-field {
+        background: #fffbeb;
+        border: 1px solid #fef3c7;
+        border-radius: 12px;
+        padding: 12px 16px;
+    }
+
+    .checkbox-label {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        cursor: pointer;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+        margin-top: 3px;
+        width: 17px;
+        height: 17px;
+        accent-color: #d97706;
+    }
+
+    .checkbox-label strong {
+        font-size: 13px;
+        color: #92400e;
+        display: block;
+    }
+
+    .checkbox-label p {
+        font-size: 11.5px;
+        color: #b45309;
+        margin: 2px 0 0;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        padding: 16px 24px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: #f7f8f5;
+    }
+
+    button.primary {
+        background: var(--accent, #557c6c);
+        color: #ffffff;
+        border: none;
+        padding: 9px 18px;
+        border-radius: 11px;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    button.primary:hover {
+        background: var(--accent-dark, #3e6253);
+    }
+
+    button.secondary {
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        padding: 9px 18px;
+        border-radius: 11px;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+    }
+</style>
+
+@code {
+    private List<DaycareAnnouncement> _announcements = new();
+    private List<DaycareAnnouncement> _filteredAnnouncements = new();
+    private List<Branch> _branches = new();
+    private bool _loading = true;
+    private bool _showCreateModal = false;
+    private bool _isSubmitting = false;
+    private string? _errorMessage;
+
+    private string _activeStatusTab = "Active";
+    private string _selectedBranchFilter = "";
+    private string _selectedTagFilter = "";
+
+    // Form inputs
+    private string _formTitle = "";
+    private string _formTag = "Notice";
+    private string _formBranchId = "";
+    private string _formContent = "";
+    private bool _formIsUrgent = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBranchesAsync();
+        await LoadAnnouncementsAsync();
+    }
+
+    private async Task LoadBranchesAsync()
+    {
+        try
+        {
+            var orgs = await OrganizationService.GetOrganizationsAsync();
+            var org = orgs.FirstOrDefault();
+            if (org != null)
+            {
+                var branches = await BranchService.GetBranchesAsync(org.Id);
+                _branches = branches.ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Announcements] Error loading branches: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAnnouncementsAsync()
+    {
+        try
+        {
+            _loading = true;
+            var tenantId = TenantContext.TenantId != Guid.Empty ? TenantContext.TenantId : Guid.Parse("10000000-0000-0000-0000-000000000001");
+            var items = await AnnouncementService.GetAnnouncementsAsync(tenantId, activeOnly: false);
+            _announcements = items.ToList();
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Announcements] Error loading announcements: {ex.Message}");
+            _announcements = new();
+            _filteredAnnouncements = new();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SetStatusTab(string tab)
+    {
+        _activeStatusTab = tab;
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        var query = _announcements.AsEnumerable();
+
+        if (_activeStatusTab == "Active")
+        {
+            query = query.Where(a => a.IsActive);
+        }
+        else
+        {
+            query = query.Where(a => !a.IsActive);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedBranchFilter) && Guid.TryParse(_selectedBranchFilter, out var filterBranchId))
+        {
+            query = query.Where(a => a.BranchId == null || a.BranchId == filterBranchId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedTagFilter))
+        {
+            query = query.Where(a => string.Equals(a.Tag, _selectedTagFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _filteredAnnouncements = query.ToList();
+    }
+
+    private void OpenCreateModal()
+    {
+        _formTitle = "";
+        _formTag = "Notice";
+        _formBranchId = "";
+        _formContent = "";
+        _formIsUrgent = false;
+        _errorMessage = null;
+        _showCreateModal = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        _showCreateModal = false;
+        _errorMessage = null;
+    }
+
+    private async Task SubmitAnnouncement()
+    {
+        if (string.IsNullOrWhiteSpace(_formTitle))
+        {
+            _errorMessage = "Announcement Title is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formContent))
+        {
+            _errorMessage = "Announcement Message Content is required.";
+            return;
+        }
+
+        try
+        {
+            _isSubmitting = true;
+            _errorMessage = null;
+
+            Guid? branchId = Guid.TryParse(_formBranchId, out var parsedBranchId) ? parsedBranchId : null;
+            Guid orgId = _branches.FirstOrDefault(b => b.Id == branchId)?.OrganizationId 
+                         ?? (_branches.FirstOrDefault()?.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001"));
+
+            var authorName = !string.IsNullOrWhiteSpace(UserContext.Email) ? UserContext.Email : "Daycare Administration";
+            var authorRole = UserContext.Roles.FirstOrDefault() ?? "Admin";
+
+            var announcement = new DaycareAnnouncement
+            {
+                Id = Guid.NewGuid(),
+                TenantId = TenantContext.TenantId != Guid.Empty ? TenantContext.TenantId : Guid.Parse("10000000-0000-0000-0000-000000000001"),
+                OrganizationId = orgId,
+                BranchId = branchId,
+                Title = _formTitle.Trim(),
+                Content = _formContent.Trim(),
+                Tag = _formTag,
+                IsUrgent = _formIsUrgent,
+                AuthorName = authorName,
+                AuthorRole = authorRole,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await AnnouncementService.CreateAnnouncementAsync(announcement);
+            await NotificationService.ShowSuccessAsync("Announcement published and broadcasted to parents!");
+
+            CloseCreateModal();
+            await LoadAnnouncementsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to publish: {ex.Message}";
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task DeactivateAnnouncement(Guid id)
+    {
+        try
+        {
+            var deactivated = await AnnouncementService.DeactivateAnnouncementAsync(id);
+            if (deactivated)
+            {
+                await NotificationService.ShowSuccessAsync("Announcement deactivated and removed from screens.");
+                await LoadAnnouncementsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync($"Failed to deactivate: {ex.Message}");
+        }
+    }
+
+    private async Task ReactivateAnnouncement(Guid id)
+    {
+        try
+        {
+            var reactivated = await AnnouncementService.ReactivateAnnouncementAsync(id);
+            if (reactivated)
+            {
+                await NotificationService.ShowSuccessAsync("Announcement reactivated and live on screens.");
+                await LoadAnnouncementsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync($"Failed to reactivate: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteAnnouncement(Guid id)
+    {
+        try
+        {
+            var deleted = await AnnouncementService.DeleteAnnouncementAsync(id);
+            if (deleted)
+            {
+                await NotificationService.ShowSuccessAsync("Announcement permanently deleted.");
+                await LoadAnnouncementsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync($"Failed to delete: {ex.Message}");
+        }
+    }
+}

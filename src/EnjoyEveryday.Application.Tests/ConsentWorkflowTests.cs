@@ -168,6 +168,9 @@ public class ConsentWorkflowTests
         public Task<IEnumerable<Event>> GetApprovedEventsForChildAsync(Guid tenantId, Guid childId, CancellationToken ct = default) => Task.FromResult<IEnumerable<Event>>(new List<Event>());
         public Task<Person?> GetPersonByUserIdAsync(Guid tenantId, Guid userId, CancellationToken ct = default) => Task.FromResult<Person?>(null);
         public Task UpdatePersonContactAsync(Guid tenantId, Guid personId, string? mobilePhone, string? preferredContactMethod, string? preferredLanguage, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<bool> IsPrivacyAndTrustApprovedAsync(Guid tenantId, Guid childId, CancellationToken ct = default) => Task.FromResult(true);
+        public Task ApprovePrivacyAndTrustAsync(Guid tenantId, Guid childId, string approvedByName, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid tenantId, Guid childId, CancellationToken ct = default) => Task.FromResult<DateTimeOffset?>(DateTimeOffset.UtcNow);
     }
 
     private class MockAuditService : IAuditService

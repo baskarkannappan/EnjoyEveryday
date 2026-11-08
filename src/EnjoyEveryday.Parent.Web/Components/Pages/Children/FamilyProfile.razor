@@ -1,8 +1,11 @@
 @page "/family"
+@page "/family-profile"
 @attribute [Authorize]
 @namespace EnjoyEveryday.Parent.Web.Components.Pages.Children
+@using EnjoyEveryday.Domain.Entities
 @inject IParentService ParentService
 @inject IConsentService ConsentService
+@inject IDaycareAnnouncementService AnnouncementService
 @inject ParentSessionState SessionState
 @inject ParentLocalizationService Localization
 @inject NavigationManager Navigation
@@ -14,7 +17,7 @@
 <!-- HEADER -->
 <ParentPageHeader Eyebrow="SECURITY · CONTACT & FAMILY"
                   Title="Family & Guardian Profile"
-                  Subtitle="Review your linked children, active consent documents, and manage your communication preferences.">
+                  Subtitle="Review your linked children, authorized pickups, privacy compliance, and communication preferences.">
     <RightContent>
         <LanguageSwitcher />
     </RightContent>
@@ -135,7 +138,7 @@
 
     </div>
 
-    <!-- RIGHT COLUMN: AUTHORIZED CHILDREN & DAYCARE ANNOUNCEMENTS -->
+    <!-- RIGHT COLUMN: AUTHORIZED CHILDREN, PICKUPS, DAYCARE ANNOUNCEMENTS & PRIVACY -->
     <div class="family-profile-column">
         
         <!-- AUTHORIZED CHILDREN -->
@@ -176,10 +179,83 @@
                     </div>
                 }
             </div>
+        </div>
 
-            <!-- SAFETY & CUSTODY NOTICE -->
-            <div class="family-safety-notice">
-                🔒 <strong>Safety Notice:</strong> To add authorized pick-up contacts, modify emergency custody, or update medical consent forms, please contact your daycare center director directly.
+        <!-- AUTHORIZED PICKUPS REGISTRY (SYNCED ACROSS PORTALS) -->
+        <div class="family-card" style="margin-top: 20px;">
+            <div class="family-card-top-row">
+                <div>
+                    <h2 class="family-card-title">Authorized Pickups</h2>
+                    <p class="family-card-subtitle">Individuals authorized to collect @(SessionState.SelectedChild?.FirstName ?? "your child") (synced to teacher checkout)</p>
+                </div>
+                <button class="primary" style="padding: 6px 14px; font-size: 12px; font-weight: 700; border-radius: 9px;" @onclick="OpenAddPickupModal">
+                    ＋ Add Pickup
+                </button>
+            </div>
+
+            @if (_loadingPickups)
+            {
+                <LoadingState Message="Loading authorized pickup contacts..." MinHeightPx="100" />
+            }
+            else if (_pickups.Count == 0)
+            {
+                <div class="family-consent-empty" style="background: #fff8f0; border-color: #fed7aa; padding: 14px;">
+                    <span style="font-size: 20px;">⚠️</span>
+                    <span style="color: #9a3412; font-weight: 600;">Action Mandatory: No authorized pickup contacts registered yet. Enrolling a primary authorized guardian is mandatory for safe child checkout.</span>
+                </div>
+            }
+            else
+            {
+                @if (!_pickups.Any(p => p.IsPrimaryGuardian))
+                {
+                    <div class="family-consent-empty" style="background: #fff8f0; border-color: #fed7aa; padding: 10px 14px; margin-bottom: 12px;">
+                        <span style="font-size: 18px;">⚠️</span>
+                        <span style="color: #9a3412; font-size: 12.5px; font-weight: 600;">Notice: Please designate at least one contact as Primary Guardian for child release compliance.</span>
+                    </div>
+                }
+                <div class="family-pickups-list">
+                    @foreach (var p in _pickups)
+                    {
+                        <div class="family-pickup-item">
+                            <div class="family-pickup-avatar">
+                                @(string.IsNullOrWhiteSpace(p.FullName) ? "G" : p.FullName.Substring(0, 1).ToUpper())
+                            </div>
+                            <div class="family-pickup-info">
+                                <div class="family-child-name-row">
+                                    <strong class="family-child-name">@p.FullName</strong>
+                                    <span class="family-active-badge @(p.IsPrimaryGuardian ? "primary-badge" : "")">
+                                        @(p.IsPrimaryGuardian ? "Primary Guardian" : "Authorized Pickup")
+                                    </span>
+                                </div>
+                                <div class="family-child-rel">
+                                    Relationship: <strong>@p.Relationship</strong> @(!string.IsNullOrWhiteSpace(p.Phone) ? $"· {p.Phone}" : "")
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(p.Notes))
+                                {
+                                    <div class="family-pickup-note">
+                                        Note: @p.Notes
+                                    </div>
+                                }
+                            </div>
+                            <div class="family-pickup-actions">
+                                <button class="btn secondary pickup-action-btn" @onclick="() => EditPickup(p)">
+                                    Edit
+                                </button>
+                                @if (!p.IsPrimaryGuardian)
+                                {
+                                    <button class="btn secondary pickup-delete-btn" @onclick="() => DeletePickup(p.Id)">
+                                        Remove
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="family-safety-synced-note">
+                <span>🔄</span>
+                <span>Updates sync immediately to Teacher Workspace, Check-Out verification, and Daycare Administration.</span>
             </div>
         </div>
 
@@ -188,24 +264,35 @@
             <div class="family-card-top-row">
                 <div>
                     <h2 class="family-card-title">Daycare Announcements</h2>
-                    <p class="family-card-subtitle">Important notices and center updates</p>
+                    <p class="family-card-subtitle">Official center updates from organization &amp; branch leaders</p>
                 </div>
                 <span style="font-size: 16px;">📢</span>
             </div>
 
-            <div class="family-announcements-list">
-                <AnnouncementCard Title="Seasonal Weather Reminder"
-                                  Content="As morning outdoor exploration continues, please ensure your child has weather-appropriate layer clothing and labelled waterproof boots in their cubby."
-                                  Date="@DateTime.Today"
-                                  Tag="Notice"
-                                  IsUrgent="false" />
-
-                <AnnouncementCard Title="Upcoming Parent-Teacher Conferences"
-                                  Content="Quarterly learning journey reflections and conference schedules will be published next week. Look for an invitation in your messages."
-                                  Date="@DateTime.Today.AddDays(-2)"
-                                  Tag="Reminder"
-                                  IsUrgent="false" />
-            </div>
+            @if (_loadingAnnouncements)
+            {
+                <LoadingState Message="Loading announcements..." MinHeightPx="80" />
+            }
+            else if (_announcements.Count == 0)
+            {
+                <div class="family-consent-empty">
+                    <span>📢</span>
+                    <span>No active announcements from the center today.</span>
+                </div>
+            }
+            else
+            {
+                <div class="family-announcements-list">
+                    @foreach (var ann in _announcements)
+                    {
+                        <AnnouncementCard Title="@ann.Title"
+                                          Content="@ann.Content"
+                                          Date="@ann.CreatedAt.ToLocalTime()"
+                                          Tag="@ann.Tag"
+                                          IsUrgent="@ann.IsUrgent" />
+                    }
+                </div>
+            }
         </div>
 
         <!-- PRIVACY & TRUST CENTER -->
@@ -217,6 +304,38 @@
                 </div>
                 <span style="font-size: 18px;">🛡️</span>
             </div>
+
+            @if (_isPrivacyApproved)
+            {
+                <div class="privacy-status-banner approved">
+                    <span class="privacy-status-icon">🛡️</span>
+                    <div>
+                        <strong>Privacy &amp; Trust Terms Approved</strong>
+                        <p>
+                            Verified for @(SessionState.SelectedChild?.FirstName). Approved on
+                            @(_privacyApprovedDate?.ToString("MMM dd, yyyy") ?? "Today") by @(_person?.FirstName ?? "Guardian").
+                            Active across all teacher, branch admin, and organization portals.
+                        </p>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="privacy-status-banner pending">
+                    <span class="privacy-status-icon">⚠️</span>
+                    <div style="flex: 1;">
+                        <strong>Action Required: Review &amp; Accept Privacy &amp; Trust</strong>
+                        <p>
+                            Please accept the child safety and data terms for @(SessionState.SelectedChild?.FirstName) to activate security compliance.
+                        </p>
+                        <button class="primary" style="margin-top: 8px; padding: 7px 16px; font-size: 12px; border-radius: 9px; font-weight: 700;"
+                                disabled="@_isApprovingPrivacy"
+                                @onclick="ApprovePrivacyTrust">
+                            @(_isApprovingPrivacy ? "Approving..." : "✓ Accept & Approve Privacy & Trust")
+                        </button>
+                    </div>
+                </div>
+            }
 
             <div class="trust-center-items">
                 <div class="trust-item">
@@ -254,6 +373,80 @@
 
 </div>
 
+<!-- AUTHORIZED PICKUP MODAL -->
+@if (_showPickupModal)
+{
+    <div class="family-modal-backdrop" @onclick="ClosePickupModal">
+        <div class="family-modal-card" @onclick:stopPropagation="true">
+            <div class="family-modal-header">
+                <div>
+                    <span class="modal-eyebrow">CHILD SECURITY &amp; CUSTODY</span>
+                    <h3 class="modal-title">@(_isEditingPickup ? "Edit Authorized Pickup" : "Add Authorized Pickup")</h3>
+                </div>
+                <button class="modal-close-btn" @onclick="ClosePickupModal">✕</button>
+            </div>
+
+            <div class="family-modal-body">
+                @if (!string.IsNullOrEmpty(_pickupModalError))
+                {
+                    <div class="family-modal-error">
+                        <span>⚠️ @_pickupModalError</span>
+                    </div>
+                }
+
+                <div class="family-field">
+                    <label class="family-label active">Full Legal Name *</label>
+                    <input class="family-input" @bind="_pickupForm.FullName" placeholder="e.g. Grandma Helen or John Doe" />
+                </div>
+
+                <div class="family-field">
+                    <label class="family-label active">Relationship *</label>
+                    <select class="family-select" @bind="_pickupForm.Relationship">
+                        <option value="Grandparent">Grandparent</option>
+                        <option value="Aunt / Uncle">Aunt / Uncle</option>
+                        <option value="Relative">Relative</option>
+                        <option value="Family Friend">Family Friend</option>
+                        <option value="Babysitter / Nanny">Babysitter / Nanny</option>
+                        <option value="Emergency Contact">Emergency Contact</option>
+                        <option value="Guardian">Guardian</option>
+                        <option value="Other">Other Authorized Individual</option>
+                    </select>
+                </div>
+
+                <div class="family-field">
+                    <label class="family-label active">Mobile Phone Number *</label>
+                    <input class="family-input" @bind="_pickupForm.Phone" placeholder="Mobile phone for front-desk ID verification" />
+                    <span class="family-hint">Staff call this number if identity verification is required at checkout.</span>
+                </div>
+
+                <div class="family-field">
+                    <label class="family-label active">4-Digit Pickup PIN (Optional)</label>
+                    <input class="family-input" @bind="_pickupForm.PickupCode" placeholder="Optional security PIN" maxlength="6" />
+                </div>
+
+                <div class="family-field">
+                    <label class="family-label active">Authorization Notes / Schedule</label>
+                    <textarea class="family-input" style="height: 60px; resize: vertical;" @bind="_pickupForm.Notes" placeholder="e.g. Authorized for Friday afternoons or regular daily pickup"></textarea>
+                </div>
+
+                <div class="family-field" style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="isPrimaryGuardian" @bind="_pickupForm.IsPrimaryGuardian" style="width: 18px; height: 18px; accent-color: var(--accent, #557c6c);" />
+                    <label for="isPrimaryGuardian" style="font-size: 13px; font-weight: 700; color: var(--text, #26332d); cursor: pointer; margin: 0;">
+                        Primary Guardian Contact (Mandatory for at least one pickup)
+                    </label>
+                </div>
+            </div>
+
+            <div class="family-modal-footer">
+                <button class="btn secondary" @onclick="ClosePickupModal">Cancel</button>
+                <button class="primary" disabled="@_isSavingPickup" @onclick="SavePickup">
+                    @(_isSavingPickup ? "Saving..." : "Save Authorized Pickup")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .family-status-banner {
         background: #eef5ef;
@@ -274,14 +467,15 @@
         border: none;
         cursor: pointer;
         color: #166534;
-        font-size: 14px;
+        font-size: 16px;
     }
 
     .family-profile-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-        gap: 20px;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
         align-items: start;
+        margin-top: 10px;
     }
 
     .family-profile-column {
@@ -293,154 +487,146 @@
         background: var(--surface, #ffffff);
         border: 1px solid var(--border, #e4e7df);
         border-radius: var(--radius, 18px);
-        padding: 22px 24px;
-        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .05));
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        padding: 24px;
     }
 
     .family-card-top-row {
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
     }
 
     .family-card-title {
         font-size: 17px;
-        font-weight: 800;
+        font-weight: 750;
         color: var(--text, #26332d);
-        margin: 0 0 2px 0;
+        margin: 0;
         letter-spacing: -0.3px;
     }
 
     .family-card-subtitle {
-        font-size: 12px;
+        font-size: 12.5px;
         color: var(--muted, #6c7870);
-        margin: 0 0 14px 0;
-    }
-
-    .family-consent-pill {
-        font-size: 10px;
-        font-weight: 750;
-        background: var(--accent-light, #e6eee9);
-        color: var(--accent-dark, #3e6253);
-        padding: 2px 8px;
-        border-radius: 6px;
+        margin: 4px 0 0 0;
     }
 
     .family-form {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 16px;
+        margin-top: 18px;
     }
 
     .family-field {
         display: flex;
         flex-direction: column;
+        gap: 6px;
     }
 
     .family-label {
-        font-size: 11px;
-        font-weight: 750;
+        font-size: 12px;
+        font-weight: 700;
         color: var(--muted, #6c7870);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 4px;
     }
 
     .family-label.active {
         color: var(--text, #26332d);
     }
 
-    .family-input,
-    .family-select {
-        width: 100%;
-        padding: 9px 12px;
+    .family-input, .family-select {
         border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
         border-radius: 10px;
+        padding: 10px 14px;
         font-size: 13.5px;
-        box-sizing: border-box;
-        font-family: inherit;
+        color: var(--text, #26332d);
         outline: none;
+        transition: border-color 0.15s ease;
+        font-family: inherit;
     }
 
-    .family-input:focus,
-    .family-select:focus {
+    .family-input:focus, .family-select:focus {
         border-color: var(--accent, #557c6c);
+        background: #ffffff;
     }
 
     .family-input.disabled {
-        background: var(--surface-soft, #f8f9f5);
-        color: var(--muted, #6c7870);
+        background: #f1f3ee;
+        color: #78827c;
         cursor: not-allowed;
     }
 
     .family-hint {
-        font-size: 10.5px;
+        font-size: 11px;
         color: var(--muted, #6c7870);
-        margin-top: 3px;
     }
 
     .family-save-btn {
-        padding: 9px 20px !important;
-        font-size: 13px !important;
-        border-radius: 10px !important;
+        padding: 10px 22px;
+        border-radius: 11px;
+        font-size: 13.5px;
+    }
+
+    .family-consent-pill {
+        font-size: 10px;
+        font-weight: 750;
+        text-transform: uppercase;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        border-radius: 6px;
+        padding: 3px 8px;
+        border: 1px solid #c8dacd;
     }
 
     .family-consent-empty {
-        padding: 16px;
-        background: var(--surface-soft, #f8f9f5);
-        border: 1px dashed var(--border, #e4e7df);
-        border-radius: 12px;
-        font-size: 12.5px;
-        color: var(--muted, #6c7870);
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        padding: 16px;
+        border-radius: 12px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        font-size: 13px;
+        color: var(--muted, #6c7870);
     }
 
-    .family-consent-list,
-    .family-children-list,
-    .family-announcements-list {
+    .family-children-list {
         display: flex;
         flex-direction: column;
         gap: 10px;
+        margin-top: 14px;
     }
 
     .family-child-item {
-        background: var(--surface-soft, #f8f9f5);
-        border: 1px solid var(--border, #e4e7df);
-        border-radius: 14px;
-        padding: 12px 14px;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 14px;
+        padding: 12px 14px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
         cursor: pointer;
-        transition: border-color 0.15s ease, background 0.15s ease;
+        transition: all 0.15s ease;
     }
 
-    .family-child-item:hover {
-        background: #f0f4f1;
-        border-color: #c8dacd;
-    }
-
-    .family-child-item.active {
+    .family-child-item:hover, .family-child-item.active {
+        background: #ffffff;
         border-color: var(--accent, #557c6c);
-        background: #f2f7f4;
+        box-shadow: 0 4px 14px rgba(40, 55, 47, 0.05);
     }
 
     .family-child-avatar {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
         border-radius: 12px;
-        background: var(--accent-light, #e6eee9);
-        color: var(--accent-dark, #3e6253);
+        background: #eef2ed;
         display: grid;
         place-items: center;
-        font-weight: 800;
-        font-size: 16px;
+        font-size: 20px;
         overflow: hidden;
         flex-shrink: 0;
-        border: 1px solid #d0e0d6;
     }
 
     .family-child-img {
@@ -474,6 +660,11 @@
         border-radius: 6px;
     }
 
+    .family-active-badge.primary-badge {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
     .family-child-rel {
         font-size: 12px;
         color: var(--muted, #6c7870);
@@ -486,15 +677,109 @@
         margin-top: 1px;
     }
 
-    .family-safety-notice {
-        margin-top: 16px;
-        background: #fffbeb;
-        border: 1px solid #fde68a;
-        border-radius: 12px;
+    /* AUTHORIZED PICKUPS STYLES */
+    .family-pickups-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .family-pickup-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         padding: 12px 14px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+    }
+
+    .family-pickup-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        display: grid;
+        place-items: center;
+        font-weight: 750;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+
+    .family-pickup-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .family-pickup-note {
+        font-size: 11px;
+        color: var(--accent-dark, #3e6253);
+        margin-top: 3px;
+        font-style: italic;
+    }
+
+    .family-pickup-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .pickup-action-btn {
+        padding: 4px 10px;
         font-size: 11.5px;
+        border-radius: 8px;
+    }
+
+    .pickup-delete-btn {
+        padding: 4px 8px;
+        font-size: 11.5px;
+        border-radius: 8px;
+        color: #b91c1c;
+        border-color: #fecaca;
+    }
+
+    .family-safety-synced-note {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 8px 12px;
+        border-radius: 9px;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        font-size: 11.5px;
+        color: #166534;
+    }
+
+    /* PRIVACY STATUS BANNER */
+    .privacy-status-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        margin-bottom: 16px;
+        font-size: 12.5px;
+        line-height: 1.45;
+    }
+
+    .privacy-status-banner.approved {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        color: #166534;
+    }
+
+    .privacy-status-banner.pending {
+        background: #fef8ee;
+        border: 1px solid #fbd38d;
         color: #92400e;
-        line-height: 1.5;
+    }
+
+    .privacy-status-icon {
+        font-size: 20px;
+        flex-shrink: 0;
     }
 
     .trust-center-items {
@@ -546,6 +831,94 @@
         color: var(--accent-dark, #3e6253);
     }
 
+    /* MODAL STYLES */
+    .family-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(30, 42, 36, 0.45);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 1050;
+        padding: 16px;
+    }
+
+    .family-modal-card {
+        background: var(--surface, #ffffff);
+        border-radius: 18px;
+        max-width: 480px;
+        width: 100%;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
+        border: 1px solid var(--border, #e4e7df);
+        overflow: hidden;
+        animation: modalFadeIn 0.18s ease-out;
+    }
+
+    @@keyframes modalFadeIn {
+        from { opacity: 0; transform: translateY(12px) scale(0.97); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .family-modal-header {
+        padding: 18px 22px;
+        background: var(--surface-soft, #f8f9f5);
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-eyebrow {
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.6px;
+        color: var(--accent-dark, #3e6253);
+        display: block;
+        margin-bottom: 2px;
+    }
+
+    .modal-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .modal-close-btn {
+        background: none;
+        border: none;
+        font-size: 18px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+    }
+
+    .family-modal-body {
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .family-modal-error {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+    }
+
+    .family-modal-footer {
+        padding: 14px 22px;
+        background: var(--surface-soft, #f8f9f5);
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
     @@media (max-width: 640px) {
         .family-profile-grid {
             grid-template-columns: 1fr;
@@ -566,9 +939,25 @@
 @code {
     private Person? _person;
     private List<ChildConsentDocument> _consentDocuments = new();
+    private List<AuthorizedPickupDto> _pickups = new();
+    private List<DaycareAnnouncement> _announcements = new();
+
     private bool _loadingProfile = true;
     private bool _loadingConsent = true;
+    private bool _loadingPickups = true;
+    private bool _loadingAnnouncements = true;
     private bool _isSaving = false;
+
+    private bool _isPrivacyApproved = false;
+    private DateTimeOffset? _privacyApprovedDate;
+    private bool _isApprovingPrivacy = false;
+
+    private bool _showPickupModal = false;
+    private bool _isEditingPickup = false;
+    private bool _isSavingPickup = false;
+    private string? _pickupModalError;
+    private AuthorizedPickupDto _pickupForm = new();
+
     private string? _mobilePhone;
     private string _preferredContactMethod = "Mobile";
     private string _preferredLanguage = "en";
@@ -578,14 +967,27 @@
     {
         SessionState.OnChildChanged += OnChildSelectionChanged;
         Localization.OnLanguageChanged += StateHasChanged;
+        if (SessionState.SelectedChild == null)
+        {
+            var children = await ParentService.GetAuthorizedChildrenAsync();
+            SessionState.SetAuthorizedChildren(children);
+        }
         await LoadProfile();
-        await LoadConsentDocuments();
+        await LoadChildDataAsync();
     }
 
     private async void OnChildSelectionChanged()
     {
-        await LoadConsentDocuments();
+        await LoadChildDataAsync();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadChildDataAsync()
+    {
+        await LoadConsentDocuments();
+        await LoadPickupsAsync();
+        await LoadPrivacyStatusAsync();
+        await LoadAnnouncementsAsync();
     }
 
     private async Task LoadProfile()
@@ -628,6 +1030,211 @@
         finally
         {
             _loadingConsent = false;
+        }
+    }
+
+    private async Task LoadPickupsAsync()
+    {
+        if (SessionState.SelectedChild == null)
+        {
+            _loadingPickups = false;
+            return;
+        }
+
+        try
+        {
+            _loadingPickups = true;
+            var profile = await ParentService.GetChildPickupSecurityProfileAsync(SessionState.SelectedChild.ChildId);
+            _pickups = profile?.AuthorizedPickups ?? new List<AuthorizedPickupDto>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FamilyProfile] Error loading pickups: {ex.Message}");
+            _pickups = new List<AuthorizedPickupDto>();
+        }
+        finally
+        {
+            _loadingPickups = false;
+        }
+    }
+
+    private async Task LoadPrivacyStatusAsync()
+    {
+        if (SessionState.SelectedChild == null) return;
+        try
+        {
+            _isPrivacyApproved = await ParentService.IsPrivacyAndTrustApprovedAsync(SessionState.SelectedChild.ChildId);
+            if (_isPrivacyApproved)
+            {
+                try
+                {
+                    _privacyApprovedDate = await ParentService.GetPrivacyAndTrustApprovalDateAsync(SessionState.SelectedChild.ChildId) ?? DateTimeOffset.UtcNow;
+                }
+                catch
+                {
+                    _privacyApprovedDate = DateTimeOffset.UtcNow;
+                }
+            }
+            else
+            {
+                _privacyApprovedDate = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FamilyProfile] Error loading privacy status: {ex.Message}");
+            _isPrivacyApproved = false;
+        }
+    }
+
+    private async Task LoadAnnouncementsAsync()
+    {
+        try
+        {
+            _loadingAnnouncements = true;
+            var tenantId = SessionState.SelectedChild?.TenantId ?? Guid.Parse("10000000-0000-0000-0000-000000000001");
+            if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+            var orgId = SessionState.SelectedChild?.OrganizationId;
+            var branchId = SessionState.SelectedChild?.BranchId;
+
+            var items = await AnnouncementService.GetAnnouncementsAsync(tenantId, orgId, branchId);
+            _announcements = items.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FamilyProfile] Error loading announcements: {ex.Message}");
+            _announcements = new List<DaycareAnnouncement>();
+        }
+        finally
+        {
+            _loadingAnnouncements = false;
+        }
+    }
+
+    private void OpenAddPickupModal()
+    {
+        if (SessionState.SelectedChild == null) return;
+        _isEditingPickup = false;
+        _pickupModalError = null;
+        _pickupForm = new AuthorizedPickupDto
+        {
+            Id = Guid.NewGuid(),
+            ChildId = SessionState.SelectedChild.ChildId,
+            Relationship = "Grandparent",
+            IsActive = true
+        };
+        _showPickupModal = true;
+    }
+
+    private void EditPickup(AuthorizedPickupDto pickup)
+    {
+        _isEditingPickup = true;
+        _pickupModalError = null;
+        _pickupForm = new AuthorizedPickupDto
+        {
+            Id = pickup.Id,
+            ChildId = pickup.ChildId,
+            PersonId = pickup.PersonId,
+            FullName = pickup.FullName,
+            Relationship = pickup.Relationship,
+            Phone = pickup.Phone,
+            PickupCode = pickup.PickupCode,
+            Notes = pickup.Notes,
+            IsActive = pickup.IsActive,
+            IsPrimaryGuardian = pickup.IsPrimaryGuardian
+        };
+        _showPickupModal = true;
+    }
+
+    private void ClosePickupModal()
+    {
+        _showPickupModal = false;
+        _pickupModalError = null;
+    }
+
+    private async Task SavePickup()
+    {
+        if (SessionState.SelectedChild == null) return;
+
+        if (string.IsNullOrWhiteSpace(_pickupForm.FullName))
+        {
+            _pickupModalError = "Full Legal Name is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_pickupForm.Phone))
+        {
+            _pickupModalError = "Mobile Phone Number is required for checkout security verification.";
+            return;
+        }
+
+        // Enforce mandatory primary guardian if none exists
+        if (!_pickups.Any(p => p.IsPrimaryGuardian && p.Id != _pickupForm.Id))
+        {
+            _pickupForm.IsPrimaryGuardian = true;
+        }
+
+        try
+        {
+            _isSavingPickup = true;
+            _pickupModalError = null;
+            await ParentService.SaveAuthorizedPickupAsync(SessionState.SelectedChild.ChildId, _pickupForm);
+            _showPickupModal = false;
+            await LoadPickupsAsync();
+            _statusMessage = $"Authorized pickup '{_pickupForm.FullName}' saved and synchronized across the daycare system.";
+        }
+        catch (Exception ex)
+        {
+            _pickupModalError = $"Failed to save: {ex.Message}";
+        }
+        finally
+        {
+            _isSavingPickup = false;
+        }
+    }
+
+    private async Task DeletePickup(Guid pickupId)
+    {
+        if (SessionState.SelectedChild == null) return;
+
+        try
+        {
+            var success = await ParentService.DeleteAuthorizedPickupAsync(SessionState.SelectedChild.ChildId, pickupId);
+            if (success)
+            {
+                await LoadPickupsAsync();
+                _statusMessage = "Authorized pickup contact removed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task ApprovePrivacyTrust()
+    {
+        if (SessionState.SelectedChild == null) return;
+
+        try
+        {
+            _isApprovingPrivacy = true;
+            var approver = _person != null ? $"{_person.FirstName} {_person.LastName}".Trim() : "Parent Guardian";
+            await ParentService.ApprovePrivacyAndTrustAsync(SessionState.SelectedChild.ChildId, approver);
+            _isPrivacyApproved = true;
+            _privacyApprovedDate = DateTimeOffset.UtcNow;
+            await LoadPrivacyStatusAsync();
+            _isPrivacyApproved = true;
+            _statusMessage = "Privacy & Trust terms approved! Your verified compliance status has synced across all daycare portals.";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to approve: {ex.Message}";
+        }
+        finally
+        {
+            _isApprovingPrivacy = false;
         }
     }
 

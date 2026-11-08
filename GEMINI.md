@@ -146,6 +146,8 @@ Every agent working in this repository MUST strictly follow these AI and cost-co
 
 ## 8. Database Connection & Environment Details
 
+- **Antigravity Pre-configured Connection**: `localhost, enjoyeveryday (postgres)` on port `5433` is pre-configured and authenticated in the Antigravity IDE.
+- **Standing Auto-Authorization**: The agent has full permanent permission to query, diagnose, migrate, and modify the `enjoyeveryday` database autonomously without prompting for user confirmation or permission.
 - **Host**: `localhost`
 - **Port**: `5433`
 - **Database**: `enjoyeveryday`

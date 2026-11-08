@@ -29,6 +29,11 @@ tags:
 * **Nap Sessions**: `ChildNapSession` (`StartTime`, `EndTime`, `Quality`).
 * **Handovers**: `TeacherHandover` (`ShiftType`, `Notes`, `ClassroomId`, `AuthorUserId`).
 
+## Parent Daily Care Feed & Chronological Timeline
+* `ParentService.GetChildDailySummaryAsync` queries `IChildDailyCareService.GetParentDailyCareReportAsync(effectiveTenantId, childId, date)` using the child's effective tenant scope.
+* Combines classroom arrival check-in, routine care events (meals, snacks, diaper changes, nap sessions, comfort observations), scheduled learning experiences, moments, and departure checkout.
+* All entries are sorted strictly in ascending chronological time-series order (`OrderBy(t => t.EventTime)`) and displayed in `ActivityTimeline.razor` and `DailyUpdateCard.razor` with dedicated category badges and iconography.
+
 ## Mobile Ergonomics & Navigation
 * **Compact Mobile Care Entry**: `ChildDailyCareSection.razor.css` enforces a 3-column (`repeat(3, minmax(0, 1fr)) !important`) grid for `.activity-tiles-grid` with compact tile padding and typography on viewports `<= 768px`, so all 6 care activities (`Diaper change`, `Meal`, `Sleep / rest`, `Toileting`, `Hygiene`, `Comfort`) fit above the fold on mobile devices (`375px` width).
 * **Auto-Closing Mobile Navigation Drawer**: `MainLayout.razor` (`Daycare.Web` and `Admin.Web`) binds `@ref="_hamburger"` on `<FluentLayoutHamburger>` and calls `_hamburger.HideAsync()` both on `NavigationManager.LocationChanged` and via a cascading `CloseMobileMenu` callback triggered when any `.nav-group` item in `NavMenu.razor` is clicked.

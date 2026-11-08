@@ -129,4 +129,60 @@ public class ParentRepository : IParentRepository
             },
             cancellationToken: cancellationToken);
     }
+
+    public async Task<bool> IsPrivacyAndTrustApprovedAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM child_consents
+                WHERE child_id = @childId
+                  AND consent_type = 'PrivacyAndTrust' AND granted = TRUE
+                  AND (tenant_id = @tenantId OR @tenantId IS NULL OR @tenantId = '10000000-0000-0000-0000-000000000001' OR tenant_id = (SELECT tenant_id FROM children WHERE id = @childId))
+            );
+            """;
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await Dapper.SqlMapper.ExecuteScalarAsync<bool>(
+            connection,
+            new Dapper.CommandDefinition(sql, new { tenantId, childId }, cancellationToken: cancellationToken));
+    }
+
+    public async Task ApprovePrivacyAndTrustAsync(Guid tenantId, Guid childId, string approvedByName, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            INSERT INTO child_consents (id, tenant_id, child_id, consent_type, granted, granted_by, granted_at, version)
+            VALUES (gen_random_uuid(), COALESCE((SELECT tenant_id FROM children WHERE id = @childId), @tenantId), @childId, 'PrivacyAndTrust', TRUE, @approvedByName, NOW(), '1.0')
+            ON CONFLICT (child_id, consent_type)
+            DO UPDATE SET granted = TRUE, granted_by = EXCLUDED.granted_by, granted_at = NOW(), version = '1.0';
+            """;
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await Dapper.SqlMapper.ExecuteAsync(
+            connection,
+            new Dapper.CommandDefinition(sql, new { tenantId, childId, approvedByName }, cancellationToken: cancellationToken));
+    }
+
+    public async Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT granted_at
+            FROM child_consents
+            WHERE child_id = @childId
+              AND consent_type = 'PrivacyAndTrust' AND granted = TRUE
+              AND (tenant_id = @tenantId OR @tenantId IS NULL OR @tenantId = '10000000-0000-0000-0000-000000000001' OR tenant_id = (SELECT tenant_id FROM children WHERE id = @childId))
+            ORDER BY granted_at DESC
+            LIMIT 1;
+            """;
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        var val = await Dapper.SqlMapper.ExecuteScalarAsync<object?>(
+            connection,
+            new Dapper.CommandDefinition(sql, new { tenantId, childId }, cancellationToken: cancellationToken));
+        if (val is DateTime dt)
+        {
+            return new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+        }
+        if (val is DateTimeOffset dto)
+        {
+            return dto;
+        }
+        return null;
+    }
 }

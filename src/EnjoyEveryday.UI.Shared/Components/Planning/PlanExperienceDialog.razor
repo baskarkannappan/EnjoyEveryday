@@ -8,45 +8,49 @@
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject IEndOfDayService EndOfDayService
 
 @if (IsOpen)
 {
-    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
-        <div style="background: white; border-radius: 12px; width: 600px; max-width: 90vw; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20, 30, 25, 0.45); backdrop-filter: blur(2px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box;">
+        <div style="background: white; border-radius: 14px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; padding: 16px 20px; box-shadow: 0 12px 35px rgba(25, 40, 32, 0.18); border: 1px solid #e1e6e0; box-sizing: border-box;">
             
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                <h2 style="margin: 0; font-size: 1.5rem; color: #26332d;">Plan Experience</h2>
-                <button @onclick="Close" style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: #666;">&times;</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #edf0ec;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.15rem;">🌱</span>
+                    <h2 style="margin: 0; font-size: 1.15rem; font-weight: 750; color: #26332d; letter-spacing: -0.2px;">Plan Experience</h2>
+                </div>
+                <button @onclick="Close" style="background: transparent; border: none; font-size: 1.4rem; cursor: pointer; color: #7c877f; line-height: 1; padding: 2px 6px; border-radius: 6px;" aria-label="Close dialog">&times;</button>
             </div>
 
             @if (!string.IsNullOrEmpty(_errorMessage))
             {
-                <div style="background: #fff0f0; color: #d32f2f; padding: 12px; border-radius: 6px; margin-bottom: 16px; border: 1px solid #ffcdd2;">
+                <div style="background: #fff0f0; color: #d32f2f; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ffcdd2; font-size: 12px; line-height: 1.4;">
                     @_errorMessage
                 </div>
             }
 
             @if (!_isReadOnly && IsDateClosedForPlanning(_date, out var closedDateWarning))
             {
-                <div style="background: #fff5f5; color: #9b2c2c; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #fed7d7; font-size: 13px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 16px;">🌙</span>
+                <div style="background: #fff5f5; color: #9b2c2c; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #fed7d7; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 14px;">🌙</span>
                     <span><strong>Daycare Closed:</strong> @closedDateWarning</span>
                 </div>
             }
 
             @if (_isReadOnly)
             {
-                <div style="background: #f4eee1; color: #5a4b2a; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #e5dac4; font-size: 13px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 16px;">🔒</span>
-                    <span><strong>Read-Only Mode:</strong> Historical experiences cannot be edited or modified. Only today and future experiences can be planned or changed.</span>
+                <div style="background: #f4eee1; color: #5a4b2a; padding: 8px 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #e5dac4; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 14px;">🔒</span>
+                    <span><strong>Read-Only Mode:</strong> Historical experiences cannot be modified.</span>
                 </div>
             }
 
-            <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
                 
                 <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Experience</label>
-                    <select @bind="_experienceId" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
+                    <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Experience</label>
+                    <select @bind="_experienceId" disabled="@_isReadOnly" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;">
                         <option value="">Select an Experience...</option>
                         @foreach (var exp in _experiences)
                         {
@@ -55,46 +59,69 @@
                     </select>
                 </div>
 
-                <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Branch</label>
-                    <select @bind="BranchId" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
-                        @if (!_branches.Any())
-                        {
-                            <option value="">Default Branch</option>
-                        }
-                        else
-                        {
-                            <option value="">Select a Branch...</option>
-                            @foreach (var b in _branches)
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Branch</label>
+                        <select @bind="BranchId" disabled="@_isReadOnly" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;">
+                            @if (!_branches.Any())
                             {
-                                <option value="@b.Id">@b.Name</option>
+                                <option value="">Default Branch</option>
                             }
-                        }
-                    </select>
+                            else
+                            {
+                                <option value="">Select Branch...</option>
+                                @foreach (var b in _branches)
+                                {
+                                    <option value="@b.Id">@b.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Classroom</label>
+                        <select value="@(_classroomId?.ToString() ?? "")" @onchange="OnClassroomChangedAsync" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;" disabled="@(_isReadOnly || (_branchId == null && _branches.Any()))">
+                            <option value="">Select Classroom...</option>
+                            @foreach (var c in _classrooms.Where(c => _branchId == null || c.BranchId == _branchId))
+                            {
+                                <option value="@c.Id">@c.Name</option>
+                            }
+                        </select>
+                    </div>
                 </div>
 
-                <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Classroom</label>
-                    <select value="@(_classroomId?.ToString() ?? "")" @onchange="OnClassroomChangedAsync" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_isReadOnly || (_branchId == null && _branches.Any()))">
-                        <option value="">Select a Classroom...</option>
-                        @foreach (var c in _classrooms.Where(c => _branchId == null || c.BranchId == _branchId))
-                        {
-                            <option value="@c.Id">@c.Name</option>
-                        }
-                    </select>
-                </div>
-
-                @if (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue)
+                @if (!string.IsNullOrEmpty(_conflictWarning))
                 {
-                    <div style="background: #fff8eb; color: #92400e; padding: 10px 14px; border-radius: 8px; border: 1px solid #fde68a; font-size: 13px; display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 16px;">⚠️</span>
-                        <span><strong>Day Schedule Full:</strong> This classroom already has both Morning and Evening experiences planned for this date. No additional sessions are allowed.</span>
+                    <div style="background: #fff5f5; color: #9b2c2c; padding: 8px 12px; border-radius: 8px; border: 1px solid #fed7d7; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 14px;">⚠️</span>
+                        <span><strong>Time Overlap Conflict:</strong> @_conflictWarning</span>
+                    </div>
+                }
+
+                @if (_roomSchedules.Any())
+                {
+                    <div style="background: #f8f9f5; border: 1px solid #e1e6e0; border-radius: 8px; padding: 8px 12px; font-size: 11.5px; color: #47534c;">
+                        <div style="font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; color: #26332d;">
+                            <span>📅</span> <span>Planned today in @GetClassroomName():</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            @foreach (var s in _roomSchedules)
+                            {
+                                <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 4px 8px; border-radius: 6px; border: 1px solid #e8ede8;">
+                                    <span><strong>@s.TimeOfDay</strong> &middot; @(GetExperienceTitle(s.ExperienceId))</span>
+                                    <span style="color: #6c7870; font-size: 11px; font-weight: 600;">@(FormatTimeRange(s.PlannedStartTime, s.PlannedEndTime))</span>
+                                </div>
+                            }
+                        </div>
+                        <div style="margin-top: 6px; font-size: 10.5px; color: #3e6253; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                            <span>✓</span> <span>Additional non-overlapping slots (8:00 AM – 7:00 PM) are open.</span>
+                        </div>
                     </div>
                 }
 
                 <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Primary Teacher</label>
-                    <select @bind="_teacherId" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" disabled="@(_isReadOnly || !_classroomId.HasValue)">
+                    <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Primary Teacher</label>
+                    <select @bind="_teacherId" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;" disabled="@(_isReadOnly || !_classroomId.HasValue)">
                         <option value="">Select a Teacher...</option>
                         @foreach (var t in GetFilteredTeachers())
                         {
@@ -103,53 +130,55 @@
                     </select>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Date</label>
-                        <input type="date" value="@_date.ToString("yyyy-MM-dd")" @onchange="OnDateChangedAsync" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Date</label>
+                        <input type="date" value="@_date.ToString("yyyy-MM-dd")" @onchange="OnDateChangedAsync" disabled="@_isReadOnly" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;" />
                     </div>
                     <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Time of Day Category</label>
-                        <select @bind="_timeOfDay" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;">
-                            <option value="Morning" disabled="@(_isMorningDisabled && !ScheduleId.HasValue)">Morning @(_isMorningDisabled && !ScheduleId.HasValue ? "(Already Planned)" : "")</option>
-                            <option value="Evening" disabled="@(_isEveningDisabled && !ScheduleId.HasValue)">Evening @(_isEveningDisabled && !ScheduleId.HasValue ? "(Already Planned)" : "")</option>
+                        <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Rhythm / Slot</label>
+                        <select @bind="_timeOfDay" disabled="@_isReadOnly" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;">
+                            <option value="Morning">Morning (8:00 AM - 11:30 AM)</option>
+                            <option value="Mid-Day">Mid-Day (11:30 AM - 2:00 PM)</option>
+                            <option value="Afternoon">Afternoon (2:00 PM - 5:00 PM)</option>
+                            <option value="Evening">Evening (5:00 PM - 7:00 PM)</option>
                         </select>
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Start Time (Operating: 8:00 AM - 7:00 PM)</label>
-                        <input type="time" @bind="_startTime" min="08:00" max="19:00" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Start Time (8am - 7pm)</label>
+                        <input type="time" value="@(_startTime?.ToString("HH:mm"))" @onchange="OnStartTimeChanged" min="08:00" max="19:00" disabled="@_isReadOnly" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;" />
                     </div>
                     <div>
-                        <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">End Time (Closing: 7:00 PM)</label>
-                        <input type="time" @bind="_endTime" min="08:00" max="19:00" disabled="@_isReadOnly" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px;" />
+                        <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">End Time (Closing 7pm)</label>
+                        <input type="time" value="@(_endTime?.ToString("HH:mm"))" @onchange="OnEndTimeChanged" min="08:00" max="19:00" disabled="@_isReadOnly" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; box-sizing: border-box;" />
                     </div>
                 </div>
 
                 <div>
-                    <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #47534c; font-size: 0.9rem;">Preparation Notes</label>
-                    <textarea @bind="_notes" disabled="@_isReadOnly" rows="3" style="width: 100%; padding: 10px; border: 1px solid #e1e6e0; border-radius: 6px; resize: vertical;"></textarea>
+                    <label style="display: block; margin-bottom: 3px; font-weight: 700; color: #47534c; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;">Preparation Notes</label>
+                    <textarea @bind="_notes" disabled="@_isReadOnly" rows="2" style="width: 100%; padding: 7px 10px; border: 1px solid #d8dfd6; border-radius: 8px; font-size: 0.85rem; background: #fafbf9; color: #26332d; resize: vertical; box-sizing: border-box;"></textarea>
                 </div>
 
             </div>
 
-            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e1e6e0; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0ec; align-items: center; flex-wrap: wrap;">
                 @if (ScheduleId.HasValue && !_isReadOnly)
                 {
                     var isClosed = IsDateClosedForPlanning(_date, out _);
-                    <div style="display: flex; gap: 8px; margin-right: auto; flex-wrap: wrap;">
-                        <button type="button" class="secondary" @onclick="CompletePlan" disabled="@isClosed" style="padding: 9px 15px; border: 1px solid #c8dacd; background: #eaf2ec; color: #3e6253; border-radius: 8px; cursor: @(isClosed ? "not-allowed" : "pointer"); opacity: @(isClosed ? "0.5" : "1"); font-weight: 700; font-size: 13px;">✓ Mark Completed</button>
-                        <button type="button" class="secondary" @onclick="CancelPlan" style="padding: 9px 13px; border: 1px solid #fed7d7; background: #fff5f5; color: #9b2c2c; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;">Cancel Plan</button>
-                        <button type="button" class="secondary" @onclick="Delete" style="padding: 9px 13px; border: 1px solid #e1e6e0; background: white; color: #7c877f; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px;">Delete</button>
+                    <div style="display: flex; gap: 6px; margin-right: auto; flex-wrap: wrap;">
+                        <button type="button" class="secondary" @onclick="CompletePlan" disabled="@isClosed" style="padding: 7px 12px; border: 1px solid #c8dacd; background: #eaf2ec; color: #3e6253; border-radius: 8px; cursor: @(isClosed ? "not-allowed" : "pointer"); opacity: @(isClosed ? "0.5" : "1"); font-weight: 700; font-size: 12px;">✓ Completed</button>
+                        <button type="button" class="secondary" @onclick="CancelPlan" style="padding: 7px 10px; border: 1px solid #fed7d7; background: #fff5f5; color: #9b2c2c; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px;">Cancel</button>
+                        <button type="button" class="secondary" @onclick="Delete" style="padding: 7px 10px; border: 1px solid #e1e6e0; background: white; color: #7c877f; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px;">Delete</button>
                     </div>
                 }
-                <button type="button" class="secondary" @onclick="Close" style="padding: 9px 18px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c;">Close</button>
+                <button type="button" class="secondary" @onclick="Close" style="padding: 7px 14px; border: 1px solid #e1e6e0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; color: #47534c; font-size: 12.5px;">Close</button>
                 @if (!_isReadOnly)
                 {
                     var isClosedForSave = IsDateClosedForPlanning(_date, out _);
-                    <button type="button" class="primary" @onclick="Save" disabled="@(_isSaving || isClosedForSave || (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue))" style="padding: 9px 18px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: @(isClosedForSave ? "not-allowed" : "pointer"); opacity: @(isClosedForSave ? "0.5" : "1"); font-weight: 600;">
+                    <button type="button" class="primary" @onclick="Save" disabled="@(_isSaving || isClosedForSave || !string.IsNullOrEmpty(_conflictWarning))" style="padding: 7px 16px; border: none; background: #456a55; color: white; border-radius: 8px; cursor: @(isClosedForSave ? "not-allowed" : "pointer"); opacity: @(isClosedForSave ? "0.5" : "1"); font-weight: 650; font-size: 12.5px;">
                         @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
                     </button>
                 }
@@ -248,13 +277,112 @@
         }
     }
 
-    private bool _isMorningDisabled = false;
-    private bool _isEveningDisabled = false;
-    private bool _hasReachedClassroomDailyLimit => _isMorningDisabled && _isEveningDisabled;
+    private List<ExperienceSchedule> _roomSchedules = new();
+    private string _conflictWarning = "";
+
+    private string GetClassroomName()
+    {
+        if (!_classroomId.HasValue) return "Classroom";
+        return _classrooms.FirstOrDefault(c => c.Id == _classroomId.Value)?.Name ?? "Classroom";
+    }
+
+    private string GetExperienceTitle(Guid experienceId)
+    {
+        return _experiences.FirstOrDefault(e => e.Id == experienceId)?.Title ?? "Experience";
+    }
+
+    private string FormatTimeRange(TimeSpan? start, TimeSpan? end)
+    {
+        if (start.HasValue && end.HasValue)
+        {
+            return $"{DateTime.Today.Add(start.Value):hh:mm tt} - {DateTime.Today.Add(end.Value):hh:mm tt}";
+        }
+        return "Time not set";
+    }
 
     private bool IsDateClosedForPlanning(DateTime dt, out string reason)
     {
         return PlannerService.IsDaycareClosedForPlanning(DateOnly.FromDateTime(dt), out reason);
+    }
+
+    private void OnStartTimeChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (TimeSpan.TryParse(val, out var ts))
+        {
+            _startTime = DateTime.Today.Add(ts);
+            if (!_endTime.HasValue || _endTime <= _startTime)
+            {
+                _endTime = _startTime.Value.AddMinutes(30);
+            }
+
+            var hour = ts.Hours;
+            if (hour < 11 || (hour == 11 && ts.Minutes < 30))
+            {
+                _timeOfDay = "Morning";
+            }
+            else if (hour < 14)
+            {
+                _timeOfDay = "Mid-Day";
+            }
+            else if (hour < 17)
+            {
+                _timeOfDay = "Afternoon";
+            }
+            else
+            {
+                _timeOfDay = "Evening";
+            }
+        }
+        else
+        {
+            _startTime = null;
+        }
+        ValidateTimeOverlap();
+    }
+
+    private void OnEndTimeChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (TimeSpan.TryParse(val, out var ts))
+        {
+            _endTime = DateTime.Today.Add(ts);
+        }
+        else
+        {
+            _endTime = null;
+        }
+        ValidateTimeOverlap();
+    }
+
+    private void ValidateTimeOverlap()
+    {
+        _conflictWarning = "";
+        if (!_startTime.HasValue || !_endTime.HasValue) return;
+
+        var startTs = _startTime.Value.TimeOfDay;
+        var endTs = _endTime.Value.TimeOfDay;
+
+        if (startTs >= endTs)
+        {
+            _conflictWarning = "Start time must be before end time.";
+            return;
+        }
+
+        foreach (var existing in _roomSchedules)
+        {
+            if (ScheduleId.HasValue && existing.Id == ScheduleId.Value) continue;
+            if (!existing.PlannedStartTime.HasValue || !existing.PlannedEndTime.HasValue) continue;
+
+            if (startTs < existing.PlannedEndTime.Value && endTs > existing.PlannedStartTime.Value)
+            {
+                var exp = _experiences.FirstOrDefault(e => e.Id == existing.ExperienceId);
+                var expTitle = exp?.Title ?? "Existing session";
+                var timeStr = $"{DateTime.Today.Add(existing.PlannedStartTime.Value):hh:mm tt} - {DateTime.Today.Add(existing.PlannedEndTime.Value):hh:mm tt}";
+                _conflictWarning = $"Time overlaps with '{expTitle}' ({timeStr}). Please choose an open time slot.";
+                return;
+            }
+        }
     }
 
     private async Task OnClassroomChangedAsync(ChangeEventArgs e)
@@ -282,40 +410,20 @@
 
     private async Task CheckClassroomSlotAvailabilityAsync()
     {
-        _isMorningDisabled = false;
-        _isEveningDisabled = false;
+        _roomSchedules.Clear();
+        _conflictWarning = "";
 
         if (!_classroomId.HasValue) return;
 
         try
         {
             var schedules = await PlannerService.GetSchedulesForDateAsync(DateOnly.FromDateTime(_date));
-            var roomSchedules = schedules.Where(s =>
+            _roomSchedules = schedules.Where(s =>
                 s.ClassroomId == _classroomId.Value &&
                 (!ScheduleId.HasValue || s.Id != ScheduleId.Value) &&
                 !string.Equals(s.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
 
-            foreach (var s in roomSchedules)
-            {
-                var slot = s.TimeOfDay?.Trim().ToLowerInvariant() ?? "";
-                if (slot.Contains("morn"))
-                {
-                    _isMorningDisabled = true;
-                }
-                else
-                {
-                    _isEveningDisabled = true;
-                }
-            }
-
-            if (_isMorningDisabled && !_isEveningDisabled && _timeOfDay == "Morning")
-            {
-                _timeOfDay = "Evening";
-            }
-            else if (_isEveningDisabled && !_isMorningDisabled && _timeOfDay == "Evening")
-            {
-                _timeOfDay = "Morning";
-            }
+            ValidateTimeOverlap();
         }
         catch
         {
@@ -413,9 +521,10 @@
             return;
         }
 
-        if (_hasReachedClassroomDailyLimit && !ScheduleId.HasValue)
+        ValidateTimeOverlap();
+        if (!string.IsNullOrEmpty(_conflictWarning))
         {
-            _errorMessage = "This classroom already has both Morning and Evening experiences planned for this date.";
+            _errorMessage = _conflictWarning;
             return;
         }
 
@@ -457,7 +566,7 @@
                     return;
                 }
             }
-            if (_date.Date == DateTime.Today && endTs.HasValue && endTs.Value <= DateTime.Now.TimeOfDay) {
+            if (EndOfDayService?.IsBypassedForTesting() != true && _date.Date == DateTime.Today && endTs.HasValue && endTs.Value <= DateTime.Now.TimeOfDay) {
                 _errorMessage = "Cannot plan an experience for a time window that has already passed today.";
                 _isSaving = false;
                 return;

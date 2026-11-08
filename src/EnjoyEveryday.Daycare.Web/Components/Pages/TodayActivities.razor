@@ -13,6 +13,7 @@
 
 @inject PlannerService PlannerService
 @inject ExecutionService ExecutionService
+@inject IEndOfDayService EndOfDayService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
@@ -48,12 +49,29 @@
     {
         @if (IsDaycareClosed)
         {
-            <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; align-items: center; gap: 12px; color: #9b2c2c;">
-                <span style="font-size: 20px;">🌙</span>
-                <div>
-                    <div style="font-weight: 750; font-size: 14px;">Daycare Closed — Activities &amp; Planning Locked</div>
-                    <div style="font-size: 12.5px; color: #742a2a; margin-top: 2px;">@_closedReason Starting or ending activities and planning experiences for this day are prohibited.</div>
+            <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; color: #9b2c2c;">
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                    <span style="font-size: 20px;">🌙</span>
+                    <div>
+                        <div style="font-weight: 750; font-size: 14px;">Daycare Closed — Activities &amp; Planning Locked</div>
+                        <div style="font-size: 12.5px; color: #742a2a; margin-top: 2px;">@_closedReason Starting or ending activities and planning experiences for this day are prohibited.</div>
+                    </div>
                 </div>
+                <button type="button" class="btn secondary" style="background: white; border: 1px solid #fed7d7; color: #9b2c2c; font-size: 11.5px; padding: 6px 12px; border-radius: 9px; font-weight: 700; white-space: nowrap; cursor: pointer;" @onclick="BypassDaycareClosedForTesting" title="Override daycare closed restrictions for testing">
+                    ⚡ Bypass for Testing
+                </button>
+            </div>
+        }
+        else if (EndOfDayService.IsBypassedForTesting())
+        {
+            <div style="background: #eef7f0; border: 1px solid #c3e6cb; border-radius: 12px; padding: 9px 16px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #1e6333;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span>⚡</span>
+                    <span><strong>Testing Override Active</strong>: Daycare closed restrictions are bypassed. All activities unlocked.</span>
+                </div>
+                <button type="button" class="btn secondary" style="background: white; border: 1px solid #c3e6cb; color: #1e6333; font-size: 11px; padding: 4px 10px; border-radius: 8px; font-weight: 700; cursor: pointer;" @onclick="ReenableDaycareClosedGuards">
+                    Re-enable Guards
+                </button>
             </div>
         }
 
@@ -786,5 +804,17 @@
     {
         _isActiveSessionOpen = false;
         await LoadActivitiesAsync();
+    }
+
+    private void BypassDaycareClosedForTesting()
+    {
+        EndOfDayService.SetRuntimeBypass(true);
+        StateHasChanged();
+    }
+
+    private void ReenableDaycareClosedGuards()
+    {
+        EndOfDayService.SetRuntimeBypass(false);
+        StateHasChanged();
     }
 }

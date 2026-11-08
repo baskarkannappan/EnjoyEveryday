@@ -6,6 +6,7 @@
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.ActiveSessionModal
+@using EnjoyEveryday.UI.Shared.Components.Attendance
 @using EnjoyEveryday.UI.Shared.Components.ChildJourney
 @using EnjoyEveryday.UI.Shared.Components.OperationsBoard
 @using Microsoft.FluentUI.AspNetCore.Components
@@ -488,43 +489,43 @@
                                     </div>
                                 </div>
 
-                                <!-- Action Buttons Row -->
+                                <!-- Action Buttons Row: Circular with visible icons alone -->
                                 <div class="child-actions-row">
                                     <button class="child-action-btn @(_activeDiaperChildId == child.ChildId ? "active-action" : "")" 
                                             @onclick="() => ToggleDiaperPopover(child.ChildId)" 
-                                            title="Record Diaper Change">
-                                        <span>🧷</span>
-                                        <span>Diaper</span>
+                                            title="Record Diaper Change"
+                                            aria-label="Diaper">
+                                        <span class="action-icon">🧷</span>
                                     </button>
 
                                     <button class="child-action-btn @(_activeMealChildId == child.ChildId ? "active-action" : "")" 
                                             @onclick="() => ToggleMealPopover(child.ChildId)" 
-                                            title="Record Meal or Snack">
-                                        <span>🍎</span>
-                                        <span>Meal</span>
+                                            title="Record Meal or Snack"
+                                            aria-label="Meal">
+                                        <span class="action-icon">🍎</span>
                                     </button>
 
                                     <button class="child-action-btn @(isSleeping ? "active-action" : "")" 
                                             @onclick="() => ToggleNapAsync(child)" 
-                                            title="@(isSleeping ? "Wake up child" : "Start nap timer")">
-                                        <span>@(isSleeping ? "⏰" : "😴")</span>
-                                        <span>@(isSleeping ? "Wake" : "Rest")</span>
+                                            title="@(isSleeping ? "Wake up child" : "Start nap timer")"
+                                            aria-label="@(isSleeping ? "Wake" : "Rest")">
+                                        <span class="action-icon">@(isSleeping ? "⏰" : "😴")</span>
                                     </button>
 
                                     <button class="child-action-btn" 
                                             @onclick="() => OpenQuickMomentModalAsync(child)" 
-                                            title="Capture Moment or Observation">
-                                        <span>📸</span>
-                                        <span>Moment</span>
+                                            title="Capture Moment or Observation"
+                                            aria-label="Moment">
+                                        <span class="action-icon">📸</span>
                                     </button>
 
                                     <button class="child-action-btn btn-checkout" 
                                             @onclick="() => CheckOutChildAsync(child.ChildId)" 
                                             disabled="@_isDaycareClosed"
                                             style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")"
-                                            title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Record Departure")">
-                                        <span>🚪</span>
-                                        <span>Out</span>
+                                            title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Record Departure / Check Out")"
+                                            aria-label="Check Out">
+                                        <span class="action-icon">🚪</span>
                                     </button>
                                 </div>
 
@@ -933,6 +934,18 @@
             </div>
         </div>
     </div>
+}
+
+@if (_showSecurePickupModal && _activeClassroom != null)
+{
+    <SecurePickupModal IsOpen="_showSecurePickupModal"
+                       ChildId="_pickupChildId"
+                       ChildName="@_pickupChildName"
+                       ClassroomId="_activeClassroom.Id"
+                       ClassroomName="@_activeClassroom.Name"
+                       BranchId="_activeClassroom.BranchId"
+                       OnCompleted="HandleSecurePickupCompleted"
+                       OnClose="() => _showSecurePickupModal = false" />
 }
 
 @code {
@@ -1391,16 +1404,7 @@
     private bool CheckIfDaycareClosed()
     {
         var localNow = TimeProvider.GetLocalNow();
-        if (localNow.DayOfWeek == DayOfWeek.Saturday || localNow.DayOfWeek == DayOfWeek.Sunday)
-        {
-            return true;
-        }
-        if (EndOfDayService.IsDayClosedByEndOfDay(_activeClassroom?.BranchId, localNow.Date))
-        {
-            return true;
-        }
-        // Daycare closing time: 7:00 PM (19:00). Closed between 7:00 PM and 7:00 AM.
-        return localNow.Hour >= 19 || localNow.Hour < 7;
+        return EndOfDayService.IsDaycareClosedForDate(DateOnly.FromDateTime(localNow.Date), _activeClassroom?.BranchId, includeTimeOfDayCheckForToday: true, out _);
     }
 
     private async Task SelectClassroomAsync(Guid roomId)
@@ -1446,7 +1450,11 @@
         }
     }
 
-    private async Task CheckOutChildAsync(Guid childId)
+    private bool _showSecurePickupModal = false;
+    private Guid _pickupChildId = Guid.Empty;
+    private string _pickupChildName = "";
+
+    private void CheckOutChildAsync(Guid childId)
     {
         if (_activeClassroom == null) return;
         if (_isDaycareClosed)
@@ -1454,29 +1462,18 @@
             _ = NotificationService.ShowWarningAsync("Daycare is closed. Child attendance and departure cannot be performed while the daycare is closed.");
             return;
         }
-        try
-        {
-            var nowTime = TimeProvider.GetLocalNow().TimeOfDay;
-            await AttendanceService.MarkChildAttendanceAsync(new ChildAttendance
-            {
-                Id = Guid.NewGuid(),
-                TenantId = TenantContext.TenantId,
-                BranchId = _activeClassroom.BranchId,
-                ClassroomId = _activeClassroom.Id,
-                ChildId = childId,
-                AttendanceDate = DateTime.Today,
-                Status = "CheckedOut",
-                DepartureTime = nowTime,
-                RecordedByUserId = UserContext.UserId
-            });
 
-            await NotificationService.ShowSuccessAsync("Departure recorded.");
-            await RefreshBoardAsync();
-        }
-        catch (Exception ex)
-        {
-            await NotificationService.HandleExceptionAsync(ex);
-        }
+        var child = _classroomChildren.FirstOrDefault(c => c.ChildId == childId);
+        _pickupChildId = childId;
+        _pickupChildName = child?.ChildName ?? "Child";
+        _showSecurePickupModal = true;
+    }
+
+    private async Task HandleSecurePickupCompleted()
+    {
+        _showSecurePickupModal = false;
+        await NotificationService.ShowSuccessAsync("Child departure and authorized pickup verified.");
+        await RefreshBoardAsync();
     }
 
     private async Task MarkAllScheduledPresentAsync()

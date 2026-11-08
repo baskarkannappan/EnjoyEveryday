@@ -28,5 +28,6 @@ Critical child welfare domain safeguarding children with life-threatening allerg
 ## UI Presentation & Emergency Badges
 * In `TeacherWorkspace.razor` and `BranchDetailSection.razor`, children with severe allergies display a bright red medical badge with instant hover tooltip listing emergency protocols.
 * During meal logging in `ChildDailyCareSection.razor`, dietary restrictions appear in amber pills to prevent accidental allergen exposure.
-* In `SecurePickupModal.razor`, collectors must match an authorized `ChildEmergencyContact` or require supervisor sign-off.
+* In `SecurePickupModal.razor` and `TeacherWorkspace.razor` departure checkout (`CheckOutChildAsync`), collectors must match an authorized pickup or guardian. The modal exposes `OnCompleted` and `OnDepartureConfirmed` callbacks, ensuring reliable checkout completion. Parents self-manage authorized pickups in `FamilyProfile.razor` (where designating at least one Primary Guardian is mandatory for safety release), and administrators review them in Step 8 of `ChildEnrollmentWizard.razor`. Updates sync immediately across teacher checkout, admissions, and daycare administration.
+* **Privacy & Trust Center Approval**: Guardians accept and approve child data privacy and pickup security terms upon logging in (`Today.razor` and `FamilyProfile.razor`), writing to `child_consents` with immediate verified status reflected across all platform tiers.
 

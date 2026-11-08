@@ -32,6 +32,7 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `branches`, `branch_floor_maps`, `floor_map_markers`, `branch_operational_goals`: Physical center facilities and floor plans.
 * `classrooms`, `classroom_statutory_ratios`, `classroom_teachers`: Room capacities, statutory licensing ratios, and teacher assignments.
 * `teachers`, `teacher_attendance`: Primary teacher profile and clock-in/out records.
+* `daycare_announcements`: Official organization and branch announcements broadcast to families and educators with urgency tagging and `is_active` soft-deactivation toggle.
 * `teacher_availabilities`, `teacher_certifications`, `teacher_documents`, `teacher_education`, `teacher_emergency_contacts`, `teacher_employments`, `teacher_experiences`, `teacher_handovers`, `teacher_languages`, `teacher_observations`, `teacher_preferences`, `teacher_professional_developments`, `teacher_schedules`, `teacher_skills`, `teacher_specialties`, `teacher_trainings`: Comprehensive staff records.
 * `staff_leaves`: Sick, vacation, and coverage logs.
 

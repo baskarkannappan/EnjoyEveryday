@@ -1,48 +1,679 @@
 @page "/notifications"
 @using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.Daycare.Web.Services
+@inject IDaycareAnnouncementService AnnouncementService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IPageAuthorizationService PageAuth
+@inject OrganizationService OrgService
+@inject BranchService BranchService
+@rendermode InteractiveServer
 
-<PageTitle>Notifications — EnjoyEveryday</PageTitle>
+<PageTitle>Notifications &amp; Announcements — EnjoyEveryday</PageTitle>
 
 <div class="content notifications-page" style="max-width: 960px; margin: 0 auto; padding: 24px 16px;">
-    <PageHero Eyebrow="NOTIFICATIONS"
+    <PageHero Eyebrow="NOTIFICATIONS &amp; BROADCASTS"
               Title="Activity &amp; Announcements"
-              Subtitle="Keep track of real-time daycare updates, caregiver alerts, and classroom events." />
+              Subtitle="Keep track of real-time daycare updates, official center notices, and broadcast messages to parents and educators.">
+        <RightContent>
+            @if (_canPost)
+            {
+                <button class="btn primary" @onclick="OpenComposerModal">
+                    ＋ Post Announcement
+                </button>
+            }
+        </RightContent>
+    </PageHero>
 
-    <div style="background: var(--surface, #ffffff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); padding: 20px; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06)); margin-top: 24px;">
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="announcement-success-banner">
+            <span>✓ @_successMessage</span>
+            <button class="banner-close-btn" @onclick="() => _successMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- DAYCARE ANNOUNCEMENTS STREAM -->
+    <div class="announcements-section-card">
+        <div class="section-card-header">
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <div class="section-icon-badge">
+                    📢
+                </div>
+                <div>
+                    <h3 class="section-title">Daycare Announcements</h3>
+                    <p class="section-subtitle">Synced across Parent Portals, Teacher Workspaces, and Administration</p>
+                </div>
+            </div>
+            <span class="synced-badge">⚡ Real-time Synced</span>
+        </div>
+
+        @if (_loading)
+        {
+            <div style="padding: 30px; text-align: center; color: var(--muted, #6c7870);">
+                Loading announcements...
+            </div>
+        }
+        else if (_announcements.Count == 0)
+        {
+            <div class="announcements-empty">
+                <span style="font-size: 24px;">📯</span>
+                <p>No active announcements posted yet.</p>
+                @if (_canPost)
+                {
+                    <button class="btn secondary" style="margin-top: 8px;" @onclick="OpenComposerModal">
+                        Create the First Announcement
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="announcements-stream">
+                @foreach (var item in _announcements)
+                {
+                    <div class="announcement-row @(item.IsUrgent ? "urgent" : "")">
+                        <div class="announcement-row-top">
+                            <div class="announcement-tag-group">
+                                <span class="announcement-tag @(item.IsUrgent ? "urgent" : "")">@item.Tag</span>
+                                @if (item.IsUrgent)
+                                {
+                                    <span class="urgent-indicator">⚠️ URGENT</span>
+                                }
+                            </div>
+                            <span class="announcement-timestamp">@item.CreatedAt.ToString("MMM dd, yyyy · h:mm tt")</span>
+                        </div>
+                        <h4 class="announcement-heading">@item.Title</h4>
+                        <p class="announcement-body">@item.Content</p>
+                        <div class="announcement-author-meta">
+                            <span>Author: <strong>@item.AuthorName</strong> (@item.AuthorRole)</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- QUICK ACTIVITY ACCESS CARDS -->
+    <div class="quick-access-card" style="margin-top: 24px;">
         <div style="display: flex; gap: 12px; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--border, #e4e7df);">
-            <div style="width: 38px; height: 38px; border-radius: 10px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e5c49); display: grid; place-items: center; font-size: 18px;">
+            <div style="width: 36px; height: 36px; border-radius: 10px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #3e5c49); display: grid; place-items: center; font-size: 17px;">
                 🔔
             </div>
             <div>
-                <h3 style="margin: 0; font-size: 15px; font-weight: 750; color: var(--text, #26332d);">All Caught Up!</h3>
-                <p style="margin: 0; font-size: 13px; color: var(--muted, #6c7870);">You have no unread system announcements or alerts.</p>
+                <h3 style="margin: 0; font-size: 14.5px; font-weight: 750; color: var(--text, #26332d);">Connected Activity Feeds</h3>
+                <p style="margin: 0; font-size: 12.5px; color: var(--muted, #6c7870);">Instant access to everyday classroom conversations and attendance</p>
             </div>
         </div>
 
-        <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px;">
-            <div style="display: flex; gap: 14px; align-items: flex-start; padding: 12px; border-radius: 12px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df);">
+        <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 10px;">
+            <div class="quick-link-item">
                 <span style="font-size: 18px;">💬</span>
                 <div style="flex-grow: 1;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-weight: 700; font-size: 13px; color: var(--text, #26332d);">Family Conversations</span>
-                        <span style="font-size: 11px; color: var(--muted, #6c7870);">Live</span>
+                        <span style="font-size: 11px; color: var(--muted, #6c7870);">Live Channel</span>
                     </div>
-                    <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--muted, #6c7870);">Parent messages are accessible through the dedicated messaging center.</p>
+                    <p style="margin: 3px 0 0 0; font-size: 12px; color: var(--muted, #6c7870);">Direct educator-to-family messages for all enrolled children.</p>
                 </div>
-                <a href="/classroom-messages" class="btn secondary" style="padding: 4px 10px; font-size: 12px; border-radius: 8px; text-decoration: none; color: var(--text, #26332d); border: 1px solid var(--border, #e4e7df); background: white;">Open Messages</a>
+                <a href="/classroom-messages" class="btn secondary quick-btn">Open Messages</a>
             </div>
 
-            <div style="display: flex; gap: 14px; align-items: flex-start; padding: 12px; border-radius: 12px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df);">
+            <div class="quick-link-item">
                 <span style="font-size: 18px;">☀️</span>
                 <div style="flex-grow: 1;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 700; font-size: 13px; color: var(--text, #26332d);">Classroom Daily Care</span>
+                        <span style="font-weight: 700; font-size: 13px; color: var(--text, #26332d);">Classroom Daily Care &amp; Attendance</span>
                         <span style="font-size: 11px; color: var(--muted, #6c7870);">Today</span>
                     </div>
-                    <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--muted, #6c7870);">Check attendance and meal/nap logs for your classroom.</p>
+                    <p style="margin: 3px 0 0 0; font-size: 12px; color: var(--muted, #6c7870);">Check check-in/departure statuses, meals, naps, and health checks.</p>
                 </div>
-                <a href="/management/attendance" class="btn secondary" style="padding: 4px 10px; font-size: 12px; border-radius: 8px; text-decoration: none; color: var(--text, #26332d); border: 1px solid var(--border, #e4e7df); background: white;">Attendance</a>
+                <a href="/management/attendance" class="btn secondary quick-btn">Attendance</a>
             </div>
         </div>
     </div>
 </div>
+
+<!-- POST ANNOUNCEMENT MODAL -->
+@if (_showComposerModal)
+{
+    <div class="announcement-modal-backdrop" @onclick="CloseComposerModal">
+        <div class="announcement-modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <span class="modal-eyebrow">DAYCARE BROADCAST</span>
+                    <h3 class="modal-title">Publish Daycare Announcement</h3>
+                </div>
+                <button class="close-btn" @onclick="CloseComposerModal">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_composerError))
+                {
+                    <div class="composer-error-box">
+                        <span>⚠️ @_composerError</span>
+                    </div>
+                }
+
+                <div class="composer-field">
+                    <label class="composer-label">Announcement Title *</label>
+                    <input class="composer-input" @bind="_formTitle" placeholder="e.g. Seasonal Weather Notice or Winter Celebration" />
+                </div>
+
+                <div class="composer-row">
+                    <div class="composer-field" style="flex: 1;">
+                        <label class="composer-label">Category / Tag</label>
+                        <select class="composer-select" @bind="_formTag">
+                            <option value="Notice">Notice</option>
+                            <option value="Reminder">Reminder</option>
+                            <option value="Weather">Weather</option>
+                            <option value="Celebration">Celebration</option>
+                            <option value="Health & Safety">Health &amp; Safety</option>
+                            <option value="Urgent">Urgent Alert</option>
+                        </select>
+                    </div>
+
+                    <div class="composer-field" style="flex: 1;">
+                        <label class="composer-label">Target Audience / Campus</label>
+                        <select class="composer-select" @bind="_formBranchSelection">
+                            <option value="">All Branches &amp; Families</option>
+                            @foreach (var b in _branches)
+                            {
+                                <option value="@b.Id.ToString()">@b.Name Campus</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="composer-field">
+                    <label class="composer-label">Announcement Message *</label>
+                    <textarea class="composer-textarea" @bind="_formContent" placeholder="Enter clear, concise details for families and staff..."></textarea>
+                </div>
+
+                <div class="composer-checkbox-wrap">
+                    <input type="checkbox" id="urgentCheck" @bind="_formIsUrgent" />
+                    <label for="urgentCheck" style="font-size: 12.5px; font-weight: 650; color: #991b1b; cursor: pointer;">
+                        Mark as Urgent (Highlights with priority alert for parents and educators)
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseComposerModal">Cancel</button>
+                <button class="btn primary" disabled="@_isPublishing" @onclick="PublishAnnouncement">
+                    @(_isPublishing ? "Publishing..." : "Broadcast Announcement")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .announcement-success-banner {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 12px;
+        padding: 12px 18px;
+        margin-bottom: 20px;
+        color: #166534;
+        font-size: 13.5px;
+        font-weight: 650;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .banner-close-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #166534;
+        font-size: 16px;
+    }
+
+    .announcements-section-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 24px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        margin-top: 18px;
+    }
+
+    .section-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+
+    .section-icon-badge {
+        width: 40px;
+        height: 40px;
+        border-radius: 11px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e5c49);
+        display: grid;
+        place-items: center;
+        font-size: 19px;
+    }
+
+    .section-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .section-subtitle {
+        margin: 3px 0 0 0;
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .synced-badge {
+        font-size: 11px;
+        font-weight: 750;
+        background: #f0fdf4;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+        padding: 3px 9px;
+        border-radius: 20px;
+    }
+
+    .announcements-empty {
+        padding: 40px 20px;
+        text-align: center;
+        color: var(--muted, #6c7870);
+        font-size: 13.5px;
+    }
+
+    .announcements-stream {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        margin-top: 18px;
+    }
+
+    .announcement-row {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 14px;
+        padding: 16px 18px;
+        transition: all 0.15s ease;
+    }
+
+    .announcement-row:hover {
+        background: #ffffff;
+        border-color: var(--accent, #557c6c);
+        box-shadow: 0 4px 16px rgba(40, 55, 47, 0.04);
+    }
+
+    .announcement-row.urgent {
+        background: #fffafa;
+        border-color: #fca5a5;
+    }
+
+    .announcement-row-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .announcement-tag-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .announcement-tag {
+        font-size: 10px;
+        font-weight: 750;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #3e6253);
+        padding: 3px 8px;
+        border-radius: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .announcement-tag.urgent {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .urgent-indicator {
+        font-size: 10px;
+        font-weight: 800;
+        color: #b91c1c;
+        letter-spacing: 0.5px;
+    }
+
+    .announcement-timestamp {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    .announcement-heading {
+        margin: 0 0 6px 0;
+        font-size: 15px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .announcement-body {
+        margin: 0;
+        font-size: 13px;
+        color: #3f4e45;
+        line-height: 1.5;
+    }
+
+    .announcement-author-meta {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border, #e4e7df);
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .quick-access-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 20px 24px;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .quick-link-item {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+    }
+
+    .quick-btn {
+        padding: 5px 12px;
+        font-size: 12px;
+        border-radius: 8px;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    /* COMPOSER MODAL */
+    .announcement-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(30, 42, 36, 0.45);
+        backdrop-filter: blur(4px);
+        display: grid;
+        place-items: center;
+        z-index: 1050;
+        padding: 16px;
+    }
+
+    .announcement-modal-card {
+        background: var(--surface, #ffffff);
+        border-radius: 18px;
+        max-width: 540px;
+        width: 100%;
+        box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
+        border: 1px solid var(--border, #e4e7df);
+        overflow: hidden;
+        animation: modalFadeIn 0.18s ease-out;
+    }
+
+    .modal-header {
+        padding: 18px 22px;
+        background: var(--surface-soft, #f8f9f5);
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-eyebrow {
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.6px;
+        color: var(--accent-dark, #3e6253);
+        display: block;
+        margin-bottom: 2px;
+    }
+
+    .modal-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 18px;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+    }
+
+    .modal-body {
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .composer-error-box {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+    }
+
+    .composer-row {
+        display: flex;
+        gap: 14px;
+    }
+
+    .composer-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .composer-label {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+    }
+
+    .composer-input, .composer-select {
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        outline: none;
+        font-family: inherit;
+    }
+
+    .composer-textarea {
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 13.5px;
+        color: var(--text, #26332d);
+        outline: none;
+        font-family: inherit;
+        height: 110px;
+        resize: vertical;
+    }
+
+    .composer-input:focus, .composer-select:focus, .composer-textarea:focus {
+        border-color: var(--accent, #557c6c);
+        background: #ffffff;
+    }
+
+    .composer-checkbox-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .modal-footer {
+        padding: 14px 22px;
+        background: var(--surface-soft, #f8f9f5);
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+</style>
+
+@code {
+    private List<DaycareAnnouncement> _announcements = new();
+    private List<Branch> _branches = new();
+    private bool _loading = true;
+    private bool _canPost = false;
+    private string? _successMessage;
+
+    private bool _showComposerModal = false;
+    private bool _isPublishing = false;
+    private string? _composerError;
+
+    private string _formTitle = "";
+    private string _formTag = "Notice";
+    private string _formContent = "";
+    private string _formBranchSelection = "";
+    private bool _formIsUrgent = false;
+
+    private UserRoleProfile? _profile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPermissionsAndDataAsync();
+    }
+
+    private async Task LoadPermissionsAndDataAsync()
+    {
+        try
+        {
+            _loading = true;
+            _profile = await PageAuth.GetUserProfileAsync();
+            _canPost = _profile.IsOrgAdmin || _profile.IsBranchAdmin || _profile.IsLeadTeacher || _profile.IsPlatformAdmin;
+
+            var orgId = _profile.OrganizationId != Guid.Empty ? _profile.OrganizationId : (UserContext.OrganizationId ?? Guid.Empty);
+            if (orgId != Guid.Empty)
+            {
+                var branchList = await BranchService.GetBranchesAsync(orgId);
+                _branches = branchList.Where(b => b.IsActive).ToList();
+            }
+
+            await LoadAnnouncementsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Notifications] Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadAnnouncementsAsync()
+    {
+        var tenantId = TenantContext.TenantId != Guid.Empty ? TenantContext.TenantId : Guid.Parse("10000000-0000-0000-0000-000000000001");
+        var orgId = _profile?.OrganizationId ?? UserContext.OrganizationId;
+        var list = await AnnouncementService.GetAnnouncementsAsync(tenantId, orgId);
+        _announcements = list.ToList();
+    }
+
+    private void OpenComposerModal()
+    {
+        _composerError = null;
+        _formTitle = "";
+        _formTag = "Notice";
+        _formContent = "";
+        _formBranchSelection = "";
+        _formIsUrgent = false;
+        _showComposerModal = true;
+    }
+
+    private void CloseComposerModal()
+    {
+        _showComposerModal = false;
+        _composerError = null;
+    }
+
+    private async Task PublishAnnouncement()
+    {
+        if (string.IsNullOrWhiteSpace(_formTitle))
+        {
+            _composerError = "Please enter an announcement title.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_formContent))
+        {
+            _composerError = "Please enter announcement content.";
+            return;
+        }
+
+        try
+        {
+            _isPublishing = true;
+            _composerError = null;
+
+            var tenantId = TenantContext.TenantId != Guid.Empty ? TenantContext.TenantId : Guid.Parse("10000000-0000-0000-0000-000000000001");
+            var orgId = _profile?.OrganizationId ?? UserContext.OrganizationId;
+            Guid? branchId = null;
+            if (Guid.TryParse(_formBranchSelection, out var parsedBranch))
+            {
+                branchId = parsedBranch;
+            }
+
+            var authorName = !string.IsNullOrWhiteSpace(_profile?.DisplayName) ? _profile.DisplayName : (UserContext.Email ?? "Administration");
+            var authorRole = _profile?.PrimaryRoleName ?? "Daycare Admin";
+
+            var item = new DaycareAnnouncement
+            {
+                TenantId = tenantId,
+                OrganizationId = orgId ?? Guid.Parse("20000000-0000-0000-0000-000000000001"),
+                BranchId = branchId,
+                Title = _formTitle.Trim(),
+                Content = _formContent.Trim(),
+                Tag = _formTag,
+                IsUrgent = _formIsUrgent,
+                AuthorName = authorName,
+                AuthorRole = authorRole
+            };
+
+            await AnnouncementService.CreateAnnouncementAsync(item);
+            _showComposerModal = false;
+            _successMessage = $"Announcement '{_formTitle}' broadcast successfully to all parents and educators.";
+            await LoadAnnouncementsAsync();
+        }
+        catch (Exception ex)
+        {
+            _composerError = $"Failed to broadcast announcement: {ex.Message}";
+        }
+        finally
+        {
+            _isPublishing = false;
+        }
+    }
+}

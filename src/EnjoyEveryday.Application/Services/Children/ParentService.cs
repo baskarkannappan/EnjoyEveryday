@@ -7,13 +7,15 @@ namespace EnjoyEveryday.Application.Services;
 
 public class ChildDailyTimelineItem
 {
+    public DateTime EventTime { get; set; }
     public string TimeLabel { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public string Category { get; set; } = string.Empty; // Attendance, Experience, Moment
+    public string Category { get; set; } = string.Empty; // Attendance, Experience, Moment, DailyCare
     public string? Status { get; set; }
     public bool IsCompleted { get; set; }
     public string? PhotoUrl { get; set; }
+    public string? Icon { get; set; }
 }
 
 public class ChildDailySummary
@@ -73,6 +75,12 @@ public interface IParentService
     Task<ParentChatMessage> SendParentMessageAsync(Guid childId, string messageText, CancellationToken cancellationToken = default);
     Task ReportAbsenceAsync(Guid childId, DateTime startDate, DateTime endDate, string reason, string? notes, CancellationToken cancellationToken = default);
     Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid childId, CancellationToken cancellationToken = default);
+    Task<AuthorizedPickupDto> SaveAuthorizedPickupAsync(Guid childId, AuthorizedPickupDto dto, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAuthorizedPickupAsync(Guid childId, Guid pickupId, CancellationToken cancellationToken = default);
+    Task<bool> IsPrivacyAndTrustApprovedAsync(Guid childId, CancellationToken cancellationToken = default);
+    Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid childId, CancellationToken cancellationToken = default);
+    Task ApprovePrivacyAndTrustAsync(Guid childId, string approvedByName, CancellationToken cancellationToken = default);
+    Task MarkMessagesAsReadAsync(Guid childId, CancellationToken cancellationToken = default);
     Task<List<Invoice>> GetChildInvoicesAsync(Guid childId, CancellationToken cancellationToken = default);
 }
 
@@ -161,24 +169,46 @@ public class ParentService : IParentService
             .ToList();
 
         var timelineItems = new List<ChildDailyTimelineItem>();
+        DateTime baseDateTime = targetDate.ToDateTime(TimeOnly.MinValue);
 
         // 1. Attendance Timeline Item
-        if (attendance != null)
+        if (attendance != null && attendance.ArrivalTime.HasValue)
         {
-            var timeStr = attendance.ArrivalTime.HasValue ? DateTime.Today.Add(attendance.ArrivalTime.Value).ToString("h:mm tt") : "Morning";
+            var arrTime = baseDateTime.Add(attendance.ArrivalTime.Value);
+            var timeStr = arrTime.ToString("h:mm tt");
             var desc = attendance.Status == "Present" 
-                ? $"Arrived at {timeStr}" + (attendance.DepartureTime.HasValue ? $", departed at {DateTime.Today.Add(attendance.DepartureTime.Value):h:mm tt}" : " · Currently in classroom")
+                ? $"Arrived at {timeStr}" + (attendance.DepartureTime.HasValue ? $", departed at {baseDateTime.Add(attendance.DepartureTime.Value):h:mm tt}" : " · Currently in classroom")
                 : $"Status: {attendance.Status}";
 
             timelineItems.Add(new ChildDailyTimelineItem
             {
+                EventTime = arrTime,
                 TimeLabel = timeStr,
                 Title = "Classroom Check-In",
                 Description = desc,
                 Category = "Attendance",
+                Icon = "☀️",
                 Status = attendance.Status,
                 IsCompleted = true
             });
+
+            if (attendance.DepartureTime.HasValue)
+            {
+                var depTime = baseDateTime.Add(attendance.DepartureTime.Value);
+                timelineItems.Add(new ChildDailyTimelineItem
+                {
+                    EventTime = depTime,
+                    TimeLabel = depTime.ToString("h:mm tt"),
+                    Title = "Classroom Departure / Check-Out",
+                    Description = !string.IsNullOrWhiteSpace(attendance.PickupPersonName)
+                        ? $"Picked up by {attendance.PickupPersonName} ({attendance.PickupPersonRelationship ?? "Authorized Contact"}). Handover verified."
+                        : "Checked out and safely departed.",
+                    Category = "Attendance",
+                    Icon = "🚪",
+                    Status = "Completed",
+                    IsCompleted = true
+                });
+            }
         }
 
         // 2. Scheduled Classroom Experiences
@@ -189,12 +219,21 @@ public class ParentService : IParentService
             {
                 var exp = await _experienceRepository.GetByIdAsync(effectiveTenantId, sch.ExperienceId, cancellationToken);
                 var isCompleted = string.Equals(sch.Status, "Completed", StringComparison.OrdinalIgnoreCase);
+                var expTime = sch.PlannedStartTime.HasValue 
+                    ? baseDateTime.Add(sch.PlannedStartTime.Value) 
+                    : (string.Equals(sch.TimeOfDay, "Afternoon", StringComparison.OrdinalIgnoreCase) ? baseDateTime.AddHours(14) : baseDateTime.AddHours(10));
+                var timeLabel = sch.PlannedStartTime.HasValue 
+                    ? expTime.ToString("h:mm tt") 
+                    : (sch.TimeOfDay ?? "Classroom Plan");
+
                 timelineItems.Add(new ChildDailyTimelineItem
                 {
-                    TimeLabel = sch.TimeOfDay ?? "Classroom Plan",
+                    EventTime = expTime,
+                    TimeLabel = timeLabel,
                     Title = exp?.Title ?? "Classroom Activity",
                     Description = exp?.Description ?? "Engaging classroom learning experience",
                     Category = "Experience",
+                    Icon = "🎨",
                     Status = sch.Status,
                     IsCompleted = isCompleted
                 });
@@ -204,12 +243,15 @@ public class ParentService : IParentService
         // 3. Approved Moments for today
         foreach (var moment in approvedMoments)
         {
+            var mTime = moment.ObservationDate != default ? moment.ObservationDate.LocalDateTime : baseDateTime.AddHours(11);
             timelineItems.Add(new ChildDailyTimelineItem
             {
-                TimeLabel = moment.ObservationDate.ToString("h:mm tt"),
+                EventTime = mTime,
+                TimeLabel = mTime.ToString("h:mm tt"),
                 Title = moment.Title ?? "Special Moment",
                 Description = moment.Observation,
                 Category = "Moment",
+                Icon = "✨",
                 Status = "Approved",
                 IsCompleted = true,
                 PhotoUrl = moment.Photos?.FirstOrDefault()
@@ -222,15 +264,22 @@ public class ParentService : IParentService
         {
             try
             {
-                careReport = await _dailyCareService.GetParentDailyCareReportAsync(childId, DateOnly.FromDateTime(date), cancellationToken);
+                careReport = await _dailyCareService.GetParentDailyCareReportAsync(effectiveTenantId, childId, DateOnly.FromDateTime(date), cancellationToken);
                 foreach (var careItem in careReport.Timeline)
                 {
+                    if (careItem.Category == "Attendance" && timelineItems.Any(t => t.Category == "Attendance" && t.Title == "Classroom Check-In"))
+                    {
+                        continue;
+                    }
+
                     timelineItems.Add(new ChildDailyTimelineItem
                     {
+                        EventTime = careItem.EventTime != default ? careItem.EventTime : baseDateTime.AddHours(12),
                         TimeLabel = careItem.TimeLabel,
                         Title = careItem.Title,
                         Description = careItem.Description,
                         Category = careItem.Category,
+                        Icon = careItem.Icon,
                         Status = "Completed",
                         IsCompleted = true
                     });
@@ -241,6 +290,9 @@ public class ParentService : IParentService
                 // Fallback gracefully if care records not yet logged
             }
         }
+
+        // Sort all items strictly into chronological time-series order
+        timelineItems = timelineItems.OrderBy(t => t.EventTime).ToList();
 
         var hasCareUpdates = careReport != null && (
             careReport.DiaperChangesCount > 0 ||
@@ -713,7 +765,10 @@ public class ParentService : IParentService
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
         if (_pickupService == null) return null;
-        return await _pickupService.GetChildPickupSecurityProfileAsync(childId, null, cancellationToken);
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId);
+        var effectiveTenantId = child?.TenantId != null && child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+        return await _pickupService.GetChildPickupSecurityProfileAsync(effectiveTenantId, childId, null, cancellationToken);
     }
 
     public async Task<List<Invoice>> GetChildInvoicesAsync(Guid childId, CancellationToken cancellationToken = default)
@@ -722,5 +777,87 @@ public class ParentService : IParentService
         if (_billingService == null) return new List<Invoice>();
         var allInvoices = await _billingService.GetAllInvoicesAsync(ct: cancellationToken);
         return allInvoices;
+    }
+
+    public async Task<AuthorizedPickupDto> SaveAuthorizedPickupAsync(Guid childId, AuthorizedPickupDto dto, CancellationToken cancellationToken = default)
+    {
+        await ValidateAccessOrThrow(childId, cancellationToken);
+        if (_pickupService == null)
+        {
+            throw new InvalidOperationException("Pickup service is not available.");
+        }
+
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId)
+            ?? throw new InvalidOperationException("Child not found.");
+        var effectiveTenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+
+        return await _pickupService.SaveAuthorizedPickupAsync(effectiveTenantId, childId, dto, cancellationToken);
+    }
+
+    public async Task<bool> DeleteAuthorizedPickupAsync(Guid childId, Guid pickupId, CancellationToken cancellationToken = default)
+    {
+        await ValidateAccessOrThrow(childId, cancellationToken);
+        if (_pickupService == null) return false;
+
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId)
+            ?? throw new InvalidOperationException("Child not found.");
+        var effectiveTenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+
+        return await _pickupService.DeleteAuthorizedPickupAsync(effectiveTenantId, childId, pickupId, cancellationToken);
+    }
+
+    public async Task<bool> IsPrivacyAndTrustApprovedAsync(Guid childId, CancellationToken cancellationToken = default)
+    {
+        await ValidateAccessOrThrow(childId, cancellationToken);
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId);
+        var effectiveTenantId = child != null && child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+
+        return await _parentRepository.IsPrivacyAndTrustApprovedAsync(effectiveTenantId, childId, cancellationToken);
+    }
+
+    public async Task<DateTimeOffset?> GetPrivacyAndTrustApprovalDateAsync(Guid childId, CancellationToken cancellationToken = default)
+    {
+        await ValidateAccessOrThrow(childId, cancellationToken);
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId);
+        var effectiveTenantId = child != null && child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+
+        return await _parentRepository.GetPrivacyAndTrustApprovalDateAsync(effectiveTenantId, childId, cancellationToken);
+    }
+
+    public async Task ApprovePrivacyAndTrustAsync(Guid childId, string approvedByName, CancellationToken cancellationToken = default)
+    {
+        await ValidateAccessOrThrow(childId, cancellationToken);
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId)
+            ?? throw new InvalidOperationException("Child not found.");
+        var effectiveTenantId = child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+
+        await _parentRepository.ApprovePrivacyAndTrustAsync(effectiveTenantId, childId, approvedByName, cancellationToken);
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = effectiveTenantId,
+            UserId = _userContext.UserId,
+            Action = "PrivacyAndTrustApproved",
+            EntityType = "ChildConsent",
+            EntityId = childId,
+            Details = new { ChildId = childId, ApprovedBy = approvedByName }
+        }, cancellationToken);
+    }
+
+    public async Task MarkMessagesAsReadAsync(Guid childId, CancellationToken cancellationToken = default)
+    {
+        await ValidateAccessOrThrow(childId, cancellationToken);
+        if (_communicationRepository == null) return;
+
+        var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+        var child = children.FirstOrDefault(c => c.ChildId == childId);
+        var effectiveTenantId = child != null && child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+
+        await _communicationRepository.MarkAsReadByParentAsync(effectiveTenantId, childId, cancellationToken);
     }
 }

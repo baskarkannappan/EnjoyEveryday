@@ -1,6 +1,7 @@
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
 using EnjoyEveryday.Shared.Tenancy;
+using Microsoft.Extensions.Configuration;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -41,6 +42,9 @@ public interface IEndOfDayService
     bool IsDayClosedByEndOfDay(Guid? branchId = null, DateTime? date = null);
     bool IsDaycareClosedForDate(DateTime date, Guid? branchId, bool includeTimeOfDayCheckForToday, out string reason);
     bool IsDaycareClosedForDate(DateOnly date, Guid? branchId, bool includeTimeOfDayCheckForToday, out string reason);
+    bool IsEnforcementEnabled();
+    bool IsBypassedForTesting();
+    void SetRuntimeBypass(bool? bypass);
 }
 
 public class EndOfDayService : IEndOfDayService
@@ -49,14 +53,102 @@ public class EndOfDayService : IEndOfDayService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IAuditService _auditService;
+    private readonly IConfiguration? _configuration;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid TenantId, DateOnly Date), bool> _closedDates = new();
+    private static bool? _runtimeBypassOverride = null;
 
-    public EndOfDayService(IEndOfDayRepository repository, ITenantContext tenantContext, IUserContext userContext, IAuditService auditService)
+    public EndOfDayService(
+        IEndOfDayRepository repository,
+        ITenantContext tenantContext,
+        IUserContext userContext,
+        IAuditService auditService,
+        IConfiguration? configuration = null)
     {
         _repository = repository;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
+        _configuration = configuration;
+    }
+
+    public static bool? RuntimeBypassOverride
+    {
+        get => _runtimeBypassOverride;
+        set => _runtimeBypassOverride = value;
+    }
+
+    public void SetRuntimeBypass(bool? bypass)
+    {
+        _runtimeBypassOverride = bypass;
+    }
+
+    public bool IsBypassedForTesting()
+    {
+        return !IsEnforcementEnabled();
+    }
+
+    public bool IsEnforcementEnabled()
+    {
+        if (_runtimeBypassOverride.HasValue)
+        {
+            return !_runtimeBypassOverride.Value;
+        }
+
+        // 1. Check environment variable override
+        var envOverride = Environment.GetEnvironmentVariable("BYPASS_DAYCARE_CLOSED")
+                       ?? Environment.GetEnvironmentVariable("Bypass_daycare_closed");
+        if (!string.IsNullOrWhiteSpace(envOverride) && (envOverride == "1" || envOverride.Equals("true", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (_configuration == null) return true;
+
+        // 2. Check configuration key "Bypass_daycare_closed" or "BypassDaycareClosed"
+        var bypassConfig = _configuration["Bypass_daycare_closed"] 
+                        ?? _configuration["BypassDaycareClosed"]
+                        ?? _configuration["DaycareOperations:Bypass_daycare_closed"];
+        if (!string.IsNullOrWhiteSpace(bypassConfig) && (bypassConfig == "1" || bypassConfig.Equals("true", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        // 3. Check flat boolean key "EnforceDaycareClosed" (default: true)
+        if (bool.TryParse(_configuration["EnforceDaycareClosed"], out var enforceFlat) && !enforceFlat)
+        {
+            return false;
+        }
+
+        // 4. Check configuration section "DaycareClosedEnforcement:Enabled" (default: true)
+        if (bool.TryParse(_configuration["DaycareClosedEnforcement:Enabled"], out var enabledSection) && !enabledSection)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool IsWeekendAllowed()
+    {
+        if (_runtimeBypassOverride.HasValue && _runtimeBypassOverride.Value) return true;
+        if (_configuration == null) return false;
+        return string.Equals(_configuration["DaycareClosedEnforcement:AllowWeekends"], "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_configuration["AllowWeekendOperations"], "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsAfterHoursAllowed()
+    {
+        if (_runtimeBypassOverride.HasValue && _runtimeBypassOverride.Value) return true;
+        if (_configuration == null) return false;
+        return string.Equals(_configuration["DaycareClosedEnforcement:AllowAfterHours"], "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_configuration["AllowAfterHoursOperations"], "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsPastDatesAllowed()
+    {
+        if (_runtimeBypassOverride.HasValue && _runtimeBypassOverride.Value) return true;
+        if (_configuration == null) return false;
+        return string.Equals(_configuration["DaycareClosedEnforcement:AllowPastDates"], "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsDayClosedByEndOfDay(Guid? branchId = null, DateTime? date = null)
@@ -75,11 +167,20 @@ public class EndOfDayService : IEndOfDayService
     {
         reason = string.Empty;
 
+        // If enforcement is disabled via config, env, or runtime test bypass, all features remain accessible.
+        if (!IsEnforcementEnabled())
+        {
+            return false;
+        }
+
         // 1. Non-working days (Weekends: Saturday & Sunday)
         if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
         {
-            reason = $"The daycare is closed on {date:dddd, MMM d, yyyy} (weekend non-operating day).";
-            return true;
+            if (!IsWeekendAllowed())
+            {
+                reason = $"The daycare is closed on {date:dddd, MMM d, yyyy} (weekend non-operating day).";
+                return true;
+            }
         }
 
         // 2. Explicitly closed via End-of-Day process
@@ -94,8 +195,11 @@ public class EndOfDayService : IEndOfDayService
         var today = DateOnly.FromDateTime(DateTime.Today);
         if (date < today)
         {
-            reason = $"The daycare day for {date:MMM d, yyyy} has already ended and is closed.";
-            return true;
+            if (!IsPastDatesAllowed())
+            {
+                reason = $"The daycare day for {date:MMM d, yyyy} has already ended and is closed.";
+                return true;
+            }
         }
 
         // 4. Operating hours check if checking today's live state (Closed after 7:00 PM / 19:00 or before 7:00 AM)
@@ -104,8 +208,11 @@ public class EndOfDayService : IEndOfDayService
             var now = DateTime.Now;
             if (now.Hour >= 19 || now.Hour < 7)
             {
-                reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM).";
-                return true;
+                if (!IsAfterHoursAllowed())
+                {
+                    reason = "The daycare is closed for the day (operating hours are 7:00 AM to 7:00 PM).";
+                    return true;
+                }
             }
         }
 
