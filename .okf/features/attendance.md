@@ -37,9 +37,15 @@ tags:
 
 ## Key Workflows
 
-### 1. Child Check-In & Departure
-* **Mark Present**: Dropdown in `AttendancePeopleTable` or bulk action "Mark selected present".
-* **Departure / Pickup**: Clicking "Check Out" opens `SecurePickupModal.razor`. Requires collector name, relationship, and verification method (PIN, ID Check, Signature).
+### 1. Child Check-In, Secure Departure & Action Locking
+* **Mark Present / Check-In**: Dropdown in `AttendancePeopleTable`, 1-tap card in `TeacherWorkspace.razor`, or bulk action "Mark selected present" / "Check-In All". Sets `status = 'Present'` and `arrival_time`.
+* **Departure / Pickup Verification**: Clicking "Check Out" (or `🚪` in `TeacherWorkspace.razor`) opens `SecurePickupModal.razor`. Requires collector name, relationship, and verification method (PIN, ID Check, Signature).
+* **Departure Status & Action Locking**:
+  * Upon recording departure, `SecurePickupService.VerifyAndRecordChildDepartureAsync` sets `attendanceRecord.Status = "CheckedOut"` and `DepartureTime = departureTime`.
+  * `ChildDailyCareService.GetClassroomOverviewAsync` evaluates departed children (`Status == "CheckedOut"` or `DepartureTime != null`), setting `IsCheckedIn = false` and `AttendanceStatus = "CheckedOut"`.
+  * In `TeacherWorkspace.razor`, departed children display a `Checked Out` status badge and `Departed [time]`. All routine actions (diapers, meals, naps, moments, checkout) are completely locked, showing `🚪 Checked out • Logs locked`.
+  * Individual actions (`QuickRecordDiaperAsync`, `QuickRecordMealAsync`, `ToggleNapAsync`, `OpenQuickMomentModalAsync`) reject attempts if `!child.IsCheckedIn`.
+  * **Re-admit Flow**: Teachers can click `Re-admit` if checkout was recorded in error. `sp_record_child_attendance` detects `p_status = 'Present'` with null departure time, resetting `status = 'Present'` and clearing `departure_time`, collector names, and pickup verification fields back to null.
 * **End of Day & Closed-Day Prohibitions**:
   * `EndOfDayProcessModal.razor` and `DaycareEndOfDayBackgroundService` auto-close unclosed records at end of day (7:00 PM). Unclosed child attendances are marked with `departure_time = '19:00:00'` and status `CheckedOut`. Unclosed teacher attendances are marked with `clock_out_time = '19:00:00'` and status `ClockedOut`. Remaining active activities are marked `Completed`.
   * **Daycare Closed-State Enforcement (`AttendanceService`, `SecurePickupService`, `BranchDetailSection.razor`, `AttendancePeopleTable.razor`, `TeacherWorkspace.razor`)**: When the daycare is closed (weekends Saturday/Sunday, before 7:00 AM or at/after 7:00 PM, past dates, or after End-of-Day execution via `EndOfDayService.IsDaycareClosedForDate`), all attendance operations (check-in, check-out, status changes, bulk marking present, and secure pickup departure recording) for children, teachers, and staff are locked in both application services and UI components.

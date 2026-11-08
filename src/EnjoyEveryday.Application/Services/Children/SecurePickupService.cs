@@ -268,7 +268,7 @@ public class SecurePickupService : ISecurePickupService
             CreatedAt = DateTimeOffset.UtcNow
         };
 
-        attendanceRecord.Status = "Present"; // Remains on daily roster as attended today
+        attendanceRecord.Status = "CheckedOut";
         attendanceRecord.DepartureTime = departureTime;
         attendanceRecord.PickupPersonName = request.PickupPersonName;
         attendanceRecord.PickupPersonRelationship = request.PickupPersonRelationship;

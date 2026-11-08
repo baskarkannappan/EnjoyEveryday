@@ -503,14 +503,18 @@ public class ChildDailyCareService : IChildDailyCareService
 
             activeNaps.TryGetValue(child.Id, out var nap);
 
+            bool isDeparted = string.Equals(att?.Status, "CheckedOut", StringComparison.OrdinalIgnoreCase) || att?.DepartureTime != null;
+            bool isPresent = string.Equals(att?.Status, "Present", StringComparison.OrdinalIgnoreCase) && !isDeparted;
+            string attendanceStatus = isDeparted ? "CheckedOut" : (att?.Status ?? "Not Checked In");
+
             var status = new ClassroomChildCareStatus
             {
                 ChildId = child.Id,
                 ChildName = $"{child.FirstName} {child.LastName}",
                 PhotoUrl = child.PhotoUrl,
                 ClassroomId = child.ClassroomId,
-                IsCheckedIn = string.Equals(att?.Status, "Present", StringComparison.OrdinalIgnoreCase),
-                AttendanceStatus = att?.Status ?? "Not Checked In",
+                IsCheckedIn = isPresent,
+                AttendanceStatus = attendanceStatus,
                 ArrivalTime = att?.ArrivalTime,
                 DepartureTime = att?.DepartureTime,
                 LastDiaperEvent = childEvents.Where(e => e.EventType == CareEventTypes.DiaperChange).OrderByDescending(e => e.EventTime).FirstOrDefault(),
