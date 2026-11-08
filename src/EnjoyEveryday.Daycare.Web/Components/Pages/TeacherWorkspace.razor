@@ -473,59 +473,42 @@
 
                             @if (child.IsCheckedIn)
                             {
-                                <!-- Routines Glance -->
-                                <div class="child-glance-row">
-                                    <div class="glance-chip @(child.LastDiaperEvent == null ? "empty-chip" : "")" title="Last Diaper Change">
-                                        <span>🧷</span>
-                                        <span>@(child.LastDiaperEvent != null ? $"{child.LastDiaperEvent.DiaperCondition ?? "Checked"} ({child.LastDiaperEvent.EventTime.ToLocalTime().ToString("h:mm tt")})" : "No diaper yet")</span>
-                                    </div>
-                                    <div class="glance-chip @(child.LastMealEvent == null ? "empty-chip" : "")" title="Last Meal/Snack">
-                                        <span>🍎</span>
-                                        <span>@(child.LastMealEvent != null ? $"{child.LastMealEvent.AmountConsumed ?? "Recorded"}" : "No meal yet")</span>
-                                    </div>
-                                    <div class="glance-chip @(!isSleeping ? "empty-chip" : "")" title="Rest Status">
-                                        <span>😴</span>
-                                        <span>@(isSleeping ? "Resting" : "Awake")</span>
-                                    </div>
-                                </div>
-
-                                <!-- Action Buttons Row: Circular with visible icons alone -->
-                                <div class="child-actions-row">
-                                    <button class="child-action-btn @(_activeDiaperChildId == child.ChildId ? "active-action" : "")" 
-                                            @onclick="() => ToggleDiaperPopover(child.ChildId)" 
-                                            title="Record Diaper Change"
-                                            aria-label="Diaper">
-                                        <span class="action-icon">🧷</span>
+                                <!-- 1. Interactive Routine Actions (Combines status glance + 1-tap update) -->
+                                <div class="child-routine-actions">
+                                    <!-- Diaper Action -->
+                                    <button type="button" 
+                                            class="routine-action-btn @(_activeDiaperChildId == child.ChildId ? "active-action" : "") @(child.LastDiaperEvent == null ? "empty-routine" : "")"
+                                            @onclick="() => ToggleDiaperPopover(child.ChildId)"
+                                            title="Tap to update diaper change">
+                                        <div class="routine-head">
+                                            <span class="routine-icon">🧷</span>
+                                            <span class="routine-label">Diaper</span>
+                                        </div>
+                                        <span class="routine-value">@(child.LastDiaperEvent != null ? $"{child.LastDiaperEvent.DiaperCondition ?? "Checked"} ({child.LastDiaperEvent.EventTime.ToLocalTime():h:mm tt})" : "Log change")</span>
                                     </button>
 
-                                    <button class="child-action-btn @(_activeMealChildId == child.ChildId ? "active-action" : "")" 
-                                            @onclick="() => ToggleMealPopover(child.ChildId)" 
-                                            title="Record Meal or Snack"
-                                            aria-label="Meal">
-                                        <span class="action-icon">🍎</span>
+                                    <!-- Meal Action -->
+                                    <button type="button" 
+                                            class="routine-action-btn @(_activeMealChildId == child.ChildId ? "active-action" : "") @(child.LastMealEvent == null ? "empty-routine" : "")"
+                                            @onclick="() => ToggleMealPopover(child.ChildId)"
+                                            title="Tap to record meal or snack">
+                                        <div class="routine-head">
+                                            <span class="routine-icon">🍎</span>
+                                            <span class="routine-label">Meal</span>
+                                        </div>
+                                        <span class="routine-value">@(child.LastMealEvent != null ? $"{child.LastMealEvent.AmountConsumed ?? "Recorded"}" : "Log meal")</span>
                                     </button>
 
-                                    <button class="child-action-btn @(isSleeping ? "active-action" : "")" 
-                                            @onclick="() => ToggleNapAsync(child)" 
-                                            title="@(isSleeping ? "Wake up child" : "Start nap timer")"
-                                            aria-label="@(isSleeping ? "Wake" : "Rest")">
-                                        <span class="action-icon">@(isSleeping ? "⏰" : "😴")</span>
-                                    </button>
-
-                                    <button class="child-action-btn" 
-                                            @onclick="() => OpenQuickMomentModalAsync(child)" 
-                                            title="Capture Moment or Observation"
-                                            aria-label="Moment">
-                                        <span class="action-icon">📸</span>
-                                    </button>
-
-                                    <button class="child-action-btn btn-checkout" 
-                                            @onclick="() => CheckOutChildAsync(child.ChildId)" 
-                                            disabled="@_isDaycareClosed"
-                                            style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")"
-                                            title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Record Departure / Check Out")"
-                                            aria-label="Check Out">
-                                        <span class="action-icon">🚪</span>
+                                    <!-- Rest / Nap Action -->
+                                    <button type="button" 
+                                            class="routine-action-btn @(isSleeping ? "is-resting active-action" : "")"
+                                            @onclick="() => ToggleNapAsync(child)"
+                                            title="@(isSleeping ? "Tap to wake up child" : "Tap to start nap timer")">
+                                        <div class="routine-head">
+                                            <span class="routine-icon">@(isSleeping ? "⏰" : "😴")</span>
+                                            <span class="routine-label">Rest</span>
+                                        </div>
+                                        <span class="routine-value">@(isSleeping ? "Resting (Wake)" : "Awake (Start)")</span>
                                     </button>
                                 </div>
 
@@ -534,14 +517,14 @@
                                 {
                                     <div class="quick-popover">
                                         <div class="quick-popover-title">
-                                            <span>Select Diaper Condition:</span>
-                                            <span style="cursor: pointer;" @onclick="() => _activeDiaperChildId = null">✕</span>
+                                            <span>Record Diaper for @child.ChildName:</span>
+                                            <span class="popover-close-btn" @onclick="() => _activeDiaperChildId = null">✕</span>
                                         </div>
                                         <div class="quick-popover-options">
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet")'>💧 Wet</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "BM")'>💩 BM / Dirty</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet & BM")'>💧💩 Both</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Clean/Dry")'>✨ Clean &amp; Dry</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet")'>💧 Wet</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "BM")'>💩 BM / Dirty</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet & BM")'>💧💩 Both</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Clean/Dry")'>✨ Clean &amp; Dry</button>
                                         </div>
                                     </div>
                                 }
@@ -551,18 +534,39 @@
                                 {
                                     <div class="quick-popover">
                                         <div class="quick-popover-title">
-                                            <span>Select Amount Consumed:</span>
-                                            <span style="cursor: pointer;" @onclick="() => _activeMealChildId = null">✕</span>
+                                            <span>Record Meal for @child.ChildName:</span>
+                                            <span class="popover-close-btn" @onclick="() => _activeMealChildId = null">✕</span>
                                         </div>
                                         <div class="quick-popover-options">
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "All (100%)")'>🥣 All (100%)</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Most (75%)")'>👍 Most (75%)</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Half (50%)")'>🥪 Half (50%)</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Some (25%)")'>🤏 Little (25%)</button>
-                                            <button class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "None (0%)")'>❌ None</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "All (100%)")'>🥣 All (100%)</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Most (75%)")'>👍 Most (75%)</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Half (50%)")'>🥪 Half (50%)</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "Some (25%)")'>🤏 Little (25%)</button>
+                                            <button type="button" class="popover-option-btn" @onclick='() => QuickRecordMealAsync(child.ChildId, "None (0%)")'>❌ None</button>
                                         </div>
                                     </div>
                                 }
+
+                                <!-- 2. Footer Action Bar (Dedicated Observation & Check Out buttons) -->
+                                <div class="child-card-footer">
+                                    <button type="button" 
+                                            class="btn-child-moment" 
+                                            @onclick="() => OpenQuickMomentModalAsync(child)"
+                                            title="Record photo or learning observation for @child.ChildName">
+                                        <span class="btn-icon">📸</span>
+                                        <span>+ Moment</span>
+                                    </button>
+
+                                    <button type="button" 
+                                            class="btn-child-checkout" 
+                                            @onclick="() => CheckOutChildAsync(child.ChildId)" 
+                                            disabled="@_isDaycareClosed"
+                                            style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                            title="@(_isDaycareClosed ? "Daycare is closed" : "Record departure / Check out")">
+                                        <span class="btn-icon">🚪</span>
+                                        <span>Check Out</span>
+                                    </button>
+                                </div>
                             }
                             else if (child.AttendanceStatus == "CheckedOut")
                             {
