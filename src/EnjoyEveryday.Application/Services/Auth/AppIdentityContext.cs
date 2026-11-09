@@ -55,8 +55,9 @@ public class AppIdentityContext : IUserContext, ITenantContext
 
     private ClaimsPrincipal? ResolveUser()
     {
-        if (_httpContextAccessor?.HttpContext?.User?.Identity?.IsAuthenticated == true)
-            return _httpContextAccessor.HttpContext.User;
+        var httpUser = _httpContextAccessor?.HttpContext?.User;
+        if (httpUser?.Identity?.IsAuthenticated == true)
+            return httpUser;
 
         if (_serviceProvider != null)
         {
@@ -98,10 +99,17 @@ public class AppIdentityContext : IUserContext, ITenantContext
             }
         }
 
-        return _httpContextAccessor?.HttpContext?.User;
+        return httpUser;
     }
 
-    private bool HasValidAuthenticatedIdentity => User != null && User.Identity?.IsAuthenticated == true;
+    private bool HasValidAuthenticatedIdentity
+    {
+        get
+        {
+            var user = User;
+            return user?.Identity?.IsAuthenticated == true;
+        }
+    }
 
     private bool IsAdminUser =>
         Roles.Contains("PlatformAdmin", StringComparer.OrdinalIgnoreCase) ||
@@ -112,9 +120,10 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get
         {
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var tenantClaim = User!.FindFirst("TenantId")?.Value;
+                var tenantClaim = user.FindFirst("TenantId")?.Value;
                 if (Guid.TryParse(tenantClaim, out var tenantId))
                     return tenantId;
 
@@ -143,9 +152,10 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get 
         {
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var nameIdentifier = User!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var nameIdentifier = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (Guid.TryParse(nameIdentifier, out var userId))
                     return userId;
 
@@ -170,9 +180,10 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get
         {
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var email = User!.FindFirst(ClaimTypes.Email)?.Value;
+                var email = user.FindFirst(ClaimTypes.Email)?.Value;
                 if (!string.IsNullOrEmpty(email)) return email;
                 return string.Empty;
             }
@@ -186,9 +197,10 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get
         {
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var roles = User!.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+                var roles = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
                 if (roles.Count > 0) return roles;
             }
 
@@ -211,9 +223,10 @@ public class AppIdentityContext : IUserContext, ITenantContext
             if (!IsAuthenticated)
                 return Array.Empty<string>();
 
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var perms = User!.FindAll("Permission").Select(c => c.Value).ToList();
+                var perms = user.FindAll("Permission").Select(c => c.Value).ToList();
                 if (perms.Count > 0) return perms;
             }
 

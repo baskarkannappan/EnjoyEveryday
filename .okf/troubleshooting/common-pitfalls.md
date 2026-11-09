@@ -57,3 +57,11 @@ tags:
   }
   ```
 
+## 7. Blazor Server `IHttpContextAccessor` Lifecycle & Identity Null Safety
+* **Problem**: `IHttpContextAccessor.HttpContext` is only active during the initial HTTP request/prerender. Once the Blazor circuit/WebSocket begins asynchronous processing or when navigating on mobile, `HttpContext` becomes `null` asynchronously. Accessing `_httpContextAccessor.HttpContext.User` without local capture or null propagation throws a `System.NullReferenceException` at runtime.
+* **Fix**: Capture `var httpUser = _httpContextAccessor?.HttpContext?.User;` once in [AppIdentityContext.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Application/Services/Auth/AppIdentityContext.cs), check `httpUser?.Identity?.IsAuthenticated == true`, and wrap Blazor navigation menu scope resolution in general `try-catch (Exception ex)` blocks to prevent circuit crashes.
+
+## 8. Mobile Viewport `zoom: 0.82` Reset & Action List Grids
+* **Problem**: `ee-foundation.css` applies `zoom: 0.82` to desktop containers. On mobile viewports (e.g., iPhone SE 375px), un-reset `zoom` inflates the coordinate layout (`375 / 0.82 = 457px`), pushing cards and grids offscreen. Additionally, trying to force 2-column grids on horizontal action cards with icons, long titles, and subtitles causes text truncation and container overflows.
+* **Fix**: Always reset `zoom: 1 !important;` under `@media (max-width: 768px)` in `ee-foundation.css`. On mobile phones (`<= 640px`), convert dense multi-column shortcut grids to clean full-width single-column list cards with right arrow chevrons (`→`).
+
