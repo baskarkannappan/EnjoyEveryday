@@ -56,6 +56,25 @@ public class StorybookStorageService
         return null;
     }
 
+    public string? GetGridImageBase64(Guid experienceId)
+    {
+        var imagePath = GetGridImagePath(experienceId);
+        if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath)) return null;
+
+        try
+        {
+            var bytes = File.ReadAllBytes(imagePath);
+            var ext = Path.GetExtension(imagePath).ToLowerInvariant();
+            var mime = ext == ".jpg" || ext == ".jpeg" ? "image/jpeg" : "image/png";
+            return $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to encode storybook grid image to Base64 for experience {Id}", experienceId);
+            return null;
+        }
+    }
+
     public async Task<bool> SaveGridImageAsync(Guid experienceId, Stream stream, string contentType, CancellationToken cancellationToken = default)
     {
         try
@@ -139,7 +158,8 @@ public class StorybookStorageService
 
             var hasGridImage = HasStoredGridImage(exp.Id);
             var geminiPrompt = _storybookGenService.BuildGeminiStorybookPrompt(exp, dna);
-            var html = StandaloneHtmlGenerator.GenerateStorybookHtml(exp, dna, hasGridImage, geminiPrompt, exp.Id);
+            var gridImageBase64 = GetGridImageBase64(exp.Id);
+            var html = StandaloneHtmlGenerator.GenerateStorybookHtml(exp, dna, hasGridImage, geminiPrompt, exp.Id, gridImageBase64);
 
             Directory.CreateDirectory(_storageDir);
             var filePath = Path.Combine(_storageDir, $"{exp.Id}.html");
@@ -181,7 +201,19 @@ public class StorybookStorageService
                 var isStale = (exp.UpdatedAt > DateTimeOffset.MinValue && fileInfo.LastWriteTimeUtc < exp.UpdatedAt.UtcDateTime) || isImageNewer;
                 if (!isStale)
                 {
-                    return await File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
+                    var existingHtml = await File.ReadAllTextAsync(filePath, Encoding.UTF8, cancellationToken);
+                    // Automatically upgrade cached HTML that still uses legacy relative image URLs or is missing print-only steps / lightbox modal
+                    var isLegacyPath = HasStoredGridImage(experienceId) && existingHtml.Contains($"/api/experiences/{experienceId}/storybook/image");
+                    var isMissingPrintSteps = !existingHtml.Contains("print-only-steps");
+                    var isMissingLightbox = !existingHtml.Contains("lightboxModal");
+
+                    if (isLegacyPath || isMissingPrintSteps || isMissingLightbox)
+                    {
+                        _logger.LogInformation("Storybook HTML for {Id} is outdated (legacy path: {Legacy}, missing print steps: {MissingSteps}, missing lightbox: {MissingLightbox}). Regenerating.",
+                            experienceId, isLegacyPath, isMissingPrintSteps, isMissingLightbox);
+                        return await StoreStorybookAsync(exp, cancellationToken);
+                    }
+                    return existingHtml;
                 }
                 _logger.LogInformation("Storybook file at {Path} is older than Experience UpdatedAt or Image. Regenerating to match current version.", filePath);
             }

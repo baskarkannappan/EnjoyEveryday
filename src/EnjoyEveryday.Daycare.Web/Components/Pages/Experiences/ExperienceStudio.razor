@@ -17,6 +17,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject EnjoyEveryday.Application.Services.Ai.IStorybookGenerationService StorybookGenerationService
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject IConfiguration Configuration
 <div class="content">
     <PageHero Eyebrow="Little Stars"
               Title="Experience Studio"
@@ -25,7 +26,7 @@
             <a href="/experiences" class="studio-btn studio-btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
                 📚 Library
             </a>
-            <button class="studio-btn studio-btn-secondary" @onclick="GenerateStorybookInteractiveAsync" style="border-color: var(--accent, #557c6c); color: var(--accent-dark, #3e6253); background: var(--accent-light, #e6eee9); font-weight: 700;">
+            <button class="studio-btn studio-btn-secondary" @onclick="GenerateStorybookInteractiveAsync" style="border-color: var(--accent, #557c6c); color: var(--accent-dark, #31523c); background: var(--accent-light, #e6eee9); font-weight: 700;">
                 📖 Generate Storybook
             </button>
             <button class="studio-btn studio-btn-secondary" @onclick="CopyGeminiStorybookPromptAsync" title="Copy Master Prompt for Google Gemini to generate 6-panel illustrated picture book">
@@ -85,6 +86,45 @@
                             </button>
                         </div>
                     </div>
+
+                    @if (_showStudioStatusLog)
+                    {
+                        <div class="card studio-diagnostics-card" style="margin-bottom: 20px; border-left: 4px solid @(GetDiagnosticsAccentColor());">
+                            <div class="diagnostics-header">
+                                <div class="diagnostics-title-group">
+                                    <span class="diagnostics-icon">&#10022;</span>
+                                    <strong>AI Engine Status</strong>
+                                    <span class="diagnostics-pill diagnostics-pill-@_diagnosticsStatusType">
+                                        @if (_isGeneratingIdeas || _isImproving)
+                                        {
+                                            <span class="diagnostics-spinner"></span>
+                                        }
+                                        @_diagnosticsBadge
+                                    </span>
+                                </div>
+                                <button type="button" class="diagnostics-toggle-btn" @onclick="() => _isDiagnosticsExpanded = !_isDiagnosticsExpanded">
+                                    @(_isDiagnosticsExpanded ? "Hide Logs" : "View Logs")
+                                </button>
+                            </div>
+
+                            @if (_isDiagnosticsExpanded)
+                            {
+                                <div class="diagnostics-log-console">
+                                    @if (_diagnosticsLogs.Any())
+                                    {
+                                        @foreach (var log in _diagnosticsLogs)
+                                        {
+                                            <div class="diagnostics-log-line">@log</div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="diagnostics-log-empty">AI Engine ready. Click &ldquo;Help me explore&rdquo; to see live connection and model diagnostics.</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
 
                     <div class="card">
                         <div class="card-header">
@@ -459,6 +499,11 @@
     private bool _isSuggestingMaterials = false;
     private List<ExperienceFullData> _aiSuggestions = new();
     private string _newMaterial = string.Empty;
+    private bool _showStudioStatusLog = true;
+    private bool _isDiagnosticsExpanded = true;
+    private List<string> _diagnosticsLogs = new();
+    private string _diagnosticsBadge = "Ready";
+    private string _diagnosticsStatusType = "success";
 
     private async Task GenerateStorybookInteractiveAsync()
     {
@@ -520,14 +565,30 @@
     {
         if (string.IsNullOrWhiteSpace(_ideaInput)) return;
         _isGeneratingIdeas = true;
+        _diagnosticsLogs.Clear();
+        _diagnosticsBadge = "Connecting to Gemini...";
+        _diagnosticsStatusType = "connecting";
+        _isDiagnosticsExpanded = true;
         StateHasChanged();
+
         try
         {
-            var suggestions = await AiIdeaService.GenerateIdeasAsync(_ideaInput);
-            _aiSuggestions = suggestions.ToList();
+            var genResult = await AiIdeaService.GenerateIdeasWithDiagnosticsAsync(_ideaInput, logLine =>
+            {
+                _diagnosticsLogs.Add(logLine);
+                InvokeAsync(StateHasChanged);
+            });
+
+            _aiSuggestions = genResult.Suggestions.ToList();
+            _diagnosticsLogs = genResult.Diagnostics.Logs;
+            _diagnosticsBadge = genResult.Diagnostics.StatusBadge;
+            _diagnosticsStatusType = genResult.Diagnostics.StatusType;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _diagnosticsBadge = "AI Generation Error";
+            _diagnosticsStatusType = "error";
+            _diagnosticsLogs.Add($"[{DateTime.Now:HH:mm:ss}] Error: {ex.Message}");
             await ToastService.ShowErrorToastAsync("Failed to generate ideas.");
         }
         finally
@@ -536,6 +597,15 @@
             StateHasChanged();
         }
     }
+
+    private string GetDiagnosticsAccentColor() => _diagnosticsStatusType switch
+    {
+        "connecting" => "#d97706",
+        "success" => "#31523c",
+        "fallback" => "#b45309",
+        "error" => "#9b2c2c",
+        _ => "#557c6c"
+    };
 
     private async Task ApplySuggestion(ExperienceFullData suggestion)
     {
@@ -704,6 +774,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _showStudioStatusLog = Configuration.GetValue<bool>("AiAgent:ShowStudioStatusLog", true);
         var profile = await PageAuth.GetUserProfileAsync();
         if (!profile.IsOrgAdmin && !profile.IsBranchAdmin && !UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate))
         {
@@ -868,6 +939,10 @@
     private async Task ImproveAsync(string requestContext)
     {
         _isImproving = true;
+        _diagnosticsLogs.Clear();
+        _diagnosticsBadge = "Enhancing with Gemini...";
+        _diagnosticsStatusType = "connecting";
+        _isDiagnosticsExpanded = true;
         StateHasChanged();
 
         try
@@ -893,18 +968,31 @@
                 Materials = _dna.Materials,
                 ExecutionGuide = _dna.ExecutionGuide
             };
-            var result = await AiIdeaService.ImproveExperienceAsync(payload, requestContext);
+            var result = await AiIdeaService.ImproveExperienceAsync(payload, requestContext, logLine =>
+            {
+                _diagnosticsLogs.Add(logLine);
+                InvokeAsync(StateHasChanged);
+            });
             if (result != null)
             {
                 _pendingImprovement = result;
+                _diagnosticsLogs = result.Diagnostics.Logs;
+                _diagnosticsBadge = result.Diagnostics.StatusBadge;
+                _diagnosticsStatusType = result.Diagnostics.StatusType;
+                _showImprovementCompare = true;
             }
             else
             {
+                _diagnosticsBadge = "Improvement Failed";
+                _diagnosticsStatusType = "error";
                 await ToastService.ShowErrorToastAsync("Failed to get improvement suggestions. Please check your connection and API key.");
             }
         }
         catch (Exception ex)
         {
+            _diagnosticsBadge = "Improvement Error";
+            _diagnosticsStatusType = "error";
+            _diagnosticsLogs.Add($"[{DateTime.Now:HH:mm:ss}] Error: {ex.Message}");
             await ToastService.ShowErrorToastAsync($"An error occurred while connecting to the AI: {ex.Message}");
         }
         finally

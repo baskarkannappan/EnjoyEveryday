@@ -13,8 +13,8 @@ class Settings:
 
     # Provider Selection & Configuration
     DEFAULT_PROVIDER: str = os.getenv("AI_PROVIDER", "GoogleGemini")
-    DEFAULT_MODEL: str = os.getenv("AI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"))
-    DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", os.getenv("GEMINI_TIMEOUT_SECONDS", "45")))
+    DEFAULT_MODEL: str = os.getenv("AI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite"))
+    DEFAULT_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", os.getenv("GEMINI_TIMEOUT_SECONDS", "25")))
     MAX_RETRIES: int = int(os.getenv("AI_MAX_RETRIES", os.getenv("GEMINI_MAX_RETRIES", "2")))
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", None)
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)

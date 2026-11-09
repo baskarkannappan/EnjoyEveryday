@@ -7,6 +7,7 @@ public class StoryChapter
     public string PhaseTag { get; set; } = "";
     public string Duration { get; set; } = "5 min";
     public string Narrative { get; set; } = "";
+    public string ChildStory { get; set; } = "";
     public string ChildrenAction { get; set; } = "";
     public string TeacherSpark { get; set; } = "";
     public string WonderPrompt { get; set; } = "";

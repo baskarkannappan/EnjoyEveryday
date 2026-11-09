@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import json
 import logging
 import re
+import time
 from typing import List, Dict, Any
 from app.schemas.requests import IdeaRequest, ImproveRequest, MaterialsRequest
 from app.schemas.responses import IdeaResponse, ImproveResponse, MaterialsResponse
@@ -129,7 +130,16 @@ async def generate_ideas(
     if cached_ideas is not None:
         return cached_ideas
 
+    start_time = time.time()
     prompt = f"Learning Theme / Starting Idea: {req.idea.strip()}"
+    meta = {
+        "provider": "GoogleGemini",
+        "model": "gemini-3.1-flash-lite",
+        "isFallback": False,
+        "executionTimeMs": 0,
+        "status": "Connected to Google Gemini"
+    }
+
     try:
         raw_suggestions = await ai_provider_registry.generate_with_failover(
             prompt=prompt,
@@ -137,8 +147,17 @@ async def generate_ideas(
             tenant_context=context,
             temperature=0.6
         )
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        meta["executionTimeMs"] = elapsed_ms
+        meta["status"] = f"Generated via Google Gemini (gemini-3.1-flash-lite) in {elapsed_ms}ms"
     except Exception as ex:
+        elapsed_ms = int((time.time() - start_time) * 1000)
         logger.warning(f"AI generation failed for /api/ideas across all providers: {ex}. Building deterministic safe fallback.")
+        meta["provider"] = "DeterministicFallback"
+        meta["model"] = "PedagogicalRuleEngine"
+        meta["isFallback"] = True
+        meta["executionTimeMs"] = elapsed_ms
+        meta["status"] = f"Primary AI timed out / failed ({str(ex)[:70]}). Deterministic safe fallback active."
         clean_topic = extract_clean_topic(req.idea)
         raw_suggestions = [
             {
@@ -196,7 +215,7 @@ async def generate_ideas(
 
             validated_suggestions.append(clean_item)
 
-    result = {"suggestions": validated_suggestions}
+    result = {"suggestions": validated_suggestions, "meta": meta}
     await ai_cache.set(cache_key, result, ttl_seconds=1800)
     return result
 
@@ -210,8 +229,16 @@ async def improve_experience(
     if cached_improvement is not None:
         return cached_improvement
 
+    start_time = time.time()
     compact_dna = json.dumps(req.experienceDna, separators=(',', ':'))
     prompt = f"Improvement Request: {req.requestContext.strip()}\n\nCurrent Experience DNA:\n{compact_dna}"
+    meta = {
+        "provider": "GoogleGemini",
+        "model": "gemini-3.1-flash-lite",
+        "isFallback": False,
+        "executionTimeMs": 0,
+        "status": "Connected to Google Gemini"
+    }
     
     try:
         raw_result = await ai_provider_registry.generate_with_failover(
@@ -220,6 +247,9 @@ async def improve_experience(
             tenant_context=context,
             temperature=0.4
         )
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        meta["executionTimeMs"] = elapsed_ms
+        meta["status"] = f"Enhanced via Google Gemini (gemini-3.1-flash-lite) in {elapsed_ms}ms"
         reason = raw_result.get("reason", "Experience enhanced with requested pedagogical adjustments.")
         updated_data = raw_result.get("updatedData", req.experienceDna)
         clean_data = experience_validator.sanitize_and_validate(updated_data)
@@ -231,16 +261,23 @@ async def improve_experience(
                 if not clean_data.get(k):
                     clean_data[k] = v
 
-        res = {"reason": reason, "updatedData": clean_data}
+        res = {"reason": reason, "updatedData": clean_data, "meta": meta}
         await ai_cache.set(cache_key, res, ttl_seconds=1800)
         return res
 
     except Exception as ex:
+        elapsed_ms = int((time.time() - start_time) * 1000)
         logger.warning(f"AI improvement failed: {ex}. Returning safe grounded fallback.")
         fallback = build_improved_fallback(req.experienceDna, req.requestContext)
+        meta["provider"] = "DeterministicFallback"
+        meta["model"] = "PedagogicalRuleEngine"
+        meta["isFallback"] = True
+        meta["executionTimeMs"] = elapsed_ms
+        meta["status"] = f"Primary AI timed out / failed ({str(ex)[:70]}). Deterministic safe fallback active."
         return {
             "reason": f"Adapted experience structure to incorporate '{req.requestContext}'.",
-            "updatedData": fallback
+            "updatedData": fallback,
+            "meta": meta
         }
 
 @router.post("/api/materials", response_model=MaterialsResponse)

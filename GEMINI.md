@@ -27,7 +27,7 @@ Always reference these CSS variables or their hex equivalents:
 | `--muted` | `#6c7870` / `#7c877f` | Subtitles, labels, timestamps, secondary details |
 | `--accent` | `#557c6c` / `#52745e` | Signature brand sage green (primary buttons & highlights) |
 | `--accent-light` | `#e6eee9` / `#e5eee8` | Active badges, avatar background, highlighted pills |
-| `--accent-dark` | `#3e6253` | Button hover, icon color, strong status badges |
+| `--accent-dark` | `#31523c` | Button hover, icon color, strong status badges |
 | `--warm` | `#f4eee1` / `#f5efe3` | Warm sand / cream accent |
 | `--shadow` | `0 8px 30px rgba(40, 55, 47, .06)` | Standard natural card elevation shadow |
 | `--radius` | `18px` | Standard border radius for cards & major containers |
@@ -72,9 +72,9 @@ Every page in `EnjoyEveryday.Daycare.Web` should follow this structure:
 
 ### A. Buttons
 - **Primary**: `<button class="primary">` or `<a class="btn primary">`
-  - Rounded `11px`, background `var(--accent)`, hover `var(--accent-dark)`, white text, `font-weight: 700`.
+  - Rounded `0px`, background `#31523c`, hover `#23412f`, white text (`#ffffff`), `font-weight: 700`.
 - **Secondary**: `<button class="secondary">` or `<a class="btn secondary">`
-  - Rounded `11px`, background `white`, border `1px solid var(--border)`, color `var(--text)`.
+  - Rounded `0px`, background `white`, border `1px solid var(--border)`, color `var(--text)`.
 
 ### B. Directory & Listing Grids (`people-grid` & `person`)
 When listing people (teachers, children, users, parents):

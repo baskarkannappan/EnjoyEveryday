@@ -53,11 +53,36 @@ public class ExperienceImprovementResult
 {
     public string Reason { get; set; } = string.Empty;
     public ExperienceFullData UpdatedData { get; set; } = new();
+    public AiIdeaDiagnostics Diagnostics { get; set; } = new();
+}
+
+public class AiExecutionMeta
+{
+    public string Provider { get; set; } = "GoogleGemini";
+    public string Model { get; set; } = "gemini-3.1-flash-lite";
+    public bool IsFallback { get; set; }
+    public int ExecutionTimeMs { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public class AiIdeaDiagnostics
+{
+    public List<string> Logs { get; set; } = new();
+    public string StatusBadge { get; set; } = "Ready";
+    public string StatusType { get; set; } = "success"; // "connecting", "success", "fallback", "error"
+    public AiExecutionMeta? Meta { get; set; }
+}
+
+public class AiIdeaGenerationResult
+{
+    public List<ExperienceFullData> Suggestions { get; set; } = new();
+    public AiIdeaDiagnostics Diagnostics { get; set; } = new();
 }
 
 public interface IAiIdeaService
 {
     Task<IEnumerable<ExperienceFullData>> GenerateIdeasAsync(string ideaInput);
-    Task<ExperienceImprovementResult?> ImproveExperienceAsync(object experienceDna, string requestContext);
+    Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, Action<string>? onProgress = null);
+    Task<ExperienceImprovementResult?> ImproveExperienceAsync(object experienceDna, string requestContext, Action<string>? onProgress = null);
     Task<IEnumerable<string>> SuggestMaterialsAsync(object experienceDna);
 }

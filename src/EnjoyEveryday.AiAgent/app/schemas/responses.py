@@ -1,12 +1,22 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
+class AiExecutionMeta(BaseModel):
+    provider: str = "GoogleGemini"
+    model: str = "gemini-3.1-flash-lite"
+    isFallback: bool = False
+    executionTimeMs: int = 0
+    status: str = "OK"
+
 class IdeaResponse(BaseModel):
     suggestions: List[Dict[str, Any]]
+    meta: Optional[AiExecutionMeta] = None
+
 
 class ImproveResponse(BaseModel):
     reason: str
     updatedData: Dict[str, Any]
+    meta: Optional[AiExecutionMeta] = None
 
 class MaterialsResponse(BaseModel):
     materials: List[str]

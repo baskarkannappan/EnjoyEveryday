@@ -56,6 +56,7 @@ public static class StandaloneHtmlGenerator
                 string sceneKey;
                 string icon;
                 string narrative;
+                string childStory;
                 string teacherScript;
                 string wonderPrompt;
 
@@ -74,9 +75,10 @@ public static class StandaloneHtmlGenerator
                 {
                     sceneKey = "gathering";
                     icon = "🌿";
-                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
-                        ? $"Welcome the children warmly into {pName}. {pChildren} {pTeacher}"
-                        : $"Welcome the children warmly into {pName}. Invite curious little hands and eyes to make their first discoveries.";
+                    childStory = $"Welcome, curious explorers! Today our classroom is waiting like an open canvas for an exciting adventure all about {cleanTitle.ToLowerInvariant()}. Reach out with your hands, feel the textures, and let's imagine what wonderful secrets we can discover together!";
+                    narrative = !string.IsNullOrWhiteSpace(pTeacher)
+                        ? $"Welcome the children warmly into {pName}. {pTeacher} Introduce the materials and invite curious hands and eyes to make their first discoveries."
+                        : $"Welcome the children warmly into {pName}. Introduce materials and invite open exploration with gentle sensory curiosity.";
 
                     teacherScript = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.TeacherIntroduction)
                         ? dna.ExecutionGuide.TeacherIntroduction
@@ -92,10 +94,8 @@ public static class StandaloneHtmlGenerator
                 {
                     sceneKey = "reflection";
                     icon = "🌟";
-                    var cleanAccomplish = accomplishment.Trim().TrimEnd('.');
-                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
-                        ? $"Gather together to celebrate each child's discovery: {pChildren} {pTeacher} {cleanAccomplish}."
-                        : $"Gather back together into a cozy reflection circle. Celebrate each child's discovery and effort with warmth. {cleanAccomplish}.";
+                    childStory = $"Step softly, little artists! Look at the wonderful world our hands created together across the whole room. Each colorful mark tells a special story, and our classroom is shining with creativity and pride!";
+                    narrative = "Gather the children together in a gentle circle for reflection. Guide a collaborative gallery walk where each child can share the story behind their marks, celebrating how everyone's creativity transformed the room.";
 
                     if (!string.IsNullOrWhiteSpace(pTeacher) && pTeacher.Contains("\""))
                     {
@@ -118,10 +118,8 @@ public static class StandaloneHtmlGenerator
                 {
                     sceneKey = isAdventureOrQuest ? "challenge" : "explore";
                     icon = isAdventureOrQuest ? "🔍" : "🎨";
-                    var cleanCreate = create.Trim().TrimEnd('.');
-                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
-                        ? $"The quest is in full swing! {pChildren} {pTeacher} {cleanCreate}."
-                        : $"The room fills with focused energy. {cleanCreate}.";
+                    childStory = $"Swish, glide, and tap! Little fingers create swirling patterns, rainbow paths, and friendly shapes. Friends share their materials, smiling and pointing with joy as our giant shared masterpiece comes alive!";
+                    narrative = "Children dive into creative hands-on exploration. Circulate to encourage cooperative sharing, observe fine-motor grips, and offer descriptive, encouraging prompts.";
 
                     if (!string.IsNullOrWhiteSpace(pTeacher) && pTeacher.Contains("\""))
                     {
@@ -144,9 +142,8 @@ public static class StandaloneHtmlGenerator
                 {
                     sceneKey = "challenge";
                     icon = "🔍";
-                    narrative = !string.IsNullOrWhiteSpace(pChildren)
-                        ? $"Present the hands-on challenge: {pChildren} {challenge}"
-                        : $"Pose the gentle wonder challenge: {challenge}. There are no right or wrong answers—only open invitations to explore and discover.";
+                    childStory = $"Can we work together on today's quest? {challenge}. Let's test our ideas and see what surprises we can build!";
+                    narrative = $"Pose the gentle wonder challenge: {challenge}. There are no right or wrong answers—only open invitations to explore, hypothesize, and build.";
 
                     teacherScript = !string.IsNullOrWhiteSpace(challenge)
                         ? $"\"I wonder what will happen if we take on this challenge together? {challenge}\""
@@ -158,9 +155,8 @@ public static class StandaloneHtmlGenerator
                 {
                     sceneKey = "explore";
                     icon = "🎨";
-                    narrative = !string.IsNullOrWhiteSpace(pChildren) && !string.IsNullOrWhiteSpace(pTeacher)
-                        ? $"Deep flow takes over: {pChildren} {pTeacher} {create.Trim().TrimEnd('.')}."
-                        : $"Deep creative flow takes over. Children explore, sort, and collaborate with focused, joyful energy.";
+                    childStory = $"Hands busy, minds soaring! Watch how colors and textures mix and transform in front of us. Every idea is a wonderful adventure!";
+                    narrative = "Deep creative flow takes over. Children explore, sort, and collaborate with focused, joyful energy.";
 
                     teacherScript = $"\"You are making such exciting discoveries! Tell me about what you found.\"";
                     wonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does your discovery tell us?";
@@ -169,7 +165,8 @@ public static class StandaloneHtmlGenerator
                 {
                     sceneKey = "magic";
                     icon = "✨";
-                    narrative = $"A breakthrough moment of discovery! {magic.Trim().TrimEnd('.')}. A shared ripple of delight touches every heart in the room.";
+                    childStory = "Look at that magical surprise! Our ideas have connected into something brand new and delightful that makes everyone smile!";
+                    narrative = "A breakthrough moment of discovery. Encourage children to share what surprised them and celebrate their self-guided breakthroughs.";
                     teacherScript = $"\"You discovered that all on your own! How did that happen? Can you show our friends?\"";
                     wonderPrompt = "Did you see that? What made it happen? Can we do it again?";
                 }
@@ -181,6 +178,7 @@ public static class StandaloneHtmlGenerator
                     PhaseTag = i == 0 ? "Step 1: Setup & Invitation" : i == count - 1 ? $"Step {i + 1}: Reflection & Sharing" : $"Step {i + 1}: Hands-On Action",
                     Duration = p.DurationMinutes > 0 ? $"{p.DurationMinutes} min" : "5 min",
                     Narrative = narrative,
+                    ChildStory = childStory,
                     ChildrenAction = string.IsNullOrWhiteSpace(p.ChildrenDo) ? "Children explore with open hands and focused curiosity." : p.ChildrenDo,
                     TeacherSpark = string.IsNullOrWhiteSpace(p.TeacherDoes) ? "Observe and offer open-ended support when invited." : p.TeacherDoes,
                     WonderPrompt = wonderPrompt,
@@ -199,6 +197,7 @@ public static class StandaloneHtmlGenerator
                 PhaseTag = "Step 1: Setup & Invitation",
                 Duration = "5 min",
                 Narrative = "Prepare the low circle table or exploration rug. Place tactile elements within reach. Children gather closely to inspect the materials with open curiosity.",
+                ChildStory = $"Welcome, curious explorers! Today an exciting mystery is waiting for us all about {cleanTitle.ToLowerInvariant()}. Come feel the textures and take a gentle explorer breath together.",
                 ChildrenAction = "Children gather around the sensory rug, feeling the smooth textures and whispering guesses about today's mystery.",
                 TeacherSpark = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.TeacherIntroduction) ? dna.ExecutionGuide.TeacherIntroduction : "Present the mystery basket with calm excitement. Ask: 'What curious secrets are hiding inside?'",
                 WonderPrompt = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Ask) ? dna.ExecutionGuide.Ask : "What does this feel like in your hands? Have you ever seen this before?",
@@ -214,6 +213,7 @@ public static class StandaloneHtmlGenerator
                 PhaseTag = "Step 2: The Inquiry",
                 Duration = "5 min",
                 Narrative = $"Pose the gentle challenge: {challenge}. There are no right or wrong answers—only invitations to experiment, hypothesize, and build.",
+                ChildStory = $"Can we work as a team to solve our mission? {challenge}. Let's test our ideas and see what surprises we can build!",
                 ChildrenAction = "Children examine their tools, turn them over in their fingers, and whisper ideas to their neighbor with joyful energy.",
                 TeacherSpark = "Frame the challenge as an adventure. Encourage each child that every idea is valuable and worth trying.",
                 WonderPrompt = "How do you think we can make this work? What if we try it together?",
@@ -229,6 +229,7 @@ public static class StandaloneHtmlGenerator
                 PhaseTag = "Step 3: Deep Flow",
                 Duration = "10 min",
                 Narrative = $"The room fills with the happy hum of active creation. {create}. Little hands mold, balance, test, and arrange materials into brand new worlds.",
+                ChildStory = $"Swish, pat, and build! Little hands create swirling paths and towers. Friends share supplies, smiling as our shared world takes shape!",
                 ChildrenAction = "Deeply engaged in flow state: sorting colors, building structures, testing balance, and sharing supplies kindly.",
                 TeacherSpark = !string.IsNullOrWhiteSpace(dna.ExecutionGuide?.Watch) ? dna.ExecutionGuide.Watch : "Observe problem-solving moments. Notice who collaborates and who finds a peaceful solo focus.",
                 WonderPrompt = "Look what happens when these two come together! What story is your creation telling?",
@@ -244,6 +245,7 @@ public static class StandaloneHtmlGenerator
                 PhaseTag = "Step 4: The Discovery",
                 Duration = "5 min",
                 Narrative = $"Encourage children to share their breakthrough: {magic}. A shared ripple of delight touches every heart in the room.",
+                ChildStory = "Look at that magical surprise! Our ideas have connected into something brand new that makes everyone smile with wonder!",
                 ChildrenAction = "Eyes widen with excitement, pointing out their breakthrough to friends with wide, luminous smiles.",
                 TeacherSpark = "Celebrate the discovery immediately! Say: 'You discovered that all on your own! How did that happen?'",
                 WonderPrompt = "Did you see that? What made it happen? Can we do it again?",
@@ -259,6 +261,7 @@ public static class StandaloneHtmlGenerator
                 PhaseTag = "Step 5: Reflection",
                 Duration = "5 min",
                 Narrative = $"{accomplishment}. Each child holds up their triumph with gentle pride. {reflection}. The memories of today will stay warmly in our hearts.",
+                ChildStory = "Look at what we accomplished together! Step softly and admire our creations—our whole room is glowing with pride and creative wonder.",
                 ChildrenAction = "Children proudly present their work, explain their creative decisions, and help tidy up their sanctuary.",
                 TeacherSpark = "Capture the moment with a warm photo or learning note. Guide a closing gratitude breath for our journey together.",
                 WonderPrompt = "What was your favorite part of today's adventure? Who would you like to share this story with?",
@@ -281,7 +284,8 @@ public static class StandaloneHtmlGenerator
         ExperienceDna dna, 
         bool hasGridImage, 
         string? geminiPrompt, 
-        Guid? experienceId)
+        Guid? experienceId,
+        string? gridImageBase64 = null)
     {
         var cleanTitle = CleanTitle(exp.Title);
         var chapters = BuildChapters(exp, dna);
@@ -315,7 +319,8 @@ public static class StandaloneHtmlGenerator
             versionText,
             hasGridImage,
             geminiPrompt,
-            experienceId ?? exp.Id
+            experienceId ?? exp.Id,
+            gridImageBase64
         );
     }
 
@@ -333,7 +338,8 @@ public static class StandaloneHtmlGenerator
         string versionInfo = "",
         bool hasGridImage = false,
         string? geminiPrompt = null,
-        Guid? experienceId = null)
+        Guid? experienceId = null,
+        string? gridImageBase64 = null)
     {
         var sb = new StringBuilder();
 
@@ -354,7 +360,7 @@ public static class StandaloneHtmlGenerator
       --muted: #6c7870;
       --accent: #557c6c;
       --accent-light: #e6eee9;
-      --accent-dark: #3e6253;
+      --accent-dark: #31523c;
       --warm: #f4eee1;
       --shadow: 0 8px 30px rgba(40, 55, 47, .06);
       --radius: 18px;
@@ -1042,17 +1048,210 @@ public static class StandaloneHtmlGenerator
       height: 440px;
     }
 
+    /* Full-Screen Lightbox Modal */
+    .lightbox-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(20, 30, 25, 0.92);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 10000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .lightbox-modal.active {
+      display: flex;
+    }
+    .lightbox-bar {
+      width: 100%;
+      max-width: 1300px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      color: white;
+    }
+    .lightbox-title {
+      font-size: 15px;
+      font-weight: 750;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lightbox-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .lightbox-close-btn {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    .lightbox-close-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    .lightbox-content {
+      width: 100%;
+      max-width: 1300px;
+      max-height: calc(100vh - 100px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .lightbox-image {
+      max-width: 100%;
+      max-height: calc(100vh - 110px);
+      object-fit: contain;
+      border-radius: 12px;
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Print-Only Steps Container (Hidden on Screen) */
+    .print-only-steps {
+      display: none;
+    }
+
     /* Print View */
     @media print {
-      body { background: white; padding: 0; }
-      .hero-actions, .stage-bottom, .dots-nav, .view-toggle-bar { display: none !important; }
-      .split-layout { display: block; }
-      .stage { page-break-after: always; box-shadow: none; border: 1px solid #ccc; margin-bottom: 30px; }
-      .diagram-canvas { height: 260px; }
+      @page {
+        size: auto;
+        margin: 12mm 15mm;
+      }
+      html, body {
+        background: white !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        color: #1a221e !important;
+        font-size: 11pt !important;
+      }
+      .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .hero {
+        margin-bottom: 16px !important;
+        padding-bottom: 12px !important;
+        border-bottom: 1px solid #d4ded7 !important;
+      }
+      .hero-actions,
+      .ai-toolbar,
+      .view-toggle-bar,
+      .stage-bottom,
+      .dots-nav,
+      .btn-ai,
+      .btn-ai-outline,
+      .toast-popup,
+      .lightbox-modal,
+      .grid-header-actions {
+        display: none !important;
+      }
+
+      /* Hide interactive single-stage view, show all print steps */
+      .stage {
+        display: none !important;
+      }
+      .print-only-steps {
+        display: block !important;
+      }
+
+      .split-layout {
+        display: block !important;
+      }
+
+      /* When 6-panel grid is present, grid card is on Page 1, sidebar on Page 2 */
+      .has-grid-image .grid-showcase-card {
+        box-shadow: none !important;
+        border: 1px solid #d4ded7 !important;
+        margin: 0 0 20px 0 !important;
+        padding: 14px !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: always !important;
+        break-after: page !important;
+      }
+      .has-grid-image .sidebar {
+        page-break-before: always !important;
+        break-before: page !important;
+      }
+
+      .grid-image-frame {
+        box-shadow: none !important;
+        border: none !important;
+        overflow: visible !important;
+        background: transparent !important;
+      }
+      .storybook-grid-img {
+        max-height: 480px !important;
+        width: auto !important;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        display: block !important;
+        object-fit: contain !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+
+      .sidebar {
+        display: block !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 24px !important;
+      }
+      .sidebar .card {
+        box-shadow: none !important;
+        border: 1px solid #d4ded7 !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 14px !important;
+        padding: 14px 18px !important;
+        background: white !important;
+      }
+
+      /* Each step gets its own clean printed page */
+      .print-step-card {
+        page-break-before: always !important;
+        break-before: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin-bottom: 24px !important;
+        border: 1px solid #d4ded7 !important;
+        border-radius: 14px !important;
+        padding: 18px 20px !important;
+        background: white !important;
+      }
+      .diy-step-grid {
+        display: grid !important;
+        grid-template-columns: 320px 1fr !important;
+        gap: 18px !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      .diagram-canvas {
+        height: 220px !important;
+      }
     }
   </style>");
         sb.AppendLine("</head>");
-        sb.AppendLine("<body>");
+        sb.AppendLine($"<body class=\"{(hasGridImage || !string.IsNullOrEmpty(gridImageBase64) ? "has-grid-image" : "")}\">");
 
         sb.AppendLine("  <div class=\"container\">");
 
@@ -1095,21 +1294,40 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("    </div>");
 
         // Illustrated Grid Showcase (if uploaded)
-        if (hasGridImage && experienceId.HasValue)
+        if ((hasGridImage || !string.IsNullOrEmpty(gridImageBase64)) && experienceId.HasValue)
         {
+            var imgSrc = !string.IsNullOrEmpty(gridImageBase64)
+                ? gridImageBase64
+                : $"/api/experiences/{experienceId.Value}/storybook/image";
+
             sb.AppendLine("    <div class=\"grid-showcase-card\">");
             sb.AppendLine("      <div class=\"grid-showcase-header\">");
             sb.AppendLine("        <div class=\"grid-showcase-title\">");
             sb.AppendLine("          <span>🎨</span>");
             sb.AppendLine("          <span>6-Page Illustrated Storybook (Pixar-Inspired 3D Scene)</span>");
             sb.AppendLine("        </div>");
-            sb.AppendLine("        <div style=\"display: flex; gap: 8px;\">");
-            sb.AppendLine($"          <a href=\"/api/experiences/{experienceId.Value}/storybook/image\" target=\"_blank\" class=\"btn-ai-outline\">🔍 View Full Size</a>");
-            sb.AppendLine("          <button class=\"btn-ai-outline\" onclick=\"document.getElementById('imgUploadInput').click()\">🔄 Replace Image</button>");
+            sb.AppendLine("        <div style=\"display: flex; gap: 8px;\" class=\"grid-header-actions\">");
+            sb.AppendLine("          <button type=\"button\" class=\"btn-ai-outline\" onclick=\"openFullSizeImage()\">🔍 View Full Size</button>");
+            sb.AppendLine("          <button type=\"button\" class=\"btn-ai-outline\" onclick=\"document.getElementById('imgUploadInput').click()\">🔄 Replace Image</button>");
             sb.AppendLine("        </div>");
             sb.AppendLine("      </div>");
             sb.AppendLine("      <div class=\"grid-image-frame\">");
-            sb.AppendLine($"        <img src=\"/api/experiences/{experienceId.Value}/storybook/image\" alt=\"6-Panel Storybook Grid\" class=\"storybook-grid-img\" />");
+            sb.AppendLine($"        <img src=\"{imgSrc}\" alt=\"6-Panel Storybook Grid\" class=\"storybook-grid-img\" style=\"cursor: pointer;\" onclick=\"openFullSizeImage()\" title=\"Click to view full size\" />");
+            sb.AppendLine("      </div>");
+            sb.AppendLine("    </div>");
+
+            // Lightbox Modal for Full Size Viewing
+            sb.AppendLine("    <div id=\"lightboxModal\" class=\"lightbox-modal\" onclick=\"if(event.target===this)closeLightbox()\">");
+            sb.AppendLine("      <div class=\"lightbox-bar\">");
+            sb.AppendLine("        <div class=\"lightbox-title\"><span>🎨</span> 6-Page Illustrated Storybook (Full Size)</div>");
+            sb.AppendLine("        <div class=\"lightbox-actions\">");
+            sb.AppendLine("          <button type=\"button\" class=\"btn-ai-outline\" style=\"background:rgba(255,255,255,0.12); color:white; border-color:rgba(255,255,255,0.3);\" onclick=\"openImageInNewWindow()\">↗ Open in New Tab</button>");
+            sb.AppendLine("          <button type=\"button\" class=\"btn-ai-outline\" style=\"background:rgba(255,255,255,0.12); color:white; border-color:rgba(255,255,255,0.3);\" onclick=\"downloadStorybookImage()\">⬇ Download Image</button>");
+            sb.AppendLine("          <button type=\"button\" class=\"lightbox-close-btn\" onclick=\"closeLightbox()\" title=\"Close\">✕</button>");
+            sb.AppendLine("        </div>");
+            sb.AppendLine("      </div>");
+            sb.AppendLine("      <div class=\"lightbox-content\" onclick=\"if(event.target===this)closeLightbox()\">");
+            sb.AppendLine($"        <img src=\"{imgSrc}\" alt=\"6-Panel Storybook Grid Full Size\" class=\"lightbox-image\" />");
             sb.AppendLine("      </div>");
             sb.AppendLine("    </div>");
         }
@@ -1282,6 +1500,70 @@ public static class StandaloneHtmlGenerator
         sb.AppendLine("            <button class=\"btn primary\" id=\"nextBtn\" onclick=\"nextChapter()\">Next Step →</button>");
         sb.AppendLine("          </div>");
 
+        sb.AppendLine("        </div>");
+
+        // Print-Only Steps: Render ALL chapters so printing includes the complete manual!
+        sb.AppendLine("        <div class=\"print-only-steps\">");
+        for (int i = 0; i < chapters.Count; i++)
+        {
+            var ch = chapters[i];
+            sb.AppendLine("          <div class=\"print-step-card\">");
+            sb.AppendLine("            <div class=\"stage-top\" style=\"margin-bottom: 14px;\">");
+            sb.AppendLine("              <div class=\"scene-meta-row\">");
+            sb.AppendLine($"                <span class=\"scene-tag\">Step {i + 1} of {chapters.Count} • {HttpUtility.HtmlEncode(ch.PhaseTag)}</span>");
+            sb.AppendLine($"                <span style=\"font-size: 12px; color: var(--muted);\">⏱️ {HttpUtility.HtmlEncode(ch.Duration)}</span>");
+            sb.AppendLine("              </div>");
+            sb.AppendLine("            </div>");
+            sb.AppendLine("            <div class=\"diy-step-grid\">");
+            sb.AppendLine("              <div class=\"diy-diagram-box\">");
+            sb.AppendLine("                <div class=\"diagram-header\">");
+            sb.AppendLine("                  <span>🎨 Visual Blueprint Scene</span>");
+            sb.AppendLine($"                  <span>STEP {i + 1}</span>");
+            sb.AppendLine("                </div>");
+            sb.AppendLine("                <div class=\"diagram-canvas\">");
+            sb.AppendLine(GetSvgForKey(ch.SvgSceneKey));
+            sb.AppendLine("                </div>");
+            sb.AppendLine("              </div>");
+            sb.AppendLine("              <div class=\"diy-info-box\">");
+            sb.AppendLine($"                <h2 class=\"scene-heading\">{HttpUtility.HtmlEncode(ch.Title)}</h2>");
+            sb.AppendLine("                <div class=\"instruction-callout\">");
+            sb.AppendLine("                  <h5>Pedagogical Story Flow</h5>");
+            sb.AppendLine($"                  <p>{HttpUtility.HtmlEncode(ch.Narrative)}</p>");
+            sb.AppendLine("                </div>");
+            if (!string.IsNullOrWhiteSpace(ch.TeacherScript))
+            {
+                sb.AppendLine("                <div class=\"teacher-script-callout\">");
+                sb.AppendLine("                  <div class=\"script-header\">");
+                sb.AppendLine("                    <span>🗣️</span>");
+                sb.AppendLine("                    <strong>Teacher's Spoken Script (Say Aloud)</strong>");
+                sb.AppendLine("                  </div>");
+                sb.AppendLine($"                  <p class=\"script-text\">{HttpUtility.HtmlEncode(ch.TeacherScript)}</p>");
+                sb.AppendLine("                </div>");
+            }
+            sb.AppendLine("                <div class=\"actions-grid\">");
+            sb.AppendLine("                  <div class=\"action-card child-action\">");
+            sb.AppendLine("                    <div class=\"action-header\">👧👦 Children Action</div>");
+            sb.AppendLine($"                    <p>{HttpUtility.HtmlEncode(ch.ChildrenAction)}</p>");
+            sb.AppendLine("                  </div>");
+            sb.AppendLine("                  <div class=\"action-card teacher-action\">");
+            sb.AppendLine("                    <div class=\"action-header\">🌱 Teacher Guidance</div>");
+            sb.AppendLine($"                    <p>{HttpUtility.HtmlEncode(ch.TeacherSpark)}</p>");
+            sb.AppendLine("                  </div>");
+            sb.AppendLine("                </div>");
+            if (!string.IsNullOrWhiteSpace(ch.WonderPrompt))
+            {
+                sb.AppendLine("                <div class=\"wonder-box\">");
+                sb.AppendLine("                  <span style=\"font-size: 18px;\">💡</span>");
+                sb.AppendLine("                  <div>");
+                sb.AppendLine("                    <strong>Wonder Prompt: </strong>");
+                sb.AppendLine($"                    <span>{HttpUtility.HtmlEncode(ch.WonderPrompt)}</span>");
+                sb.AppendLine("                  </div>");
+                sb.AppendLine("                </div>");
+            }
+            sb.AppendLine("              </div>");
+            sb.AppendLine("            </div>");
+            sb.AppendLine("          </div>");
+        }
         sb.AppendLine("        </div>");
         sb.AppendLine("      </main>");
 
@@ -1462,6 +1744,58 @@ public static class StandaloneHtmlGenerator
         showToast('Upload error: ' + e.message);
       }
     }
+
+    // Full Size Image Viewer & Lightbox Helpers
+    function openFullSizeImage() {
+      const modal = document.getElementById('lightboxModal');
+      if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      } else {
+        openImageInNewWindow();
+      }
+    }
+
+    function closeLightbox() {
+      const modal = document.getElementById('lightboxModal');
+      if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeLightbox();
+    });
+
+    function openImageInNewWindow() {
+      const img = document.querySelector('.storybook-grid-img');
+      if (!img) return;
+      const expId = document.getElementById('experienceIdData')?.value || '';
+      if (window.location.protocol.startsWith('http') && expId) {
+        window.open('/api/experiences/' + expId + '/storybook/image', '_blank');
+        return;
+      }
+      const win = window.open('');
+      if (win) {
+        win.document.write('<!DOCTYPE html><html><head><meta charset=""utf-8""><title>Full Size Storybook</title>' +
+          '<style>body{margin:0;background:#181c19;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px;box-sizing:border-box;}' +
+          'img{max-width:100%;max-height:96vh;object-fit:contain;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.6);}' +
+          '</style></head><body><img src=""' + img.src + '"" alt=""Full Size Storybook"" /></body></html>');
+        win.document.close();
+      }
+    }
+
+    function downloadStorybookImage() {
+      const img = document.querySelector('.storybook-grid-img');
+      if (!img) return;
+      const a = document.createElement('a');
+      a.href = img.src;
+      a.download = 'Illustrated_Storybook_Grid.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   </script>");
 
         sb.AppendLine($"  <textarea id=\"geminiPromptData\" style=\"display:none;\">{HttpUtility.HtmlEncode(geminiPrompt ?? "")}</textarea>");
@@ -1538,16 +1872,16 @@ public static class StandaloneHtmlGenerator
 
   <!-- Potted Fiddle Leaf Tree (Right) -->
   <path d=""M 650 250 L 685 250 L 680 286 L 655 286 Z"" fill=""#d9826c""/>
-  <path d=""M 667 250 Q 655 180 670 140"" stroke=""#3e6253"" stroke-width=""4.5"" fill=""none""/>
+  <path d=""M 667 250 Q 655 180 670 140"" stroke=""#31523c"" stroke-width=""4.5"" fill=""none""/>
   <ellipse cx=""662"" cy=""170"" rx=""24"" ry=""13"" fill=""#557c6c"" transform=""rotate(-25 662 170)""/>
-  <ellipse cx=""682"" cy=""145"" rx=""26"" ry=""15"" fill=""#3e6253"" transform=""rotate(20 682 145)""/>
+  <ellipse cx=""682"" cy=""145"" rx=""26"" ry=""15"" fill=""#31523c"" transform=""rotate(20 682 145)""/>
   <ellipse cx=""665"" cy=""125"" rx=""22"" ry=""12"" fill=""#78998a""/>
 
   <!-- Hanging Potted Eucalyptus (Left) -->
   <line x1=""140"" y1=""0"" x2=""140"" y2=""85"" stroke=""#7c877f"" stroke-width=""2""/>
   <path d=""M 125 85 L 155 85 L 150 110 L 130 110 Z"" fill=""#ab9c76""/>
   <path d=""M 140 85 Q 110 120 120 150 Q 135 125 140 85"" fill=""#557c6c""/>
-  <path d=""M 140 85 Q 170 115 160 155 Q 145 130 140 85"" fill=""#3e6253""/>
+  <path d=""M 140 85 Q 170 115 160 155 Q 145 130 140 85"" fill=""#31523c""/>
   <path d=""M 140 85 Q 140 135 145 165 Q 150 135 140 85"" fill=""#78998a""/>
 
   <!-- Stage Label Badge -->
@@ -1581,7 +1915,7 @@ public static class StandaloneHtmlGenerator
 
   <!-- Centerpiece: Mystery Inquiry Box Glowing with Amber Light -->
   <rect x=""330"" y=""135"" width=""140"" height=""80"" rx=""10"" fill=""#557c6c""/>
-  <rect x=""322"" y=""128"" width=""156"" height=""18"" rx=""6"" fill=""#3e6253""/>
+  <rect x=""322"" y=""128"" width=""156"" height=""18"" rx=""6"" fill=""#31523c""/>
   <!-- Golden Ribbon & Bow -->
   <rect x=""392"" y=""128"" width=""16"" height=""87"" fill=""#e9b65e""/>
   <ellipse cx=""388"" cy=""120"" rx=""12"" ry=""7"" fill=""#e9b65e"" transform=""rotate(-20 388 120)""/>
@@ -1636,7 +1970,7 @@ public static class StandaloneHtmlGenerator
   <rect x=""285"" y=""162"" width=""90"" height=""32"" rx=""4"" fill=""#d9826c""/>
   <!-- Arch Block -->
   <path d=""M 305 162 A 25 25 0 0 1 355 162 Z"" fill=""#ffffff""/>
-  <polygon points=""330,110 285,160 375,160"" fill=""#3e6253""/>
+  <polygon points=""330,110 285,160 375,160"" fill=""#31523c""/>
   <circle cx=""330"" cy=""95"" r=""12"" fill=""#df9b3a""/>
 
   <!-- Sculpting Clay Pot with Sprout (Center-Right) -->
@@ -1645,14 +1979,14 @@ public static class StandaloneHtmlGenerator
   <line x1=""475"" y1=""210"" x2=""485"" y2=""145"" stroke=""#855e39"" stroke-width=""5"" stroke-linecap=""round""/>
   <circle cx=""485"" cy=""140"" r=""8"" fill=""#557c6c""/>
   <circle cx=""495"" cy=""152"" r=""7"" fill=""#78998a""/>
-  <circle cx=""470"" cy=""160"" r=""6"" fill=""#3e6253""/>
+  <circle cx=""470"" cy=""160"" r=""6"" fill=""#31523c""/>
 
   <!-- Watercolor Artist Palette with Daubs (Far Left) -->
   <path d=""M 175 210 C 175 185 235 185 235 210 C 235 235 175 235 175 210 Z"" fill=""#faf5ec"" stroke=""#ab9c76"" stroke-width=""2""/>
   <circle cx=""195"" cy=""202"" r=""6"" fill=""#557c6c""/>
   <circle cx=""215"" cy=""200"" r=""6"" fill=""#df9b3a""/>
   <circle cx=""205"" cy=""216"" r=""6"" fill=""#d9826c""/>
-  <circle cx=""188"" cy=""216"" r=""5"" fill=""#3e6253""/>
+  <circle cx=""188"" cy=""216"" r=""5"" fill=""#31523c""/>
 
   <!-- Textured Craft Paper & Animal Silhouette (Far Right) -->
   <rect x=""535"" y=""190"" width=""60"" height=""35"" rx=""4"" fill=""#f4d89a"" stroke=""#df9b3a"" stroke-width=""1.5""/>
@@ -1710,7 +2044,7 @@ public static class StandaloneHtmlGenerator
 
   <!-- Pedestal of Discovery -->
   <ellipse cx=""400"" cy=""250"" rx=""110"" ry=""18"" fill=""#e2ebe4"" stroke=""#557c6c"" stroke-width=""2.5""/>
-  <text x=""400"" y=""295"" text-anchor=""middle"" font-size=""16"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#3e6253"" letter-spacing=""2"">A MOMENT OF PURE DISCOVERY</text>
+  <text x=""400"" y=""295"" text-anchor=""middle"" font-size=""16"" font-family=""Roboto, sans-serif"" font-weight=""800"" fill=""#31523c"" letter-spacing=""2"">A MOMENT OF PURE DISCOVERY</text>
 
   <!-- Stage Label Badge -->
   <rect x=""30"" y=""24"" width=""290"" height=""32"" rx=""8"" fill=""rgba(255,255,255,0.92)"" stroke=""#557c6c"" stroke-width=""1.5""/>
@@ -1746,7 +2080,7 @@ public static class StandaloneHtmlGenerator
   <circle cx=""470"" cy=""137"" r=""3"" fill=""#ffffff""/>
 
   <ellipse cx=""240"" cy=""220"" rx=""20"" ry=""11"" fill=""#557c6c""/>
-  <polygon points=""258,220 274,210 274,230"" fill=""#3e6253""/>
+  <polygon points=""258,220 274,210 274,230"" fill=""#31523c""/>
   <circle cx=""232"" cy=""218"" r=""2.5"" fill=""#ffffff""/>
 
   <!-- Bubbles -->
@@ -1775,7 +2109,7 @@ public static class StandaloneHtmlGenerator
   <polygon points=""160,60 185,65 172,98"" fill=""#557c6c""/>
   <polygon points=""235,72 260,72 248,108"" fill=""#e9b65e""/>
   <polygon points=""315,68 340,64 328,102"" fill=""#d9826c""/>
-  <polygon points=""435,64 460,68 448,102"" fill=""#3e6253""/>
+  <polygon points=""435,64 460,68 448,102"" fill=""#31523c""/>
   <polygon points=""515,72 540,72 528,108"" fill=""#df9b3a""/>
   <polygon points=""595,62 620,56 608,94"" fill=""#78998a""/>
 
@@ -1793,7 +2127,7 @@ public static class StandaloneHtmlGenerator
   <path d=""M 394 157 C 394 152 400 151 400 155 C 400 151 406 152 406 157 C 406 163 400 166 400 166 C 400 166 394 163 394 157 Z"" fill=""#d9826c""/>
 
   <!-- 3. Animal Collage & Sticks -->
-  <rect x=""560"" y=""162"" width=""52"" height=""43"" rx=""6"" fill=""#3e6253""/>
+  <rect x=""560"" y=""162"" width=""52"" height=""43"" rx=""6"" fill=""#31523c""/>
   <ellipse cx=""586"" cy=""150"" rx=""18"" ry=""10"" fill=""#f4d89a""/>
 
   <!-- Little Stars of Accomplishment -->

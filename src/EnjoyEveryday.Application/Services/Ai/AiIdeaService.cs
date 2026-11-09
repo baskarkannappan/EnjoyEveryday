@@ -23,7 +23,35 @@ public class AiIdeaService : IAiIdeaService
 
     public async Task<IEnumerable<ExperienceFullData>> GenerateIdeasAsync(string ideaInput)
     {
-        if (string.IsNullOrWhiteSpace(ideaInput)) return new List<ExperienceFullData>();
+        var result = await GenerateIdeasWithDiagnosticsAsync(ideaInput);
+        return result.Suggestions;
+    }
+
+    public async Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, Action<string>? onProgress = null)
+    {
+        var result = new AiIdeaGenerationResult();
+        void Log(string msg)
+        {
+            var time = DateTime.Now.ToString("HH:mm:ss");
+            var entry = $"[{time}] {msg}";
+            result.Diagnostics.Logs.Add(entry);
+            onProgress?.Invoke(entry);
+        }
+
+        if (string.IsNullOrWhiteSpace(ideaInput))
+        {
+            Log("Idea input is empty. Aborting.");
+            result.Diagnostics.StatusBadge = "Empty Input";
+            result.Diagnostics.StatusType = "error";
+            return result;
+        }
+
+        var trimmedPrompt = ideaInput.Trim();
+        var preview = trimmedPrompt.Length > 50 ? trimmedPrompt.Substring(0, 47) + "..." : trimmedPrompt;
+        Log($"Starting pedagogical idea exploration for: \"{preview}\"");
+
+        var baseUrl = _httpClient.BaseAddress?.ToString() ?? "http://127.0.0.1:8000/";
+        Log($"Connecting to AI Engine at {baseUrl}api/ideas...");
 
         try
         {
@@ -33,38 +61,99 @@ public class AiIdeaService : IAiIdeaService
                 apiKey = "DEFAULT_AI_KEY";
             }
 
-            var request = new { idea = ideaInput };
+            var request = new { idea = trimmedPrompt };
             using var message = new HttpRequestMessage(HttpMethod.Post, "api/ideas");
             message.Headers.Add("X-Tenant-Api-Key", apiKey);
             message.Headers.Add("X-Tenant-Id", _tenantContext.TenantId != Guid.Empty ? _tenantContext.TenantId.ToString() : "10000000-0000-0000-0000-000000000001");
             message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
             message.Content = JsonContent.Create(request);
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            Log("Dispatching request. Awaiting response from Google Gemini...");
+
             var response = await _httpClient.SendAsync(message);
+            stopwatch.Stop();
+
             if (response.IsSuccessStatusCode)
             {
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var result = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(options);
-                if (result?.Suggestions != null && result.Suggestions.Count > 0)
+                var apiResult = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(options);
+                if (apiResult?.Suggestions != null && apiResult.Suggestions.Count > 0)
                 {
-                    return result.Suggestions;
+                    result.Suggestions = apiResult.Suggestions;
+                    result.Diagnostics.Meta = apiResult.Meta;
+
+                    if (apiResult.Meta != null && apiResult.Meta.IsFallback)
+                    {
+                        Log($"AI provider timeout / error: {apiResult.Meta.Status}");
+                        Log($"Activated safe deterministic fallback in {stopwatch.ElapsedMilliseconds}ms. Loaded {result.Suggestions.Count} activities.");
+                        result.Diagnostics.StatusBadge = "Fallback Active (Deterministic Rules)";
+                        result.Diagnostics.StatusType = "fallback";
+                    }
+                    else
+                    {
+                        var prov = apiResult.Meta?.Provider ?? "GoogleGemini";
+                        var mdl = apiResult.Meta?.Model ?? "gemini-3.1-flash-lite";
+                        Log($"Connected to {prov} ({mdl}). Received {result.Suggestions.Count} suggestions in {stopwatch.ElapsedMilliseconds}ms.");
+                        result.Diagnostics.StatusBadge = $"Connected: {prov} ({mdl})";
+                        result.Diagnostics.StatusType = "success";
+                    }
+                    return result;
                 }
             }
             else
             {
                 var errContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"[AiIdeaService /api/ideas] Status: {response.StatusCode}, Body: {errContent}");
+                var shortErr = errContent.Length > 100 ? errContent.Substring(0, 97) + "..." : errContent;
+                Log($"AI service returned HTTP {(int)response.StatusCode}: {shortErr}");
             }
+        }
+        catch (HttpRequestException ex)
+        {
+            Log($"AI service offline or unreachable ({ex.Message}). Check that AiAgent is running on port 8000.");
+        }
+        catch (TaskCanceledException)
+        {
+            Log("AI request timed out while waiting for Gemini.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AiIdeaService /api/ideas Exception] {ex.Message}");
+            Log($"Unexpected AI error: {ex.Message}");
         }
 
-        return GenerateFallbackIdeas(ideaInput);
+        // Local Deterministic Safe Fallback
+        Log("Engaging local deterministic fallback engine (rules-based)...");
+        var fallbackList = GenerateFallbackIdeas(trimmedPrompt).ToList();
+        result.Suggestions = fallbackList;
+        result.Diagnostics.StatusBadge = "Fallback Active (Deterministic Rules)";
+        result.Diagnostics.StatusType = "fallback";
+        result.Diagnostics.Meta = new AiExecutionMeta
+        {
+            Provider = "LocalFallback",
+            Model = "DeterministicEngine",
+            IsFallback = true,
+            Status = "Local deterministic rules active."
+        };
+        Log($"Built {fallbackList.Count} safe, grounded learning experiences tailored to \"{preview}\".");
+        return result;
     }
-    public async Task<ExperienceImprovementResult?> ImproveExperienceAsync(object experienceDna, string requestContext)
+    public async Task<ExperienceImprovementResult?> ImproveExperienceAsync(object experienceDna, string requestContext, Action<string>? onProgress = null)
     {
+        var diag = new AiIdeaDiagnostics();
+        void Log(string msg)
+        {
+            var time = DateTime.Now.ToString("HH:mm:ss");
+            var entry = $"[{time}] {msg}";
+            diag.Logs.Add(entry);
+            onProgress?.Invoke(entry);
+        }
+
+        var reqSummary = !string.IsNullOrWhiteSpace(requestContext) ? requestContext.Trim() : "General Enhancement";
+        Log($"Requesting AI pedagogical enhancement: \"{reqSummary}\"");
+
+        var baseUrl = _httpClient.BaseAddress?.ToString() ?? "http://127.0.0.1:8000/";
+        Log($"Connecting to AI Engine at {baseUrl}api/improve...");
+
         var request = new { experienceDna, requestContext };
         try
         {
@@ -80,25 +169,78 @@ public class AiIdeaService : IAiIdeaService
             message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
             message.Content = JsonContent.Create(request);
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            Log("Dispatching improvement request. Awaiting response from Google Gemini...");
+
             var response = await _httpClient.SendAsync(message);
+            stopwatch.Stop();
+
             if (response.IsSuccessStatusCode)
             {
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var result = await response.Content.ReadFromJsonAsync<ExperienceImprovementResult>(options);
-                if (result != null) return result;
+                var apiRes = await response.Content.ReadFromJsonAsync<AiImproveApiResponse>(options);
+                if (apiRes != null)
+                {
+                    var result = new ExperienceImprovementResult
+                    {
+                        Reason = apiRes.Reason,
+                        UpdatedData = apiRes.UpdatedData ?? new ExperienceFullData(),
+                        Diagnostics = diag
+                    };
+                    result.Diagnostics.Meta = apiRes.Meta;
+
+                    if (apiRes.Meta != null && apiRes.Meta.IsFallback)
+                    {
+                        Log($"AI provider timeout / fallback: {apiRes.Meta.Status}");
+                        Log($"Activated safe deterministic fallback in {stopwatch.ElapsedMilliseconds}ms. Reason: {result.Reason}");
+                        result.Diagnostics.StatusBadge = "Fallback Active (Deterministic Rules)";
+                        result.Diagnostics.StatusType = "fallback";
+                    }
+                    else
+                    {
+                        var prov = apiRes.Meta?.Provider ?? "GoogleGemini";
+                        var mdl = apiRes.Meta?.Model ?? "gemini-3.1-flash-lite";
+                        Log($"Connected to {prov} ({mdl}). Applied enhancements: \"{result.Reason}\" in {stopwatch.ElapsedMilliseconds}ms.");
+                        result.Diagnostics.StatusBadge = $"Connected: {prov} ({mdl})";
+                        result.Diagnostics.StatusType = "success";
+                    }
+                    return result;
+                }
             }
             else
             {
                 var errContent = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"[AiIdeaService /api/improve] Status: {response.StatusCode}, Body: {errContent}");
+                var shortErr = errContent.Length > 100 ? errContent.Substring(0, 97) + "..." : errContent;
+                Log($"AI service returned HTTP {(int)response.StatusCode}: {shortErr}");
             }
+        }
+        catch (HttpRequestException ex)
+        {
+            Log($"AI service offline or unreachable ({ex.Message}). Check that AiAgent is running on port 8000.");
+        }
+        catch (TaskCanceledException)
+        {
+            Log("AI request timed out while waiting for Gemini.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AiIdeaService /api/improve Exception] {ex.Message}");
+            Log($"Unexpected AI error: {ex.Message}");
         }
 
-        return GenerateFallbackImprovement(experienceDna, requestContext);
+        Log("Engaging local deterministic fallback engine for improvement...");
+        var fallback = GenerateFallbackImprovement(experienceDna, requestContext);
+        fallback.Diagnostics = diag;
+        fallback.Diagnostics.StatusBadge = "Fallback Active (Deterministic Rules)";
+        fallback.Diagnostics.StatusType = "fallback";
+        fallback.Diagnostics.Meta = new AiExecutionMeta
+        {
+            Provider = "LocalFallback",
+            Model = "DeterministicEngine",
+            IsFallback = true,
+            Status = "Local deterministic improvement rules active."
+        };
+        Log($"Applied rule-based enhancement: \"{fallback.Reason}\"");
+        return fallback;
     }
 
     private static ExperienceImprovementResult GenerateFallbackImprovement(object experienceDna, string requestContext)
@@ -395,5 +537,13 @@ public class AiIdeaService : IAiIdeaService
     private class AiIdeaResponse
     {
         public List<ExperienceFullData>? Suggestions { get; set; }
+        public AiExecutionMeta? Meta { get; set; }
+    }
+
+    private class AiImproveApiResponse
+    {
+        public string Reason { get; set; } = string.Empty;
+        public ExperienceFullData? UpdatedData { get; set; }
+        public AiExecutionMeta? Meta { get; set; }
     }
 }

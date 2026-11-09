@@ -185,7 +185,7 @@ public static class BillingEndpoints
         sb.AppendLine(".rcpt-title { font-size: 22px; font-weight: 800; color: #557c6c; text-align: right; }");
         sb.AppendLine(".rcpt-number { font-size: 13.5px; font-weight: 750; font-family: monospace; text-align: right; margin-top: 3px; }");
         sb.AppendLine(".amount-banner { background: #e6eee9; border: 1px solid #c8dacd; border-radius: 12px; padding: 18px 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }");
-        sb.AppendLine(".amount-label { font-size: 13px; font-weight: 750; color: #3e6253; text-transform: uppercase; }");
+        sb.AppendLine(".amount-label { font-size: 13px; font-weight: 750; color: #31523c; text-transform: uppercase; }");
         sb.AppendLine(".amount-val { font-size: 28px; font-weight: 850; color: #26332d; }");
         sb.AppendLine(".details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; font-size: 13px; }");
         sb.AppendLine(".detail-item { padding: 10px 14px; background: #f8f9f5; border-radius: 8px; border: 1px solid #e4e7df; }");

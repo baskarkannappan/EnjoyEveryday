@@ -19,11 +19,9 @@ class GeminiProvider:
     # Production models in order of priority (fast, accurate, cost-effective)
     FALLBACK_MODELS: List[str] = [
         "gemini-3.1-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-flash-lite-latest",
-        "gemini-flash-latest"
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
     ]
 
     def __init__(self):
@@ -77,6 +75,7 @@ class GeminiProvider:
                         "system_instruction": system_instruction,
                         "response_mime_type": "application/json",
                         "temperature": temperature,
+                        "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
                     }
                     if response_model is not None:
                         config_args["response_schema"] = response_model
