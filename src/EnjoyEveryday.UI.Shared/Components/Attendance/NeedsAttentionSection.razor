@@ -51,25 +51,49 @@
     [Parameter]
     public DateTime SelectedDate { get; set; } = DateTime.Today;
 
+    [Parameter]
+    public IEnumerable<EnjoyEveryday.Domain.Entities.Branch>? AllowedBranches { get; set; }
+
+    [Parameter]
+    public string BranchFilter { get; set; } = "all";
+
     private List<AttendanceAttentionAlertDto> _alertList = new();
 
     protected override async Task OnParametersSetAsync()
     {
         if (Alerts != null)
         {
-            _alertList = Alerts.ToList();
+            _alertList = FilterAlerts(Alerts);
         }
         else
         {
             try
             {
                 var result = await AttendanceService.GetAttendanceNeedsAttentionAsync(SelectedDate);
-                _alertList = result.ToList();
+                _alertList = FilterAlerts(result);
             }
             catch
             {
                 _alertList = new List<AttendanceAttentionAlertDto>();
             }
         }
+    }
+
+    private List<AttendanceAttentionAlertDto> FilterAlerts(IEnumerable<AttendanceAttentionAlertDto> alerts)
+    {
+        var list = alerts.ToList();
+
+        if (AllowedBranches != null && AllowedBranches.Any())
+        {
+            var allowedNames = new HashSet<string>(AllowedBranches.Select(b => b.Name), StringComparer.OrdinalIgnoreCase);
+            list = list.Where(a => string.IsNullOrWhiteSpace(a.BranchName) || allowedNames.Contains(a.BranchName)).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(BranchFilter) && !BranchFilter.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            list = list.Where(a => string.IsNullOrWhiteSpace(a.BranchName) || a.BranchName.Equals(BranchFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        return list;
     }
 }

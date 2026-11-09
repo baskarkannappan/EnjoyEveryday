@@ -1,0 +1,659 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Users
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+
+@inject IOrganizationHierarchyService HierarchyService
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IAccessScopeRepository AccessScopeRepo
+@inject NavigationManager Navigation
+
+<div class="org-hierarchy-container">
+    <!-- TOOLBAR & CONTROLS -->
+    <div class="hierarchy-toolbar">
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text"
+                   class="search-input"
+                   placeholder="Search branches, staff, roles, or students..."
+                   @bind="_searchQuery"
+                   @bind:event="oninput" />
+            @if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                <button type="button" class="clear-btn" @onclick="() => _searchQuery = string.Empty">✕</button>
+            }
+        </div>
+
+        <div class="toolbar-actions">
+            <!-- Expand / Collapse All -->
+            <button type="button" class="tool-btn" @onclick="ExpandAll" title="Expand All Branches & Classrooms">
+                <span>➕ Expand All</span>
+            </button>
+            <button type="button" class="tool-btn" @onclick="CollapseAll" title="Collapse All">
+                <span>➖ Collapse All</span>
+            </button>
+
+            <!-- Zoom Controls -->
+            <div class="zoom-controls">
+                <button type="button" class="zoom-btn" @onclick="ZoomOut" title="Zoom Out" disabled="@(_zoomLevel <= 0.6f)">−</button>
+                <button type="button" class="zoom-label" @onclick="ResetZoom" title="Click to Reset 100%">
+                    @((int)(_zoomLevel * 100))%
+                </button>
+                <button type="button" class="zoom-btn" @onclick="ZoomIn" title="Zoom In" disabled="@(_zoomLevel >= 1.4f)">+</button>
+            </div>
+
+            <!-- Refresh Button -->
+            <button type="button" class="tool-btn" @onclick="LoadHierarchyAsync" title="Refresh Live Hierarchy">
+                <span>🔄 Refresh</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ERROR BANNER -->
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="hierarchy-error-banner">
+            <span>⚠️ @_errorMessage</span>
+            <button type="button" @onclick="() => _errorMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- LOADING STATE -->
+    @if (_isLoading)
+    {
+        <div class="hierarchy-loading-state">
+            <div class="spinner"></div>
+            <p>Loading live organization hierarchy...</p>
+        </div>
+    }
+    else if (_hierarchy == null || string.IsNullOrEmpty(_hierarchy.OrganizationName))
+    {
+        <div class="hierarchy-empty-state">
+            <div class="empty-icon">🏢</div>
+            <h3>No Organization Data Found</h3>
+            <p>We could not find an active organization structure for your account.</p>
+        </div>
+    }
+    else
+    {
+        <!-- INTERACTIVE CANVAS WITH ZOOM & PAN -->
+        <div class="hierarchy-canvas-viewport">
+            <div class="hierarchy-canvas-content" style="transform: scale(@_zoomLevel); transform-origin: top center;">
+                
+                <!-- LEVEL 1: ORGANIZATION ROOT NODE -->
+                <div class="org-root-wrapper">
+                    <div class="org-card @(IsNodeHighlighted(_hierarchy.OrganizationName) ? "highlighted" : "")">
+                        <div class="org-card-header">
+                            <div class="org-icon-badge">🏢</div>
+                            <div class="org-title-group">
+                                <span class="org-eyebrow">ORGANIZATION HEADQUARTERS</span>
+                                <h2 class="org-name">@_hierarchy.OrganizationName</h2>
+                                @if (!string.IsNullOrWhiteSpace(_hierarchy.Location))
+                                {
+                                    <span class="org-location">📍 @_hierarchy.Location</span>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Organization Administrators -->
+                        <div class="org-admins-section">
+                            <span class="section-label">Organization Leadership:</span>
+                            <div class="admin-chips">
+                                @if (_hierarchy.OrganizationAdmins.Count > 0)
+                                {
+                                    @foreach (var admin in _hierarchy.OrganizationAdmins)
+                                    {
+                                        <div class="admin-chip @(IsNodeHighlighted(admin.Name) || IsNodeHighlighted(admin.Email) ? "highlighted" : "")"
+                                             title="Organization Administrator"
+                                             @onclick="() => NavigateToUser(admin.UserId)">
+                                            <div class="admin-avatar">@admin.Initials</div>
+                                            <div class="admin-info">
+                                                <span class="admin-name">@admin.Name</span>
+                                                <span class="admin-email">@admin.Email</span>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="no-admin">No Organization Administrator assigned yet</span>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Organization Stats Pill Bar -->
+                        <div class="org-stats-bar">
+                            <div class="stat-pill">
+                                <span class="stat-num">@_hierarchy.TotalBranches</span>
+                                <span class="stat-label">Branches</span>
+                            </div>
+                            <div class="stat-pill-divider"></div>
+                            <div class="stat-pill">
+                                <span class="stat-num">@_hierarchy.TotalStaff</span>
+                                <span class="stat-label">Total Staff</span>
+                            </div>
+                            <div class="stat-pill-divider"></div>
+                            <div class="stat-pill">
+                                <span class="stat-num">@_hierarchy.TotalStudents</span>
+                                <span class="stat-label">Enrolled Students</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @if (_hierarchy.Branches.Count > 0)
+                {
+                    <!-- VERTICAL CONNECTOR FROM ORG ROOT -->
+                    <div class="tree-stem-vertical"></div>
+
+                    <!-- LEVEL 2: BRANCHES ROW -->
+                    <div class="branches-wrapper">
+                        <!-- Horizontal distribution line across branches -->
+                        @if (_hierarchy.Branches.Count > 1)
+                        {
+                            <div class="tree-distributor-horizontal" style="width: @GetDistributorWidth(_hierarchy.Branches.Count);"></div>
+                        }
+
+                        <div class="branches-grid">
+                            @foreach (var branch in _hierarchy.Branches)
+                            {
+                                var branchMatches = BranchMatchesSearch(branch);
+                                <div class="branch-column @(branchMatches ? "branch-has-match" : "")">
+                                    <!-- Stem connecting horizontal bar down to branch card -->
+                                    <div class="tree-branch-stem"></div>
+
+                                    <!-- BRANCH CARD -->
+                                    <div class="branch-card @(IsNodeHighlighted(branch.BranchName) ? "highlighted" : "")">
+                                        <div class="branch-card-header">
+                                            <div class="branch-header-top">
+                                                <div class="branch-icon-title">
+                                                    <span class="branch-icon">📍</span>
+                                                    <div>
+                                                        <h3 class="branch-title">@branch.BranchName</h3>
+                                                        <span class="branch-loc">@(string.IsNullOrWhiteSpace(branch.Location) ? "Campus Location" : branch.Location)</span>
+                                                    </div>
+                                                </div>
+                                                <button type="button" 
+                                                        class="toggle-branch-btn" 
+                                                        @onclick="() => branch.IsExpanded = !branch.IsExpanded"
+                                                        title="@(branch.IsExpanded ? "Collapse Branch" : "Expand Branch")">
+                                                    @(branch.IsExpanded ? "▲" : "▼")
+                                                </button>
+                                            </div>
+
+                                            <!-- Stats Row -->
+                                            <div class="branch-quick-stats">
+                                                <span class="b-stat">🎓 @branch.LeadTeacherCount Lead</span>
+                                                <span class="b-stat-dot">•</span>
+                                                <span class="b-stat">✏️ @branch.TeacherCount Teachers</span>
+                                                <span class="b-stat-dot">•</span>
+                                                <span class="b-stat">🎒 @branch.StudentCount Students</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="branch-card-body">
+                                            <!-- Branch Directors -->
+                                            <div class="branch-admin-box">
+                                                <span class="sub-label">CAMPUS BRANCH DIRECTOR</span>
+                                                @if (branch.BranchAdmins.Count > 0)
+                                                {
+                                                    @foreach (var bAdmin in branch.BranchAdmins)
+                                                    {
+                                                        <div class="director-card @(IsNodeHighlighted(bAdmin.Name) || IsNodeHighlighted(bAdmin.Email) ? "highlighted" : "")"
+                                                             @onclick="() => NavigateToUser(bAdmin.UserId)">
+                                                            <div class="director-avatar">@bAdmin.Initials</div>
+                                                            <div class="director-meta">
+                                                                <span class="director-name">@bAdmin.Name</span>
+                                                                <span class="director-email">@bAdmin.Email</span>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <div class="unassigned-director">
+                                                        <span>No Branch Director assigned</span>
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            <!-- Expand / Collapse Classroom Peek -->
+                                            <div class="branch-accordion-footer">
+                                                <button type="button" 
+                                                        class="accordion-trigger-btn"
+                                                        @onclick="() => branch.IsExpanded = !branch.IsExpanded">
+                                                    <span>@(branch.IsExpanded ? "Hide Structure & Classrooms" : $"View Classrooms ({branch.Classrooms.Count}) & Staff")</span>
+                                                    <span class="arrow">@(branch.IsExpanded ? "▲" : "▼")</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- LEVEL 3: CLASSROOMS & UNASSIGNED STAFF -->
+                                    @if (branch.IsExpanded)
+                                    {
+                                        <div class="branch-children-tree">
+                                            <div class="tree-stem-vertical small"></div>
+
+                                            <!-- UNASSIGNED BRANCH STAFF (IF ANY) -->
+                                            @if (branch.UnassignedStaff.Count > 0)
+                                            {
+                                                <div class="unassigned-staff-section">
+                                                    <div class="unassigned-staff-card">
+                                                        <div class="unassigned-header">
+                                                            <span class="badge-icon">📋</span>
+                                                            <div>
+                                                                <span class="unassigned-title">Additional Branch Staff</span>
+                                                                <span class="unassigned-sub">Assigned to campus; pending classroom placement</span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="unassigned-staff-grid">
+                                                            @foreach (var staff in branch.UnassignedStaff)
+                                                            {
+                                                                <div class="staff-chip @(IsNodeHighlighted(staff.Name) || IsNodeHighlighted(staff.Email) ? "highlighted" : "")"
+                                                                     @onclick="() => NavigateToUser(staff.UserId)">
+                                                                    <div class="staff-avatar @(staff.RoleName.Contains("Lead") ? "lead" : "")">@staff.Initials</div>
+                                                                    <div class="staff-meta">
+                                                                        <span class="staff-name">@staff.Name</span>
+                                                                        <span class="staff-role-badge @(staff.RoleName.Contains("Lead") ? "lead-badge" : "")">@staff.RoleName</span>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            <!-- CLASSROOMS LIST -->
+                                            @if (branch.Classrooms.Count > 0)
+                                            {
+                                                <div class="classrooms-flow-container">
+                                                    @foreach (var cl in branch.Classrooms)
+                                                    {
+                                                        <div class="classroom-tree-node @(ClassroomMatchesSearch(cl) ? "classroom-has-match" : "")">
+                                                            <div class="tree-classroom-stem"></div>
+
+                                                            <!-- CLASSROOM CARD -->
+                                                            <div class="classroom-card @(IsNodeHighlighted(cl.ClassroomName) ? "highlighted" : "")">
+                                                                <!-- Classroom Header -->
+                                                                <div class="classroom-header">
+                                                                    <div class="classroom-title-row">
+                                                                        <span class="cl-icon">🏫</span>
+                                                                        <div>
+                                                                            <h4 class="cl-name">@cl.ClassroomName</h4>
+                                                                            @if (!string.IsNullOrWhiteSpace(cl.RoomNumber))
+                                                                            {
+                                                                                <span class="cl-room">Room: @cl.RoomNumber</span>
+                                                                            }
+                                                                        </div>
+                                                                    </div>
+                                                                    <span class="cl-capacity-badge">Cap: @cl.Capacity</span>
+                                                                </div>
+
+                                                                <!-- LEAD TEACHERS -->
+                                                                <div class="educator-section">
+                                                                    <div class="educator-section-header">
+                                                                        <span class="educator-type-tag lead">⭐ Lead Educator</span>
+                                                                    </div>
+                                                                    @if (cl.LeadTeachers.Count > 0)
+                                                                    {
+                                                                        @foreach (var lead in cl.LeadTeachers)
+                                                                        {
+                                                                            <div class="educator-row @(IsNodeHighlighted(lead.Name) || IsNodeHighlighted(lead.Email) ? "highlighted" : "")"
+                                                                                 @onclick="() => NavigateToUser(lead.UserId)">
+                                                                                <div class="educator-avatar lead">@lead.Initials</div>
+                                                                                <div class="educator-details">
+                                                                                    <span class="educator-name">@lead.Name</span>
+                                                                                    <span class="educator-email">@lead.Email</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        }
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span class="no-educator">No Lead Educator assigned</span>
+                                                                    }
+                                                                </div>
+
+                                                                <!-- TEACHERS / EDUCATORS -->
+                                                                <div class="educator-section">
+                                                                    <div class="educator-section-header">
+                                                                        <span class="educator-type-tag teacher">✏️ Classroom Educators</span>
+                                                                    </div>
+                                                                    @if (cl.Teachers.Count > 0)
+                                                                    {
+                                                                        @foreach (var t in cl.Teachers)
+                                                                        {
+                                                                            <div class="educator-row @(IsNodeHighlighted(t.Name) || IsNodeHighlighted(t.Email) ? "highlighted" : "")"
+                                                                                 @onclick="() => NavigateToUser(t.UserId)">
+                                                                                <div class="educator-avatar teacher">@t.Initials</div>
+                                                                                <div class="educator-details">
+                                                                                    <span class="educator-name">@t.Name</span>
+                                                                                    <span class="educator-email">@t.Email</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        }
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span class="no-educator">No Assistant Educators assigned</span>
+                                                                    }
+                                                                </div>
+
+                                                                <!-- STUDENTS SECTION -->
+                                                                <div class="students-collapsible-section">
+                                                                    <button type="button" 
+                                                                            class="students-toggle-btn"
+                                                                            @onclick="() => ToggleClassroomStudentsAsync(cl)">
+                                                                        <span class="st-btn-left">
+                                                                            <span>🎒</span>
+                                                                            <span>Enrolled Students (@cl.StudentCount)</span>
+                                                                        </span>
+                                                                        <span class="st-btn-arrow">@(cl.IsExpanded ? "▲" : "▼")</span>
+                                                                    </button>
+
+                                                                    @if (cl.IsExpanded)
+                                                                    {
+                                                                        <div class="students-list-panel">
+                                                                            @if (_loadingClassroomId == cl.ClassroomId)
+                                                                            {
+                                                                                <div class="st-loading">Loading students...</div>
+                                                                            }
+                                                                            else if (cl.Students.Count == 0)
+                                                                            {
+                                                                                <div class="st-empty">No students currently enrolled</div>
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                <div class="students-grid">
+                                                                                    @foreach (var st in cl.Students)
+                                                                                    {
+                                                                                        <div class="student-chip @(IsNodeHighlighted(st.FullName) ? "highlighted" : "")"
+                                                                                             title="@($"View {st.FullName}'s Journey")"
+                                                                                             @onclick="() => NavigateToChild(st.ChildId)">
+                                                                                            <div class="student-avatar">
+                                                                                                @if (!string.IsNullOrWhiteSpace(st.PhotoUrl))
+                                                                                                {
+                                                                                                    <img src="@st.PhotoUrl" alt="@st.FullName" />
+                                                                                                }
+                                                                                                else
+                                                                                                {
+                                                                                                    <span>@st.Initials</span>
+                                                                                                }
+                                                                                            </div>
+                                                                                            <div class="student-info">
+                                                                                                <span class="st-name">@st.FullName</span>
+                                                                                                @if (!string.IsNullOrWhiteSpace(st.AssignedTeacherName))
+                                                                                                {
+                                                                                                    <span class="st-teacher">Teacher: @st.AssignedTeacherName</span>
+                                                                                                }
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    }
+                                                                                </div>
+                                                                            }
+                                                                        </div>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="empty-classrooms-box">
+                                                    <span>No classrooms created in this branch yet</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="tree-stem-vertical"></div>
+                    <div class="no-branches-box">
+                        <p>No active branches found for your authorized scope in this organization.</p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private OrganizationHierarchyDto? _hierarchy;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    private string _searchQuery = string.Empty;
+    private float _zoomLevel = 1.0f;
+    private Guid? _loadingClassroomId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHierarchyAsync();
+    }
+
+    public async Task LoadHierarchyAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            _errorMessage = null;
+
+            var tenantId = TenantContext.TenantId;
+            var orgId = UserContext.OrganizationId ?? Guid.Empty;
+            var userId = UserContext.UserId;
+
+            if (orgId == Guid.Empty)
+            {
+                _errorMessage = "No active organization selected in context.";
+                return;
+            }
+
+            // Determine if requesting user is Organization Administrator or Platform Admin
+            var roles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (UserContext.Roles != null)
+            {
+                foreach (var r in UserContext.Roles) roles.Add(r);
+            }
+
+            if (userId != Guid.Empty)
+            {
+                try
+                {
+                    var orgRoles = await AccessScopeRepo.GetOrganizationRoleNamesAsync(tenantId, orgId, userId);
+                    foreach (var r in orgRoles) roles.Add(r);
+                }
+                catch { }
+            }
+
+            bool isOrgAdmin = roles.Any(r =>
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Admin", StringComparison.OrdinalIgnoreCase));
+
+            _hierarchy = await HierarchyService.GetOrganizationHierarchyAsync(tenantId, orgId, userId, isOrgAdmin);
+
+            // If a search query is already active, expand matching sections
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                ApplySearchExpansions();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load hierarchy: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ToggleClassroomStudentsAsync(ClassroomHierarchyNodeDto cl)
+    {
+        cl.IsExpanded = !cl.IsExpanded;
+
+        if (cl.IsExpanded && !cl.ChildrenLoaded)
+        {
+            try
+            {
+                _loadingClassroomId = cl.ClassroomId;
+                var students = await HierarchyService.GetClassroomStudentsAsync(TenantContext.TenantId, cl.ClassroomId);
+                cl.Students = students;
+                cl.ChildrenLoaded = true;
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Failed to load students: {ex.Message}";
+            }
+            finally
+            {
+                _loadingClassroomId = null;
+            }
+        }
+    }
+
+    private void ExpandAll()
+    {
+        if (_hierarchy == null) return;
+        foreach (var branch in _hierarchy.Branches)
+        {
+            branch.IsExpanded = true;
+            foreach (var cl in branch.Classrooms)
+            {
+                cl.IsExpanded = true;
+            }
+        }
+    }
+
+    private void CollapseAll()
+    {
+        if (_hierarchy == null) return;
+        foreach (var branch in _hierarchy.Branches)
+        {
+            branch.IsExpanded = false;
+            foreach (var cl in branch.Classrooms)
+            {
+                cl.IsExpanded = false;
+            }
+        }
+    }
+
+    private void ZoomIn()
+    {
+        if (_zoomLevel < 1.4f)
+        {
+            _zoomLevel = (float)Math.Round(_zoomLevel + 0.1f, 1);
+        }
+    }
+
+    private void ZoomOut()
+    {
+        if (_zoomLevel > 0.6f)
+        {
+            _zoomLevel = (float)Math.Round(_zoomLevel - 0.1f, 1);
+        }
+    }
+
+    private void ResetZoom()
+    {
+        _zoomLevel = 1.0f;
+    }
+
+    private bool IsNodeHighlighted(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery) || string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return text.Contains(_searchQuery.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool BranchMatchesSearch(BranchHierarchyNodeDto branch)
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery))
+            return false;
+
+        var q = _searchQuery.Trim();
+        if (branch.BranchName.Contains(q, StringComparison.OrdinalIgnoreCase)) return true;
+        if (branch.BranchAdmins.Any(a => a.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || a.Email.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
+        if (branch.UnassignedStaff.Any(s => s.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || s.Email.Contains(q, StringComparison.OrdinalIgnoreCase) || s.RoleName.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
+        if (branch.Classrooms.Any(c => ClassroomMatchesSearch(c))) return true;
+
+        return false;
+    }
+
+    private bool ClassroomMatchesSearch(ClassroomHierarchyNodeDto cl)
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery))
+            return false;
+
+        var q = _searchQuery.Trim();
+        if (cl.ClassroomName.Contains(q, StringComparison.OrdinalIgnoreCase)) return true;
+        if (cl.LeadTeachers.Any(t => t.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || t.Email.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
+        if (cl.Teachers.Any(t => t.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || t.Email.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
+        if (cl.Students.Any(s => s.FullName.Contains(q, StringComparison.OrdinalIgnoreCase))) return true;
+
+        return false;
+    }
+
+    private void ApplySearchExpansions()
+    {
+        if (_hierarchy == null || string.IsNullOrWhiteSpace(_searchQuery)) return;
+
+        foreach (var branch in _hierarchy.Branches)
+        {
+            if (BranchMatchesSearch(branch))
+            {
+                branch.IsExpanded = true;
+                foreach (var cl in branch.Classrooms)
+                {
+                    if (ClassroomMatchesSearch(cl))
+                    {
+                        cl.IsExpanded = true;
+                    }
+                }
+            }
+        }
+    }
+
+    private string GetDistributorWidth(int branchCount)
+    {
+        if (branchCount <= 1) return "0px";
+        // Calculate spread width based on branch columns
+        int px = (branchCount - 1) * 360;
+        return $"{Math.Max(px, 300)}px";
+    }
+
+    private void NavigateToUser(Guid userId)
+    {
+        if (userId != Guid.Empty)
+        {
+            Navigation.NavigateTo($"/teachers/view/{userId}");
+        }
+    }
+
+    private void NavigateToChild(Guid childId)
+    {
+        if (childId != Guid.Empty)
+        {
+            Navigation.NavigateTo($"/journey/{childId}");
+        }
+    }
+}
+

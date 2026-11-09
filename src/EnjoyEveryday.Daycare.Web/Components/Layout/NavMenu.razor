@@ -765,6 +765,14 @@
 
                     <!-- Action buttons -->
                     <div class="nav-profile-actions">
+                        @if (_assignedBranchIds.Count > 1)
+                        {
+                            <a href="/select-branch" 
+                               title="Switch Branch" 
+                               class="nav-action-btn">
+                                <FluentIcon Value="@(new Icons.Regular.Size16.Building())" Color="Color.Custom" CustomColor="var(--accent, #52745e)" />
+                            </a>
+                        }
                         <a href="/select-organization" 
                            title="Switch Organization" 
                            class="nav-action-btn">
@@ -1132,6 +1140,7 @@
     private bool _isBranchAdmin = false;
     private bool _isLeadTeacher = false;
     private bool _isTeacher = false;
+    private HashSet<Guid> _assignedBranchIds = new();
     private List<string> _availableViews = new();
     private int _availableViewsCount = 0;
     private string _currentNavView = "Teacher";
@@ -1223,6 +1232,7 @@
             _isBranchAdmin = profile.IsBranchAdmin;
             _isLeadTeacher = profile.IsLeadTeacher;
             _isTeacher = profile.IsTeacher;
+            _assignedBranchIds = profile.AssignedBranchIds;
             _availableViews = profile.AvailableViews;
             _availableViewsCount = _availableViews.Count;
 
@@ -1238,6 +1248,14 @@
                     ViewPreference.SetCurrentView(match);
                     return;
                 }
+            }
+
+            // If user is OrgAdmin and has no assigned classrooms, default to OrgAdmin navigation view
+            if (_isOrgAdmin && profile.AssignedClassroomIds.Count == 0)
+            {
+                _currentNavView = "OrgAdmin";
+                ViewPreference.SetCurrentView(_currentNavView);
+                return;
             }
 
             // 2. Active Session Preference (persisted across menu clicks!)

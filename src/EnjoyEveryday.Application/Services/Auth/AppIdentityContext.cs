@@ -265,6 +265,22 @@ public class AppIdentityContext : IUserContext, ITenantContext
         }
     }
 
+    public Guid? BranchId
+    {
+        get
+        {
+            if (HasValidAuthenticatedIdentity)
+            {
+                var branchClaim = User!.FindFirst("ActiveBranchId")?.Value ?? User!.FindFirst("BranchId")?.Value;
+                if (Guid.TryParse(branchClaim, out var branchId))
+                    return branchId;
+
+                return null;
+            }
+            return null;
+        }
+    }
+
     public bool HasPermission(string permission)
     {
         if (string.IsNullOrWhiteSpace(permission))

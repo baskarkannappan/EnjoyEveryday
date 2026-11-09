@@ -57,6 +57,13 @@ tags:
   }
   ```
 
+## 7. Multi-Tenant Branch Queries & Live Role Resolution
+* **Problem**: In multi-tenant environments where organizations each have their own `tenant_id`, passing a stale session `TenantId` (such as the default development tenant) to `fn_get_branches_by_organization` or `fn_get_dashboard_branch_metrics` yields 0 rows because `branches.tenant_id` must match `organizations.tenant_id`. Additionally, reading user roles solely from static authentication cookie claims causes newly granted roles (e.g. Org Admin assigned via Platform Admin) to be invisible until re-login.
+* **Fix**:
+  1. `BranchRepository` and `DashboardRepository` dynamically resolve the organization's authoritative `tenant_id` via `fn_get_organization_by_id_global` before querying branches or dashboard metrics.
+  2. `PageAuthorizationService` invokes `IAccessScopeRepository.GetOrganizationRoleNamesAsync(tenantId, orgId, userId)` live on each profile resolution so admin assignments take effect instantly.
+  3. Map `/organization/branches` and `/organization` to `Management.razor` (the real organization & branch hub) rather than static mock tree components.
+
 ## 7. Blazor Server `IHttpContextAccessor` Lifecycle & Identity Null Safety
 * **Problem**: `IHttpContextAccessor.HttpContext` is only active during the initial HTTP request/prerender. Once the Blazor circuit/WebSocket begins asynchronous processing or when navigating on mobile, `HttpContext` becomes `null` asynchronously. Accessing `_httpContextAccessor.HttpContext.User` without local capture or null propagation throws a `System.NullReferenceException` at runtime.
 * **Fix**: Capture `var httpUser = _httpContextAccessor?.HttpContext?.User;` once in [AppIdentityContext.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Application/Services/Auth/AppIdentityContext.cs), check `httpUser?.Identity?.IsAuthenticated == true`, and wrap Blazor navigation menu scope resolution in general `try-catch (Exception ex)` blocks to prevent circuit crashes.
@@ -64,4 +71,8 @@ tags:
 ## 8. Mobile Viewport `zoom: 0.82` Reset & Action List Grids
 * **Problem**: `ee-foundation.css` applies `zoom: 0.82` to desktop containers. On mobile viewports (e.g., iPhone SE 375px), un-reset `zoom` inflates the coordinate layout (`375 / 0.82 = 457px`), pushing cards and grids offscreen. Additionally, trying to force 2-column grids on horizontal action cards with icons, long titles, and subtitles causes text truncation and container overflows.
 * **Fix**: Always reset `zoom: 1 !important;` under `@media (max-width: 768px)` in `ee-foundation.css`. On mobile phones (`<= 640px`), convert dense multi-column shortcut grids to clean full-width single-column list cards with right arrow chevrons (`→`).
+
+## 9. `roles` Table Schema & Tenant Role Instantiation
+* **Problem**: The `roles` table contains columns `(id, tenant_id, name, description, scope_type, created_at)`. It does NOT have `is_system` or `updated_at`. When dynamically instantiating a tenant-scoped role from global template roles (e.g., `LeadTeacher`), attempting to reference non-existent columns causes error `42703: column "is_system" of relation "roles" does not exist`.
+* **Fix**: In `sp_assign_organization_role`, insert only valid columns `(id, tenant_id, name, description, scope_type, created_at)` and copy mapped permissions from `role_permissions`.
 

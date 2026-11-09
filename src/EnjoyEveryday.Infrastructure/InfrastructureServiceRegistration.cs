@@ -44,6 +44,7 @@ public static class InfrastructureServiceRegistration
 
         // Repositories
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+        services.AddScoped<EnjoyEveryday.Application.Services.IOrganizationHierarchyService, EnjoyEveryday.Infrastructure.Repositories.OrganizationHierarchyService>();
         services.AddScoped<BranchRepository>();
         services.AddScoped<IBranchRepository>(sp => new EnjoyEveryday.Infrastructure.Repositories.Decorators.CachedBranchRepository(
             sp.GetRequiredService<BranchRepository>(),

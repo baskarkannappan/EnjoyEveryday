@@ -1,4 +1,7 @@
 @page "/management"
+@page "/organization"
+@page "/organization/branches"
+@page "/management/branches"
 @rendermode InteractiveServer
 @using EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.UI.Shared.Components.Organization
@@ -160,9 +163,10 @@
         var profile = await PageAuth.GetUserProfileAsync();
         _isOrgAdmin = profile.IsOrgAdmin;
 
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = (UserContext.OrganizationId.HasValue 
-            ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value) 
+        var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+        var targetOrgId = profile.OrganizationId != Guid.Empty ? profile.OrganizationId : UserContext.OrganizationId;
+        var org = (targetOrgId.HasValue 
+            ? orgs.FirstOrDefault(o => o.Id == targetOrgId.Value) 
             : null) ?? orgs.FirstOrDefault();
 
         if (org != null)

@@ -28,6 +28,15 @@ public class UserRepository : IUserRepository
             cancellationToken: cancellationToken);
     }
 
+    public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QuerySingleFunctionAsync<User>(
+            "fn_get_user_by_email",
+            new { Email = email.Trim() },
+            cancellationToken: cancellationToken);
+    }
+
     public async Task<IEnumerable<User>> GetAllAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

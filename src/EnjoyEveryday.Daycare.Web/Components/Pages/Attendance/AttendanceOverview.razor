@@ -14,6 +14,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Nav
 @inject IPageAuthorizationService PageAuth
+@inject IUserViewPreferenceService ViewPreference
 @rendermode InteractiveServer
 
 <div class="content">
@@ -58,31 +59,21 @@
         var isAuthorized = await PageAuth.EnsureAuthorizedAsync(routeToCheck);
         if (!isAuthorized) return;
 
+        var userProfile = await PageAuth.GetUserProfileAsync();
         var tenantId = TenantContext.TenantId;
-        var userId = UserContext.UserId;
-        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-        _isOrgAdmin = userRoles.Any(r =>
-            r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
-        _isBranchAdmin = !_isOrgAdmin && userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+        var userId = userProfile.UserId;
 
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-
-        if (tenantId != Guid.Empty && userId != Guid.Empty)
-        {
-            var classroomIds = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId);
-            _assignedClassroomIds = new HashSet<Guid>(classroomIds);
-
-            if (org != null)
-            {
-                var branchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, org.Id, userId);
-                _assignedBranchIds = new HashSet<Guid>(branchIds);
-            }
-        }
-
+        _isOrgAdmin = userProfile.IsOrgAdmin;
+        _isBranchAdmin = userProfile.IsBranchAdmin && !_isOrgAdmin;
+        _assignedBranchIds = userProfile.AssignedBranchIds;
+        _assignedClassroomIds = userProfile.AssignedClassroomIds;
         _isTeacherOnly = !_isOrgAdmin && !_isBranchAdmin;
+
+        var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+        var targetOrgId = UserContext.OrganizationId ?? (userProfile.OrganizationId != Guid.Empty ? userProfile.OrganizationId : (Guid?)null);
+        var org = targetOrgId.HasValue
+            ? orgs.FirstOrDefault(o => o.Id == targetOrgId.Value) ?? orgs.FirstOrDefault()
+            : orgs.FirstOrDefault();
 
         if (org != null)
         {
@@ -103,7 +94,12 @@
             {
                 Branches = allBranches.Where(b => _assignedBranchIds.Contains(b.Id)).ToList();
                 AllClassrooms = AllClassrooms.Where(c => _assignedBranchIds.Contains(c.BranchId)).ToList();
-                SelectedBranchFilter = Branches.FirstOrDefault()?.Name ?? "all";
+                var activeBranch = (ViewPreference.ActiveBranchId.HasValue && Branches.Any(b => b.Id == ViewPreference.ActiveBranchId.Value))
+                    ? Branches.First(b => b.Id == ViewPreference.ActiveBranchId.Value)
+                    : ((UserContext.BranchId.HasValue && Branches.Any(b => b.Id == UserContext.BranchId.Value))
+                        ? Branches.First(b => b.Id == UserContext.BranchId.Value)
+                        : Branches.FirstOrDefault());
+                SelectedBranchFilter = activeBranch?.Name ?? "all";
             }
             else if (_isTeacherOnly)
             {
@@ -136,7 +132,12 @@
     {
         if (_isBranchAdmin && _assignedBranchIds.Count > 0)
         {
-            var branchId = _assignedBranchIds.First();
+            var activeBranchId = (ViewPreference.ActiveBranchId.HasValue && _assignedBranchIds.Contains(ViewPreference.ActiveBranchId.Value))
+                ? ViewPreference.ActiveBranchId.Value
+                : ((UserContext.BranchId.HasValue && _assignedBranchIds.Contains(UserContext.BranchId.Value))
+                    ? UserContext.BranchId.Value
+                    : _assignedBranchIds.First());
+            var branchId = activeBranchId;
             var childAtt = (await AttendanceService.GetChildAttendanceAsync(branchId, SelectedDate)).ToList();
             var teacherAtt = (await AttendanceService.GetTeacherAttendanceAsync(branchId, SelectedDate)).ToList();
 
@@ -155,6 +156,13 @@
         else
         {
             Summary = await AttendanceService.GetOrganizationSummaryAsync(SelectedDate);
+        }
+
+        if (Summary != null)
+        {
+            var classroomSummaries = (await AttendanceService.GetClassroomAttendanceSummariesAsync(SelectedDate, Branches, AllClassrooms)).ToList();
+            Summary.AttendanceToFinishClassrooms = classroomSummaries.Count(c => c.StatusCategory == "pending");
+            Summary.NeedsAttentionClassrooms = classroomSummaries.Count(c => c.StatusCategory == "attention");
         }
     }
 }

@@ -24,6 +24,14 @@
         </div>
     }
 
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="alert-banner" style="background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; padding: 12px 18px; border-radius: 12px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; font-weight: 600;">
+            <span>⚠ @_errorMessage</span>
+            <button class="close-alert" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #9b2c2c;" @onclick="() => _errorMessage = null">✕</button>
+        </div>
+    }
+
     <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);">
         <p style="color: var(--muted); font-size: 14px; margin-top: 0; margin-bottom: 16px;">
             Select an organization or search branches to manage classrooms, physical capacity, and localized staff assignments.
@@ -133,6 +141,7 @@
     private string _search = "";
     private string _selectedOrgFilter = "";
     private string? _notificationMessage = null;
+    private string? _errorMessage = null;
 
     // Modal state
     private bool _showCreateModal = false;
@@ -189,9 +198,17 @@
     private async Task SubmitCreateBranch()
     {
         if (string.IsNullOrWhiteSpace(_newBranchName) || !Guid.TryParse(_newBranchOrgId, out var orgId)) return;
-        var created = await PlatformService.CreateBranchAsync(orgId, _newBranchName, _newBranchLocation);
-        _notificationMessage = $"Branch '{created.Name}' registered under '{created.OrganizationName}' successfully.";
-        CloseModals();
-        await LoadDataAsync();
+        try
+        {
+            var created = await PlatformService.CreateBranchAsync(orgId, _newBranchName, _newBranchLocation);
+            _notificationMessage = $"Branch '{created.Name}' registered under '{created.OrganizationName}' successfully.";
+            _errorMessage = null;
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to register branch: {ex.Message}";
+        }
     }
 }

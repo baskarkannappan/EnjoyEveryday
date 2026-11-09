@@ -35,6 +35,7 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `fn_get_child_attendance_by_date(p_tenant_id uuid, p_branch_id uuid, p_date date)` | `FUNCTION` | `AttendanceRepository.GetChildAttendanceByDateAsync` | Raw attendance records including arrival and departure times. |
 | `fn_get_teacher_attendance_summary(p_tenant_id uuid, p_branch_id uuid, p_date date)` | `FUNCTION` | `StaffRosterRepository.GetTeacherAttendanceAsync` | Clock-in, clock-out, and active duty status for teachers on a specific date. |
 | `fn_get_attendance_summary(p_tenant_id uuid, p_branch_id uuid, p_date date)` | `FUNCTION` | `AttendanceService` | High-level summary of total present vs expected for stat strips. |
+| `fn_get_attendance_needs_attention(p_tenant_id uuid, p_date date)` | `FUNCTION` | `AttendanceRepository.GetAttendanceNeedsAttentionAsync` | Returns actionable attendance alerts (unmarked classrooms, missing departures, staffing shortages on branches with active rooms). |
 | `sp_record_child_attendance(...)` | `PROCEDURE` | `AttendanceRepository.RecordChildAttendanceAsync` | Upserts daily child check-in, arrival timestamp, and pickup signature. |
 | `sp_close_end_of_day_teachers(p_clock_out interval/time, p_ids uuid[])` | `PROCEDURE` | `EndOfDayRepository.CloseTeachersAsync` / `EndOfDayService` | Auto-clocks out teachers remaining in status `Present`/`Late` at close of shift, sets `clock_out_time` and status `ClockedOut`. |
 | `sp_close_end_of_day_children(p_departure interval/time, p_user_id uuid, p_ids uuid[])` | `PROCEDURE` | `EndOfDayRepository.CloseChildrenAsync` / `EndOfDayService` | Auto-checks out remaining children without departure, sets `departure_time` to end-of-day time and status `CheckedOut`. |
@@ -82,5 +83,9 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `fn_sync_external_login(...)` | `FUNCTION` | `EnjoyEveryday.Daycare.Web`, `EnjoyEveryday.Admin.Web` | Synchronizes external OAuth login for Daycare and Admin portals, returning user status and active organization. |
 | `fn_dev_login(...)` | `FUNCTION` | `EnjoyEveryday.Daycare.Web`, `EnjoyEveryday.Admin.Web` | Resolves dev login user profile and active organization in development environments. |
 | `fn_validate_and_set_organization(...)` | `FUNCTION` | `EnjoyEveryday.Daycare.Web`, `EnjoyEveryday.Admin.Web` | Validates user membership in an organization and returns tenant context. |
+| `fn_get_user_by_email(p_email character varying)` | `FUNCTION` | `IUserRepository.GetByEmailAsync` | Retrieves user profile by email or normalized email across global users table. |
+| `sp_assign_organization_role(p_tenant_id uuid, p_organization_id uuid, p_user_id uuid, p_role_name character varying)` | `PROCEDURE` | `IUserRepository.AssignOrganizationRoleAsync` | Upserts organization membership and assigns organization role, supporting existing users from any tenant joining organizations. |
+| `fn_get_users_hierarchy(p_tenant_id uuid)` | `FUNCTION` | `IUserRepository.GetUsersHierarchyAsync` | Returns team members and roles scoped to the tenant, including members joined via organization memberships and branch assignments. |
+| `fn_get_user_assigned_branches(p_user_id uuid, p_organization_id uuid)` | `FUNCTION` | `AuthEndpoints.cs`, `SelectBranch.razor` | Returns active branches assigned to a user within an organization via `user_branch_assignments`, enforcing multi-branch routing and scoping. |
 
 

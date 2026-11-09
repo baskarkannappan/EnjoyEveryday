@@ -16,6 +16,9 @@ public class AttendanceSummary
     public int AbsentTeachers { get; set; }
     public int LateTeachers { get; set; }
     public int UnmarkedTeachers => ExpectedTeachers - PresentTeachers - AbsentTeachers - LateTeachers;
+
+    public int AttendanceToFinishClassrooms { get; set; }
+    public int NeedsAttentionClassrooms { get; set; }
 }
 
 public interface IAttendanceRepository

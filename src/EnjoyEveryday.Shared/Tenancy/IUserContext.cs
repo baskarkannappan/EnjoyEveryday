@@ -10,6 +10,7 @@ public interface IUserContext
     IEnumerable<string> Roles { get; }
     IEnumerable<string> Permissions { get; }
     Guid? OrganizationId { get; }
+    Guid? BranchId => null;
     bool HasPermission(string permission);
 }
 
@@ -21,6 +22,7 @@ public class UserContext : IUserContext
     public IEnumerable<string> Roles { get; set; } = Array.Empty<string>();
     public IEnumerable<string> Permissions { get; set; } = Array.Empty<string>();
     public Guid? OrganizationId { get; set; }
+    public Guid? BranchId { get; set; }
 
     public bool HasPermission(string permission)
     {

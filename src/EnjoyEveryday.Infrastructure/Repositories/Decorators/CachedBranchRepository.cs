@@ -29,7 +29,7 @@ public class CachedBranchRepository : IBranchRepository
         return await _cache.GetOrCreateAsync(
             key,
             ct => _inner.GetByIdAsync(tenantId, id, ct),
-            slidingExpiration: TimeSpan.FromMinutes(10),
+            slidingExpiration: TimeSpan.FromSeconds(3),
             cancellationToken: cancellationToken);
     }
 
@@ -39,7 +39,7 @@ public class CachedBranchRepository : IBranchRepository
         return await _cache.GetOrCreateAsync(
             key,
             ct => _inner.GetByOrganizationIdAsync(tenantId, organizationId, ct),
-            slidingExpiration: TimeSpan.FromMinutes(10),
+            slidingExpiration: TimeSpan.FromSeconds(3),
             cancellationToken: cancellationToken);
     }
 

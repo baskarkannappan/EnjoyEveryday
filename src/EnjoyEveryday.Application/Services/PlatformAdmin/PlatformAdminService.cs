@@ -298,7 +298,8 @@ public class PlatformAdminService : IPlatformAdminService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to create branch in database; creating in-memory branch.");
+                _logger.LogError(ex, "Failed to create branch '{BranchName}' in database for organization {OrganizationId}", name, organizationId);
+                throw;
             }
         }
 

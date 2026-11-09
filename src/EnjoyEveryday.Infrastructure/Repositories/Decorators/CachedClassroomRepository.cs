@@ -29,7 +29,7 @@ public class CachedClassroomRepository : IClassroomRepository
         return await _cache.GetOrCreateAsync(
             key,
             ct => _inner.GetByIdAsync(tenantId, id, ct),
-            slidingExpiration: TimeSpan.FromMinutes(10),
+            slidingExpiration: TimeSpan.FromSeconds(3),
             cancellationToken: cancellationToken);
     }
 
@@ -39,7 +39,7 @@ public class CachedClassroomRepository : IClassroomRepository
         return await _cache.GetOrCreateAsync(
             key,
             ct => _inner.GetByBranchIdAsync(tenantId, branchId, ct),
-            slidingExpiration: TimeSpan.FromMinutes(10),
+            slidingExpiration: TimeSpan.FromSeconds(3),
             cancellationToken: cancellationToken);
     }
 
@@ -49,7 +49,7 @@ public class CachedClassroomRepository : IClassroomRepository
         return await _cache.GetOrCreateAsync(
             key,
             ct => _inner.GetAllAsync(tenantId, ct),
-            slidingExpiration: TimeSpan.FromMinutes(10),
+            slidingExpiration: TimeSpan.FromSeconds(3),
             cancellationToken: cancellationToken);
     }
 
@@ -59,7 +59,7 @@ public class CachedClassroomRepository : IClassroomRepository
         return await _cache.GetOrCreateAsync(
             key,
             ct => _inner.GetAllAsync(tenantId, organizationId, ct),
-            slidingExpiration: TimeSpan.FromMinutes(10),
+            slidingExpiration: TimeSpan.FromSeconds(3),
             cancellationToken: cancellationToken);
     }
 

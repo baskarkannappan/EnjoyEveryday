@@ -46,6 +46,7 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
     private readonly IResourceAuthorizer _resourceAuthorizer;
     private readonly NavigationManager _navigation;
     private readonly IOrganizationPermissionService _orgPerms;
+    private readonly IOrganizationRepository _orgRepo;
 
     // Cache profile per scope
     private UserRoleProfile? _cachedProfile;
@@ -56,7 +57,8 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         IAccessScopeRepository scopeRepo,
         IResourceAuthorizer resourceAuthorizer,
         NavigationManager navigation,
-        IOrganizationPermissionService orgPerms)
+        IOrganizationPermissionService orgPerms,
+        IOrganizationRepository orgRepo)
     {
         _userContext = userContext;
         _tenantContext = tenantContext;
@@ -64,6 +66,7 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         _resourceAuthorizer = resourceAuthorizer;
         _navigation = navigation;
         _orgPerms = orgPerms;
+        _orgRepo = orgRepo;
     }
 
     public async Task<UserRoleProfile> GetUserProfileAsync(CancellationToken ct = default)
@@ -86,6 +89,28 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         var tenantId = _tenantContext.TenantId;
         var userId = profile.UserId;
         var orgId = _userContext.OrganizationId ?? Guid.Empty;
+
+        // If organization is not in claims or session, resolve from user's active memberships
+        if (orgId == Guid.Empty && userId != Guid.Empty)
+        {
+            try
+            {
+                var userOrgs = (await _orgRepo.GetOrganizationsByUserIdAsync(userId, ct)).ToList();
+                if (userOrgs.Count > 0)
+                {
+                    var activeOrg = userOrgs.FirstOrDefault(o => o.IsActive) ?? userOrgs[0];
+                    orgId = activeOrg.Id;
+                    if (tenantId == Guid.Empty || tenantId != activeOrg.TenantId)
+                    {
+                        tenantId = activeOrg.TenantId;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PageAuth] Error resolving user org from DB: {ex.Message}");
+            }
+        }
         profile.OrganizationId = orgId;
 
         // Fetch live scopes from database
@@ -98,7 +123,24 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             profile.AssignedBranchIds = new HashSet<Guid>(branchIds);
         }
 
-        var roles = (_userContext.Roles ?? Enumerable.Empty<string>()).ToList();
+        var roles = new HashSet<string>(_userContext.Roles ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
+        // Fetch live organization roles from database (user_organization_roles) so admin assignments take effect immediately
+        if (orgId != Guid.Empty && userId != Guid.Empty)
+        {
+            try
+            {
+                var dbRoles = await _scopeRepo.GetOrganizationRoleNamesAsync(tenantId, orgId, userId, ct);
+                foreach (var r in dbRoles)
+                {
+                    roles.Add(r);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PageAuth] Error loading live org roles: {ex.Message}");
+            }
+        }
 
         // 0. Platform Admin check
         profile.IsPlatformAdmin = roles.Any(r =>

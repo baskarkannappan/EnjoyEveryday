@@ -166,7 +166,10 @@
                             <div>
                                 <label class="field-label">Assigned Branch Location</label>
                                 <select class="filter" style="width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; font-weight: 600; border-radius: 0px; background: white;" @bind="_selectedBranchId">
-                                    <option value="">-- All Authorized Branches / None --</option>
+                                    @if (_isOrgAdmin)
+                                    {
+                                        <option value="">-- All Authorized Branches / None --</option>
+                                    }
                                     @foreach (var branch in _branches)
                                     {
                                         <option value="@branch.Id">@branch.Name @(!string.IsNullOrEmpty(branch.Location) ? $"({branch.Location})" : "")</option>
@@ -226,12 +229,28 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var userRoles = (UserContext.Roles ?? Enumerable.Empty<string>()).ToList();
-        _isOrgAdmin = userRoles.Any(r =>
+        var tenantId = TenantContext.TenantId;
+        var userId = UserContext.UserId;
+        var roles = new HashSet<string>(UserContext.Roles ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
+        if (UserContext.OrganizationId.HasValue && userId != Guid.Empty && tenantId != Guid.Empty)
+        {
+            try
+            {
+                var orgRoles = await AccessScopeRepo.GetOrganizationRoleNamesAsync(tenantId, UserContext.OrganizationId.Value, userId);
+                foreach (var r in orgRoles) roles.Add(r);
+            }
+            catch { }
+        }
+
+        _isOrgAdmin = roles.Any(r =>
             r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
             r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
-            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase));
-        _isBranchAdmin = userRoles.Any(r => r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase));
+            r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase));
+        _isBranchAdmin = !_isOrgAdmin && roles.Any(r =>
+            r.Equals(RoleTemplates.BranchAdmin, StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Branch Admin", StringComparison.OrdinalIgnoreCase));
 
         await LoadUsersAsync();
     }
@@ -239,6 +258,12 @@
     public void OpenAddUserModal()
     {
         _showAddUserModal = true;
+        _errorMessage = null;
+        if (_isBranchAdmin && _branches.Count > 0 && (string.IsNullOrEmpty(_selectedBranchId) || !_branches.Any(b => b.Id.ToString() == _selectedBranchId)))
+        {
+            _selectedBranchId = _branches[0].Id.ToString();
+        }
+        StateHasChanged();
     }
 
     private void CloseAddUserModal()
@@ -257,7 +282,21 @@
 
             if (UserContext.OrganizationId.HasValue)
             {
-                _branches = (await BranchService.GetBranchesAsync(UserContext.OrganizationId.Value)).ToList();
+                var allBranches = (await BranchService.GetBranchesAsync(UserContext.OrganizationId.Value)).ToList();
+                if (_isBranchAdmin)
+                {
+                    var assignedBranchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, UserContext.OrganizationId.Value, UserContext.UserId);
+                    _branches = allBranches.Where(b => assignedBranchIds.Contains(b.Id)).ToList();
+                }
+                else
+                {
+                    _branches = allBranches;
+                }
+
+                if (_branches.Count > 0 && (string.IsNullOrEmpty(_selectedBranchId) || !_branches.Any(b => b.Id.ToString() == _selectedBranchId)))
+                {
+                    _selectedBranchId = _branches[0].Id.ToString();
+                }
             }
 
             _allUsers = users.Select(u => new UserRecordItem
@@ -342,33 +381,59 @@
             _errorMessage = null;
 
             var tenantId = TenantContext.TenantId;
-            var displayName = $"{_newUserFirstName} {_newUserLastName}".Trim();
-            if (string.IsNullOrWhiteSpace(displayName)) displayName = _newUserEmail.Split('@')[0];
+            var emailTrimmed = _newUserEmail.Trim();
+            var existingUser = await UserRepository.GetByEmailAsync(emailTrimmed);
+            Guid targetUserId;
+            string displayName;
 
-            var newUser = new User
+            if (existingUser != null)
             {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                Email = _newUserEmail.Trim(),
-                FirstName = _newUserFirstName.Trim(),
-                LastName = _newUserLastName.Trim(),
-                DisplayName = displayName,
-                IsActive = true,
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
-            };
+                targetUserId = existingUser.Id;
+                displayName = string.IsNullOrWhiteSpace(existingUser.DisplayName) ? existingUser.FullName : existingUser.DisplayName;
+                if (string.IsNullOrWhiteSpace(displayName)) displayName = emailTrimmed.Split('@')[0];
+            }
+            else
+            {
+                displayName = $"{_newUserFirstName} {_newUserLastName}".Trim();
+                if (string.IsNullOrWhiteSpace(displayName)) displayName = emailTrimmed.Split('@')[0];
 
-            await UserRepository.AddAsync(newUser, _newUserPassword);
+                var newUser = new User
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    Email = emailTrimmed,
+                    FirstName = _newUserFirstName.Trim(),
+                    LastName = _newUserLastName.Trim(),
+                    DisplayName = displayName,
+                    IsActive = true,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+
+                await UserRepository.AddAsync(newUser, _newUserPassword);
+                targetUserId = newUser.Id;
+            }
+
             if (UserContext.OrganizationId.HasValue)
             {
-                await UserRepository.AssignOrganizationRoleAsync(tenantId, UserContext.OrganizationId.Value, newUser.Id, _newUserRole);
+                if (_isBranchAdmin)
+                {
+                    var assignedBranchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, UserContext.OrganizationId.Value, UserContext.UserId);
+                    if (!Guid.TryParse(_selectedBranchId, out var bGuid) || !assignedBranchIds.Contains(bGuid))
+                    {
+                        var forcedBranch = assignedBranchIds.FirstOrDefault();
+                        _selectedBranchId = forcedBranch != Guid.Empty ? forcedBranch.ToString() : _selectedBranchId;
+                    }
+                }
+
+                await UserRepository.AssignOrganizationRoleAsync(tenantId, UserContext.OrganizationId.Value, targetUserId, _newUserRole);
                 if (Guid.TryParse(_selectedBranchId, out var branchGuid))
                 {
-                    await UserRepository.AssignBranchToUserAsync(tenantId, UserContext.OrganizationId.Value, branchGuid, newUser.Id, UserContext.UserId);
+                    await UserRepository.AssignBranchToUserAsync(tenantId, UserContext.OrganizationId.Value, branchGuid, targetUserId, UserContext.UserId);
                 }
             }
 
-            _successBanner = $"Team member '{displayName}' created successfully with role '{FormatRoleName(_newUserRole)}'.";
+            _successBanner = $"Team member '{displayName}' {(existingUser != null ? "added and assigned" : "created")} successfully with role '{FormatRoleName(_newUserRole)}'.";
             CloseAddUserModal();
             _newUserFirstName = "";
             _newUserLastName = "";

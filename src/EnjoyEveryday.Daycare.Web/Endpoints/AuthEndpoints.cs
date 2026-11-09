@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Dapper;
 using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 using Microsoft.AspNetCore.Authentication;
@@ -83,9 +84,7 @@ public static class AuthEndpoints
 
             await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
-            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
-            return Results.Redirect(returnUrl ?? "/");
+            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, activeOrgId, returnUrl, new AuthenticationProperties { IsPersistent = true });
         });
 
         group.MapGet("/callback", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
@@ -145,17 +144,8 @@ public static class AuthEndpoints
 
             await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
-            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var properties = new AuthenticationProperties { IsPersistent = true };
-
-            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
-            
-            if (activeOrgId == null)
-            {
-                return Results.Redirect("/select-organization");
-            }
-
-            return Results.Redirect(returnUrl ?? "/");
+            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, activeOrgId, returnUrl, properties);
         });
 
         group.MapPost("/set-organization", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
@@ -205,10 +195,66 @@ public static class AuthEndpoints
 
             await BuildAuthClaimsAsync(conn, claims, userId, organizationId);
 
-            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var properties = new AuthenticationProperties { IsPersistent = true };
+            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, organizationId, returnUrl, properties);
+        }).DisableAntiforgery();
 
-            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+        group.MapPost("/set-branch", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
+        {
+            var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId)) 
+                return Results.Redirect("/auth/login");
+
+            var activeOrgIdStr = context.User.FindFirst("ActiveOrganizationId")?.Value;
+            if (string.IsNullOrEmpty(activeOrgIdStr) || !Guid.TryParse(activeOrgIdStr, out var orgId))
+                return Results.Redirect("/select-organization");
+
+            Guid? branchId = null;
+            if (context.Request.HasFormContentType)
+            {
+                var form = await context.Request.ReadFormAsync();
+                if (Guid.TryParse(form["branchId"], out var parsedBranchId))
+                {
+                    branchId = parsedBranchId;
+                }
+            }
+
+            if (!branchId.HasValue)
+                return Results.Redirect("/select-branch");
+
+            using var conn = await db.CreateConnectionAsync();
+            
+            var assignedBranches = (await conn.QueryFunctionAsync<BranchRow>(
+                "fn_get_user_assigned_branches",
+                new { UserId = userId, OrganizationId = orgId })).ToList();
+
+            var targetBranch = assignedBranches.FirstOrDefault(b => b.id == branchId.Value);
+            if (targetBranch == null)
+            {
+                var isOrgAdmin = context.User.IsInRole("OrganizationAdmin") || context.User.IsInRole("OrganizationOwner") || context.User.IsInRole("PlatformAdmin");
+                if (isOrgAdmin)
+                {
+                    var allBranches = await conn.QueryAsync<BranchRow>(
+                        "SELECT id, name FROM branches WHERE id = @BranchId AND organization_id = @OrgId AND is_active = true",
+                        new { BranchId = branchId.Value, OrgId = orgId });
+                    targetBranch = allBranches.FirstOrDefault();
+                }
+            }
+
+            if (targetBranch == null)
+            {
+                return Results.Redirect("/auth/access-denied?reason=unauthorized_branch");
+            }
+
+            var claims = context.User.Claims
+                .Where(c => c.Type != "ActiveBranchId" && c.Type != "ActiveBranchName")
+                .ToList();
+
+            claims.Add(new Claim("ActiveBranchId", targetBranch.id.ToString()));
+            claims.Add(new Claim("ActiveBranchName", targetBranch.name));
+
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
 
             return Results.Redirect(returnUrl ?? "/");
         }).DisableAntiforgery();
@@ -247,6 +293,66 @@ public static class AuthEndpoints
                 claims.Add(new Claim("Permission", row.claim_value));
             }
         }
+    }
+
+    private static async Task<IResult> FinalizeSignInAndRedirectAsync(
+        HttpContext context,
+        System.Data.IDbConnection conn,
+        List<Claim> claims,
+        Guid userId,
+        Guid? activeOrgId,
+        string? returnUrl,
+        AuthenticationProperties properties)
+    {
+        if (activeOrgId == null)
+        {
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+            return Results.Redirect("/select-organization");
+        }
+
+        var isOrgAdmin = claims.Any(c => c.Type == ClaimTypes.Role && 
+            (c.Value == "OrganizationAdmin" || c.Value == "OrganizationOwner" || c.Value == "PlatformAdmin"));
+
+        if (isOrgAdmin)
+        {
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+            return Results.Redirect(returnUrl ?? "/");
+        }
+
+        var assignedBranches = (await conn.QueryFunctionAsync<BranchRow>(
+            "fn_get_user_assigned_branches",
+            new { UserId = userId, OrganizationId = activeOrgId.Value })).ToList();
+
+        if (assignedBranches.Count == 1)
+        {
+            claims.Add(new Claim("ActiveBranchId", assignedBranches[0].id.ToString()));
+            claims.Add(new Claim("ActiveBranchName", assignedBranches[0].name));
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+            return Results.Redirect(returnUrl ?? "/");
+        }
+        else if (assignedBranches.Count > 1)
+        {
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+            return Results.Redirect($"/select-branch{(string.IsNullOrEmpty(returnUrl) ? "" : "?returnUrl=" + Uri.EscapeDataString(returnUrl))}");
+        }
+        else
+        {
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+            return Results.Redirect(returnUrl ?? "/");
+        }
+    }
+
+    private sealed class BranchRow
+    {
+        public Guid id { get; set; }
+        public string name { get; set; } = string.Empty;
+        public string? location { get; set; }
+        public bool is_active { get; set; }
     }
 
     private sealed class AuthSyncResult

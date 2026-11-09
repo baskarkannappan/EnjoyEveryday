@@ -9,6 +9,8 @@
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
 @inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject IAccessScopeRepository AccessScopeRepo
 @inject ISystemLookupCatalog LookupCatalog
 
 <div class="roster-page-container">
@@ -659,9 +661,26 @@
             var branchesList = (await BranchService.GetBranchesAsync(defaultOrg.Id)).ToList();
             _branches = branchesList;
 
+            var isOrgAdmin = UserContext.Roles.Contains("OrganizationAdmin") || UserContext.Roles.Contains("OrganizationOwner") || UserContext.Roles.Contains("PlatformAdmin");
+            if (!isOrgAdmin && UserContext.UserId != Guid.Empty)
+            {
+                var assignedBranchIds = (await AccessScopeRepo.GetAssignedBranchIdsAsync(TenantContext.TenantId, defaultOrg.Id, UserContext.UserId)).ToHashSet();
+                if (assignedBranchIds.Count > 0)
+                {
+                    _branches = _branches.Where(b => assignedBranchIds.Contains(b.Id)).ToList();
+                }
+            }
+
             if (_branches.Any())
             {
-                _selectedBranchId = _branches.First().Id;
+                if (UserContext.BranchId.HasValue && _branches.Any(b => b.Id == UserContext.BranchId.Value))
+                {
+                    _selectedBranchId = UserContext.BranchId.Value;
+                }
+                else
+                {
+                    _selectedBranchId = _branches.First().Id;
+                }
             }
         }
 

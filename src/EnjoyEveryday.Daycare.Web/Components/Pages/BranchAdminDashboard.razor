@@ -22,6 +22,7 @@
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService ViewPreference
 
 <PageTitle>Branch Operations — EnjoyEveryday</PageTitle>
 
@@ -744,9 +745,20 @@
 
                 if (_branches.Any())
                 {
-                    if (string.IsNullOrEmpty(_selectedBranchId) || !_branches.Any(b => b.Id.ToString() == _selectedBranchId))
+                    if (ViewPreference.ActiveBranchId.HasValue && _branches.Any(b => b.Id == ViewPreference.ActiveBranchId.Value))
+                    {
+                        _selectedBranchId = ViewPreference.ActiveBranchId.Value.ToString();
+                    }
+                    else if (UserContext.BranchId.HasValue && _branches.Any(b => b.Id == UserContext.BranchId.Value))
+                    {
+                        _selectedBranchId = UserContext.BranchId.Value.ToString();
+                        var match = _branches.First(b => b.Id == UserContext.BranchId.Value);
+                        ViewPreference.SetActiveBranch(match.Id, match.Name);
+                    }
+                    else if (string.IsNullOrEmpty(_selectedBranchId) || !_branches.Any(b => b.Id.ToString() == _selectedBranchId))
                     {
                         _selectedBranchId = _branches.First().Id.ToString();
+                        ViewPreference.SetActiveBranch(_branches.First().Id, _branches.First().Name);
                     }
                 }
                 else
@@ -809,6 +821,14 @@
     private async Task HandleBranchSelected(ChangeEventArgs e)
     {
         _selectedBranchId = e.Value?.ToString() ?? "";
+        if (Guid.TryParse(_selectedBranchId, out var bId))
+        {
+            var b = _branches.FirstOrDefault(x => x.Id == bId);
+            if (b != null)
+            {
+                ViewPreference.SetActiveBranch(b.Id, b.Name);
+            }
+        }
         await RefreshBoardAsync();
     }
 

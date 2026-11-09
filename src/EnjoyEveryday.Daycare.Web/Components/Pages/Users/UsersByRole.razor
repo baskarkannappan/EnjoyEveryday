@@ -12,6 +12,22 @@
               Title="Users by Role Hierarchy"
               Subtitle="All daycare team members, educators, administrators, and families organized by operational role hierarchy.">
         <RightContent>
+            <!-- View Mode Switcher -->
+            <div class="view-switcher-group" style="display: inline-flex; border: 1px solid var(--border, #e4e7df); border-radius: 6px; overflow: hidden; background: var(--surface, #ffffff); margin-right: 4px;">
+                <button type="button" 
+                        class="switcher-btn @(_viewMode == "list" ? "active" : "")" 
+                        @onclick='() => SetViewMode("list")'
+                        style="padding: 7px 14px; font-size: 13px; font-weight: 650; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; background: @(_viewMode == "list" ? "var(--accent-light, #e6eee9)" : "transparent"); color: @(_viewMode == "list" ? "var(--accent-dark, #31523c)" : "var(--muted, #6c7870)"); transition: all 0.15s ease;">
+                    <span>📋 List View</span>
+                </button>
+                <button type="button" 
+                        class="switcher-btn @(_viewMode == "hierarchy" ? "active" : "")" 
+                        @onclick='() => SetViewMode("hierarchy")'
+                        style="padding: 7px 14px; font-size: 13px; font-weight: 650; border: none; border-left: 1px solid var(--border, #e4e7df); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; background: @(_viewMode == "hierarchy" ? "var(--accent-light, #e6eee9)" : "transparent"); color: @(_viewMode == "hierarchy" ? "var(--accent-dark, #31523c)" : "var(--muted, #6c7870)"); transition: all 0.15s ease;">
+                    <span>🌳 Hierarchy View</span>
+                </button>
+            </div>
+
             <button type="button" class="btn primary" @onclick="() => _viewRef?.OpenAddUserModal()" style="display: inline-flex; align-items: center; gap: 8px;">
                 <FluentIcon Value="@(new Icons.Regular.Size16.Add())" Color="Color.Custom" CustomColor="#ffffff" />
                 <span>+ Add Team Member</span>
@@ -23,9 +39,25 @@
         </RightContent>
     </PageHero>
 
-    <UsersByRoleView @ref="_viewRef" />
+    <!-- List View (preserved exactly as before) -->
+    <div style="@(_viewMode == "list" ? "" : "display: none;")">
+        <UsersByRoleView @ref="_viewRef" />
+    </div>
+
+    <!-- Hierarchy View (new graphical org chart) -->
+    @if (_viewMode == "hierarchy")
+    {
+        <OrganizationHierarchyView @ref="_hierarchyRef" />
+    }
 </div>
 
 @code {
     private UsersByRoleView? _viewRef;
+    private OrganizationHierarchyView? _hierarchyRef;
+    private string _viewMode = "list";
+
+    private void SetViewMode(string mode)
+    {
+        _viewMode = mode;
+    }
 }
