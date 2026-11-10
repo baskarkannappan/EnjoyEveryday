@@ -36,13 +36,20 @@ EnjoyEveryday.slnx
 
 ## Running Port Map
 
-| Application | Local Port | Primary Audience | Key Entry Routes |
-|:---|:---|:---|:---|
-| **Daycare Web** | `https://localhost:7003` | Teachers, Branch Admins, Org Admins | `/`, `/today`, `/management/attendance`, `/attendance/monthly`, `/today-activities`, `/planning` |
-| **Platform Admin** | `https://localhost:7004` | Platform Admins & Operations | `/tenants`, `/warehouse`, `/catalog`, `/matrix` |
-| **Parent Web** | `https://localhost:7005` | Parents & Guardians | `/`, `/today`, `/journey`, `/memories`, `/messages`, `/family` |
-| **REST API** | `http://localhost:5001` | External integrations, mobile apps | `/api/v1/...` |
-| **PostgreSQL 18** | `localhost:5433` | Database Server | Database: `enjoyeveryday`, User: `postgres` |
+| Application | Visual Studio / Local Host Port | Docker Desktop Test Port | Primary Audience | Key Entry Routes |
+|:---|:---|:---|:---|:---|
+| **Daycare Web** | `https://localhost:7003` | `http://localhost:8081` | Teachers, Branch Admins, Org Admins | `/`, `/today`, `/management/attendance`, `/attendance/monthly`, `/today-activities`, `/planning` |
+| **Platform Admin** | `https://localhost:7004` | — | Platform Admins & Operations | `/tenants`, `/warehouse`, `/catalog`, `/matrix` |
+| **Parent Web** | `https://localhost:7005` | — | Parents & Guardians | `/`, `/today`, `/journey`, `/memories`, `/messages`, `/family` |
+| **REST API** | `https://localhost:7013` / `http://localhost:5165` | `http://localhost:8082` | External integrations, mobile apps | `/swagger` |
+| **AI Agent** | `http://localhost:8000` | `http://localhost:8083` | FastAPI / Google ADK services | `/docs` |
+| **PostgreSQL 15** | `localhost:5433` | `db:5432` (internal) | Database Server | Database: `enjoyeveryday`, User: `postgres` |
+
+## Docker Containerization & Deployment
+* **Docker Compose**: Orchestrates `db`, `api`, `web`, and `ai-agent` on `enjoyeveryday-net`.
+* **Developer Guides**:
+  * [Visual Studio Developer Guide](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/docs/developer-guide-visual-studio.md): Running and debugging in VS 2022.
+  * [Docker Desktop Deployment Guide](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/docs/docker-desktop-deployment-guide.md): Local containerized multi-tier testing.
 
 ## Dependencies & UI Component Sharing
 * All common daycare controls (Attendance tables, daily care sections, modals) live in `EnjoyEveryday.UI.Shared`.

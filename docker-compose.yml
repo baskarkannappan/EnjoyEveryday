@@ -13,6 +13,60 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - enjoyeveryday-net
+
+  api:
+    build:
+      context: .
+      dockerfile: src/EnjoyEveryday.Api/Dockerfile
+    container_name: enjoyeveryday_api
+    restart: on-failure
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+    ports:
+      - "8082:8080"
+    depends_on:
+      - db
+    networks:
+      - enjoyeveryday-net
+
+  ai-agent:
+    build:
+      context: ./src/EnjoyEveryday.AiAgent
+      dockerfile: Dockerfile
+    container_name: enjoyeveryday_ai_agent
+    restart: on-failure
+    environment:
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8083:8000"
+    networks:
+      - enjoyeveryday-net
+
+  web:
+    build:
+      context: .
+      dockerfile: src/EnjoyEveryday.Daycare.Web/Dockerfile
+    container_name: enjoyeveryday_web
+    restart: on-failure
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+      AiAgent__BaseUrl: "http://ai-agent:8000"
+      Api__BaseUrl: "http://api:8080"
+    ports:
+      - "8081:8080"
+    depends_on:
+      - db
+      - api
+    networks:
+      - enjoyeveryday-net
 
 volumes:
   postgres_data:
+
+networks:
+  enjoyeveryday-net:
+    driver: bridge
