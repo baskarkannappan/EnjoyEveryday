@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -58,6 +56,42 @@ services:
       Api__BaseUrl: "http://api:8080"
     ports:
       - "8081:8080"
+    depends_on:
+      - db
+      - api
+    networks:
+      - enjoyeveryday-net
+
+  admin-web:
+    build:
+      context: .
+      dockerfile: src/EnjoyEveryday.Admin.Web/Dockerfile
+    container_name: enjoyeveryday_admin_web
+    restart: on-failure
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+      Api__BaseUrl: "http://api:8080"
+    ports:
+      - "8084:8080"
+    depends_on:
+      - db
+      - api
+    networks:
+      - enjoyeveryday-net
+
+  parent-web:
+    build:
+      context: .
+      dockerfile: src/EnjoyEveryday.Parent.Web/Dockerfile
+    container_name: enjoyeveryday_parent_web
+    restart: on-failure
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+      Api__BaseUrl: "http://api:8080"
+    ports:
+      - "8085:8080"
     depends_on:
       - db
       - api

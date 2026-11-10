@@ -39,8 +39,8 @@ EnjoyEveryday.slnx
 | Application | Visual Studio / Local Host Port | Docker Desktop Test Port | Primary Audience | Key Entry Routes |
 |:---|:---|:---|:---|:---|
 | **Daycare Web** | `https://localhost:7003` | `http://localhost:8081` | Teachers, Branch Admins, Org Admins | `/`, `/today`, `/management/attendance`, `/attendance/monthly`, `/today-activities`, `/planning` |
-| **Platform Admin** | `https://localhost:7004` | — | Platform Admins & Operations | `/tenants`, `/warehouse`, `/catalog`, `/matrix` |
-| **Parent Web** | `https://localhost:7005` | — | Parents & Guardians | `/`, `/today`, `/journey`, `/memories`, `/messages`, `/family` |
+| **Platform Admin** | `https://localhost:7004` | `http://localhost:8084` | Platform Admins & Operations | `/tenants`, `/warehouse`, `/catalog`, `/matrix` |
+| **Parent Web** | `https://localhost:7005` | `http://localhost:8085` | Parents & Guardians | `/`, `/today`, `/journey`, `/memories`, `/messages`, `/family` |
 | **REST API** | `https://localhost:7013` / `http://localhost:5165` | `http://localhost:8082` | External integrations, mobile apps | `/swagger` |
 | **AI Agent** | `http://localhost:8000` | `http://localhost:8083` | FastAPI / Google ADK services | `/docs` |
 | **PostgreSQL 15** | `localhost:5433` | `db:5432` (internal) | Database Server | Database: `enjoyeveryday`, User: `postgres` |

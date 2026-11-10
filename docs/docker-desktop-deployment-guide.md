@@ -61,7 +61,9 @@ Once launched, access the following URLs in your browser:
 
 | Component | URL | Verification Action |
 | :--- | :--- | :--- |
-| **Web Portal** | `http://localhost:8081` | Log in with `admin@littlestars.com` or `myassociationmanager005@gmail.com`. |
+| **Daycare Web** | `http://localhost:8081` | Log in with `admin@littlestars.com` or `myassociationmanager005@gmail.com`. |
+| **Platform Admin** | `http://localhost:8084` | Platform administration, multi-tenant overview, warehouse & catalog. |
+| **Parent Portal** | `http://localhost:8085` | Parent & guardian timeline, memories, routines, and communications. |
 | **Core API** | `http://localhost:8082/swagger` | Verify OpenAPI documentation and test endpoints. |
 | **AI Agent** | `http://localhost:8083/docs` | Verify FastAPI Swagger docs for Gemini ADK endpoints. |
 | **Database** | `localhost:5433` | Connect with DBeaver, pgAdmin, or run `scripts\db.cmd`. |
