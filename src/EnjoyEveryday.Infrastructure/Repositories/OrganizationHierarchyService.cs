@@ -179,7 +179,7 @@ public class OrganizationHierarchyService : IOrganizationHierarchyService
                     JOIN classrooms cl ON ct.classroom_id = cl.id 
                     WHERE ct.user_id = u.id AND cl.branch_id = uba.branch_id
                 )
-                AND (r.name IS NULL OR r.name NOT IN ('OrganizationAdmin', 'OrganizationOwner'))
+                AND (r.name IS NULL OR r.name NOT IN ('OrganizationAdmin', 'OrganizationOwner', 'BranchAdmin'))
               ORDER BY uba.branch_id, u.id, (CASE WHEN r.name = 'LeadTeacher' THEN 1 WHEN r.name = 'ClassroomTeacher' THEN 2 ELSE 3 END)",
             new { BranchIds = branchIds })).ToList();
 
@@ -285,26 +285,29 @@ public class OrganizationHierarchyService : IOrganizationHierarchyService
 
             if (unassignedStaffLookup.TryGetValue(branch.id, out var unassigned))
             {
-                branchDto.UnassignedStaff = unassigned.Select(s =>
-                {
-                    allUniqueStaffIds.Add(s.user_id);
-                    if (s.role_name.Contains("Lead", StringComparison.OrdinalIgnoreCase))
+                var adminUserIds = new HashSet<Guid>(branchDto.BranchAdmins.Select(a => a.UserId));
+                branchDto.UnassignedStaff = unassigned
+                    .Where(s => !adminUserIds.Contains(s.user_id))
+                    .Select(s =>
                     {
-                        branchLeadCount++;
-                    }
-                    else if (!s.role_name.Contains("Director", StringComparison.OrdinalIgnoreCase) && !s.role_name.Contains("Admin", StringComparison.OrdinalIgnoreCase))
-                    {
-                        branchTeacherCount++;
-                    }
-                    return new StaffNodeDto
-                    {
-                        UserId = s.user_id,
-                        Name = s.name,
-                        Email = s.email,
-                        RoleName = s.role_name,
-                        AssignedClassroomName = "Unassigned Classroom"
-                    };
-                }).ToList();
+                        allUniqueStaffIds.Add(s.user_id);
+                        if (s.role_name.Contains("Lead", StringComparison.OrdinalIgnoreCase))
+                        {
+                            branchLeadCount++;
+                        }
+                        else if (!s.role_name.Contains("Director", StringComparison.OrdinalIgnoreCase) && !s.role_name.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+                        {
+                            branchTeacherCount++;
+                        }
+                        return new StaffNodeDto
+                        {
+                            UserId = s.user_id,
+                            Name = s.name,
+                            Email = s.email,
+                            RoleName = s.role_name,
+                            AssignedClassroomName = "Unassigned Classroom"
+                        };
+                    }).ToList();
             }
 
             branchDto.LeadTeacherCount = branchLeadCount;
