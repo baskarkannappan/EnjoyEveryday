@@ -129,17 +129,20 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
     private readonly ILogger<EnrollmentPipelineService> _logger;
+    private readonly IClassroomReadinessService? _readinessService;
 
     public EnrollmentPipelineService(
         IEnrollmentPipelineRepository repository,
         ITenantContext tenantContext,
         IAuditService? auditService = null,
-        ILogger<EnrollmentPipelineService>? logger = null)
+        ILogger<EnrollmentPipelineService>? logger = null,
+        IClassroomReadinessService? readinessService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _auditService = auditService ?? new NullAuditService();
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<EnrollmentPipelineService>.Instance;
+        _readinessService = readinessService;
     }
 
     public async Task<PipelineOverviewDto> GetPipelineOverviewAsync(Guid? branchId = null, CancellationToken ct = default)
@@ -274,12 +277,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         var app = await GetApplicationByIdAsync(request.ApplicationId, ct);
         if (app == null) throw new InvalidOperationException("Application not found.");
 
-        Guid childId = app.ChildId ?? Guid.NewGuid();
-
-        // 1. Create or ensure child record in children table
-        await _repository.EnsureChildEnrolledAsync(childId, tenantId, request.ClassroomId, app.ChildFirstName, app.ChildLastName, app.DateOfBirth, ct);
-
-        // 2. Resolve branch and organization scope from the selected classroom
+        // 1. Resolve branch and organization scope from the selected classroom
         var scope = await _repository.GetClassroomScopeAsync(tenantId, request.ClassroomId, ct);
         var branchId = scope.BranchId ?? (app.BranchId != tenantId ? app.BranchId : null);
         var organizationId = scope.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
@@ -289,6 +287,17 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         {
             branchId = scope.BranchId;
         }
+
+        // Validate classroom readiness before proceeding with enrollment
+        if (_readinessService != null && branchId.HasValue)
+        {
+            await _readinessService.EnsureClassroomReadyForEnrollmentAsync(tenantId, branchId.Value, request.ClassroomId, ct);
+        }
+
+        Guid childId = app.ChildId ?? Guid.NewGuid();
+
+        // 2. Create or ensure child record in children table
+        await _repository.EnsureChildEnrolledAsync(childId, tenantId, request.ClassroomId, app.ChildFirstName, app.ChildLastName, app.DateOfBirth, ct);
 
         // 3. Create family billing contract
         var contractId = Guid.NewGuid();

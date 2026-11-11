@@ -105,6 +105,11 @@ public partial class EnrollmentPipeline : ComponentBase
 
             ApplyFilters();
         }
+        catch (ClassroomReadinessException ex)
+        {
+            _isError = true;
+            _statusMessage = $"Classroom readiness check failed: {ex.Message}";
+        }
         catch (Exception ex)
         {
             _isError = true;
@@ -204,6 +209,11 @@ public partial class EnrollmentPipeline : ComponentBase
             _statusMessage = $"Admissions inquiry registered for {_newInquiry.ChildFirstName} {_newInquiry.ChildLastName}.";
             await LoadDataAsync();
         }
+        catch (ClassroomReadinessException ex)
+        {
+            _isError = true;
+            _statusMessage = $"Classroom readiness check failed: {ex.Message}";
+        }
         catch (Exception ex)
         {
             _isError = true;
@@ -219,6 +229,11 @@ public partial class EnrollmentPipeline : ComponentBase
             _isError = false;
             _statusMessage = $"Application moved to {GetStageDisplayName(nextStage)}.";
             await LoadDataAsync();
+        }
+        catch (ClassroomReadinessException ex)
+        {
+            _isError = true;
+            _statusMessage = $"Classroom readiness check failed: {ex.Message}";
         }
         catch (Exception ex)
         {
@@ -247,6 +262,11 @@ public partial class EnrollmentPipeline : ComponentBase
             _isError = false;
             _statusMessage = $"Campus tour scheduled for {_selectedApp.ChildFullName} on {_tourDateTime:MMM dd @ h:mm tt}.";
             await LoadDataAsync();
+        }
+        catch (ClassroomReadinessException ex)
+        {
+            _isError = true;
+            _statusMessage = $"Classroom readiness check failed: {ex.Message}";
         }
         catch (Exception ex)
         {
@@ -283,6 +303,11 @@ public partial class EnrollmentPipeline : ComponentBase
             _isError = false;
             _statusMessage = $"Congratulations! {_selectedApp.ChildFullName} is officially enrolled and family tuition contract has been recorded.";
             await LoadDataAsync();
+        }
+        catch (ClassroomReadinessException ex)
+        {
+            _isError = true;
+            _statusMessage = $"Classroom readiness check failed: {ex.Message}";
         }
         catch (Exception ex)
         {

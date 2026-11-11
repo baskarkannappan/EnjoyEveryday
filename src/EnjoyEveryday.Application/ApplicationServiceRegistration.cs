@@ -105,6 +105,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<AccountBookService>();
         services.AddScoped<IEnrollmentPipelineService, EnrollmentPipelineService>();
         services.AddScoped<EnrollmentPipelineService>();
+        services.AddScoped<IClassroomReadinessService, ClassroomReadinessService>();
+        services.AddScoped<ClassroomReadinessService>();
         services.AddScoped<IBranchBenchmarkingService, BranchBenchmarkingService>();
         services.AddScoped<BranchBenchmarkingService>();
         services.AddScoped<IDaycareAnnouncementService, DaycareAnnouncementService>();

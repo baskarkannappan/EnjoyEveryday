@@ -1,6 +1,8 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@inject IClassroomReadinessService ReadinessService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 
 @if (IsOpen && Application != null)
 {
@@ -21,12 +23,44 @@
                 <div class="form-row-2">
                     <div class="form-group">
                         <label>Assigned Classroom *</label>
-                        <select class="input-field" @bind="EnrollContract.ClassroomId">
+                        <select class="input-field" value="@EnrollContract.ClassroomId" @onchange="OnClassroomChanged">
                             @foreach (var c in Classrooms)
                             {
                                 <option value="@c.Id">@c.Name (@c.AgeGroup)</option>
                             }
                         </select>
+                        @if (_readinessResult != null)
+                        {
+                            @if (!_readinessResult.IsReady)
+                            {
+                                <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px 14px; margin-top: 8px;">
+                                    <div style="font-weight: 750; font-size: 13px; color: #9b2c2c; margin-bottom: 3px;">
+                                        ⚠️ Classroom Unavailable for Enrollment
+                                    </div>
+                                    @foreach (var req in _readinessResult.MissingRequirements)
+                                    {
+                                        <p style="font-size: 12px; color: #742a2a; margin: 0 0 4px 0;">@req</p>
+                                    }
+                                    @if (_readinessResult.ActionItems.Any())
+                                    {
+                                        <div style="display: flex; gap: 6px; margin-top: 6px;">
+                                            @foreach (var action in _readinessResult.ActionItems)
+                                            {
+                                                <a href="@action.ActionUrl" target="_blank" class="btn secondary" style="font-size: 11px; padding: 4px 10px; border-color: #feb2b2; color: #9b2c2c; text-decoration: none; border-radius: 4px;">
+                                                    @action.ActionText ↗
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; border-radius: 8px; padding: 8px 12px; margin-top: 8px; font-size: 12px; color: var(--accent-dark, #31523c); font-weight: 650;">
+                                    ✓ Classroom is ready for enrollment (@_readinessResult.AvailableSpots spots available)
+                                </div>
+                            }
+                        }
                     </div>
                     <div class="form-group">
                         <label>Official Start Date *</label>
@@ -92,7 +126,7 @@
             </div>
             <div class="modal-footer-pipeline">
                 <button class="btn secondary" @onclick="OnClose">Cancel</button>
-                <button class="primary" @onclick="OnConfirm">
+                <button class="primary" @onclick="OnConfirm" disabled="@(!_isClassroomReady)" style="@(!_isClassroomReady ? "opacity: 0.5; cursor: not-allowed;" : "")">
                     Confirm Enrollment &amp; Bind Tuition Plan
                 </button>
             </div>
@@ -107,4 +141,49 @@
     [Parameter] public List<Classroom> Classrooms { get; set; } = new();
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnConfirm { get; set; }
+
+    private ClassroomReadinessCheckResult? _readinessResult;
+    private Guid _lastCheckedClassroomId = Guid.Empty;
+    private bool _isClassroomReady = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && EnrollContract.ClassroomId != Guid.Empty && EnrollContract.ClassroomId != _lastCheckedClassroomId)
+        {
+            await CheckReadinessAsync(EnrollContract.ClassroomId);
+        }
+    }
+
+    private async Task OnClassroomChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var cid))
+        {
+            EnrollContract.ClassroomId = cid;
+            await CheckReadinessAsync(cid);
+        }
+    }
+
+    private async Task CheckReadinessAsync(Guid classroomId)
+    {
+        _lastCheckedClassroomId = classroomId;
+        var selectedRoom = Classrooms.FirstOrDefault(c => c.Id == classroomId);
+        var branchId = selectedRoom?.BranchId ?? Application?.BranchId;
+        if (branchId.HasValue && branchId.Value != Guid.Empty)
+        {
+            try
+            {
+                _readinessResult = await ReadinessService.ValidateClassroomReadinessAsync(TenantContext.TenantId, branchId.Value, classroomId);
+                _isClassroomReady = _readinessResult.IsReady;
+            }
+            catch (Exception)
+            {
+                _isClassroomReady = false;
+            }
+        }
+        else
+        {
+            _readinessResult = null;
+            _isClassroomReady = true;
+        }
+    }
 }

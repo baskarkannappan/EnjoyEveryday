@@ -30,6 +30,29 @@ public class ClassroomsController : ControllerBase
         return Ok(classroom);
     }
 
+    [HttpGet("readiness")]
+    public async Task<IActionResult> GetBranchClassroomsReadiness(
+        Guid branchId,
+        [FromServices] IClassroomReadinessService readinessService,
+        [FromServices] EnjoyEveryday.Shared.Tenancy.ITenantContext tenantContext,
+        CancellationToken cancellationToken)
+    {
+        var readiness = await readinessService.GetBranchClassroomsReadinessAsync(tenantContext.TenantId, branchId, cancellationToken);
+        return Ok(readiness);
+    }
+
+    [HttpGet("{id}/readiness")]
+    public async Task<IActionResult> GetClassroomReadiness(
+        Guid branchId,
+        Guid id,
+        [FromServices] IClassroomReadinessService readinessService,
+        [FromServices] EnjoyEveryday.Shared.Tenancy.ITenantContext tenantContext,
+        CancellationToken cancellationToken)
+    {
+        var readiness = await readinessService.ValidateClassroomReadinessAsync(tenantContext.TenantId, branchId, id, cancellationToken);
+        return Ok(readiness);
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateClassroom(Guid branchId, [FromBody] CreateClassroomRequest request, CancellationToken cancellationToken)
     {

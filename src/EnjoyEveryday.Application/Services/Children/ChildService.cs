@@ -13,19 +13,40 @@ public class ChildService
     private readonly IAuditService _auditService;
     private readonly IUserContext _userContext;
     private readonly IResourceAuthorizer _authorizer;
+    private readonly IClassroomRepository? _classroomRepository;
+    private readonly IClassroomReadinessService? _readinessService;
 
     public ChildService(IChildRepository childRepository, ITenantContext tenantContext, IAuditService auditService, IUserContext userContext)
-        : this(childRepository, tenantContext, auditService, userContext, new NullResourceAuthorizer())
+        : this(childRepository, tenantContext, auditService, userContext, new NullResourceAuthorizer(), null, null)
     {
     }
 
-    public ChildService(IChildRepository childRepository, ITenantContext tenantContext, IAuditService auditService, IUserContext userContext, IResourceAuthorizer authorizer)
+    public ChildService(
+        IChildRepository childRepository,
+        ITenantContext tenantContext,
+        IAuditService auditService,
+        IUserContext userContext,
+        IResourceAuthorizer authorizer)
+        : this(childRepository, tenantContext, auditService, userContext, authorizer, null, null)
+    {
+    }
+
+    public ChildService(
+        IChildRepository childRepository,
+        ITenantContext tenantContext,
+        IAuditService auditService,
+        IUserContext userContext,
+        IResourceAuthorizer authorizer,
+        IClassroomRepository? classroomRepository,
+        IClassroomReadinessService? readinessService)
     {
         _childRepository = childRepository;
         _tenantContext = tenantContext;
         _auditService = auditService;
         _userContext = userContext;
         _authorizer = authorizer;
+        _classroomRepository = classroomRepository;
+        _readinessService = readinessService;
     }
 
     public async Task<IEnumerable<Child>> GetChildrenAsync(CancellationToken cancellationToken = default)
@@ -55,11 +76,22 @@ public class ChildService
     public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, string? photoUrl = null, CancellationToken cancellationToken = default)
     {
         if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
+        var tenantId = _tenantContext.TenantId;
         if (classroomId.HasValue)
+        {
             await _authorizer.RequireClassroomAsync(classroomId.Value, Permissions.ChildManage, cancellationToken);
+            if (_readinessService != null && _classroomRepository != null)
+            {
+                var room = await _classroomRepository.GetByIdAsync(tenantId, classroomId.Value, cancellationToken);
+                if (room != null && room.BranchId != Guid.Empty && !string.Equals(room.ClassroomType, "Pool", StringComparison.OrdinalIgnoreCase) && !string.Equals(room.Code, "POOL-WAITING", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _readinessService.EnsureClassroomReadyForEnrollmentAsync(tenantId, room.BranchId, classroomId.Value, cancellationToken);
+                }
+            }
+        }
         else
             await _authorizer.RequireOrganizationPermissionAsync(Permissions.ChildManage, cancellationToken);
-        var tenantId = _tenantContext.TenantId;
+
         var child = new Child
         {
             Id = Guid.NewGuid(),
@@ -88,7 +120,17 @@ public class ChildService
         {
             // Moving a child requires enrollment authority over the destination as well.
             if (child.ClassroomId.HasValue)
+            {
                 await _authorizer.RequireClassroomAsync(child.ClassroomId.Value, Permissions.ChildEnrollmentManage, cancellationToken);
+                if (_readinessService != null && _classroomRepository != null)
+                {
+                    var room = await _classroomRepository.GetByIdAsync(_tenantContext.TenantId, child.ClassroomId.Value, cancellationToken);
+                    if (room != null && room.BranchId != Guid.Empty && !string.Equals(room.ClassroomType, "Pool", StringComparison.OrdinalIgnoreCase) && !string.Equals(room.Code, "POOL-WAITING", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _readinessService.EnsureClassroomReadyForEnrollmentAsync(_tenantContext.TenantId, room.BranchId, child.ClassroomId.Value, cancellationToken);
+                    }
+                }
+            }
             else
                 await _authorizer.RequireOrganizationPermissionAsync(Permissions.ChildEnrollmentManage, cancellationToken);
         }

@@ -10,6 +10,7 @@
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
 @inject ISecurePickupService SecurePickupService
+@inject IClassroomReadinessService ClassroomReadinessService
 @using EnjoyEveryday.Shared.Tenancy
 @using EnjoyEveryday.Shared.Authorization
 @inject IUserContext UserContext
@@ -205,7 +206,7 @@
                 </div>
                 <div class="field">
                     <label>Assigned Branch</label>
-                    <select @bind="selectedBranchId">
+                    <select value="@selectedBranchId" @onchange="OnBranchChanged">
                         <option value="">-- Select Branch --</option>
                         @foreach (var branch in _branches)
                         {
@@ -213,16 +214,110 @@
                         }
                     </select>
                 </div>
+
+                @if (!string.IsNullOrEmpty(selectedBranchId) && _branchReadiness != null && !_branchReadiness.IsReady)
+                {
+                    <div class="readiness-banner" style="background: var(--warm, #f4eee1); border: 1px solid var(--border, #e4e7df); border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;">
+                        <div style="display: flex; align-items: flex-start; gap: 12px;">
+                            <div style="font-size: 20px; line-height: 1;">⚠️</div>
+                            <div style="flex: 1;">
+                                <h4 style="font-size: 15px; font-weight: 750; color: var(--text, #26332d); margin: 0 0 6px 0;">
+                                    Branch is not ready for student onboarding
+                                </h4>
+                                @if (_branchReadiness.MissingRequirements.Count == 1)
+                                {
+                                    <p style="font-size: 13.5px; color: var(--text, #26332d); margin: 0 0 12px 0;">
+                                        @_branchReadiness.MissingRequirements[0]
+                                    </p>
+                                }
+                                else
+                                {
+                                    <p style="font-size: 13.5px; color: var(--text, #26332d); margin: 0 0 8px 0;">
+                                        Your branch is not ready for student onboarding. Please complete the following setup:
+                                    </p>
+                                    <ol style="margin: 0 0 14px 18px; padding: 0; font-size: 13.5px; color: var(--text, #26332d);">
+                                        @foreach (var req in _branchReadiness.MissingRequirements)
+                                        {
+                                            <li style="margin-bottom: 4px;">@req</li>
+                                        }
+                                    </ol>
+                                }
+
+                                @if (_branchReadiness.ActionItems.Any())
+                                {
+                                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                                        @foreach (var action in _branchReadiness.ActionItems)
+                                        {
+                                            <a href="@action.ActionUrl" target="_blank" class="btn primary" style="font-size: 12.5px; padding: 6px 14px; text-decoration: none; border-radius: 6px;">
+                                                @action.ActionText ↗
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
                 <div class="field">
                     <label>Assigned Classroom</label>
-                    <select @bind="selectedClassroomId" disabled="@(string.IsNullOrEmpty(selectedBranchId))">
+                    <select value="@selectedClassroomId" @onchange="OnClassroomChanged" disabled="@(string.IsNullOrEmpty(selectedBranchId) || (_branchReadiness != null && !_branchReadiness.HasClassrooms))">
                         <option value="">-- Select Classroom --</option>
-                        @foreach (var classroom in _classrooms.Where(c => c.BranchId.ToString() == selectedBranchId))
+                        @foreach (var classroom in _classrooms.Where(c => c.BranchId.ToString() == selectedBranchId && c.ClassroomType != "Pool" && c.Code != "POOL-WAITING"))
                         {
-                            <option value="@classroom.Id">@classroom.Name</option>
+                            var suffix = GetClassroomBadgeText(classroom.Id);
+                            <option value="@classroom.Id">@classroom.Name @suffix</option>
                         }
                     </select>
                 </div>
+
+                @if (_selectedClassroomReadiness != null)
+                {
+                    @if (!_selectedClassroomReadiness.IsReady)
+                    {
+                        <div class="readiness-banner" style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 12px; padding: 14px 18px; margin-top: 12px;">
+                            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                <div style="font-size: 18px;">🚫</div>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 750; font-size: 14px; color: #9b2c2c; margin-bottom: 4px;">
+                                        Classroom Unavailable for Enrollment
+                                    </div>
+                                    @foreach (var req in _selectedClassroomReadiness.MissingRequirements)
+                                    {
+                                        <p style="font-size: 13px; color: #742a2a; margin: 0 0 6px 0;">@req</p>
+                                    }
+                                    @if (_selectedClassroomReadiness.ActionItems.Any())
+                                    {
+                                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                            @foreach (var action in _selectedClassroomReadiness.ActionItems)
+                                            {
+                                                <a href="@action.ActionUrl" target="_blank" class="btn secondary" style="font-size: 12px; padding: 5px 12px; border-color: #feb2b2; color: #9b2c2c; text-decoration: none; border-radius: 6px;">
+                                                    @action.ActionText ↗
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="readiness-banner" style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; border-radius: 12px; padding: 12px 18px; margin-top: 12px;">
+                            <div style="display: flex; align-items: center; gap: 10px; color: var(--accent-dark, #31523c); font-size: 13.5px; font-weight: 650;">
+                                <span style="font-size: 16px;">✓</span>
+                                <span><strong>Ready for Enrollment:</strong> @_selectedClassroomReadiness.AvailableSpots spots available (@_selectedClassroomReadiness.CurrentEnrolled / @_selectedClassroomReadiness.Capacity enrolled)</span>
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (!string.IsNullOrEmpty(_stepErrorMessage))
+                {
+                    <div style="margin-top: 12px; padding: 10px 14px; background: #fff5f5; border: 1px solid #fed7d7; border-radius: 8px; color: #9b2c2c; font-size: 13px; font-weight: 600;">
+                        ⚠️ @_stepErrorMessage
+                    </div>
+                }
             }
             else if (currentStep == 8)
             {
@@ -518,6 +613,16 @@
             }
             await LoadPickupsAsync();
         }
+
+        if (string.IsNullOrEmpty(selectedBranchId) && _branches.Count == 1)
+        {
+            selectedBranchId = _branches[0].Id.ToString();
+        }
+
+        if (!string.IsNullOrEmpty(selectedBranchId) && Guid.TryParse(selectedBranchId, out var initialBid))
+        {
+            await LoadReadinessForBranchAsync(initialBid);
+        }
     }
 
     private string childFirstName = "";
@@ -569,9 +674,110 @@
 
     private List<Branch> _branches = new();
     private List<Classroom> _classrooms = new();
+    private ClassroomReadinessCheckResult? _branchReadiness;
+    private Dictionary<Guid, ClassroomReadinessCheckResult> _classroomReadinessMap = new();
+    private ClassroomReadinessCheckResult? _selectedClassroomReadiness;
+    private string? _stepErrorMessage;
+    private bool _isLoadingReadiness;
+
+    private async Task LoadReadinessForBranchAsync(Guid branchId)
+    {
+        try
+        {
+            _isLoadingReadiness = true;
+            _branchReadiness = await ClassroomReadinessService.ValidateBranchReadinessAsync(TenantContext.TenantId, branchId);
+            _classroomReadinessMap = await ClassroomReadinessService.GetBranchClassroomsReadinessAsync(TenantContext.TenantId, branchId);
+            if (Guid.TryParse(selectedClassroomId, out var cid) && _classroomReadinessMap.TryGetValue(cid, out var r))
+            {
+                _selectedClassroomReadiness = r;
+            }
+            else
+            {
+                _selectedClassroomReadiness = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _stepErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoadingReadiness = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnBranchChanged(ChangeEventArgs e)
+    {
+        selectedBranchId = e.Value?.ToString() ?? "";
+        selectedClassroomId = "";
+        _selectedClassroomReadiness = null;
+        _stepErrorMessage = null;
+        if (Guid.TryParse(selectedBranchId, out var bid))
+        {
+            await LoadReadinessForBranchAsync(bid);
+        }
+        else
+        {
+            _branchReadiness = null;
+            _classroomReadinessMap.Clear();
+        }
+    }
+
+    private void OnClassroomChanged(ChangeEventArgs e)
+    {
+        selectedClassroomId = e.Value?.ToString() ?? "";
+        _stepErrorMessage = null;
+        if (Guid.TryParse(selectedClassroomId, out var cid) && _classroomReadinessMap.TryGetValue(cid, out var r))
+        {
+            _selectedClassroomReadiness = r;
+        }
+        else
+        {
+            _selectedClassroomReadiness = null;
+        }
+    }
+
+    private string GetClassroomBadgeText(Guid classroomId)
+    {
+        if (_classroomReadinessMap.TryGetValue(classroomId, out var r))
+        {
+            if (r.IsReady) return $"— [Ready: {r.AvailableSpots} spots left]";
+            if (!r.ClassroomActive) return "— [Inactive]";
+            if (!r.HasAssignedTeacher) return "— [No Teacher Assigned]";
+            if (!r.HasAvailableCapacity) return "— [Full: At Capacity]";
+            return $"— [{r.Status}]";
+        }
+        return "";
+    }
     
     private async Task NextStep()
     {
+        _stepErrorMessage = null;
+        if (currentStep == 7)
+        {
+            if (string.IsNullOrWhiteSpace(selectedBranchId))
+            {
+                _stepErrorMessage = "Please select an assigned branch.";
+                return;
+            }
+            if (_branchReadiness != null && !_branchReadiness.IsReady)
+            {
+                _stepErrorMessage = "This branch is not ready for student onboarding. Please complete the missing setup before proceeding.";
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(selectedClassroomId))
+            {
+                _stepErrorMessage = "Please select an assigned classroom.";
+                return;
+            }
+            if (Guid.TryParse(selectedClassroomId, out var cidVal) && _classroomReadinessMap.TryGetValue(cidVal, out var r) && !r.IsReady)
+            {
+                _stepErrorMessage = "The selected classroom is not available for enrollment. Please resolve the classroom issues or select an available room.";
+                return;
+            }
+        }
+
         if (currentStep == 1 && _draftChild == null)
         {
             _draftChild = await ChildService.CreateChildAsync(childFirstName, childLastName, childDob, null, childPhotoPreview);
@@ -659,19 +865,36 @@
 
     private async Task CompleteEnrollment()
     {
+        _stepErrorMessage = null;
         if (_draftChild != null)
         {
-            _draftChild.ProfileCompletionPercentage = 100;
-            _draftChild.EnrollmentStatus = "Enrolled";
-            await ChildService.UpdateChildAsync(_draftChild);
-
-            if (!string.IsNullOrWhiteSpace(parentEmail))
+            try
             {
-                await ChildService.SyncParentGuardianAsync(_draftChild.Id, parentEmail, parentName, parentRelationship, parentPhone);
+                _draftChild.ProfileCompletionPercentage = 100;
+                _draftChild.EnrollmentStatus = "Enrolled";
+                await ChildService.UpdateChildAsync(_draftChild);
+
+                if (!string.IsNullOrWhiteSpace(parentEmail))
+                {
+                    await ChildService.SyncParentGuardianAsync(_draftChild.Id, parentEmail, parentName, parentRelationship, parentPhone);
+                }
+
+                NavigationManager.NavigateTo("/children");
+            }
+            catch (ClassroomReadinessException ex)
+            {
+                _stepErrorMessage = $"Classroom readiness check failed: {ex.Message}";
+                currentStep = 7;
+            }
+            catch (Exception ex)
+            {
+                _stepErrorMessage = ex.Message;
             }
         }
-        
-        NavigationManager.NavigateTo("/children");
+        else
+        {
+            NavigationManager.NavigateTo("/children");
+        }
     }
 
     private async Task LoadPickupsAsync()

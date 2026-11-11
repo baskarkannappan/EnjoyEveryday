@@ -53,6 +53,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IClassroomRepository>(sp => new EnjoyEveryday.Infrastructure.Repositories.Decorators.CachedClassroomRepository(
             sp.GetRequiredService<ClassroomRepository>(),
             sp.GetRequiredService<EnjoyEveryday.Shared.Caching.ITenantMemoryCache>()));
+        services.AddScoped<EnjoyEveryday.Domain.Repositories.IClassroomReadinessRepository, EnjoyEveryday.Infrastructure.Repositories.ClassroomReadinessRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IChildRepository, ChildRepository>();
         services.AddScoped<IExperienceRepository, ExperienceRepository>();
