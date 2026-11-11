@@ -57,3 +57,16 @@ EnjoyEveryday is a daycare and early-childhood education management platform.
   * Bottom DOM spacer (`.mobile-bottom-spacer`): `display: block; height: calc(76px + env(safe-area-inset-bottom, 0px));` to physically guarantee scroll space across all mobile WebKit and Chromium engines.
   * Nav bar height: `height: calc(64px + env(safe-area-inset-bottom, 0px))` with `padding-bottom: env(safe-area-inset-bottom, 0px)`.
 
+## 6. Role-Based Navigation Architecture (`NavMenu.razor`)
+* **Role Views**: Navigation separates completely into 4 distinct roles organized with lightweight independent functional groups and nested expandable submenus:
+  * **Organization Admin** (8 groups): Workspace, Organization (with Branch Management & Staff submenus), People & Admissions (with Admissions submenu), Daycare Operations, Experiences, Child Development, Family Engagement, Business & Settings.
+  * **Branch Admin** (8 groups): Workspace, Branch Management, People & Admissions (with Admissions submenu), Daycare Operations (with Safety & Compliance submenu), Experiences, Child Development, Family Engagement, Reports & Settings.
+  * **Lead Teacher** (7 groups): My Workspace, Classroom Management, Child Care, Experiences & Activities, Child Development, Family Engagement, My Account (with Safety submenu).
+  * **Teacher / Educator** (6 groups): My Workspace, My Classroom, Daily Care, Activities, Child Development, My Account (with Safety submenu).
+* **Typography & Casing**: Group headers, main menu items, and submenus are consistently formatted in Title Case / Camel Case (`My Workspace`, `Daycare Operations`, `People & Admissions`, `Child Development`) with `text-transform: none` to maintain a calm, natural, Scandinavian aesthetic rather than aggressive all-caps.
+* **Nested Submenus**: Multi-level hierarchical submenus use `HashSet<string> _openSubmenus` for independent expand/collapse states with `border-left: 1.5px solid var(--border)` visual rails.
+* **Context Display & Switchers**: Sidebar footer houses the user avatar, name, active role badge, quick workspace switchers (`/select-branch`, `/select-organization`), and view dropdown selector for multi-role users.
+* **Smart Auto-Expansion**: Active child routes automatically expand their parent submenu and highlight active links, while unrelated submenus remain unaffected.
+
+
+
