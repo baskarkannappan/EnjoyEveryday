@@ -237,8 +237,18 @@ public class ResourceAuthorizer : IResourceAuthorizer
             return;
         }
 
-        // Organization-scoped role: needs role.assign in the ACTIVE org and a live membership there.
-        await RequireOrganizationPermissionAsync(Permissions.RoleAssign, ct);
+        // Classroom/Teaching roles (Teacher, ClassroomTeacher, LeadTeacher, DaycareTeacher) or Family roles:
+        // May be assigned by an Organization Admin OR a Branch Admin with staff management authority.
+        if (scope == RoleScope.Classroom || scope == RoleScope.Family)
+        {
+            var canManage = _user.HasPermission(Permissions.StaffManage) || _user.HasPermission(Permissions.RoleAssign);
+            if (!canManage) throw await DenyAsync(action + ".staff", "Role", targetUserId, ct);
+        }
+        else
+        {
+            // Organization/Branch-scoped administrative roles: needs role.assign in the ACTIVE org and a live membership there.
+            await RequireOrganizationPermissionAsync(Permissions.RoleAssign, ct);
+        }
 
         // Cannot hand out more than you hold.
         foreach (var permission in RoleTemplates.PermissionsOf(roleName))

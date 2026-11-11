@@ -73,14 +73,15 @@ public static class RoleTemplates
         Permissions.ExperienceExecute, Permissions.ChildObserve, Permissions.ObservationApprove,
         Permissions.JourneyViewInternal, Permissions.JourneyPublish, Permissions.AiUse,
         Permissions.AttendanceView, Permissions.AttendanceRecord, Permissions.AttendanceCorrect, Permissions.AttendanceApprove,
-        Permissions.CareView, Permissions.CarePlanManage,
+        Permissions.CareView, Permissions.CareRecord, Permissions.CarePlanManage, Permissions.CareHandover,
         Permissions.SafetyMapManage, Permissions.SafetyMapPublish, Permissions.SafetyMapView,
         Permissions.EmergencyContactsManage, Permissions.SafetyReport,
         Permissions.ConsentIssue, Permissions.ConsentReview, Permissions.ConsentView,
         Permissions.EventCreate, Permissions.EventManage, Permissions.EventApproved, Permissions.EventPublished, Permissions.EventCancelled,
         Permissions.CommsDraft, Permissions.CommsSend, Permissions.CommsApprove, Permissions.CommsView,
         Permissions.InsightsBranchView, Permissions.InsightsClassroomView,
-        Permissions.MaterialsView
+        Permissions.MaterialsView,
+        Permissions.StaffRosterView
     };
 
     // Lead Teacher combines full teaching duties with classroom team coordination, readiness, and daily log review.
