@@ -47,6 +47,7 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
     private readonly NavigationManager _navigation;
     private readonly IOrganizationPermissionService _orgPerms;
     private readonly IOrganizationRepository _orgRepo;
+    private readonly IUserRepository? _userRepo;
 
     // Cache profile per scope
     private UserRoleProfile? _cachedProfile;
@@ -58,7 +59,8 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         IResourceAuthorizer resourceAuthorizer,
         NavigationManager navigation,
         IOrganizationPermissionService orgPerms,
-        IOrganizationRepository orgRepo)
+        IOrganizationRepository orgRepo,
+        IUserRepository? userRepo = null)
     {
         _userContext = userContext;
         _tenantContext = tenantContext;
@@ -67,6 +69,7 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         _navigation = navigation;
         _orgPerms = orgPerms;
         _orgRepo = orgRepo;
+        _userRepo = userRepo;
     }
 
     public async Task<UserRoleProfile> GetUserProfileAsync(CancellationToken ct = default)
@@ -112,6 +115,22 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             }
         }
         profile.OrganizationId = orgId;
+
+        if (userId != Guid.Empty && _userRepo != null)
+        {
+            try
+            {
+                var user = await _userRepo.GetByIdAsync(tenantId, userId, ct);
+                if (user != null && !string.IsNullOrWhiteSpace(user.DisplayName))
+                {
+                    profile.DisplayName = user.DisplayName;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PageAuth] Error loading user display name: {ex.Message}");
+            }
+        }
 
         // Fetch live scopes from database
         var classroomIds = await _scopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId, ct);

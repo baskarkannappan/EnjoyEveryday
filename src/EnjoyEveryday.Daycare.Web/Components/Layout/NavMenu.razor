@@ -744,10 +744,12 @@
     <AuthorizeView>
         <Authorized>
             @{
-                var userName = context.User.Identity?.Name 
+                var userName = !string.IsNullOrWhiteSpace(_userDisplayName)
+                    ? _userDisplayName
+                    : (context.User.Identity?.Name 
                     ?? context.User.FindFirst("DisplayName")?.Value 
                     ?? UserContext.Email 
-                    ?? "Educator";
+                    ?? "Educator");
                 var initial = !string.IsNullOrWhiteSpace(userName) ? userName.Trim()[0].ToString().ToUpper() : "E";
             }
             <div class="nav-profile-footer">
@@ -1144,6 +1146,7 @@
     private List<string> _availableViews = new();
     private int _availableViewsCount = 0;
     private string _currentNavView = "Teacher";
+    private string _userDisplayName = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -1235,6 +1238,7 @@
             _assignedBranchIds = profile.AssignedBranchIds;
             _availableViews = profile.AvailableViews;
             _availableViewsCount = _availableViews.Count;
+            _userDisplayName = profile.DisplayName;
 
             // 1. Detect active view from URL query if present and authorized
             var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);

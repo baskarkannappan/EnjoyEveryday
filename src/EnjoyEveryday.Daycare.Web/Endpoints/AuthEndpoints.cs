@@ -131,7 +131,9 @@ public static class AuthEndpoints
             Guid userId = syncResult.out_user_id.Value;
             Guid effectiveTenantId = syncResult.out_effective_tenant_id ?? syncResult.out_tenant_id ?? Guid.Empty;
             Guid? activeOrgId = syncResult.out_active_org_id;
-            string displayName = syncResult.out_display_name ?? fullName ?? givenName;
+            string displayName = !string.IsNullOrWhiteSpace(fullName) && fullName != email 
+                ? fullName 
+                : (syncResult.out_display_name ?? fullName ?? givenName);
 
             var claims = new List<Claim>
             {

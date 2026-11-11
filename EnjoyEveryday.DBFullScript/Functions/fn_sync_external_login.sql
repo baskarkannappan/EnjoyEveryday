@@ -106,7 +106,29 @@ BEGIN
     VALUES (p_provider, p_provider_key, v_user_id, NOW())
     ON CONFLICT (provider, provider_key) DO NOTHING;
 
-    UPDATE users SET email_confirmed = TRUE, updated_at = NOW() WHERE id = v_user_id;
+    -- Synchronize profile name from Google/OAuth if provided
+    IF p_display_name IS NOT NULL AND TRIM(p_display_name) <> '' AND LOWER(TRIM(p_display_name)) NOT IN ('teacher', 'educator', 'admin', 'user') THEN
+        v_display_name := TRIM(p_display_name);
+        v_first_name := COALESCE(NULLIF(TRIM(p_first_name), ''), v_first_name);
+        v_last_name := COALESCE(NULLIF(TRIM(p_last_name), ''), v_last_name);
+
+        UPDATE users 
+        SET display_name = v_display_name,
+            first_name = COALESCE(v_first_name, first_name),
+            last_name = COALESCE(v_last_name, last_name),
+            email_confirmed = TRUE,
+            updated_at = NOW() 
+        WHERE id = v_user_id;
+
+        UPDATE teachers
+        SET display_name = v_display_name,
+            first_name = COALESCE(v_first_name, first_name),
+            last_name = COALESCE(v_last_name, last_name),
+            updated_at = NOW()
+        WHERE user_id = v_user_id;
+    ELSE
+        UPDATE users SET email_confirmed = TRUE, updated_at = NOW() WHERE id = v_user_id;
+    END IF;
 
     -- 6. Resolve display name
     IF v_display_name IS NULL OR TRIM(v_display_name) = '' THEN
