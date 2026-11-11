@@ -103,7 +103,14 @@
 
                 <div style="display: flex; justify-content: flex-end; gap: 10px;">
                     <button class="secondary" @onclick='() => selectedModalItem = null'>Close</button>
-                    @if (selectedModalItem.IsPurchasedOrEntitled)
+                    @if (selectedModalItem.IsAlreadyInLibrary)
+                    {
+                        <a href="/experiences" class="btn secondary" style="color: var(--accent-dark); font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                            View in Library
+                        </a>
+                        <button class="primary" disabled style="opacity: 0.65; cursor: not-allowed;">Already in Your Library</button>
+                    }
+                    else if (selectedModalItem.IsPurchasedOrEntitled)
                     {
                         <button class="primary" @onclick="() => ImportToLibraryAsync(selectedModalItem)">+ Add to My Library</button>
                     }
@@ -214,12 +221,17 @@
         try
         {
             var cloned = await MarketplaceService.ImportToOrganizationLibraryAsync(item.Id);
+            item.IsAlreadyInLibrary = true;
             statusMessage = $"\"{item.Title}\" has been imported into your private library! You can now customize and schedule it.";
             selectedModalItem = null;
         }
         catch (Exception ex)
         {
-            statusMessage = $"Error importing experience: {ex.Message}";
+            if (ex.Message.Contains("already in your organization's library", StringComparison.OrdinalIgnoreCase))
+            {
+                item.IsAlreadyInLibrary = true;
+            }
+            statusMessage = ex.Message;
         }
     }
 }

@@ -57,10 +57,35 @@ public class ExperienceMarketplaceService
         // Check entitlements for the caller's active organization
         var orgId = _userContext.OrganizationId;
         HashSet<Guid> entitledIds = new();
+        HashSet<Guid> inLibraryPlatformExpIds = new();
         if (orgId.HasValue)
         {
             var entitlements = await _marketplaceRepo.GetOrganizationEntitlementsAsync(orgId.Value, ct);
             entitledIds = entitlements.Select(e => e.PlatformExperienceId).ToHashSet();
+
+            // Check which marketplace experiences have already been imported into this organization's library
+            var orgExperiences = await _experienceRepo.GetAllAsync(_tenantContext.TenantId, orgId.Value, ct);
+            foreach (var oe in orgExperiences)
+            {
+                if (oe.PlatformExperienceId.HasValue)
+                {
+                    inLibraryPlatformExpIds.Add(oe.PlatformExperienceId.Value);
+                }
+                else if (!string.IsNullOrWhiteSpace(oe.DnaPayload) && oe.DnaPayload.Contains("PlatformExperienceId"))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(oe.DnaPayload);
+                        if (doc.RootElement.TryGetProperty("_platformProvenance", out var prov) &&
+                            prov.TryGetProperty("PlatformExperienceId", out var peIdProp) &&
+                            Guid.TryParse(peIdProp.GetString(), out var peGuid))
+                        {
+                            inLibraryPlatformExpIds.Add(peGuid);
+                        }
+                    }
+                    catch { }
+                }
+            }
         }
 
         var isPlatformAdmin = IsPlatformAdmin();
@@ -68,6 +93,7 @@ public class ExperienceMarketplaceService
         foreach (var item in catalog)
         {
             item.IsPurchasedOrEntitled = entitledIds.Contains(item.Id);
+            item.IsAlreadyInLibrary = inLibraryPlatformExpIds.Contains(item.Id);
 
             // Redact private provenance if not Platform Admin
             if (!isPlatformAdmin)
@@ -93,6 +119,11 @@ public class ExperienceMarketplaceService
         {
             var entitlement = await _marketplaceRepo.GetEntitlementAsync(orgId.Value, id, ct);
             exp.IsPurchasedOrEntitled = entitlement != null;
+
+            var orgExperiences = await _experienceRepo.GetAllAsync(_tenantContext.TenantId, orgId.Value, ct);
+            exp.IsAlreadyInLibrary = orgExperiences.Any(oe => 
+                oe.PlatformExperienceId == id || 
+                (!string.IsNullOrWhiteSpace(oe.DnaPayload) && oe.DnaPayload.Contains(id.ToString())));
         }
 
         if (!IsPlatformAdmin())
@@ -201,6 +232,17 @@ public class ExperienceMarketplaceService
         if (!orgId.HasValue)
             throw new UnauthorizedAccessException("Must be within an active organization to import experiences.");
 
+        // Duplicate Check: ensure experience is not already imported into this organization's library
+        var existingExperiences = await _experienceRepo.GetAllAsync(_tenantContext.TenantId, orgId.Value, ct);
+        var alreadyImported = existingExperiences.FirstOrDefault(oe =>
+            oe.PlatformExperienceId == platformExperienceId ||
+            (!string.IsNullOrWhiteSpace(oe.DnaPayload) && oe.DnaPayload.Contains(platformExperienceId.ToString())));
+
+        if (alreadyImported != null)
+        {
+            throw new InvalidOperationException($"The experience \"{alreadyImported.Title}\" is already in your organization's library.");
+        }
+
         var entitlement = await _marketplaceRepo.GetEntitlementAsync(orgId.Value, platformExperienceId, ct);
         if (entitlement == null || entitlement.Status != EntitlementStatus.Active)
             throw new UnauthorizedAccessException("Organization does not hold an active entitlement for this platform experience.");
@@ -217,6 +259,7 @@ public class ExperienceMarketplaceService
             Id = Guid.NewGuid(),
             TenantId = _tenantContext.TenantId,
             OrganizationId = orgId.Value,
+            PlatformExperienceId = platformExperienceId,
             Title = platformExp.Title,
             Description = platformExp.Description,
             Status = ExperienceStatus.Approved.ToString(),
@@ -226,7 +269,15 @@ public class ExperienceMarketplaceService
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        var created = await _experienceRepo.AddAsync(experience, ct);
+        Experience created;
+        try
+        {
+            created = await _experienceRepo.AddAsync(experience, ct);
+        }
+        catch (Exception ex) when (ex.Message.Contains("23505") || ex.Message.Contains("uq_experiences_org_platform_exp") || ex.InnerException?.Message.Contains("23505") == true)
+        {
+            throw new InvalidOperationException($"The experience \"{platformExp.Title}\" is already in your organization's library.", ex);
+        }
 
         await _marketplaceRepo.LogAuditEventAsync(new ExperienceAuditEvent
         {

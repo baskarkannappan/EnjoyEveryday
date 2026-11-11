@@ -75,7 +75,9 @@ public class ChildService
 
     public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, string? photoUrl = null, bool isOfficialAdmission = false, CancellationToken cancellationToken = default)
     {
-        if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
+        var hasManage = _userContext.HasPermission(Permissions.ChildManage);
+        var hasEnrollment = _userContext.HasPermission(Permissions.ChildEnrollmentManage);
+        if (!hasManage && !hasEnrollment) throw new UnauthorizedAccessException("Requires child.manage or child.enrollment.manage permission.");
 
         // Direct child creation bypassing admissions is prohibited when running in full application context
         if (!isOfficialAdmission && _readinessService != null)
@@ -84,9 +86,10 @@ public class ChildService
         }
 
         var tenantId = _tenantContext.TenantId;
+        var perm = hasManage ? Permissions.ChildManage : Permissions.ChildEnrollmentManage;
         if (classroomId.HasValue)
         {
-            await _authorizer.RequireClassroomAsync(classroomId.Value, Permissions.ChildManage, cancellationToken);
+            await _authorizer.RequireClassroomAsync(classroomId.Value, perm, cancellationToken);
             if (_readinessService != null && _classroomRepository != null)
             {
                 var room = await _classroomRepository.GetByIdAsync(tenantId, classroomId.Value, cancellationToken);
@@ -97,7 +100,7 @@ public class ChildService
             }
         }
         else
-            await _authorizer.RequireOrganizationPermissionAsync(Permissions.ChildManage, cancellationToken);
+            await _authorizer.RequireOrganizationPermissionAsync(perm, cancellationToken);
 
         var child = new Child
         {
@@ -118,9 +121,13 @@ public class ChildService
 
     public async Task UpdateChildAsync(Child child, CancellationToken cancellationToken = default)
     {
-        if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
+        var hasManage = _userContext.HasPermission(Permissions.ChildManage);
+        var hasEnrollment = _userContext.HasPermission(Permissions.ChildEnrollmentManage);
+        if (!hasManage && !hasEnrollment) throw new UnauthorizedAccessException("Requires child.manage or child.enrollment.manage permission.");
+
         // Body IDs are untrusted: scope is checked against the STORED child, not the submitted object.
-        await _authorizer.RequireChildAsync(child.Id, Permissions.ChildManage, cancellationToken);
+        var perm = hasManage ? Permissions.ChildManage : Permissions.ChildEnrollmentManage;
+        await _authorizer.RequireChildAsync(child.Id, perm, cancellationToken);
         if (child.TenantId != _tenantContext.TenantId) throw new UnauthorizedAccessException("Access denied.");
         var existingChild = await _childRepository.GetByIdAsync(_tenantContext.TenantId, child.Id, cancellationToken);
         if (existingChild != null && existingChild.ClassroomId != child.ClassroomId)

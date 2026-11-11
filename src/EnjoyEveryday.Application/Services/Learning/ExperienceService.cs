@@ -67,6 +67,7 @@ public class ExperienceService
                 ExperienceType = type,
                 IsAiCreated = isAi,
                 IsPlatform = isPlatform,
+                PlatformExperienceId = exp.PlatformExperienceId,
                 AgeGroup = ageGroup,
                 Duration = duration,
                 Environment = env

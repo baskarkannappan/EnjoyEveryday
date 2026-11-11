@@ -111,6 +111,7 @@ public class PlatformExperience
 
     // Derived display helpers
     public bool IsPurchasedOrEntitled { get; set; }
+    public bool IsAlreadyInLibrary { get; set; }
 }
 
 public class PlatformExperienceVersion

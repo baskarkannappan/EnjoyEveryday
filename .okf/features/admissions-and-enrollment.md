@@ -55,7 +55,9 @@ Before a student can be onboarded, enrolled, or assigned to a branch/classroom, 
 * **UI**:
   - `ChildrenDirectoryView.razor` replaces standalone child addition with `+ Start New Admission`, routing users to `/enrollment?action=new-inquiry`. `ChildFormModal.razor` is strictly dedicated to editing existing child profiles.
   - `ChildEnrollment.razor` automatically redirects any `/children/add` requests to `/enrollment?action=new-inquiry`.
+  - `ChildEnrollmentWizard.razor`: Incorporates non-blocking soft failure handling (`IAppNotificationService` toast notifications and an inline warning banner). Step transitions and async database operations catch `UnauthorizedAccessException`, `ClassroomReadinessException`, and operational failures without breaking the Blazor circuit or hanging the user interface.
 * **Backend**:
+  - `ChildService.CreateChildAsync` and `ChildService.UpdateChildAsync` permit both `child.manage` and `child.enrollment.manage` permissions, ensuring users with admissions/enrollment authority can successfully update draft and enrolled child records.
   - `ChildService.CreateChildAsync` enforces `isOfficialAdmission: true`, disallowing direct child creation without the official pipeline.
   - `ChildrenController` rejects direct `POST /api/children` requests with HTTP 400 Bad Request, directing callers to `/enrollment` or `/api/admissions/inquiry`.
   - `EnrollmentPipelineService.FinalizeEnrollmentAndBillingAsync` checks `app.PipelineStage != "Enrolled"` to prevent duplicate submissions and double-invoicing.

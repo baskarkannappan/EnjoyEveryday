@@ -12,6 +12,7 @@ public class Experience
     public Guid? OrganizationId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public Guid? PlatformExperienceId { get; set; }
     
     public double AverageStars { get; set; } = 0;
 }

@@ -11,6 +11,7 @@
 @inject IJSRuntime JSRuntime
 @inject ISecurePickupService SecurePickupService
 @inject IClassroomReadinessService ClassroomReadinessService
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @using EnjoyEveryday.Shared.Tenancy
 @using EnjoyEveryday.Shared.Authorization
 @inject IUserContext UserContext
@@ -311,13 +312,6 @@
                         </div>
                     }
                 }
-
-                @if (!string.IsNullOrEmpty(_stepErrorMessage))
-                {
-                    <div style="margin-top: 12px; padding: 10px 14px; background: #fff5f5; border: 1px solid #fed7d7; border-radius: 8px; color: #9b2c2c; font-size: 13px; font-weight: 600;">
-                        ⚠️ @_stepErrorMessage
-                    </div>
-                }
             }
             else if (currentStep == 8)
             {
@@ -457,6 +451,14 @@
                         <p><strong>Start Date:</strong> @enrollmentStartDate?.ToString("yyyy-MM-dd")</p>
                         <p><strong>Classroom:</strong> @(_classrooms.FirstOrDefault(c => c.Id.ToString() == selectedClassroomId)?.Name ?? "None")</p>
                     </div>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_stepErrorMessage))
+            {
+                <div style="margin-top: 16px; margin-bottom: 8px; padding: 12px 16px; background: #fff5f5; border: 1px solid #fed7d7; border-radius: 8px; color: #9b2c2c; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">⚠️</span>
+                    <span>@_stepErrorMessage</span>
                 </div>
             }
 
@@ -778,60 +780,78 @@
             }
         }
 
-        if (currentStep == 1 && _draftChild == null)
+        try
         {
-            _draftChild = await ChildService.CreateChildAsync(childFirstName, childLastName, childDob, null, childPhotoPreview);
-            _draftChild.EnrollmentStatus = "Draft";
-        }
-        
-        if (_draftChild != null)
-        {
-            _draftChild.FirstName = childFirstName;
-            _draftChild.LastName = childLastName;
-            _draftChild.DateOfBirth = childDob;
-            _draftChild.PhotoUrl = childPhotoPreview;
-            if (Guid.TryParse(selectedClassroomId, out var cid))
+            if (currentStep == 1 && _draftChild == null)
             {
-                _draftChild.ClassroomId = cid;
+                _draftChild = await ChildService.CreateChildAsync(childFirstName, childLastName, childDob, null, childPhotoPreview, isOfficialAdmission: true);
+                _draftChild.EnrollmentStatus = "Draft";
             }
-            else
+            
+            if (_draftChild != null)
             {
-                _draftChild.ClassroomId = await SystemProvisioning.EnsureWaitingPoolAsync();
-            }
-            _draftChild.ProfileCompletionPercentage = currentStep * 10;
-            if (currentStep == 10) _draftChild.EnrollmentStatus = "Enrolled";
-            
-            var draftState = new
-            {
-                parentName, parentRelationship, parentEmail, parentPhone, parentPhotoPreview,
-                addressLine1, addressCity, addressProvince, addressPostalCode,
-                emergencyName, emergencyPhone, emergencyRelationship,
-                physicianName, physicianPhone, allergies, medications,
-                dietaryRestrictions, napRoutine, toiletTraining,
-                enrollmentStartDate, scheduleType, selectedBranchId, selectedClassroomId,
-                pickupName, pickupRelationship, pickupCode,
-                consentPhoto, consentMedical, consentMarketing
-            };
-            
-            _draftChild.DraftData = System.Text.Json.JsonSerializer.Serialize(draftState);
-            
-            await ChildService.UpdateChildAsync(_draftChild);
+                _draftChild.FirstName = childFirstName;
+                _draftChild.LastName = childLastName;
+                _draftChild.DateOfBirth = childDob;
+                _draftChild.PhotoUrl = childPhotoPreview;
+                if (Guid.TryParse(selectedClassroomId, out var cid))
+                {
+                    _draftChild.ClassroomId = cid;
+                }
+                else
+                {
+                    _draftChild.ClassroomId = await SystemProvisioning.EnsureWaitingPoolAsync();
+                }
+                _draftChild.ProfileCompletionPercentage = currentStep * 10;
+                if (currentStep == 10) _draftChild.EnrollmentStatus = "Enrolled";
+                
+                var draftState = new
+                {
+                    parentName, parentRelationship, parentEmail, parentPhone, parentPhotoPreview,
+                    addressLine1, addressCity, addressProvince, addressPostalCode,
+                    emergencyName, emergencyPhone, emergencyRelationship,
+                    physicianName, physicianPhone, allergies, medications,
+                    dietaryRestrictions, napRoutine, toiletTraining,
+                    enrollmentStartDate, scheduleType, selectedBranchId, selectedClassroomId,
+                    pickupName, pickupRelationship, pickupCode,
+                    consentPhoto, consentMedical, consentMarketing
+                };
+                
+                _draftChild.DraftData = System.Text.Json.JsonSerializer.Serialize(draftState);
+                
+                await ChildService.UpdateChildAsync(_draftChild);
 
-            if (!string.IsNullOrWhiteSpace(parentEmail))
+                if (!string.IsNullOrWhiteSpace(parentEmail))
+                {
+                    await ChildService.SyncParentGuardianAsync(_draftChild.Id, parentEmail, parentName, parentRelationship, parentPhone);
+                }
+            }
+
+            if (currentStep == 8 && !string.IsNullOrWhiteSpace(pickupName))
             {
-                await ChildService.SyncParentGuardianAsync(_draftChild.Id, parentEmail, parentName, parentRelationship, parentPhone);
+                await SaveCurrentPickupContactAsync();
+            }
+
+            if (currentStep < 10) 
+            {
+                currentStep++;
+                if (currentStep > maxAllowedStep) maxAllowedStep = currentStep;
             }
         }
-
-        if (currentStep == 8 && !string.IsNullOrWhiteSpace(pickupName))
+        catch (UnauthorizedAccessException ex)
         {
-            await SaveCurrentPickupContactAsync();
+            _stepErrorMessage = $"Permission Denied: {ex.Message}";
+            await NotificationService.ShowWarningAsync($"Permission Denied: {ex.Message}");
         }
-
-        if (currentStep < 10) 
+        catch (ClassroomReadinessException ex)
         {
-            currentStep++;
-            if (currentStep > maxAllowedStep) maxAllowedStep = currentStep;
+            _stepErrorMessage = $"Classroom readiness check failed: {ex.Message}";
+            await NotificationService.ShowWarningAsync(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            _stepErrorMessage = $"Unable to save progress: {ex.Message}";
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -847,20 +867,34 @@
 
     private async Task HandleChildPhotoSelected(InputFileChangeEventArgs e)
     {
-        var format = "image/avif";
-        var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
-        var buffer = new byte[resizedImage.Size];
-        await resizedImage.OpenReadStream().ReadAsync(buffer);
-        childPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+        try
+        {
+            var format = "image/avif";
+            var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
+            var buffer = new byte[resizedImage.Size];
+            await resizedImage.OpenReadStream().ReadAsync(buffer);
+            childPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task HandleParentPhotoSelected(InputFileChangeEventArgs e)
     {
-        var format = "image/avif";
-        var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
-        var buffer = new byte[resizedImage.Size];
-        await resizedImage.OpenReadStream().ReadAsync(buffer);
-        parentPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+        try
+        {
+            var format = "image/avif";
+            var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
+            var buffer = new byte[resizedImage.Size];
+            await resizedImage.OpenReadStream().ReadAsync(buffer);
+            parentPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task CompleteEnrollment()
@@ -879,16 +913,24 @@
                     await ChildService.SyncParentGuardianAsync(_draftChild.Id, parentEmail, parentName, parentRelationship, parentPhone);
                 }
 
+                await NotificationService.ShowSuccessAsync("Child enrollment completed successfully!");
                 NavigationManager.NavigateTo("/children");
             }
             catch (ClassroomReadinessException ex)
             {
                 _stepErrorMessage = $"Classroom readiness check failed: {ex.Message}";
                 currentStep = 7;
+                await NotificationService.ShowWarningAsync(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _stepErrorMessage = $"Permission Denied: {ex.Message}";
+                await NotificationService.ShowWarningAsync($"Permission Denied: {ex.Message}");
             }
             catch (Exception ex)
             {
-                _stepErrorMessage = ex.Message;
+                _stepErrorMessage = $"Unable to complete enrollment: {ex.Message}";
+                await NotificationService.HandleExceptionAsync(ex);
             }
         }
         else
@@ -921,28 +963,41 @@
         var childId = Id ?? _draftChild?.Id;
         if (!childId.HasValue || string.IsNullOrWhiteSpace(pickupName)) return;
 
-        var dto = new AuthorizedPickupDto
+        try
         {
-            Id = Guid.NewGuid(),
-            ChildId = childId.Value,
-            FullName = pickupName.Trim(),
-            Relationship = string.IsNullOrWhiteSpace(pickupRelationship) ? "Authorized Pickup" : pickupRelationship.Trim(),
-            Phone = pickupPhone?.Trim() ?? "",
-            PickupCode = pickupCode?.Trim() ?? "",
-            IsActive = true,
-            IsPrimaryGuardian = pickupIsPrimary || !_authorizedPickupsList.Any(p => p.IsPrimaryGuardian)
-        };
+            var dto = new AuthorizedPickupDto
+            {
+                Id = Guid.NewGuid(),
+                ChildId = childId.Value,
+                FullName = pickupName.Trim(),
+                Relationship = string.IsNullOrWhiteSpace(pickupRelationship) ? "Authorized Pickup" : pickupRelationship.Trim(),
+                Phone = pickupPhone?.Trim() ?? "",
+                PickupCode = pickupCode?.Trim() ?? "",
+                IsActive = true,
+                IsPrimaryGuardian = pickupIsPrimary || !_authorizedPickupsList.Any(p => p.IsPrimaryGuardian)
+            };
 
-        var tenantId = _draftChild?.TenantId ?? TenantContext.TenantId;
-        if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+            var tenantId = _draftChild?.TenantId ?? TenantContext.TenantId;
+            if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
-        await SecurePickupService.SaveAuthorizedPickupAsync(tenantId, childId.Value, dto);
-        await LoadPickupsAsync();
-        pickupName = "";
-        pickupRelationship = "";
-        pickupPhone = "";
-        pickupCode = "";
-        pickupIsPrimary = false;
+            await SecurePickupService.SaveAuthorizedPickupAsync(tenantId, childId.Value, dto);
+            await LoadPickupsAsync();
+            pickupName = "";
+            pickupRelationship = "";
+            pickupPhone = "";
+            pickupCode = "";
+            pickupIsPrimary = false;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _stepErrorMessage = $"Permission Denied: {ex.Message}";
+            await NotificationService.ShowWarningAsync($"Permission Denied: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _stepErrorMessage = $"Unable to save pickup contact: {ex.Message}";
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task DeleteChild()
@@ -952,9 +1007,24 @@
             bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this child? This action cannot be undone.");
             if (confirmed)
             {
-                await ChildService.DeleteChildAsync(Id.Value);
-                NavigationManager.NavigateTo("/children");
+                try
+                {
+                    await ChildService.DeleteChildAsync(Id.Value);
+                    await NotificationService.ShowSuccessAsync("Child deleted successfully.");
+                    NavigationManager.NavigateTo("/children");
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    _stepErrorMessage = $"Permission Denied: {ex.Message}";
+                    await NotificationService.ShowWarningAsync($"Permission Denied: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    _stepErrorMessage = $"Unable to delete child: {ex.Message}";
+                    await NotificationService.HandleExceptionAsync(ex);
+                }
             }
         }
+    }
     }
 }

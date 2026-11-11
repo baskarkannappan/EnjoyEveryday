@@ -20,6 +20,7 @@ public class ExperienceCatalogItemDto
     public string ExperienceType { get; set; } = "Experience";
     public bool IsAiCreated { get; set; }
     public bool IsPlatform { get; set; }
+    public Guid? PlatformExperienceId { get; set; }
     public string AgeGroup { get; set; } = "3-4";
     public string Duration { get; set; } = "15 min";
     public string Environment { get; set; } = "Indoor";
