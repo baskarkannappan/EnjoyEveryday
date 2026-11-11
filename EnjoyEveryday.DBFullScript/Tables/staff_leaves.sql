@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict r6qYD4DhQSYqbjb0Arbzo5ffnjXF6RYAp5yUzUekSnmdQwYzanOpMwtzbtupCcC
+\restrict 9k9Rb4MTOhza49a6nsfVBdphmZf61z9n91Y3Y1h3qkCGuW0EaJAegWLGlBUtalC
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -100,5 +100,5 @@ ALTER TABLE ONLY public.staff_leaves
 -- PostgreSQL database dump complete
 --
 
-\unrestrict r6qYD4DhQSYqbjb0Arbzo5ffnjXF6RYAp5yUzUekSnmdQwYzanOpMwtzbtupCcC
+\unrestrict 9k9Rb4MTOhza49a6nsfVBdphmZf61z9n91Y3Y1h3qkCGuW0EaJAegWLGlBUtalC
 

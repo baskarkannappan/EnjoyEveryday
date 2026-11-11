@@ -38,3 +38,22 @@ Complies with statutory daycare regulatory licensing requirements by maintaining
 * `Permissions.StaffManage`: Required to approve leaves, assign shifts, and modify rosters.
 * Branch Admins oversee their assigned branch; Org Admins can oversee all branches.
 
+## Teacher Promotion to Lead Teacher & Classroom Management
+* **Promotion Workflow**:
+  - Authorized Roles: `OrganizationAdmin` and `BranchAdmin` (holding `staff.manage` / `role.assign`).
+  - Stored Procedure: `public.sp_promote_teacher_to_lead(p_tenant_id, p_organization_id, p_branch_id, p_user_id, p_promoted_by, p_classroom_ids)`.
+  - Atomic Action:
+    - Retires lower teaching role in `user_organization_roles` for the target organization, granting `LeadTeacher`.
+    - Guarantees branch assignment in `user_branch_assignments`.
+    - Synchronizes multi-classroom assignments in `classroom_teachers` for that branch only.
+    - Preserves all historical attendance, daily moments, and memberships in other organizations/branches.
+    - Audited to `public.audit_log` with action `Teacher.PromotedToLead`.
+* **Classroom Management Workflow**:
+  - Stored Procedure: `public.sp_update_teacher_classrooms(p_tenant_id, p_organization_id, p_branch_id, p_user_id, p_classroom_ids)`.
+  - Allows Organization Admin and Branch Admin to add, remove, or modify classroom assignments for teachers and lead teachers without changing their operational role.
+  - Audited to `public.audit_log` with action `Teacher.ClassroomsUpdated`.
+* **UI Components**:
+  - [`PromoteTeacherModal.razor`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Users/PromoteTeacherModal.razor): Two-step wizard (Branch & Room Selection -> Confirmation Review).
+  - [`ManageTeacherClassroomsModal.razor`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Users/ManageTeacherClassroomsModal.razor): Room assignment manager.
+  - Accessible via `UsersByRoleView.razor`, `TeachersDirectoryView.razor`, and `TeacherProfile.razor`.
+

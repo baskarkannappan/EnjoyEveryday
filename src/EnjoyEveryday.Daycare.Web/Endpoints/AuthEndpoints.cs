@@ -41,6 +41,7 @@ public static class AuthEndpoints
             }
 
             var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}" };
+            properties.SetParameter("prompt", "select_account");
             
             if (!string.IsNullOrEmpty(inviteToken))
             {

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict eAPVh3xiF7K3jyv89WA3axOnRMsEDxYmXUzfb5FQBWRFuskafSOPaMs9QuOpQCu
+\restrict Q3Y2g48Eg4rvdSuXYQZ3sSQC4arDSUMlcDQD35RbMxlbhOHCpGViMkgYg5whqP1
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -41,6 +41,13 @@ ALTER TABLE ONLY public.event_classrooms
 
 
 --
+-- Name: event_classrooms event_classrooms_no_overlap; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER event_classrooms_no_overlap BEFORE INSERT OR UPDATE ON public.event_classrooms FOR EACH ROW EXECUTE FUNCTION public.trg_event_classrooms_no_overlap();
+
+
+--
 -- Name: event_classrooms event_classrooms_classroom_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -60,5 +67,5 @@ ALTER TABLE ONLY public.event_classrooms
 -- PostgreSQL database dump complete
 --
 
-\unrestrict eAPVh3xiF7K3jyv89WA3axOnRMsEDxYmXUzfb5FQBWRFuskafSOPaMs9QuOpQCu
+\unrestrict Q3Y2g48Eg4rvdSuXYQZ3sSQC4arDSUMlcDQD35RbMxlbhOHCpGViMkgYg5whqP1
 

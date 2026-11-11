@@ -13,6 +13,7 @@
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject SystemProvisioningService SystemProvisioning
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @inject IDbConnectionFactory DbConnectionFactory
@@ -74,13 +75,33 @@
 
         if (Id.HasValue)
         {
-            var user = await UserService.GetUserByIdAsync(Id.Value);
-            if (user != null)
+            var tenantId = TenantContext.TenantId;
+            var targetOrgId = profile.OrganizationId != Guid.Empty ? profile.OrganizationId : (Guid?)null;
+
+            var teacher = await TeacherService.GetTeacherByIdAsync(tenantId, Id.Value);
+            if (teacher == null)
             {
-                var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId);
-                var teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
-                
-                if (teacher != null && !string.IsNullOrWhiteSpace(teacher.DraftData))
+                var allTeachers = (await TeacherService.GetAllTeachersAsync(tenantId, targetOrgId)).ToList();
+                teacher = allTeachers.FirstOrDefault(t => t.Id == Id.Value || t.UserId == Id.Value);
+            }
+            User? user = null;
+            if (teacher != null && teacher.UserId.HasValue)
+            {
+                user = await UserService.GetUserByIdAsync(teacher.UserId.Value);
+            }
+            else
+            {
+                user = await UserService.GetUserByIdAsync(Id.Value);
+                if (user != null)
+                {
+                    var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId, targetOrgId);
+                    teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
+                }
+            }
+
+            if (teacher != null)
+            {
+                if (!string.IsNullOrWhiteSpace(teacher.DraftData))
                 {
                     try
                     {
@@ -100,22 +121,18 @@
                     catch
                     {
                         // Fallback if deserialization fails
-                        _model.FirstName = user.FirstName ?? "";
-                        _model.LastName = user.LastName ?? "";
-                        _model.Email = user.Email ?? "";
+                        _model.FirstName = teacher.FirstName ?? user?.FirstName ?? "";
+                        _model.LastName = teacher.LastName ?? user?.LastName ?? "";
+                        _model.Email = user?.Email ?? "";
                         _model.PreferredName = teacher.PreferredName ?? "";
                     }
                 }
                 else
                 {
-                    _model.FirstName = user.FirstName ?? "";
-                    _model.LastName = user.LastName ?? "";
-                    _model.Email = user.Email ?? "";
-                    
-                    if (teacher != null)
-                    {
-                        _model.PreferredName = teacher.PreferredName ?? "";
-                    }
+                    _model.FirstName = teacher.FirstName ?? user?.FirstName ?? "";
+                    _model.LastName = teacher.LastName ?? user?.LastName ?? "";
+                    _model.Email = user?.Email ?? "";
+                    _model.PreferredName = teacher.PreferredName ?? "";
                 }
             }
         }
@@ -150,6 +167,18 @@
         {
             // Edit existing
             var user = await UserService.GetUserByIdAsync(Id.Value);
+            Guid effectiveTenantId = TenantContext.TenantId != Guid.Empty ? TenantContext.TenantId : (user?.TenantId ?? Guid.Empty);
+            Guid targetOrgId = UserContext.OrganizationId ?? effectiveTenantId;
+
+            if (user == null)
+            {
+                var existingTeacher = await TeacherService.GetTeacherByIdAsync(effectiveTenantId, Id.Value);
+                if (existingTeacher?.UserId != null)
+                {
+                    user = await UserService.GetUserByIdAsync(existingTeacher.UserId.Value);
+                }
+            }
+
             if (user != null)
             {
                 user.FirstName = model.FirstName;
@@ -158,10 +187,14 @@
                 {
                     user.Email = model.Email;
                 }
+                if (status == "Active")
+                {
+                    user.IsActive = true;
+                }
                 await UserService.UpdateUserAsync(user);
 
-                var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId);
-                var teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
+                var allTeachers = (await TeacherService.GetAllTeachersAsync(effectiveTenantId, targetOrgId)).ToList();
+                var teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id || t.Id == Id.Value);
                 if (teacher != null)
                 {
                     teacher.FirstName = model.FirstName;
@@ -179,7 +212,7 @@
                     teacher = new Teacher
                     {
                         Id = Guid.NewGuid(),
-                        TenantId = TenantContext.TenantId,
+                        TenantId = effectiveTenantId,
                         UserId = user.Id,
                         FirstName = string.IsNullOrWhiteSpace(model.FirstName) ? "Draft" : model.FirstName,
                         LastName = string.IsNullOrWhiteSpace(model.LastName) ? "Teacher" : model.LastName,
@@ -198,69 +231,84 @@
                     using var conn = await DbConnectionFactory.CreateConnectionAsync();
                     await conn.ExecuteProcedureAsync("sp_dispatch_teacher_to_classroom", new
                     {
-                        TenantId = user.TenantId,
+                        TenantId = effectiveTenantId,
                         ClassroomId = assignedCid,
                         UserId = user.Id
                     });
 
                     if (Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty)
                     {
-                        var orgs = await OrganizationService.GetOrganizationsAsync();
-                        var org = orgs.FirstOrDefault();
-                        if (org != null)
-                        {
-                            await UserRepository.AssignBranchToUserAsync(user.TenantId, org.Id, branchId, user.Id);
-                        }
+                        await UserRepository.AssignBranchToUserAsync(effectiveTenantId, targetOrgId, branchId, user.Id, UserContext.UserId);
                     }
                 }
             }
         }
         else
         {
-            // 1. Create User
+            // 1. Create or Map Existing User
             // If they are just saving a draft on the first step, these might be empty
-            var safeEmail = string.IsNullOrWhiteSpace(model.Email) ? $"draft_{Guid.NewGuid()}@draft.com" : model.Email;
-            var safeFirstName = string.IsNullOrWhiteSpace(model.FirstName) ? "Draft" : model.FirstName;
-            var safeLastName = string.IsNullOrWhiteSpace(model.LastName) ? "Teacher" : model.LastName;
+            var safeEmail = string.IsNullOrWhiteSpace(model.Email) ? $"draft_{Guid.NewGuid()}@draft.com" : model.Email.Trim();
+            var safeFirstName = string.IsNullOrWhiteSpace(model.FirstName) ? "Draft" : model.FirstName.Trim();
+            var safeLastName = string.IsNullOrWhiteSpace(model.LastName) ? "Teacher" : model.LastName.Trim();
+            var roleToAssign = !string.IsNullOrWhiteSpace(model.JobTitle) && model.JobTitle.Contains("Lead", StringComparison.OrdinalIgnoreCase) 
+                ? "LeadTeacher" 
+                : "Teacher";
 
-            var user = await UserService.CreateUserAsync(safeEmail, safeFirstName, safeLastName, "TEMP_HASH", "Teacher");
-            
-            // 2. Create Teacher
-            var teacher = new Teacher
+            var user = await UserService.CreateUserAsync(safeEmail, safeFirstName, safeLastName, "TEMP_HASH", roleToAssign);
+            if (status == "Active")
             {
-                Id = Guid.NewGuid(),
-                TenantId = TenantContext.TenantId,
-                UserId = user.Id,
-                FirstName = safeFirstName,
-                LastName = safeLastName,
-                DisplayName = user.DisplayName ?? "",
-                PreferredName = model.PreferredName,
-                ProfilePhotoUrl = model.ProfilePhotoUrl,
-                Status = status,
-                DraftData = System.Text.Json.JsonSerializer.Serialize(model),
-                ProfileCompletionPercentage = model.GetCompletionPercentage()
-            };
+                user.IsActive = true;
+                await UserService.UpdateUserAsync(user);
+            }
             
-            await TeacherService.CreateTeacherAsync(teacher);
+            // 2. Create or Update Teacher Record
+            Guid effectiveTenantId = TenantContext.TenantId != Guid.Empty ? TenantContext.TenantId : user.TenantId;
+            Guid targetOrgId = UserContext.OrganizationId ?? effectiveTenantId;
+            var allTeachers = (await TeacherService.GetAllTeachersAsync(effectiveTenantId, targetOrgId)).ToList();
+            var teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
+            if (teacher != null)
+            {
+                teacher.FirstName = safeFirstName;
+                teacher.LastName = safeLastName;
+                teacher.PreferredName = model.PreferredName;
+                teacher.ProfilePhotoUrl = model.ProfilePhotoUrl;
+                teacher.Status = status;
+                teacher.DraftData = System.Text.Json.JsonSerializer.Serialize(model);
+                teacher.ProfileCompletionPercentage = model.GetCompletionPercentage();
+                await TeacherService.UpdateTeacherAsync(teacher);
+            }
+            else
+            {
+                teacher = new Teacher
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = effectiveTenantId,
+                    UserId = user.Id,
+                    FirstName = safeFirstName,
+                    LastName = safeLastName,
+                    DisplayName = user.DisplayName ?? $"{safeFirstName} {safeLastName}".Trim(),
+                    PreferredName = model.PreferredName,
+                    ProfilePhotoUrl = model.ProfilePhotoUrl,
+                    Status = status,
+                    DraftData = System.Text.Json.JsonSerializer.Serialize(model),
+                    ProfileCompletionPercentage = model.GetCompletionPercentage()
+                };
+                await TeacherService.CreateTeacherAsync(teacher);
+            }
 
             if (Guid.TryParse(model.AssignedClassroom, out var assignedCid) && assignedCid != Guid.Empty)
             {
                 using var conn = await DbConnectionFactory.CreateConnectionAsync();
                 await conn.ExecuteProcedureAsync("sp_dispatch_teacher_to_classroom", new
                 {
-                    TenantId = user.TenantId,
+                    TenantId = effectiveTenantId,
                     ClassroomId = assignedCid,
                     UserId = user.Id
                 });
 
                 if (Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty)
                 {
-                    var orgs = await OrganizationService.GetOrganizationsAsync();
-                    var org = orgs.FirstOrDefault();
-                    if (org != null)
-                    {
-                        await UserRepository.AssignBranchToUserAsync(user.TenantId, org.Id, branchId, user.Id);
-                    }
+                    await UserRepository.AssignBranchToUserAsync(effectiveTenantId, targetOrgId, branchId, user.Id, UserContext.UserId);
                 }
             }
         }

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict R15TA998fMK3QFmuqd12NvF23xUwrpjceeRyDxQCaXZSBSqywlMx335Y4uiIyLa
+\restrict 2FD00oN7vDyS0DMbdiZYaP8wxFz1ozwxVSfeUpPfOeAL7eBNKfUJNdHbUJGly9y
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -103,5 +103,5 @@ ALTER TABLE ONLY public.classrooms
 -- PostgreSQL database dump complete
 --
 
-\unrestrict R15TA998fMK3QFmuqd12NvF23xUwrpjceeRyDxQCaXZSBSqywlMx335Y4uiIyLa
+\unrestrict 2FD00oN7vDyS0DMbdiZYaP8wxFz1ozwxVSfeUpPfOeAL7eBNKfUJNdHbUJGly9y
 

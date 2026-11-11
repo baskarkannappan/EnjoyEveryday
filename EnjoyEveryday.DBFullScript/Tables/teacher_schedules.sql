@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict x8ww3fMaTjM5mDLWtiYdgMVrOscZRRCWvfoxP9MvVhpvCicFaQvrOkq5klGMrXo
+\restrict LfjndinyljzcrC1Ep5w0mRnl0uvqLK5dYijwB5evIU2ixCu4ogia4N6jleHOtYb
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -58,5 +58,5 @@ ALTER TABLE ONLY public.teacher_schedules
 -- PostgreSQL database dump complete
 --
 
-\unrestrict x8ww3fMaTjM5mDLWtiYdgMVrOscZRRCWvfoxP9MvVhpvCicFaQvrOkq5klGMrXo
+\unrestrict LfjndinyljzcrC1Ep5w0mRnl0uvqLK5dYijwB5evIU2ixCu4ogia4N6jleHOtYb
 

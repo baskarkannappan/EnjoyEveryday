@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 6coif9Vq99bhL5IhwrZWceFpWcOurSF5LuFubFHNyq9sOacKqweBMiSRiEXxcxn
+\restrict Ev8pW3IJv2LApkYilxs6dJuNrUehd0bfaMMFmUbHD1NYtrzIXZNEkDJb90McsJ0
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -100,5 +100,5 @@ ALTER TABLE ONLY public.enrollments
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 6coif9Vq99bhL5IhwrZWceFpWcOurSF5LuFubFHNyq9sOacKqweBMiSRiEXxcxn
+\unrestrict Ev8pW3IJv2LApkYilxs6dJuNrUehd0bfaMMFmUbHD1NYtrzIXZNEkDJb90McsJ0
 

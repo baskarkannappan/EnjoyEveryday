@@ -73,9 +73,16 @@ public class ChildService
         return await _childRepository.GetByIdAsync(tenantId, id, cancellationToken);
     }
 
-    public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, string? photoUrl = null, CancellationToken cancellationToken = default)
+    public async Task<Child> CreateChildAsync(string firstName, string lastName, DateTime? dateOfBirth, Guid? classroomId, string? photoUrl = null, bool isOfficialAdmission = false, CancellationToken cancellationToken = default)
     {
         if (!_userContext.HasPermission("child.manage")) throw new UnauthorizedAccessException("Requires child.manage permission.");
+
+        // Direct child creation bypassing admissions is prohibited when running in full application context
+        if (!isOfficialAdmission && _readinessService != null)
+        {
+            throw new InvalidOperationException("Direct child creation is disabled. All new children must enter through the official Inquiry and Admission pipeline.");
+        }
+
         var tenantId = _tenantContext.TenantId;
         if (classroomId.HasValue)
         {

@@ -1,0 +1,438 @@
+@namespace EnjoyEveryday.UI.Shared.Components.Users
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Authorization
+@using EnjoyEveryday.Shared.Tenancy
+
+@inject UserService UserService
+@inject BranchService BranchService
+@inject ClassroomService ClassroomService
+@inject OrganizationService OrganizationService
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject IAccessScopeRepository AccessScopeRepo
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop" @onclick="HandleClose">
+        <div class="modal-card" @onclick:stopPropagation="true" style="max-width: 620px; width: 100%; max-height: 90vh; display: flex; flex-direction: column;">
+            
+            <!-- HEADER -->
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">TEACHER PROMOTION</div>
+                    <h3 class="modal-title">Promote to Lead Teacher</h3>
+                </div>
+                <button type="button" class="modal-close" @onclick="HandleClose" disabled="@_isSaving">✕</button>
+            </div>
+
+            <!-- BODY -->
+            <div class="modal-body" style="overflow-y: auto; padding: 20px;">
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="modal-error-box" style="margin-bottom: 16px;">
+                        ⚠️ @_errorMessage
+                    </div>
+                }
+
+                @if (_isLoading)
+                {
+                    <div style="padding: 30px; text-align: center; color: var(--muted, #6c7870);">
+                        Loading branch and classroom assignments...
+                    </div>
+                }
+                else if (_step == 1)
+                {
+                    <!-- STEP 1: CONFIGURATION -->
+                    <div style="display: flex; flex-direction: column; gap: 18px;">
+                        <!-- EDUCATOR SUMMARY CARD -->
+                        <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 0px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <h4 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 750; color: var(--text, #26332d);">@TeacherName</h4>
+                                <div style="font-size: 12.5px; color: var(--muted, #6c7870);">@TeacherEmail</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: #eef2ed; color: var(--accent-dark, #31523c); padding: 3px 8px; border-radius: 0px;">
+                                    Current: @CurrentRole
+                                </span>
+                                <div style="font-size: 12px; font-weight: 700; color: var(--accent, #557c6c); margin-top: 4px;">
+                                    Target: 🎓 Lead Teacher
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BRANCH SELECTION -->
+                        <div>
+                            <label class="field-label">Organization Branch Location <span style="color: #c53030;">*</span></label>
+                            @if (_branches.Count <= 1 || !_isOrgAdmin)
+                            {
+                                <div style="padding: 10px 14px; background: white; border: 1px solid var(--border, #e4e7df); font-size: 13px; font-weight: 650; color: var(--text, #26332d);">
+                                    📍 @(_selectedBranch?.Name ?? "Assigned Branch") @(!string.IsNullOrEmpty(_selectedBranch?.Location) ? $"({_selectedBranch.Location})" : "")
+                                </div>
+                            }
+                            else
+                            {
+                                <select class="filter" style="width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; font-weight: 600; border-radius: 0px; background: white;" 
+                                        @bind="_selectedBranchIdString" @bind:after="OnBranchChanged">
+                                    @foreach (var b in _branches)
+                                    {
+                                        <option value="@b.Id.ToString()">@b.Name @(!string.IsNullOrEmpty(b.Location) ? $"({b.Location})" : "")</option>
+                                    }
+                                </select>
+                            }
+                            <span class="field-hint">Lead Teacher authority and classroom scope are bounded to this physical location.</span>
+                        </div>
+
+                        <!-- CLASSROOM ASSIGNMENTS -->
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                                <div>
+                                    <label class="field-label" style="margin-bottom: 0;">Classroom Assignments (Branch Scope)</label>
+                                    <span class="field-hint" style="margin-top: 2px;">Select one or multiple classrooms for this Lead Teacher.</span>
+                                </div>
+                                <div style="display: flex; gap: 8px; font-size: 12px;">
+                                    <button type="button" class="btn secondary" style="padding: 3px 8px; font-size: 11px;" @onclick="SelectAllClassrooms">Select All</button>
+                                    <button type="button" class="btn secondary" style="padding: 3px 8px; font-size: 11px;" @onclick="ClearAllClassrooms">Clear All</button>
+                                    <button type="button" class="btn secondary" style="padding: 3px 8px; font-size: 11px;" @onclick="ResetClassrooms">Reset</button>
+                                </div>
+                            </div>
+
+                            @if (!_branchClassrooms.Any())
+                            {
+                                <div style="padding: 16px; border: 1px dashed var(--border, #e4e7df); background: var(--surface-soft, #f8f9f5); font-size: 13px; color: var(--muted, #6c7870); text-align: center;">
+                                    No active classrooms found in this branch.
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="border: 1px solid var(--border, #e4e7df); background: white; max-height: 200px; overflow-y: auto;">
+                                    @foreach (var c in _branchClassrooms)
+                                    {
+                                        var isChecked = _selectedClassroomIds.Contains(c.Id);
+                                        var wasPreviouslyAssigned = _initialClassroomIds.Contains(c.Id);
+                                        <label style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #f0f2ed; cursor: pointer; background: @(isChecked ? "var(--accent-light, #e6eee9)" : "transparent"); transition: background 0.15s ease;">
+                                            <input type="checkbox" checked="@isChecked" @onchange='(e) => ToggleClassroom(c.Id, e.Value)' style="width: 16px; height: 16px; accent-color: var(--accent-dark, #31523c); cursor: pointer;" />
+                                            <div style="flex: 1;">
+                                                <div style="font-size: 13px; font-weight: 650; color: var(--text, #26332d); display: flex; align-items: center; gap: 6px;">
+                                                    <span>@c.Name</span>
+                                                    @if (wasPreviouslyAssigned)
+                                                    {
+                                                        <span style="font-size: 10px; font-weight: 700; color: var(--muted, #6c7870); background: #f0f0eb; padding: 1px 6px; border-radius: 0px;">CURRENT</span>
+                                                    }
+                                                </div>
+                                                <div style="font-size: 11.5px; color: var(--muted, #6c7870);">Capacity: @c.Capacity • Age: @c.AgeGroup</div>
+                                            </div>
+                                        </label>
+                                    }
+                                </div>
+                            }
+                            <div style="margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--accent-dark, #31523c);">
+                                @_selectedClassroomIds.Count classroom(s) selected
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (_step == 2)
+                {
+                    <!-- STEP 2: CONFIRMATION SUMMARY -->
+                    <div style="display: flex; flex-direction: column; gap: 16px;">
+                        <div style="background: #eef5f1; border-left: 4px solid var(--accent, #557c6c); padding: 12px 16px;">
+                            <div style="font-size: 13.5px; font-weight: 750; color: var(--accent-dark, #31523c); margin-bottom: 2px;">
+                                Review and Confirm Promotion
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--text, #26332d);">
+                                Please review the details below. Once confirmed, the educator will be elevated to Lead Teacher in this branch.
+                            </div>
+                        </div>
+
+                        <div style="border: 1px solid var(--border, #e4e7df); background: white; padding: 16px; display: grid; grid-template-columns: 140px 1fr; gap: 12px; font-size: 13px;">
+                            <div style="font-weight: 700; color: var(--muted, #6c7870);">Educator:</div>
+                            <div style="font-weight: 700; color: var(--text, #26332d);">@TeacherName @(!string.IsNullOrWhiteSpace(TeacherEmail) ? $"({TeacherEmail})" : "")</div>
+
+                            <div style="font-weight: 700; color: var(--muted, #6c7870);">Current Role:</div>
+                            <div><span style="background: #f4eee1; color: #705828; padding: 2px 8px; font-weight: 700; font-size: 11px;">@CurrentRole</span></div>
+
+                            <div style="font-weight: 700; color: var(--muted, #6c7870);">Promoted Role:</div>
+                            <div><span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); padding: 2px 8px; font-weight: 750; font-size: 11px;">🎓 Lead Teacher (Rank 4)</span></div>
+
+                            <div style="font-weight: 700; color: var(--muted, #6c7870);">Organization:</div>
+                            <div style="font-weight: 600;">@(_organizationName ?? "Active Organization")</div>
+
+                            <div style="font-weight: 700; color: var(--muted, #6c7870);">Branch Campus:</div>
+                            <div style="font-weight: 600;">@(_selectedBranch?.Name ?? "Selected Branch")</div>
+
+                            <div style="font-weight: 700; color: var(--muted, #6c7870);">Assigned Rooms:</div>
+                            <div>
+                                @if (!_selectedClassroomIds.Any())
+                                {
+                                    <span style="color: #c53030; font-weight: 650;">No classrooms assigned (Unassigned Lead Teacher)</span>
+                                }
+                                else
+                                {
+                                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                        @foreach (var cid in _selectedClassroomIds)
+                                        {
+                                            var cls = _branchClassrooms.FirstOrDefault(c => c.Id == cid);
+                                            <span style="background: #eef2ed; border: 1px solid #d4dfd6; color: var(--accent-dark, #31523c); font-size: 11.5px; font-weight: 650; padding: 2px 8px;">
+                                                🏫 @(cls?.Name ?? cid.ToString())
+                                            </span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div style="font-size: 11.5px; color: var(--muted, #6c7870); line-height: 1.5; padding: 8px 12px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df);">
+                            🔒 <strong>Multi-Tenant Scope Protection:</strong> This promotion applies solely to <em>@(_selectedBranch?.Name)</em> within <em>@(_organizationName)</em>. Any existing assignments or roles in other organizations and branches remain strictly unchanged.
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- FOOTER -->
+            <div class="modal-footer" style="padding: 14px 20px; border-top: 1px solid var(--border, #e4e7df); display: flex; justify-content: space-between; align-items: center; background: var(--surface-soft, #f8f9f5);">
+                @if (_step == 1)
+                {
+                    <button type="button" class="btn secondary" @onclick="HandleClose" disabled="@_isSaving">Cancel</button>
+                    <button type="button" class="btn primary" @onclick="GoToStep2" disabled="@_isLoading" style="min-width: 140px;">
+                        Review Promotion →
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="btn secondary" @onclick="() => _step = 1" disabled="@_isSaving">← Back to Edit</button>
+                    <button type="button" class="btn primary" @onclick="ConfirmPromotionAsync" disabled="@_isSaving" style="min-width: 160px; background: #31523c;">
+                        @(_isSaving ? "Promoting..." : "✓ Confirm & Promote")
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid UserId { get; set; }
+    [Parameter] public string TeacherName { get; set; } = "";
+    [Parameter] public string TeacherEmail { get; set; } = "";
+    [Parameter] public string CurrentRole { get; set; } = "Teacher";
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string> OnPromoted { get; set; }
+
+    private int _step = 1;
+    private bool _isLoading = true;
+    private bool _isSaving = false;
+    private string? _errorMessage;
+
+    private bool _isOrgAdmin = true;
+    private string? _organizationName;
+    private List<Branch> _branches = new();
+    private Branch? _selectedBranch;
+    private string _selectedBranchIdString = "";
+    private List<Classroom> _allClassrooms = new();
+    private List<Classroom> _branchClassrooms = new();
+    private HashSet<Guid> _selectedClassroomIds = new();
+    private HashSet<Guid> _initialClassroomIds = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && UserId != Guid.Empty)
+        {
+            _step = 1;
+            _errorMessage = null;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            var tenantId = TenantContext.TenantId;
+            var userRoles = new HashSet<string>(UserContext.Roles ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
+            var orgs = await OrganizationService.GetOrganizationsAsync();
+            var targetOrg = (UserContext.OrganizationId.HasValue
+                ? orgs.FirstOrDefault(o => o.Id == UserContext.OrganizationId.Value)
+                : null) ?? orgs.FirstOrDefault();
+
+            _organizationName = targetOrg?.Name ?? "Main Organization";
+            var targetOrgId = targetOrg?.Id ?? tenantId;
+
+            if (targetOrgId != Guid.Empty && UserContext.UserId != Guid.Empty)
+            {
+                try
+                {
+                    var orgRoles = await AccessScopeRepo.GetOrganizationRoleNamesAsync(tenantId, targetOrgId, UserContext.UserId);
+                    foreach (var r in orgRoles) userRoles.Add(r);
+                }
+                catch { }
+            }
+
+            _isOrgAdmin = userRoles.Any(r =>
+                r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationOwner, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals(RoleTemplates.OrganizationAdmin, StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Admin", StringComparison.OrdinalIgnoreCase));
+
+            var allBranches = (await BranchService.GetBranchesAsync(targetOrgId)).ToList();
+            if (!_isOrgAdmin)
+            {
+                var assignedBranchIds = await AccessScopeRepo.GetAssignedBranchIdsAsync(tenantId, targetOrgId, UserContext.UserId);
+                _branches = allBranches.Where(b => assignedBranchIds.Contains(b.Id)).ToList();
+            }
+            else
+            {
+                _branches = allBranches;
+            }
+
+            if (string.IsNullOrWhiteSpace(TeacherEmail) && UserId != Guid.Empty)
+            {
+                var userObj = await UserService.GetUserByIdAsync(UserId);
+                if (userObj != null && !string.IsNullOrWhiteSpace(userObj.Email))
+                {
+                    TeacherEmail = userObj.Email;
+                }
+            }
+
+            _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+
+            // Load existing teacher classroom assignments
+            var existingCids = await AccessScopeRepo.GetAssignedClassroomIdsAsync(tenantId, UserId);
+            _initialClassroomIds = new HashSet<Guid>(existingCids);
+            _selectedClassroomIds = new HashSet<Guid>(existingCids);
+
+            // Determine initial branch: pick branch of teacher's existing classroom, or first available branch
+            Branch? matchedBranch = null;
+            if (_selectedClassroomIds.Count > 0)
+            {
+                var firstClassroom = _allClassrooms.FirstOrDefault(c => _selectedClassroomIds.Contains(c.Id));
+                if (firstClassroom != null)
+                {
+                    matchedBranch = _branches.FirstOrDefault(b => b.Id == firstClassroom.BranchId);
+                }
+            }
+
+            _selectedBranch = matchedBranch ?? _branches.FirstOrDefault();
+            _selectedBranchIdString = _selectedBranch?.Id.ToString() ?? "";
+
+            FilterClassroomsForBranch();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load assignment information: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OnBranchChanged()
+    {
+        if (Guid.TryParse(_selectedBranchIdString, out var bId))
+        {
+            _selectedBranch = _branches.FirstOrDefault(b => b.Id == bId);
+            FilterClassroomsForBranch();
+        }
+    }
+
+    private void FilterClassroomsForBranch()
+    {
+        if (_selectedBranch != null)
+        {
+            _branchClassrooms = _allClassrooms.Where(c => c.BranchId == _selectedBranch.Id && c.IsActive).ToList();
+        }
+        else
+        {
+            _branchClassrooms = new();
+        }
+    }
+
+    private void ToggleClassroom(Guid classroomId, object? checkedValue)
+    {
+        if (checkedValue is bool b && b)
+        {
+            _selectedClassroomIds.Add(classroomId);
+        }
+        else
+        {
+            _selectedClassroomIds.Remove(classroomId);
+        }
+    }
+
+    private void SelectAllClassrooms()
+    {
+        foreach (var c in _branchClassrooms)
+        {
+            _selectedClassroomIds.Add(c.Id);
+        }
+    }
+
+    private void ClearAllClassrooms()
+    {
+        foreach (var c in _branchClassrooms)
+        {
+            _selectedClassroomIds.Remove(c.Id);
+        }
+    }
+
+    private void ResetClassrooms()
+    {
+        _selectedClassroomIds = new HashSet<Guid>(_initialClassroomIds);
+    }
+
+    private void GoToStep2()
+    {
+        _errorMessage = null;
+        if (_selectedBranch == null)
+        {
+            _errorMessage = "Please select an authorized branch location.";
+            return;
+        }
+
+        _step = 2;
+    }
+
+    private async Task ConfirmPromotionAsync()
+    {
+        if (_selectedBranch == null) return;
+
+        try
+        {
+            _isSaving = true;
+            _errorMessage = null;
+
+            var branchClassroomSelections = _selectedClassroomIds
+                .Where(cid => _branchClassrooms.Any(bc => bc.Id == cid))
+                .ToList();
+
+            await UserService.PromoteTeacherToLeadAsync(UserId, _selectedBranch.Id, branchClassroomSelections);
+
+            var successMsg = $"Successfully promoted '{TeacherName}' to Lead Teacher in branch '{_selectedBranch.Name}'.";
+            _isSaving = false;
+            await OnClose.InvokeAsync();
+            await OnPromoted.InvokeAsync(successMsg);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Promotion failed: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        await OnClose.InvokeAsync();
+    }
+}
+

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 9efoRd3SrDnyWBdY6HgLRiDK60b2HnTfuNT46q8D1jhmRZCPcqogV346W4vhwXv
+\restrict fLDLKpJCrZ6zh6a6Pj5LDRgYB9uwlVoYNMfu6JXTnVteVSekZtRtGh9lO0GBcAb
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -90,5 +90,5 @@ ALTER TABLE ONLY public.inventory_balances
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9efoRd3SrDnyWBdY6HgLRiDK60b2HnTfuNT46q8D1jhmRZCPcqogV346W4vhwXv
+\unrestrict fLDLKpJCrZ6zh6a6Pj5LDRgYB9uwlVoYNMfu6JXTnVteVSekZtRtGh9lO0GBcAb
 

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict VkZIpzO1nUX4ATbtCnLAbpIYNobOtBU92Ae5bbEbB4COdndWIRkl449pgy99o4a
+\restrict fa5E1hWCxvDQhDGQeorKrF7BNNyxdun9YbaNzdY9hKrV2GduVcTmsK2xjbsDEMS
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -93,5 +93,5 @@ ALTER TABLE ONLY public.consent_templates
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VkZIpzO1nUX4ATbtCnLAbpIYNobOtBU92Ae5bbEbB4COdndWIRkl449pgy99o4a
+\unrestrict fa5E1hWCxvDQhDGQeorKrF7BNNyxdun9YbaNzdY9hKrV2GduVcTmsK2xjbsDEMS
 

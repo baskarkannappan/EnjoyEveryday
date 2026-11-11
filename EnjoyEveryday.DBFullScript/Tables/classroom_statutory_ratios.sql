@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict hSC2WImgMKtuz6PAU330surEU1OnN2ZEFzfyTszqNUqRK05EwAwj56lDYQ0PBFZ
+\restrict lYpWTFujQ9VTzxWbHCiwPmYeTOSjknArhDLJpeXSi6LmLylwpYr0IyVoVSuYPXG
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -56,5 +56,5 @@ ALTER TABLE ONLY public.classroom_statutory_ratios
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hSC2WImgMKtuz6PAU330surEU1OnN2ZEFzfyTszqNUqRK05EwAwj56lDYQ0PBFZ
+\unrestrict lYpWTFujQ9VTzxWbHCiwPmYeTOSjknArhDLJpeXSi6LmLylwpYr0IyVoVSuYPXG
 

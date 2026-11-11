@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 7sfUCKBGOjxItfktKsCjeJTQ4jQozixTe6QfptBb4y72OqrKuVHQ61WdUYCEV9e
+\restrict izyGyQgXGAXSp7w2EYZBojNIf2hzE5TCccvVe7tGBxaUudKwO7ge64N1tztDQfe
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -122,5 +122,5 @@ ALTER TABLE ONLY public.invoices
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 7sfUCKBGOjxItfktKsCjeJTQ4jQozixTe6QfptBb4y72OqrKuVHQ61WdUYCEV9e
+\unrestrict izyGyQgXGAXSp7w2EYZBojNIf2hzE5TCccvVe7tGBxaUudKwO7ge64N1tztDQfe
 

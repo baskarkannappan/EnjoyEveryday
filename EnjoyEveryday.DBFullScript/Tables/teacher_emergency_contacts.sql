@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Ceqa8Sxf1IA1wzHzcMragRArIaIdVpZD158yyOcm8aqQTI98ItbPvXegGli8Lcs
+\restrict 7HSgf8GvlJtpvWtaqmfElT6Z9j72bvNMva5dc0i3tPVQjS9KY8NdC5hBFeX9ThH
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -61,5 +61,5 @@ ALTER TABLE ONLY public.teacher_emergency_contacts
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Ceqa8Sxf1IA1wzHzcMragRArIaIdVpZD158yyOcm8aqQTI98ItbPvXegGli8Lcs
+\unrestrict 7HSgf8GvlJtpvWtaqmfElT6Z9j72bvNMva5dc0i3tPVQjS9KY8NdC5hBFeX9ThH
 

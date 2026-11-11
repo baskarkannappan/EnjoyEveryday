@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 9KQ3AmGEdO9ZkBaWyn59C0IJBkTW02nsoPmUypMfnHXfoIlMlkqmOTv5sYI7bCP
+\restrict NosRQladIhb8DqlBCwpGVPZ35aRsfYVfj3nfmUH2jBznrP7YFs57DW2osPjuhSM
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -33,7 +33,8 @@ CREATE TABLE public.tenants (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    encrypted_ai_api_key character varying(1000)
+    encrypted_ai_api_key character varying(1000),
+    ai_provider character varying(50) DEFAULT 'GoogleGemini'::character varying
 );
 
 
@@ -64,5 +65,5 @@ CREATE TRIGGER tenants_ensure_roles AFTER INSERT ON public.tenants FOR EACH ROW 
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9KQ3AmGEdO9ZkBaWyn59C0IJBkTW02nsoPmUypMfnHXfoIlMlkqmOTv5sYI7bCP
+\unrestrict NosRQladIhb8DqlBCwpGVPZ35aRsfYVfj3nfmUH2jBznrP7YFs57DW2osPjuhSM
 

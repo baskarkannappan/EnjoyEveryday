@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 7QGXQBxidzsXaEAA4SOS93Lv9i2GnpUYsRXKB6qjfC6uYUWlAULa0BUrY00F7aR
+\restrict FxLcoXCwN6p8ZXq6mW4aEWwaFWQIjmPeVINcjSL7nsCt7AcMNRqy32drX9Xf0Jd
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -87,5 +87,5 @@ CREATE INDEX idx_mat_prod_type ON public.material_products USING btree (material
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 7QGXQBxidzsXaEAA4SOS93Lv9i2GnpUYsRXKB6qjfC6uYUWlAULa0BUrY00F7aR
+\unrestrict FxLcoXCwN6p8ZXq6mW4aEWwaFWQIjmPeVINcjSL7nsCt7AcMNRqy32drX9Xf0Jd
 

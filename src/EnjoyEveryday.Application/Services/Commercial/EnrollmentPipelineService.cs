@@ -277,6 +277,11 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         var app = await GetApplicationByIdAsync(request.ApplicationId, ct);
         if (app == null) throw new InvalidOperationException("Application not found.");
 
+        if (string.Equals(app.PipelineStage, "Enrolled", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("This student admission has already been finalized and enrolled.");
+        }
+
         // 1. Resolve branch and organization scope from the selected classroom
         var scope = await _repository.GetClassroomScopeAsync(tenantId, request.ClassroomId, ct);
         var branchId = scope.BranchId ?? (app.BranchId != tenantId ? app.BranchId : null);

@@ -15,6 +15,7 @@
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
 @inject IAccessScopeRepository AccessScopeRepo
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 
 <div class="users-by-role-view">
     <!-- SUCCESS NOTIFICATION -->
@@ -100,7 +101,33 @@
                                         Subtitle="@user.Email"
                                         Status="@(user.IsActive ? "Active" : "Inactive")"
                                         HighlightTitle="@(user.ClassroomName != null ? "Classroom Assignment" : (user.AssociatedChildrenCount > 0 ? "Enrolled Children" : (!string.IsNullOrEmpty(user.OrganizationName) ? "Organization" : "Authority Scope")))"
-                                        HighlightText="@(user.ClassroomName ?? (user.AssociatedChildrenCount > 0 ? $"{user.AssociatedChildrenCount} child(ren) enrolled" : (!string.IsNullOrEmpty(user.OrganizationName) ? user.OrganizationName : $"{group.Scope} Level Permissions")))" />
+                                        HighlightText="@(user.ClassroomName ?? (user.AssociatedChildrenCount > 0 ? $"{user.AssociatedChildrenCount} child(ren) enrolled" : (!string.IsNullOrEmpty(user.OrganizationName) ? user.OrganizationName : $"{group.Scope} Level Permissions")))">
+                                <ActionTemplate>
+                                    @if (_isOrgAdmin || _isBranchAdmin)
+                                    {
+                                        @if (IsPromotableTeacher(user.Role))
+                                        {
+                                            <button type="button" 
+                                                    class="btn secondary" 
+                                                    @onclick="() => OpenPromoteModal(user)" 
+                                                    title="Promote this educator to Lead Teacher"
+                                                    style="padding: 4px 10px; font-size: 11.5px; font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c); background: white; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                                <span>🎓 Promote to Lead</span>
+                                            </button>
+                                        }
+                                        @if (IsEducatorRole(user.Role))
+                                        {
+                                            <button type="button" 
+                                                    class="btn secondary" 
+                                                    @onclick="() => OpenManageClassroomsModal(user)" 
+                                                    title="Manage classroom assignments for this educator"
+                                                    style="padding: 4px 10px; font-size: 11.5px; font-weight: 650; color: var(--text, #26332d); background: white; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                                <span>🏫 Classrooms</span>
+                                            </button>
+                                        }
+                                    }
+                                </ActionTemplate>
+                            </PersonCard>
                         }
                     </div>
                 </div>
@@ -194,6 +221,33 @@
             </div>
         </div>
     }
+    <!-- FLOATING TOAST -->
+    @if (!string.IsNullOrEmpty(_toastMessage))
+    {
+        <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: #263a32; color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px;">
+            <span style="font-size: 16px;">✨</span>
+            <span>@_toastMessage</span>
+            <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;">✕</button>
+        </div>
+    }
+
+    <!-- PROMOTE TEACHER MODAL -->
+    <PromoteTeacherModal IsOpen="@_showPromoteModal"
+                         UserId="@_modalUserId"
+                         TeacherName="@_modalTeacherName"
+                         TeacherEmail="@_modalTeacherEmail"
+                         CurrentRole="@_modalCurrentRole"
+                         OnClose="() => _showPromoteModal = false"
+                         OnPromoted="HandlePromotedSuccess" />
+
+    <!-- MANAGE CLASSROOMS MODAL -->
+    <ManageTeacherClassroomsModal IsOpen="@_showManageClassroomsModal"
+                                  UserId="@_modalUserId"
+                                  TeacherName="@_modalTeacherName"
+                                  TeacherEmail="@_modalTeacherEmail"
+                                  TeacherRole="@_modalCurrentRole"
+                                  OnClose="() => _showManageClassroomsModal = false"
+                                  OnSaved="HandleClassroomsSavedSuccess" />
 </div>
 
 @code {
@@ -204,9 +258,16 @@
     private List<RoleGroup> _groupedRoles = new();
 
     private bool _showAddUserModal = false;
+    private bool _showPromoteModal = false;
+    private bool _showManageClassroomsModal = false;
+    private Guid _modalUserId;
+    private string _modalTeacherName = "";
+    private string _modalTeacherEmail = "";
+    private string _modalCurrentRole = "";
     private bool _isSaving = false;
     private string? _errorMessage;
     private string? _successBanner;
+    private string? _toastMessage;
 
     private string _newUserFirstName = "";
     private string _newUserLastName = "";
@@ -270,6 +331,62 @@
     {
         _showAddUserModal = false;
         _errorMessage = null;
+    }
+
+    private bool IsPromotableTeacher(string role)
+    {
+        var resolved = RoleTemplates.Resolve(role);
+        return resolved.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
+               resolved.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
+               (role.Contains("Teacher", StringComparison.OrdinalIgnoreCase) && !role.Contains("Lead", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsEducatorRole(string role)
+    {
+        var resolved = RoleTemplates.Resolve(role);
+        return resolved.Equals(RoleTemplates.LeadTeacher, StringComparison.OrdinalIgnoreCase) ||
+               resolved.Equals(RoleTemplates.ClassroomTeacher, StringComparison.OrdinalIgnoreCase) ||
+               resolved.Equals(RoleTemplates.DaycareTeacher, StringComparison.OrdinalIgnoreCase) ||
+               role.Contains("Teacher", StringComparison.OrdinalIgnoreCase) ||
+               role.Contains("Educator", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OpenPromoteModal(UserRecordItem user)
+    {
+        _modalUserId = user.Id;
+        _modalTeacherName = user.DisplayName;
+        _modalTeacherEmail = user.Email;
+        _modalCurrentRole = FormatRoleName(user.Role);
+        _showPromoteModal = true;
+    }
+
+    private void OpenManageClassroomsModal(UserRecordItem user)
+    {
+        _modalUserId = user.Id;
+        _modalTeacherName = user.DisplayName;
+        _modalTeacherEmail = user.Email;
+        _modalCurrentRole = FormatRoleName(user.Role);
+        _showManageClassroomsModal = true;
+    }
+
+    private async Task HandlePromotedSuccess(string message)
+    {
+        _showPromoteModal = false;
+        _successBanner = message;
+        _toastMessage = message;
+        await NotificationService.ShowSuccessAsync(message);
+        await LoadUsersAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleClassroomsSavedSuccess(string message)
+    {
+        _showManageClassroomsModal = false;
+        _successBanner = message;
+        _toastMessage = message;
+        await NotificationService.ShowSuccessAsync(message);
+        await LoadUsersAsync();
+        StateHasChanged();
     }
 
     public async Task LoadUsersAsync()

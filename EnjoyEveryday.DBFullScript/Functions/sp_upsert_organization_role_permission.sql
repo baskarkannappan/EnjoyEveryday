@@ -1,0 +1,4 @@
+﻿-- Function: public.sp_upsert_organization_role_permission
+-- Backup generated on 2026-11-11 09:06:10
+
+CREATE OR REPLACE PROCEDURE public.sp_upsert_organization_role_permission(IN p_tenant_id uuid, IN p_organization_id uuid, IN p_role_name character varying, IN p_feature_key character varying, IN p_is_allowed boolean)  LANGUAGE plpgsql AS $procedure$ BEGIN     INSERT INTO organization_role_permissions (         tenant_id,         organization_id,         role_name,         feature_key,         is_allowed,         updated_at     )     VALUES (         p_tenant_id,         p_organization_id,         p_role_name,         p_feature_key,         p_is_allowed,         NOW()     )     ON CONFLICT (tenant_id, organization_id, role_name, feature_key)     DO UPDATE SET         is_allowed = EXCLUDED.is_allowed,         updated_at = NOW(); END; $procedure$ ;

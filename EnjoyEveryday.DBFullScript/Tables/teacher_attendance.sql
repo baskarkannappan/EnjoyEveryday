@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Yn2rG89LOF3WrDQmYbradWYhvHILoROBUerdOUBCNaiWFFXd5zmzRl7HzIMKWte
+\restrict kAFt3LUfcx8jVxdeIfgUk2qeIBhnbF8rIEG6Bm4N0uG0iocflYubpxMcTouUSeI
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -78,5 +78,5 @@ ALTER TABLE ONLY public.teacher_attendance
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Yn2rG89LOF3WrDQmYbradWYhvHILoROBUerdOUBCNaiWFFXd5zmzRl7HzIMKWte
+\unrestrict kAFt3LUfcx8jVxdeIfgUk2qeIBhnbF8rIEG6Bm4N0uG0iocflYubpxMcTouUSeI
 

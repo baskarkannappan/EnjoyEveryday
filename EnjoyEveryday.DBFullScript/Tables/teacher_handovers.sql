@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict NkDBbP5zaY2tdd57rv3qec2cwcujoQD9OvVnfaLZgiftcJZxaRHwJbfjNLlakMc
+\restrict XeIggGxWpttS8QyP0CQp7yWpwrqnueiNH6FuG4NQVHKUboi0Ou8q8wEQAo7hlQH
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -142,5 +142,5 @@ ALTER TABLE ONLY public.teacher_handovers
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NkDBbP5zaY2tdd57rv3qec2cwcujoQD9OvVnfaLZgiftcJZxaRHwJbfjNLlakMc
+\unrestrict XeIggGxWpttS8QyP0CQp7yWpwrqnueiNH6FuG4NQVHKUboi0Ou8q8wEQAo7hlQH
 

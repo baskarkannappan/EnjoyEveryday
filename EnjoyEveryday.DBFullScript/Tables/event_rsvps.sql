@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict BOL7314tWDO2ANZhJXgDhwDxxnfJexa77aq5k1wZalaEFL3bEeIiSoK91vl9MSF
+\restrict kfJoiNMMu2NjvFT4hpA6tr8yJiw3e38rKDhfcglRdUPnPV6La4JOAU2pjVKZIyL
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -89,5 +89,5 @@ ALTER TABLE ONLY public.event_rsvps
 -- PostgreSQL database dump complete
 --
 
-\unrestrict BOL7314tWDO2ANZhJXgDhwDxxnfJexa77aq5k1wZalaEFL3bEeIiSoK91vl9MSF
+\unrestrict kfJoiNMMu2NjvFT4hpA6tr8yJiw3e38rKDhfcglRdUPnPV6La4JOAU2pjVKZIyL
 

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_tenant_preferences
+-- Backup generated on 2026-11-11 09:05:34
+
+CREATE OR REPLACE FUNCTION public.fn_get_tenant_preferences(p_tenant_id uuid)  RETURNS TABLE(tenant_id uuid, currency character varying, time_zone character varying, operating_hours_json jsonb, statutory_ratios_json jsonb, billing_rules_json jsonb, safety_policies_json jsonb, custom_settings_json jsonb, updated_at timestamp with time zone)  LANGUAGE plpgsql AS $function$ BEGIN     RETURN QUERY     SELECT tp.tenant_id, tp.currency, tp.time_zone,            tp.operating_hours_json, tp.statutory_ratios_json,            tp.billing_rules_json, tp.safety_policies_json,            tp.custom_settings_json, tp.updated_at     FROM public.tenant_preferences tp     WHERE tp.tenant_id = p_tenant_id; END; $function$ ;

@@ -1,0 +1,4 @@
+﻿-- Function: public.fn_get_cover_candidates_for_event
+-- Backup generated on 2026-11-11 09:04:59
+
+CREATE OR REPLACE FUNCTION public.fn_get_cover_candidates_for_event(p_tenant_id uuid, p_branch_id uuid, p_event_id uuid)  RETURNS TABLE(user_id uuid, display_name text, is_same_classroom boolean, is_on_leave boolean, busy_with text, covers_this_week integer, is_available boolean, reason text)  LANGUAGE sql  STABLE AS $function$     SELECT a.* FROM events e     CROSS JOIN LATERAL (         SELECT ec.classroom_id FROM event_classrooms ec JOIN classrooms c ON c.id = ec.classroom_id         WHERE ec.event_id = e.id AND c.branch_id = p_branch_id LIMIT 1) cls     CROSS JOIN LATERAL public.fn_get_available_cover_teachers(p_tenant_id, p_branch_id, cls.classroom_id, e.event_date, e.start_time, e.end_time, e.id) a     WHERE e.id = p_event_id AND e.tenant_id = p_tenant_id AND a.user_id IS DISTINCT FROM e.organizer_id; $function$ ;

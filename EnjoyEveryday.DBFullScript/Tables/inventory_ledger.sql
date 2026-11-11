@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict dapmzrG4M6fobQBsRUID3vPc8SxMpTYEIsOeylTC5YFTU7FARFuR2KDrPBgVLqy
+\restrict rnPeMh2NQ34mvdwZQvk0TF8X2P9tgDngK28Y2RUueD7Qk9hSHW5WcoEXOd6jped
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -86,5 +86,5 @@ ALTER TABLE ONLY public.inventory_ledger
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dapmzrG4M6fobQBsRUID3vPc8SxMpTYEIsOeylTC5YFTU7FARFuR2KDrPBgVLqy
+\unrestrict rnPeMh2NQ34mvdwZQvk0TF8X2P9tgDngK28Y2RUueD7Qk9hSHW5WcoEXOd6jped
 

@@ -1,8 +1,8 @@
---
+﻿--
 -- PostgreSQL database dump
 --
 
-\restrict LTCoGMcAl9xbIfsxlldfDnXsY5a86BPKYuYCUohJdHNeWXGbqKJ4xtuTweb05pz
+\restrict wIueYdwq30QsgWyIieIJQWT5fByroMCzvP1MbEo27ejXwPv5z0v7kYKGRHPYxtv
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -310,8 +310,8 @@ DECLARE
     v_tenant_id UUID;
     v_org_name VARCHAR;
 BEGIN
-    SELECT tenant_id, o.name INTO v_tenant_id, v_org_name 
-    FROM organizations o 
+    SELECT tenant_id, o.name INTO v_tenant_id, v_org_name
+    FROM organizations o
     WHERE o.id = p_organization_id;
 
     IF v_tenant_id IS NULL THEN
@@ -329,8 +329,8 @@ BEGIN
         p_location,
         TRUE,
         NOW(),
-        COALESCE(v_org_name, 'Organization'),
-        COALESCE(p_location, 'Location unspecified'),
+        COALESCE(v_org_name, 'Organization')::VARCHAR,
+        COALESCE(p_location, 'Location unspecified')::TEXT,
         0::int,
         0::int;
 END;
@@ -376,6 +376,32 @@ $$;
 
 
 --
+-- Name: fn_assert_classroom_free(uuid, uuid, date, time without time zone, time without time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_assert_classroom_free(p_tenant_id uuid, p_classroom_id uuid, p_date date, p_start time without time zone, p_end time without time zone, p_event_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    c record;
+BEGIN
+    -- Serialize writers for the same classroom so concurrent saves cannot both succeed.
+    PERFORM pg_advisory_xact_lock(hashtextextended('classroom-slot:' || p_classroom_id::text, 0));
+
+    SELECT * INTO c FROM public.fn_find_classroom_conflicts(p_tenant_id, p_classroom_id, p_date, p_start, p_end, p_event_id) LIMIT 1;
+    IF FOUND THEN
+        RAISE EXCEPTION 'CLASSROOM_CONFLICT: Classroom is already booked % by "%"%. Cancel or move that activity first.',
+            CASE WHEN c.start_time IS NULL THEN 'all day'
+                 ELSE to_char(c.start_time, 'HH24:MI') || '–' || COALESCE(to_char(c.end_time, 'HH24:MI'), 'end of day') END,
+            c.title,
+            CASE WHEN c.organizer_name IS NULL THEN '' ELSE ' (' || c.organizer_name || ')' END
+            USING ERRCODE = 'EE409';
+    END IF;
+END;
+$$;
+
+
+--
 -- Name: fn_authorized_pickup_exists(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -403,10 +429,10 @@ $$;
 
 
 --
--- Name: fn_create_child(uuid, uuid, character varying, character varying, date, uuid, text, integer, character varying, text, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+-- Name: fn_create_child(uuid, uuid, character varying, character varying, timestamp with time zone, uuid, text, integer, character varying, text, boolean, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_create_child(p_id uuid, p_tenant_id uuid, p_first_name character varying, p_last_name character varying, p_date_of_birth date, p_classroom_id uuid, p_photo_url text, p_profile_completion_percentage integer, p_enrollment_status character varying, p_draft_data text, p_is_active boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, first_name character varying, last_name character varying, date_of_birth date, classroom_id uuid, photo_url text, profile_completion_percentage integer, enrollment_status character varying, draft_data text, is_active boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
+CREATE FUNCTION public.fn_create_child(p_id uuid, p_tenant_id uuid, p_first_name character varying, p_last_name character varying, p_date_of_birth timestamp with time zone, p_classroom_id uuid, p_photo_url text, p_profile_completion_percentage integer, p_enrollment_status character varying, p_draft_data text, p_is_active boolean, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, first_name character varying, last_name character varying, date_of_birth date, classroom_id uuid, photo_url text, profile_completion_percentage integer, enrollment_status character varying, draft_data text, is_active boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -416,7 +442,7 @@ BEGIN
         profile_completion_percentage, enrollment_status, draft_data, is_active, created_at, updated_at
     )
     VALUES (
-        p_id, p_tenant_id, p_first_name, p_last_name, p_date_of_birth, p_classroom_id, p_photo_url,
+        p_id, p_tenant_id, p_first_name, p_last_name, p_date_of_birth::DATE, p_classroom_id, p_photo_url,
         p_profile_completion_percentage, p_enrollment_status, p_draft_data, p_is_active, p_created_at, p_updated_at
     )
     RETURNING children.id, children.tenant_id, children.first_name, children.last_name, children.date_of_birth,
@@ -458,10 +484,10 @@ $$;
 
 
 --
--- Name: fn_create_event(uuid, uuid, character varying, text, uuid, date, time without time zone, time without time zone, character varying, uuid, character varying, character varying, uuid, boolean, text[], timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+-- Name: fn_create_event(uuid, uuid, character varying, text, uuid, timestamp with time zone, interval, interval, character varying, uuid, character varying, character varying, uuid, boolean, text[], timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_create_event(p_id uuid, p_tenant_id uuid, p_title character varying, p_description text, p_event_type_id uuid, p_event_date date, p_start_time time without time zone, p_end_time time without time zone, p_location character varying, p_organizer_id uuid, p_status character varying, p_scope character varying, p_branch_id uuid, p_is_organization_wide boolean, p_photo_urls text[], p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS uuid
+CREATE FUNCTION public.fn_create_event(p_id uuid, p_tenant_id uuid, p_title character varying, p_description text, p_event_type_id uuid, p_event_date timestamp with time zone, p_start_time interval, p_end_time interval, p_location character varying, p_organizer_id uuid, p_status character varying, p_scope character varying, p_branch_id uuid, p_is_organization_wide boolean, p_photo_urls text[], p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS uuid
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -470,7 +496,7 @@ BEGIN
         location, organizer_id, status, scope, branch_id, is_organization_wide, photo_urls, created_at, updated_at
     )
     VALUES (
-        p_id, p_tenant_id, p_title, p_description, p_event_type_id, p_event_date, p_start_time, p_end_time,
+        p_id, p_tenant_id, p_title, p_description, p_event_type_id, p_event_date::DATE, p_start_time::time, p_end_time::time,
         p_location, p_organizer_id, p_status, p_scope, p_branch_id, p_is_organization_wide, p_photo_urls, p_created_at, p_updated_at
     );
     RETURN p_id;
@@ -580,10 +606,10 @@ $$;
 
 
 --
--- Name: fn_create_experience_schedule(uuid, uuid, uuid, uuid, date, character varying, character varying, uuid, time without time zone, time without time zone, text, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+-- Name: fn_create_experience_schedule(uuid, uuid, uuid, uuid, timestamp with time zone, character varying, character varying, uuid, interval, interval, text, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_create_experience_schedule(p_id uuid, p_tenant_id uuid, p_experience_id uuid, p_classroom_id uuid, p_scheduled_date date, p_time_of_day character varying, p_status character varying, p_primary_teacher_id uuid, p_planned_start_time time without time zone, p_planned_end_time time without time zone, p_preparation_notes text, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, experience_id uuid, classroom_id uuid, scheduled_date date, time_of_day character varying, status character varying, primary_teacher_id uuid, planned_start_time time without time zone, planned_end_time time without time zone, preparation_notes text, created_at timestamp with time zone, updated_at timestamp with time zone)
+CREATE FUNCTION public.fn_create_experience_schedule(p_id uuid, p_tenant_id uuid, p_experience_id uuid, p_classroom_id uuid, p_scheduled_date timestamp with time zone, p_time_of_day character varying, p_status character varying, p_primary_teacher_id uuid, p_planned_start_time interval, p_planned_end_time interval, p_preparation_notes text, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, experience_id uuid, classroom_id uuid, scheduled_date date, time_of_day character varying, status character varying, primary_teacher_id uuid, planned_start_time time without time zone, planned_end_time time without time zone, preparation_notes text, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -593,8 +619,8 @@ BEGIN
         primary_teacher_id, planned_start_time, planned_end_time, preparation_notes, created_at, updated_at
     )
     VALUES (
-        p_id, p_tenant_id, p_experience_id, p_classroom_id, p_scheduled_date, p_time_of_day, p_status,
-        p_primary_teacher_id, p_planned_start_time, p_planned_end_time, p_preparation_notes, p_created_at, p_updated_at
+        p_id, p_tenant_id, p_experience_id, p_classroom_id, p_scheduled_date::DATE, p_time_of_day, p_status,
+        p_primary_teacher_id, p_planned_start_time::time, p_planned_end_time::time, p_preparation_notes, p_created_at, p_updated_at
     )
     RETURNING experience_schedules.id, experience_schedules.tenant_id, experience_schedules.experience_id,
               experience_schedules.classroom_id, experience_schedules.scheduled_date, experience_schedules.time_of_day,
@@ -761,10 +787,10 @@ $$;
 
 
 --
--- Name: fn_create_teacher(uuid, uuid, uuid, uuid, character varying, character varying, character varying, character varying, character varying, character varying, text, date, character varying, character varying, text, character varying, text, character varying, jsonb, integer, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+-- Name: fn_create_teacher(uuid, uuid, uuid, uuid, character varying, character varying, character varying, character varying, character varying, character varying, text, timestamp with time zone, character varying, character varying, text, character varying, text, character varying, jsonb, integer, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_create_teacher(p_id uuid, p_tenant_id uuid, p_person_id uuid, p_user_id uuid, p_employee_number character varying, p_first_name character varying, p_middle_name character varying, p_last_name character varying, p_preferred_name character varying, p_display_name character varying, p_profile_photo_url text, p_date_of_birth date, p_gender character varying, p_preferred_language character varying, p_other_languages text, p_pronouns character varying, p_bio text, p_status character varying, p_draft_data jsonb, p_profile_completion_percentage integer, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, person_id uuid, user_id uuid, employee_number character varying, first_name character varying, middle_name character varying, last_name character varying, preferred_name character varying, display_name character varying, profile_photo_url text, date_of_birth date, gender character varying, preferred_language character varying, other_languages text, pronouns character varying, bio text, status character varying, draft_data jsonb, profile_completion_percentage integer, created_at timestamp with time zone, updated_at timestamp with time zone)
+CREATE FUNCTION public.fn_create_teacher(p_id uuid, p_tenant_id uuid, p_person_id uuid, p_user_id uuid, p_employee_number character varying, p_first_name character varying, p_middle_name character varying, p_last_name character varying, p_preferred_name character varying, p_display_name character varying, p_profile_photo_url text, p_date_of_birth timestamp with time zone, p_gender character varying, p_preferred_language character varying, p_other_languages text, p_pronouns character varying, p_bio text, p_status character varying, p_draft_data jsonb, p_profile_completion_percentage integer, p_created_at timestamp with time zone, p_updated_at timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, person_id uuid, user_id uuid, employee_number character varying, first_name character varying, middle_name character varying, last_name character varying, preferred_name character varying, display_name character varying, profile_photo_url text, date_of_birth date, gender character varying, preferred_language character varying, other_languages text, pronouns character varying, bio text, status character varying, draft_data jsonb, profile_completion_percentage integer, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -777,7 +803,7 @@ BEGIN
     )
     VALUES (
         p_id, p_tenant_id, p_person_id, p_user_id, p_employee_number, p_first_name, p_middle_name, p_last_name, 
-        p_preferred_name, p_display_name, p_profile_photo_url, p_date_of_birth, p_gender, p_preferred_language, 
+        p_preferred_name, p_display_name, p_profile_photo_url, p_date_of_birth::DATE, p_gender, p_preferred_language, 
         p_other_languages, p_pronouns, p_bio, p_status, p_draft_data, p_profile_completion_percentage, 
         p_created_at, p_updated_at
     )
@@ -846,6 +872,29 @@ BEGIN
     RETURN QUERY 
     SELECT * FROM fn_sync_external_login('DevLogin', v_target_email, v_target_email, 'Dev', 'User', NULL, 'Daycare');
 END;
+$$;
+
+
+--
+-- Name: fn_find_classroom_conflicts(uuid, uuid, date, time without time zone, time without time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_find_classroom_conflicts(p_tenant_id uuid, p_classroom_id uuid, p_date date, p_start time without time zone, p_end time without time zone, p_exclude_event_id uuid DEFAULT NULL::uuid) RETURNS TABLE(event_id uuid, title character varying, start_time time without time zone, end_time time without time zone, organizer_id uuid, organizer_name text)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT e.id, e.title, e.start_time, e.end_time, e.organizer_id,
+           COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)::text
+    FROM events e
+    JOIN event_classrooms ec ON ec.event_id = e.id
+    LEFT JOIN users u ON u.id = e.organizer_id
+    WHERE e.tenant_id = p_tenant_id
+      AND ec.classroom_id = p_classroom_id
+      AND e.event_date = p_date
+      AND e.status <> 'Cancelled'
+      AND (p_exclude_event_id IS NULL OR e.id <> p_exclude_event_id)
+      AND COALESCE(e.start_time, '00:00'::time) < COALESCE(p_end, '23:59:59.999999'::time)
+      AND COALESCE(e.end_time, '23:59:59.999999'::time) > COALESCE(p_start, '00:00'::time)
+    ORDER BY e.start_time NULLS FIRST;
 $$;
 
 
@@ -968,6 +1017,24 @@ CREATE FUNCTION public.fn_get_active_family_contracts(p_tenant_id uuid, p_branch
     WHERE tenant_id = p_tenant_id
       AND (p_branch_id IS NULL OR branch_id = p_branch_id)
     ORDER BY created_at DESC;
+$$;
+
+
+--
+-- Name: fn_get_active_master_lookups(character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_active_master_lookups(p_category character varying DEFAULT NULL::character varying) RETURNS TABLE(id uuid, category character varying, code character varying, display_name character varying, display_order integer, is_active boolean, metadata_json jsonb)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ml.id, ml.category, ml.code, ml.display_name, ml.display_order, ml.is_active, ml.metadata_json
+    FROM public.master_lookups ml
+    WHERE ml.is_active = true
+      AND (p_category IS NULL OR ml.category = p_category)
+    ORDER BY ml.category, ml.display_order, ml.display_name;
+END;
 $$;
 
 
@@ -1154,14 +1221,20 @@ $$;
 --
 
 CREATE FUNCTION public.fn_get_all_development_areas(p_tenant_id uuid DEFAULT NULL::uuid) RETURNS TABLE(id uuid, tenant_id uuid, name character varying, description text, icon character varying, display_order integer, is_active boolean)
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql STABLE
     AS $$
 BEGIN
     RETURN QUERY
-    SELECT da.id, da.tenant_id, da.name::VARCHAR, da.description, da.icon::VARCHAR,
-           da.display_order, da.is_active
+    SELECT da.id,
+           da.tenant_id,
+           da.name::VARCHAR,
+           da.description,
+           da.icon::VARCHAR,
+           da.display_order,
+           da.is_active
     FROM development_areas da
-    WHERE (da.tenant_id IS NULL OR da.tenant_id = p_tenant_id) AND da.is_active = TRUE
+    WHERE (da.tenant_id IS NULL OR da.tenant_id = p_tenant_id)
+      AND da.is_active = TRUE
     ORDER BY da.display_order;
 END;
 $$;
@@ -1363,6 +1436,131 @@ $$;
 
 
 --
+-- Name: fn_get_assigned_classroom_ids(uuid, uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_assigned_classroom_ids(p_tenant_id uuid, p_user_id uuid, p_organization_id uuid DEFAULT NULL::uuid, p_branch_id uuid DEFAULT NULL::uuid) RETURNS TABLE(classroom_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ct.classroom_id
+    FROM classroom_teachers ct
+    JOIN classrooms c ON c.id = ct.classroom_id
+    JOIN branches b ON b.id = c.branch_id
+    WHERE ct.tenant_id = p_tenant_id 
+      AND ct.user_id = p_user_id
+      AND (p_organization_id IS NULL OR b.organization_id = p_organization_id)
+      AND (p_branch_id IS NULL OR c.branch_id = p_branch_id);
+END;
+$$;
+
+
+--
+-- Name: fn_get_attendance_needs_attention(uuid, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_attendance_needs_attention(p_tenant_id uuid, p_date date DEFAULT CURRENT_DATE) RETURNS TABLE(alert_type character varying, icon character varying, title character varying, description text, branch_name character varying, classroom_name character varying, action_text character varying, action_url character varying, severity character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- 1. Unmarked children in classrooms
+    RETURN QUERY
+    WITH room_unmarked AS (
+        SELECT 
+            b.name AS b_name,
+            c.name AS c_name,
+            COUNT(ca.id) AS unmarked_count
+        FROM public.child_attendance ca
+        JOIN public.classrooms c ON ca.classroom_id = c.id
+        JOIN public.branches b ON c.branch_id = b.id
+        WHERE ca.tenant_id = p_tenant_id
+          AND ca.attendance_date = p_date
+          AND ca.status = 'Not marked'
+        GROUP BY b.name, c.name
+        HAVING COUNT(ca.id) > 0
+    )
+    SELECT 
+        'UnmarkedAttendance'::VARCHAR AS alert_type,
+        '◷'::VARCHAR AS icon,
+        'Attendance not completed'::VARCHAR AS title,
+        (ru.b_name || ' · ' || ru.c_name || ' has ' || ru.unmarked_count || ' children not marked.')::TEXT AS description,
+        ru.b_name::VARCHAR AS branch_name,
+        ru.c_name::VARCHAR AS classroom_name,
+        'Review classroom'::VARCHAR AS action_text,
+        ('/management/attendance/classrooms/' || ru.c_name || '?branch=' || ru.b_name)::VARCHAR AS action_url,
+        'amber'::VARCHAR AS severity
+    FROM room_unmarked ru
+    LIMIT 5;
+
+    -- 2. Missing child checkouts (Checked in / Present, but departure_time IS NULL)
+    RETURN QUERY
+    WITH missing_checkouts AS (
+        SELECT 
+            b.name AS b_name,
+            c.name AS c_name,
+            COUNT(ca.id) AS missing_count
+        FROM public.child_attendance ca
+        JOIN public.classrooms c ON ca.classroom_id = c.id
+        JOIN public.branches b ON c.branch_id = b.id
+        WHERE ca.tenant_id = p_tenant_id
+          AND ca.attendance_date = p_date
+          AND ca.status IN ('Present', 'Late')
+          AND ca.departure_time IS NULL
+        GROUP BY b.name, c.name
+        HAVING COUNT(ca.id) > 0
+    )
+    SELECT 
+        'MissingCheckout'::VARCHAR AS alert_type,
+        '↗'::VARCHAR AS icon,
+        'Child checkout missing'::VARCHAR AS title,
+        (mc.b_name || ' · ' || mc.c_name || ' has ' || mc.missing_count || ' children checked in without recorded departure.')::TEXT AS description,
+        mc.b_name::VARCHAR AS branch_name,
+        mc.c_name::VARCHAR AS classroom_name,
+        'Review classroom'::VARCHAR AS action_text,
+        ('/management/attendance/classrooms/' || mc.c_name || '?branch=' || mc.b_name)::VARCHAR AS action_url,
+        'amber'::VARCHAR AS severity
+    FROM missing_checkouts mc
+    LIMIT 5;
+
+    -- 3. Teacher staffing review (branches with active classrooms where teacher attendance count < 2 on a weekday)
+    RETURN QUERY
+    WITH branch_teachers AS (
+        SELECT 
+            b.id AS b_id,
+            b.name AS b_name,
+            COUNT(ta.id) FILTER (WHERE ta.status IN ('Present', 'Late')) AS present_teachers
+        FROM public.branches b
+        LEFT JOIN public.teacher_attendance ta 
+            ON ta.branch_id = b.id 
+            AND ta.attendance_date = p_date 
+            AND ta.tenant_id = p_tenant_id
+        WHERE b.tenant_id = p_tenant_id
+          AND b.is_active = true
+          AND EXISTS (
+              SELECT 1 FROM public.classrooms c 
+              WHERE c.branch_id = b.id AND c.is_active = true
+          )
+        GROUP BY b.id, b.name
+        HAVING COUNT(ta.id) FILTER (WHERE ta.status IN ('Present', 'Late')) < 2
+    )
+    SELECT 
+        'StaffingReview'::VARCHAR AS alert_type,
+        '♙'::VARCHAR AS icon,
+        'Teacher coverage needs review'::VARCHAR AS title,
+        (bt.b_name || ' branch has ' || bt.present_teachers || ' teachers marked present today.')::TEXT AS description,
+        bt.b_name::VARCHAR AS branch_name,
+        ''::VARCHAR AS classroom_name,
+        'Review branch'::VARCHAR AS action_text,
+        ('/management/attendance/branches/' || bt.b_name)::VARCHAR AS action_url,
+        'amber'::VARCHAR AS severity
+    FROM branch_teachers bt
+    LIMIT 3;
+END;
+$$;
+
+
+--
 -- Name: fn_get_attendance_summary(uuid, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1425,6 +1623,59 @@ BEGIN
     WHERE ap.tenant_id = p_tenant_id AND ap.child_id = p_child_id AND ap.is_active = TRUE
     ORDER BY ap.is_active DESC;
 END;
+$$;
+
+
+--
+-- Name: fn_get_available_cover_teachers(uuid, uuid, uuid, date, time without time zone, time without time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_available_cover_teachers(p_tenant_id uuid, p_branch_id uuid, p_classroom_id uuid, p_date date, p_start time without time zone, p_end time without time zone, p_exclude_event_id uuid DEFAULT NULL::uuid) RETURNS TABLE(user_id uuid, display_name text, is_same_classroom boolean, is_on_leave boolean, busy_with text, covers_this_week integer, is_available boolean, reason text)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH branch_teachers AS (
+        SELECT DISTINCT ct.user_id
+        FROM classroom_teachers ct
+        JOIN classrooms c ON c.id = ct.classroom_id
+        WHERE ct.tenant_id = p_tenant_id AND c.branch_id = p_branch_id
+        UNION
+        SELECT uba.user_id
+        FROM user_branch_assignments uba
+        JOIN teachers t ON t.user_id = uba.user_id AND t.tenant_id = p_tenant_id
+        WHERE uba.tenant_id = p_tenant_id AND uba.branch_id = p_branch_id AND uba.revoked_at IS NULL
+    ),
+    info AS (
+        SELECT bt.user_id,
+               COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)::text AS display_name,
+               EXISTS (SELECT 1 FROM classroom_teachers x WHERE x.user_id = bt.user_id AND x.classroom_id = p_classroom_id) AS is_same_classroom,
+               EXISTS (SELECT 1 FROM staff_leaves sl JOIN teachers t ON t.id = sl.teacher_id
+                       WHERE t.user_id = bt.user_id AND sl.tenant_id = p_tenant_id
+                         AND sl.status = 'Approved' AND p_date BETWEEN sl.start_date AND sl.end_date) AS is_on_leave,
+               (SELECT e.title || ' ' || COALESCE(to_char(e.start_time,'HH24:MI'),'all day')
+                FROM events e
+                WHERE e.tenant_id = p_tenant_id AND e.organizer_id = bt.user_id AND e.event_date = p_date
+                  AND e.status <> 'Cancelled'
+                  AND (p_exclude_event_id IS NULL OR e.id <> p_exclude_event_id)
+                  AND COALESCE(e.start_time, '00:00'::time) < COALESCE(p_end, '23:59:59.999999'::time)
+                  AND COALESCE(e.end_time, '23:59:59.999999'::time) > COALESCE(p_start, '00:00'::time)
+                LIMIT 1)::text AS busy_with,
+               (SELECT COUNT(*)::int FROM staff_leaves sl JOIN teachers t ON t.id = sl.substitute_teacher_id
+                WHERE t.user_id = bt.user_id AND sl.tenant_id = p_tenant_id
+                  AND sl.start_date <= p_date + 6 AND sl.end_date >= p_date - 6) AS covers_this_week
+        FROM branch_teachers bt
+        JOIN users u ON u.id = bt.user_id
+        WHERE u.tenant_id = p_tenant_id
+    )
+    SELECT i.user_id, i.display_name, i.is_same_classroom, i.is_on_leave, i.busy_with, i.covers_this_week,
+           (NOT i.is_on_leave AND i.busy_with IS NULL) AS is_available,
+           CASE
+               WHEN i.is_on_leave THEN 'On approved leave'
+               WHEN i.busy_with IS NOT NULL THEN 'Leading: ' || i.busy_with
+               WHEN i.is_same_classroom THEN 'Co-teacher in this classroom — children know them'
+               ELSE 'Free branch teacher'
+           END
+    FROM info i
+    ORDER BY (NOT i.is_on_leave AND i.busy_with IS NULL) DESC, i.is_same_classroom DESC, i.covers_this_week ASC, i.display_name;
 $$;
 
 
@@ -1915,7 +2166,11 @@ CREATE FUNCTION public.fn_get_branch_classrooms_with_plans_count(p_tenant_id uui
     SELECT COUNT(DISTINCT es.classroom_id)::int
     FROM experience_schedules es
     JOIN classrooms cl ON es.classroom_id = cl.id
-    WHERE es.tenant_id = p_tenant_id AND cl.branch_id = p_branch_id
+    WHERE es.tenant_id = p_tenant_id 
+      AND cl.branch_id = p_branch_id
+      AND cl.is_active = true
+      AND COALESCE(cl.classroom_type, '') != 'Pool'
+      AND COALESCE(cl.environment, '') != 'Virtual'
       AND es.scheduled_date >= CURRENT_DATE - INTERVAL '7 days';
 $$;
 
@@ -2031,7 +2286,11 @@ CREATE FUNCTION public.fn_get_branch_room_stats(p_tenant_id uuid, p_branch_id uu
         COUNT(*)::int AS room_count,
         COALESCE(SUM(capacity), 0)::int AS total_cap
     FROM classrooms
-    WHERE tenant_id = p_tenant_id AND branch_id = p_branch_id;
+    WHERE tenant_id = p_tenant_id 
+      AND branch_id = p_branch_id
+      AND is_active = true
+      AND COALESCE(classroom_type, '') != 'Pool'
+      AND COALESCE(environment, '') != 'Virtual';
 $$;
 
 
@@ -2082,7 +2341,9 @@ BEGIN
     RETURN QUERY
     SELECT b.id, b.tenant_id, b.organization_id, b.name, b.location, b.is_active, b.created_at, b.updated_at
     FROM branches b
-    WHERE b.organization_id = p_organization_id AND b.tenant_id = p_tenant_id
+    WHERE b.organization_id = p_organization_id 
+      AND b.tenant_id = p_tenant_id
+      AND b.is_active = true
     ORDER BY b.name;
 END;
 $$;
@@ -2098,7 +2359,9 @@ CREATE FUNCTION public.fn_get_branches_for_benchmarking(p_tenant_id uuid, p_orga
     WITH org_branches AS (
         SELECT b.id, b.name, COALESCE(b.location, 'Main Campus')::varchar AS location
         FROM branches b
-        WHERE b.tenant_id = p_tenant_id AND b.organization_id = p_organization_id
+        WHERE b.tenant_id = p_tenant_id 
+          AND b.organization_id = p_organization_id
+          AND b.is_active = true
         ORDER BY b.name
     )
     SELECT * FROM org_branches
@@ -2106,6 +2369,7 @@ CREATE FUNCTION public.fn_get_branches_for_benchmarking(p_tenant_id uuid, p_orga
     SELECT b.id, b.name, COALESCE(b.location, 'Main Campus')::varchar AS location
     FROM branches b
     WHERE b.tenant_id = p_tenant_id
+      AND b.is_active = true
       AND NOT EXISTS (SELECT 1 FROM org_branches)
     ORDER BY name;
 $$;
@@ -2208,42 +2472,62 @@ $$;
 
 
 --
--- Name: child_attendance; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.child_attendance (
-    id uuid NOT NULL,
-    tenant_id uuid NOT NULL,
-    branch_id uuid NOT NULL,
-    classroom_id uuid NOT NULL,
-    child_id uuid NOT NULL,
-    attendance_date date NOT NULL,
-    status character varying(50) NOT NULL,
-    arrival_time time without time zone,
-    departure_time time without time zone,
-    notes text,
-    recorded_by_user_id uuid,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    pickup_person_name character varying(255),
-    pickup_person_relationship character varying(100),
-    pickup_verification_method character varying(100),
-    pickup_notes text,
-    authorized_pickup_id uuid,
-    departure_verified_by_user_id uuid
-);
-
-
---
 -- Name: fn_get_child_attendance_for_date(uuid, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_get_child_attendance_for_date(p_child_id uuid, p_date date) RETURNS SETOF public.child_attendance
+CREATE FUNCTION public.fn_get_child_attendance_for_date(p_child_id uuid, p_date date) RETURNS TABLE(id uuid, tenant_id uuid, branch_id uuid, classroom_id uuid, child_id uuid, attendance_date date, status character varying, arrival_time time without time zone, departure_time time without time zone, notes text, recorded_by_user_id uuid, created_at timestamp with time zone, updated_at timestamp with time zone, pickup_person_name character varying, pickup_person_relationship character varying, pickup_verification_method character varying, pickup_notes text, authorized_pickup_id uuid, departure_verified_by_user_id uuid)
     LANGUAGE sql STABLE
     AS $$
-    SELECT *
-    FROM child_attendance
-    WHERE child_id = p_child_id AND attendance_date = p_date
+    SELECT 
+        ca.id,
+        ca.tenant_id,
+        ca.branch_id,
+        ca.classroom_id,
+        ca.child_id,
+        ca.attendance_date,
+        ca.status,
+        ca.arrival_time,
+        ca.departure_time,
+        ca.notes,
+        ca.recorded_by_user_id,
+        ca.created_at,
+        ca.updated_at,
+        ca.pickup_person_name,
+        ca.pickup_person_relationship,
+        ca.pickup_verification_method,
+        ca.pickup_notes,
+        ca.authorized_pickup_id,
+        ca.departure_verified_by_user_id
+    FROM child_attendance ca
+    WHERE ca.child_id = p_child_id AND ca.attendance_date = p_date
+    LIMIT 1;
+$$;
+
+
+--
+-- Name: fn_get_child_attendance_for_date(uuid, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_child_attendance_for_date(p_child_id uuid, p_date timestamp without time zone) RETURNS TABLE(id uuid, tenant_id uuid, branch_id uuid, classroom_id uuid, child_id uuid, attendance_date date, status character varying, arrival_time time without time zone, departure_time time without time zone, notes text, recorded_by_user_id uuid, created_at timestamp with time zone, updated_at timestamp with time zone, pickup_person_name character varying, pickup_person_relationship character varying, pickup_verification_method character varying, pickup_notes text, authorized_pickup_id uuid, departure_verified_by_user_id uuid)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT ca.id, ca.tenant_id, ca.branch_id, ca.classroom_id, ca.child_id, ca.attendance_date, ca.status, ca.arrival_time, ca.departure_time, ca.notes, ca.recorded_by_user_id, ca.created_at, ca.updated_at, ca.pickup_person_name, ca.pickup_person_relationship, ca.pickup_verification_method, ca.pickup_notes, ca.authorized_pickup_id, ca.departure_verified_by_user_id
+    FROM child_attendance ca
+    WHERE ca.child_id = p_child_id AND ca.attendance_date = p_date::date
+    LIMIT 1;
+$$;
+
+
+--
+-- Name: fn_get_child_attendance_for_date(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_child_attendance_for_date(p_child_id uuid, p_date timestamp with time zone) RETURNS TABLE(id uuid, tenant_id uuid, branch_id uuid, classroom_id uuid, child_id uuid, attendance_date date, status character varying, arrival_time time without time zone, departure_time time without time zone, notes text, recorded_by_user_id uuid, created_at timestamp with time zone, updated_at timestamp with time zone, pickup_person_name character varying, pickup_person_relationship character varying, pickup_verification_method character varying, pickup_notes text, authorized_pickup_id uuid, departure_verified_by_user_id uuid)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT ca.id, ca.tenant_id, ca.branch_id, ca.classroom_id, ca.child_id, ca.attendance_date, ca.status, ca.arrival_time, ca.departure_time, ca.notes, ca.recorded_by_user_id, ca.created_at, ca.updated_at, ca.pickup_person_name, ca.pickup_person_relationship, ca.pickup_verification_method, ca.pickup_notes, ca.authorized_pickup_id, ca.departure_verified_by_user_id
+    FROM child_attendance ca
+    WHERE ca.child_id = p_child_id AND ca.attendance_date = p_date::date
     LIMIT 1;
 $$;
 
@@ -3222,6 +3506,73 @@ $$;
 
 
 --
+-- Name: fn_get_cover_candidates_for_event(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_cover_candidates_for_event(p_tenant_id uuid, p_branch_id uuid, p_event_id uuid) RETURNS TABLE(user_id uuid, display_name text, is_same_classroom boolean, is_on_leave boolean, busy_with text, covers_this_week integer, is_available boolean, reason text)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT a.* FROM events e
+    CROSS JOIN LATERAL (
+        SELECT ec.classroom_id FROM event_classrooms ec JOIN classrooms c ON c.id = ec.classroom_id
+        WHERE ec.event_id = e.id AND c.branch_id = p_branch_id LIMIT 1) cls
+    CROSS JOIN LATERAL public.fn_get_available_cover_teachers(p_tenant_id, p_branch_id, cls.classroom_id, e.event_date, e.start_time, e.end_time, e.id) a
+    WHERE e.id = p_event_id AND e.tenant_id = p_tenant_id AND a.user_id IS DISTINCT FROM e.organizer_id;
+$$;
+
+
+--
+-- Name: fn_get_coverage_needs(uuid, uuid, date, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_coverage_needs(p_tenant_id uuid, p_branch_id uuid, p_from date, p_to date) RETURNS TABLE(event_id uuid, title character varying, event_date date, start_time time without time zone, end_time time without time zone, status character varying, classroom_id uuid, classroom_name character varying, organizer_id uuid, organizer_name text, leave_id uuid, leave_type character varying)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT DISTINCT ON (e.id)
+           e.id, e.title, e.event_date, e.start_time, e.end_time, e.status,
+           c.id, c.name,
+           e.organizer_id,
+           COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.email)::text,
+           sl.id, sl.leave_type
+    FROM events e
+    JOIN event_classrooms ec ON ec.event_id = e.id
+    JOIN classrooms c ON c.id = ec.classroom_id AND c.branch_id = p_branch_id
+    JOIN users u ON u.id = e.organizer_id
+    JOIN teachers t ON t.user_id = e.organizer_id AND t.tenant_id = p_tenant_id
+    JOIN staff_leaves sl ON sl.teacher_id = t.id AND sl.status = 'Approved'
+                        AND e.event_date BETWEEN sl.start_date AND sl.end_date
+    WHERE e.tenant_id = p_tenant_id
+      AND e.event_date BETWEEN p_from AND p_to
+      AND e.status NOT IN ('Cancelled', 'Completed')
+    ORDER BY e.id, e.event_date;
+$$;
+
+
+--
+-- Name: fn_get_coverage_needs(uuid, uuid, timestamp without time zone, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_coverage_needs(p_tenant_id uuid, p_branch_id uuid, p_from timestamp without time zone, p_to timestamp without time zone) RETURNS TABLE(event_id uuid, title character varying, event_date date, start_time time without time zone, end_time time without time zone, status character varying, classroom_id uuid, classroom_name character varying, organizer_id uuid, organizer_name text, leave_id uuid, leave_type character varying)
+    LANGUAGE sql STABLE
+    AS $$ SELECT * FROM public.fn_get_coverage_needs(p_tenant_id, p_branch_id, p_from::date, p_to::date) $$;
+
+
+--
+-- Name: fn_get_daily_readiness_logs(uuid, uuid, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_daily_readiness_logs(p_tenant_id uuid, p_organization_id uuid, p_check_date date) RETURNS TABLE(item_id character varying, is_completed boolean, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT item_id, is_completed, updated_at
+    FROM public.daily_readiness_checklist_logs
+    WHERE tenant_id = p_tenant_id
+      AND organization_id = p_organization_id
+      AND check_date = p_check_date;
+$$;
+
+
+--
 -- Name: fn_get_dashboard_branch_metrics(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3615,7 +3966,7 @@ $$;
 -- Name: fn_get_event_tasks(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_get_event_tasks(p_event_id uuid) RETURNS TABLE(id uuid, event_id uuid, description character varying, owner_id uuid, due_date timestamp with time zone, is_completed boolean, completed_at timestamp with time zone, created_at timestamp with time zone, updated_at timestamp with time zone)
+CREATE FUNCTION public.fn_get_event_tasks(p_event_id uuid) RETURNS TABLE(id uuid, event_id uuid, description text, owner_id uuid, due_date timestamp with time zone, is_completed boolean, completed_at timestamp with time zone, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -5301,6 +5652,26 @@ $$;
 
 
 --
+-- Name: fn_get_media_asset_by_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_media_asset_by_id(p_tenant_id uuid, p_id uuid) RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, child_id uuid, entity_type character varying, entity_id uuid, display_container character varying, display_key character varying, display_content_type character varying, display_size_bytes bigint, display_width integer, display_height integer, thumbnail_container character varying, thumbnail_key character varying, thumbnail_content_type character varying, thumbnail_size_bytes bigint, thumbnail_width integer, thumbnail_height integer, content_hash character varying, created_by uuid, created_at timestamp with time zone, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        m.id, m.tenant_id, m.organization_id, m.child_id, m.entity_type, m.entity_id,
+        m.display_container, m.display_key, m.display_content_type, m.display_size_bytes, m.display_width, m.display_height,
+        m.thumbnail_container, m.thumbnail_key, m.thumbnail_content_type, m.thumbnail_size_bytes, m.thumbnail_width, m.thumbnail_height,
+        m.content_hash, m.created_by, m.created_at, m.updated_at
+    FROM public.media_assets m
+    WHERE m.id = p_id AND m.tenant_id = p_tenant_id;
+END;
+$$;
+
+
+--
 -- Name: fn_get_milestones_for_child(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5412,6 +5783,24 @@ BEGIN
     WHERE uor.tenant_id = p_tenant_id AND uor.organization_id = p_organization_id AND uor.user_id = p_user_id
       AND m.status = 'Active';
 END;
+$$;
+
+
+--
+-- Name: fn_get_organization_role_permissions(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_organization_role_permissions(p_tenant_id uuid, p_organization_id uuid) RETURNS TABLE(role_name character varying, feature_key character varying, is_allowed boolean, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT 
+        orp.role_name,
+        orp.feature_key,
+        orp.is_allowed,
+        orp.updated_at
+    FROM organization_role_permissions orp
+    WHERE orp.tenant_id = p_tenant_id
+      AND orp.organization_id = p_organization_id;
 $$;
 
 
@@ -5672,7 +6061,7 @@ $$;
 -- Name: fn_get_parent_communications_by_child_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_get_parent_communications_by_child_id(p_tenant_id uuid, p_child_id uuid) RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, classroom_id uuid, child_id uuid, recipient_person_id uuid, recipient_user_id uuid, recipient_email character varying, recipient_name character varying, recipient_relationship character varying, communication_type character varying, reporting_date_start date, reporting_date_end date, title character varying, content_draft text, content_final text, family_conversation_starter text, evidence_summary_json jsonb, consent_verified boolean, consent_notes character varying, status character varying, teacher_id uuid, teacher_name character varying, approved_by_user_id uuid, approved_at timestamp with time zone, sent_at timestamp with time zone, delivery_channel character varying, delivery_status character varying, delivery_error text, idempotency_key character varying, created_at timestamp with time zone, updated_at timestamp with time zone, child_name text, classroom_name character varying)
+CREATE FUNCTION public.fn_get_parent_communications_by_child_id(p_tenant_id uuid, p_child_id uuid) RETURNS TABLE(id uuid, tenant_id uuid, organization_id uuid, classroom_id uuid, child_id uuid, recipient_person_id uuid, recipient_user_id uuid, recipient_email character varying, recipient_name character varying, recipient_relationship character varying, communication_type character varying, reporting_date_start date, reporting_date_end date, title character varying, content_draft text, content_final text, family_conversation_starter text, evidence_summary_json jsonb, consent_verified boolean, consent_notes character varying, status character varying, teacher_id uuid, teacher_name character varying, approved_by_user_id uuid, approved_at timestamp with time zone, sent_at timestamp with time zone, delivery_channel character varying, delivery_status character varying, delivery_error text, idempotency_key character varying, created_at timestamp with time zone, updated_at timestamp with time zone, child_name text, classroom_name character varying, is_agent_draft boolean, agent_token_id uuid)
     LANGUAGE sql STABLE
     AS $$
     SELECT 
@@ -5685,7 +6074,9 @@ CREATE FUNCTION public.fn_get_parent_communications_by_child_id(p_tenant_id uuid
         pc.delivery_channel, pc.delivery_status, pc.delivery_error, pc.idempotency_key,
         pc.created_at, pc.updated_at,
         TRIM(CONCAT(c.first_name, ' ', c.last_name)) AS child_name,
-        cl.name AS classroom_name
+        cl.name AS classroom_name,
+        pc.is_agent_draft,
+        pc.agent_token_id
     FROM parent_communications pc
     JOIN children c ON pc.child_id = c.id
     LEFT JOIN classrooms cl ON pc.classroom_id = cl.id
@@ -5926,6 +6317,20 @@ $$;
 
 
 --
+-- Name: fn_get_platform_admin_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_platform_admin_count() RETURNS integer
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT COUNT(DISTINCT ur.user_id)::integer
+    FROM user_roles ur
+    JOIN roles r ON ur.role_id = r.id
+    WHERE r.name IN ('PlatformAdmin', 'SuperAdmin');
+$$;
+
+
+--
 -- Name: fn_get_platform_all_branches(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6045,12 +6450,36 @@ $$;
 -- Name: fn_get_platform_organization_admins(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_get_platform_organization_admins() RETURNS TABLE(user_id uuid, admin_name text, admin_email character varying, organization_id uuid, organization_name character varying, role_name character varying, account_status text)
+CREATE FUNCTION public.fn_get_platform_organization_admins() RETURNS TABLE(user_id uuid, admin_name text, admin_email character varying, organization_id uuid, organization_name character varying, role_name character varying, account_status text, first_name character varying, last_name character varying)
     LANGUAGE sql STABLE
     AS $$
+    -- 1. All users holding PlatformAdmin or SuperAdmin role globally
+    SELECT DISTINCT ON (u.id)
+        u.id AS user_id,
+        CASE
+            WHEN u.display_name IS NOT NULL AND TRIM(u.display_name) != '' THEN TRIM(u.display_name)
+            WHEN TRIM(CONCAT(u.first_name, ' ', u.last_name)) != '' THEN TRIM(CONCAT(u.first_name, ' ', u.last_name))
+            WHEN u.email IS NOT NULL AND u.email != '' THEN INITCAP(SPLIT_PART(SPLIT_PART(u.email, '@', 1), '.', 1))
+            ELSE 'Platform Administrator'
+        END AS admin_name,
+        u.email AS admin_email,
+        '00000000-0000-0000-0000-000000000000'::uuid AS organization_id,
+        'EnjoyEveryday Platform (Global)'::character varying AS organization_name,
+        'Platform Administrator'::character varying AS role_name,
+        CASE WHEN u.is_active THEN 'Active' ELSE 'Suspended' END AS account_status,
+        COALESCE(u.first_name, '')::character varying AS first_name,
+        COALESCE(u.last_name, '')::character varying AS last_name
+    FROM users u
+    JOIN user_roles ur ON ur.user_id = u.id
+    JOIN roles r ON ur.role_id = r.id
+    WHERE r.name IN ('PlatformAdmin', 'SuperAdmin')
+
+    UNION ALL
+
+    -- 2. Organization Owners, Admins, and Branch Admins
     SELECT DISTINCT ON (o.id, COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid))
         COALESCE(u.id, gen_random_uuid()) AS user_id,
-        CASE 
+        CASE
             WHEN u.display_name IS NOT NULL AND TRIM(u.display_name) != '' AND TRIM(u.display_name) != o.name THEN TRIM(u.display_name)
             WHEN TRIM(CONCAT(u.first_name, ' ', u.last_name)) != '' AND TRIM(CONCAT(u.first_name, ' ', u.last_name)) != 'Admin' AND TRIM(CONCAT(u.first_name, ' ', u.last_name)) != o.name THEN TRIM(CONCAT(u.first_name, ' ', u.last_name))
             WHEN u.email IS NOT NULL AND u.email != '' THEN INITCAP(SPLIT_PART(SPLIT_PART(u.email, '@', 1), '.', 1))
@@ -6060,14 +6489,16 @@ CREATE FUNCTION public.fn_get_platform_organization_admins() RETURNS TABLE(user_
         o.id AS organization_id,
         o.name AS organization_name,
         COALESCE(r.name, 'Organization Admin') AS role_name,
-        CASE WHEN o.is_active THEN 'Active' ELSE 'Suspended' END AS account_status
+        CASE WHEN o.is_active THEN 'Active' ELSE 'Suspended' END AS account_status,
+        COALESCE(u.first_name, '')::character varying AS first_name,
+        COALESCE(u.last_name, '')::character varying AS last_name
     FROM organizations o
     LEFT JOIN organization_memberships om ON om.organization_id = o.id AND om.status = 'Active'
     LEFT JOIN users u ON u.id = om.user_id
     LEFT JOIN user_organization_roles uor ON uor.user_id = u.id AND uor.organization_id = o.id
     LEFT JOIN roles r ON r.id = uor.role_id
-    ORDER BY o.id, COALESCE(u.id, '00000000-0000-0000-0000-000000000000'::uuid), 
-             CASE WHEN r.name = 'OrganizationOwner' THEN 1 WHEN r.name = 'OrganizationAdmin' THEN 2 ELSE 3 END;
+    WHERE r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin') OR r.name IS NULL
+    ORDER BY 4, 1;
 $$;
 
 
@@ -6529,7 +6960,10 @@ BEGIN
            t.status, t.draft_data, t.profile_completion_percentage,
            t.created_at, t.updated_at
     FROM teachers t
-    WHERE t.id = p_id AND t.tenant_id = p_tenant_id;
+    WHERE (t.id = p_id OR t.user_id = p_id)
+      AND (p_tenant_id IS NULL OR t.tenant_id = p_tenant_id)
+    ORDER BY (CASE WHEN t.id = p_id THEN 0 ELSE 1 END), t.updated_at DESC
+    LIMIT 1;
 END;
 $$;
 
@@ -6684,6 +7118,24 @@ $$;
 
 
 --
+-- Name: fn_get_tenant_ai_settings(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_tenant_ai_settings(p_tenant_id uuid) RETURNS TABLE(encrypted_key character varying, ai_provider character varying)
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        t.encrypted_ai_api_key, 
+        COALESCE(t.ai_provider, 'GoogleGemini')::varchar
+    FROM tenants t
+    WHERE t.id = p_tenant_id;
+END;
+$$;
+
+
+--
 -- Name: fn_get_tenant_encrypted_ai_api_key(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6700,6 +7152,52 @@ $$;
 
 
 --
+-- Name: fn_get_tenant_preferences(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_tenant_preferences(p_tenant_id uuid) RETURNS TABLE(tenant_id uuid, currency character varying, time_zone character varying, operating_hours_json jsonb, statutory_ratios_json jsonb, billing_rules_json jsonb, safety_policies_json jsonb, custom_settings_json jsonb, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT tp.tenant_id, tp.currency, tp.time_zone,
+           tp.operating_hours_json, tp.statutory_ratios_json,
+           tp.billing_rules_json, tp.safety_policies_json,
+           tp.custom_settings_json, tp.updated_at
+    FROM public.tenant_preferences tp
+    WHERE tp.tenant_id = p_tenant_id;
+END;
+$$;
+
+
+--
+-- Name: child_attendance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.child_attendance (
+    id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    branch_id uuid NOT NULL,
+    classroom_id uuid NOT NULL,
+    child_id uuid NOT NULL,
+    attendance_date date NOT NULL,
+    status character varying(50) NOT NULL,
+    arrival_time time without time zone,
+    departure_time time without time zone,
+    notes text,
+    recorded_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    pickup_person_name character varying(255),
+    pickup_person_relationship character varying(100),
+    pickup_verification_method character varying(100),
+    pickup_notes text,
+    authorized_pickup_id uuid,
+    departure_verified_by_user_id uuid
+);
+
+
+--
 -- Name: fn_get_today_child_attendance(uuid, uuid, date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6708,6 +7206,32 @@ CREATE FUNCTION public.fn_get_today_child_attendance(p_tenant_id uuid, p_child_i
     AS $$
     SELECT * FROM child_attendance
     WHERE tenant_id = p_tenant_id AND child_id = p_child_id AND attendance_date = p_date
+    LIMIT 1;
+$$;
+
+
+--
+-- Name: fn_get_today_child_attendance(uuid, uuid, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_today_child_attendance(p_tenant_id uuid, p_child_id uuid, p_date timestamp without time zone) RETURNS SETOF public.child_attendance
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT * FROM child_attendance
+    WHERE tenant_id = p_tenant_id AND child_id = p_child_id AND attendance_date = p_date::date
+    LIMIT 1;
+$$;
+
+
+--
+-- Name: fn_get_today_child_attendance(uuid, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_today_child_attendance(p_tenant_id uuid, p_child_id uuid, p_date timestamp with time zone) RETURNS SETOF public.child_attendance
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT * FROM child_attendance
+    WHERE tenant_id = p_tenant_id AND child_id = p_child_id AND attendance_date = p_date::date
     LIMIT 1;
 $$;
 
@@ -6728,6 +7252,27 @@ CREATE FUNCTION public.fn_get_unread_parent_communications_count(p_tenant_id uui
       AND (p_organization_id IS NULL OR pc.organization_id = p_organization_id)
       AND (p_branch_id IS NULL OR cl.branch_id = p_branch_id)
       AND (p_classroom_id IS NULL OR pc.classroom_id = p_classroom_id);
+$$;
+
+
+--
+-- Name: fn_get_user_assigned_branches(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_user_assigned_branches(p_user_id uuid, p_organization_id uuid) RETURNS TABLE(id uuid, name character varying, location character varying, is_active boolean)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT b.id, b.name::VARCHAR, b.location::VARCHAR, b.is_active
+    FROM user_branch_assignments uba
+    JOIN branches b ON uba.branch_id = b.id
+    WHERE uba.user_id = p_user_id
+      AND uba.organization_id = p_organization_id
+      AND uba.revoked_at IS NULL
+      AND b.is_active = true
+    ORDER BY b.name;
+END;
 $$;
 
 
@@ -6782,6 +7327,23 @@ $$;
 
 
 --
+-- Name: fn_get_user_by_email(character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_get_user_by_email(p_email character varying) RETURNS TABLE(id uuid, tenant_id uuid, email character varying, first_name character varying, last_name character varying, display_name character varying, is_active boolean, created_at timestamp with time zone, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.tenant_id, u.email, u.first_name, u.last_name, u.display_name, u.is_active, u.created_at, u.updated_at
+    FROM users u
+    WHERE u.normalized_email = UPPER(TRIM(p_email)) OR LOWER(u.email) = LOWER(TRIM(p_email))
+    LIMIT 1;
+END;
+$$;
+
+
+--
 -- Name: fn_get_user_by_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6792,7 +7354,15 @@ BEGIN
     RETURN QUERY
     SELECT u.id, u.tenant_id, u.email, u.first_name, u.last_name, u.display_name, u.is_active, u.created_at, u.updated_at
     FROM users u
-    WHERE u.id = p_user_id AND u.tenant_id = p_tenant_id;
+    WHERE u.id = p_user_id 
+      AND (
+          p_tenant_id IS NULL 
+          OR u.tenant_id = p_tenant_id 
+          OR EXISTS (
+              SELECT 1 FROM organization_memberships om 
+              WHERE om.user_id = u.id AND om.tenant_id = p_tenant_id
+          )
+      );
 END;
 $$;
 
@@ -6865,6 +7435,7 @@ BEGIN
             SELECT ur.user_id, ur.role_id, NULL::UUID as org_id FROM user_roles ur
             UNION ALL
             SELECT uor.user_id, uor.role_id, uor.organization_id as org_id FROM user_organization_roles uor
+            WHERE p_tenant_id = '00000000-0000-0000-0000-000000000000'::uuid OR uor.tenant_id = p_tenant_id
         ) comb
         JOIN roles r ON comb.role_id = r.id
         LEFT JOIN organizations o ON o.id = comb.org_id
@@ -6895,7 +7466,11 @@ BEGIN
     LEFT JOIN user_role_agg ura ON ura.user_id = u.id
     LEFT JOIN classroom_agg cla ON cla.user_id = u.id
     LEFT JOIN parent_agg pa ON pa.user_id = u.id
-    WHERE p_tenant_id = '00000000-0000-0000-0000-000000000000'::uuid OR u.tenant_id = p_tenant_id
+    WHERE p_tenant_id = '00000000-0000-0000-0000-000000000000'::uuid 
+       OR u.tenant_id = p_tenant_id
+       OR EXISTS (SELECT 1 FROM organization_memberships om WHERE om.user_id = u.id AND om.tenant_id = p_tenant_id)
+       OR EXISTS (SELECT 1 FROM user_organization_roles uor WHERE uor.user_id = u.id AND uor.tenant_id = p_tenant_id)
+       OR EXISTS (SELECT 1 FROM user_branch_assignments uba WHERE uba.user_id = u.id AND uba.tenant_id = p_tenant_id AND uba.revoked_at IS NULL)
     ORDER BY u.first_name, u.last_name;
 END;
 $$;
@@ -7014,10 +7589,79 @@ $$;
 
 
 --
--- Name: fn_record_teacher_attendance(uuid, uuid, uuid, uuid, date, character varying, time without time zone, time without time zone, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: fn_reassign_event_organizer(uuid, uuid, uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.fn_record_teacher_attendance(p_id uuid, p_tenant_id uuid, p_branch_id uuid, p_teacher_id uuid, p_attendance_date date, p_status character varying, p_clock_in_time time without time zone, p_clock_out_time time without time zone, p_notes text, p_recorded_by_user_id uuid) RETURNS TABLE(id uuid, tenant_id uuid, branch_id uuid, teacher_id uuid, attendance_date date, status character varying, clock_in_time time without time zone, clock_out_time time without time zone, notes text, recorded_by_user_id uuid, created_at timestamp with time zone, updated_at timestamp with time zone)
+CREATE FUNCTION public.fn_reassign_event_organizer(p_tenant_id uuid, p_event_id uuid, p_new_user_id uuid, p_reassigned_by uuid, p_branch_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    e record;
+    v_classroom uuid;
+    v_ok boolean;
+    v_reason text;
+    v_old_teacher uuid;
+    v_new_teacher uuid;
+BEGIN
+    SELECT * INTO e FROM events WHERE id = p_event_id AND tenant_id = p_tenant_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Event not found' USING ERRCODE = 'EE404';
+    END IF;
+
+    SELECT ec.classroom_id INTO v_classroom
+    FROM event_classrooms ec JOIN classrooms c ON c.id = ec.classroom_id
+    WHERE ec.event_id = p_event_id AND c.branch_id = p_branch_id LIMIT 1;
+    IF v_classroom IS NULL THEN
+        RAISE EXCEPTION 'Event does not belong to this branch' USING ERRCODE = 'EE403';
+    END IF;
+
+    -- Serialize per teacher so two admins cannot double-book the same person.
+    PERFORM pg_advisory_xact_lock(hashtextextended('teacher-slot:' || p_new_user_id::text, 0));
+
+    SELECT a.is_available, a.reason INTO v_ok, v_reason
+    FROM public.fn_get_available_cover_teachers(p_tenant_id, p_branch_id, v_classroom, e.event_date, e.start_time, e.end_time, p_event_id) a
+    WHERE a.user_id = p_new_user_id;
+
+    IF v_ok IS NULL THEN
+        RAISE EXCEPTION 'Selected teacher is not assigned to this branch' USING ERRCODE = 'EE409';
+    ELSIF NOT v_ok THEN
+        RAISE EXCEPTION 'Selected teacher is not available: %', v_reason USING ERRCODE = 'EE409';
+    END IF;
+
+    UPDATE events SET organizer_id = p_new_user_id, updated_at = now() WHERE id = p_event_id;
+    UPDATE event_tasks SET owner_id = p_new_user_id, updated_at = now()
+     WHERE event_id = p_event_id AND is_completed = false AND (owner_id = e.organizer_id OR owner_id IS NULL);
+
+    SELECT id INTO v_old_teacher FROM teachers WHERE user_id = e.organizer_id AND tenant_id = p_tenant_id LIMIT 1;
+    SELECT id INTO v_new_teacher FROM teachers WHERE user_id = p_new_user_id AND tenant_id = p_tenant_id LIMIT 1;
+
+    IF v_old_teacher IS NOT NULL THEN
+        UPDATE staff_leaves sl
+           SET substitute_teacher_id = COALESCE(sl.substitute_teacher_id, v_new_teacher),
+               reviewed_by_user_id = p_reassigned_by,
+               coverage_status = CASE WHEN EXISTS (
+                    SELECT 1 FROM events x JOIN event_classrooms xc ON xc.event_id = x.id
+                    WHERE x.tenant_id = p_tenant_id AND x.organizer_id = e.organizer_id
+                      AND x.status NOT IN ('Cancelled','Completed')
+                      AND x.event_date BETWEEN sl.start_date AND sl.end_date)
+                  THEN 'Uncovered' ELSE 'Covered' END
+         WHERE sl.teacher_id = v_old_teacher AND sl.tenant_id = p_tenant_id AND sl.status = 'Approved'
+           AND e.event_date BETWEEN sl.start_date AND sl.end_date;
+    END IF;
+
+    INSERT INTO audit_log (tenant_id, user_id, action, entity_type, entity_id, details)
+    VALUES (p_tenant_id, p_reassigned_by, 'EventOrganizerReassigned', 'Event', p_event_id,
+            jsonb_build_object('from_user_id', e.organizer_id, 'to_user_id', p_new_user_id,
+                               'event_date', e.event_date, 'classroom_id', v_classroom));
+END;
+$$;
+
+
+--
+-- Name: fn_record_teacher_attendance(uuid, uuid, uuid, uuid, timestamp with time zone, character varying, interval, interval, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_record_teacher_attendance(p_id uuid, p_tenant_id uuid, p_branch_id uuid, p_teacher_id uuid, p_attendance_date timestamp with time zone, p_status character varying, p_clock_in_time interval, p_clock_out_time interval, p_notes text, p_recorded_by_user_id uuid) RETURNS TABLE(id uuid, tenant_id uuid, branch_id uuid, teacher_id uuid, attendance_date date, status character varying, clock_in_time time without time zone, clock_out_time time without time zone, notes text, recorded_by_user_id uuid, created_at timestamp with time zone, updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -7034,41 +7678,57 @@ BEGIN
             INSERT INTO teachers (id, tenant_id, user_id, first_name, last_name, display_name, status, created_at, updated_at)
             VALUES (
                 v_actual_teacher_id,
-                COALESCE(NULLIF(p_tenant_id, '00000000-0000-0000-0000-000000000000'::uuid), v_user.tenant_id),
+                p_tenant_id,
                 v_user.id,
                 COALESCE(v_user.first_name, 'Teacher'),
                 COALESCE(v_user.last_name, ''),
-                COALESCE(v_user.display_name, v_user.first_name || ' ' || v_user.last_name),
-                'Active', NOW(), NOW()
-            ) ON CONFLICT (id) DO NOTHING;
-        ELSE
-            v_actual_teacher_id := p_teacher_id;
+                COALESCE(v_user.display_name, 'Teacher'),
+                'Active',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            );
         END IF;
     END IF;
 
-    v_attendance_id := p_id;
-    IF v_attendance_id IS NULL OR v_attendance_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
-        SELECT ta.id INTO v_attendance_id
-        FROM teacher_attendance ta
-        WHERE ta.branch_id = p_branch_id AND ta.teacher_id = v_actual_teacher_id AND ta.attendance_date = p_attendance_date;
-        
-        IF v_attendance_id IS NULL THEN
-            v_attendance_id := gen_random_uuid();
-        END IF;
+    IF v_actual_teacher_id IS NULL THEN
+        v_actual_teacher_id := p_teacher_id;
     END IF;
 
-    INSERT INTO teacher_attendance (
-        id, tenant_id, branch_id, teacher_id, attendance_date, status, clock_in_time, clock_out_time, notes, recorded_by_user_id, created_at, updated_at
-    )
-    VALUES (
-        v_attendance_id, p_tenant_id, p_branch_id, v_actual_teacher_id, p_attendance_date, p_status, p_clock_in_time, p_clock_out_time, p_notes, p_recorded_by_user_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT (id) DO UPDATE SET 
-        status = EXCLUDED.status, clock_in_time = EXCLUDED.clock_in_time, clock_out_time = EXCLUDED.clock_out_time, notes = EXCLUDED.notes, updated_at = CURRENT_TIMESTAMP;
+    SELECT ta.id INTO v_attendance_id
+    FROM teacher_attendance ta
+    WHERE ta.tenant_id = p_tenant_id
+      AND ta.teacher_id = v_actual_teacher_id
+      AND ta.attendance_date = p_attendance_date::DATE
+    LIMIT 1;
+
+    IF v_attendance_id IS NOT NULL THEN
+        UPDATE teacher_attendance
+        SET branch_id = p_branch_id,
+            status = p_status,
+            clock_in_time = COALESCE(p_clock_in_time::time, clock_in_time),
+            clock_out_time = COALESCE(p_clock_out_time::time, clock_out_time),
+            notes = COALESCE(p_notes, notes),
+            recorded_by_user_id = p_recorded_by_user_id,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = v_attendance_id;
+    ELSE
+        v_attendance_id := COALESCE(p_id, gen_random_uuid());
+        INSERT INTO teacher_attendance (
+            id, tenant_id, branch_id, teacher_id, attendance_date, status,
+            clock_in_time, clock_out_time, notes, recorded_by_user_id,
+            created_at, updated_at
+        )
+        VALUES (
+            v_attendance_id, p_tenant_id, p_branch_id, v_actual_teacher_id, p_attendance_date::DATE, p_status,
+            p_clock_in_time::time, p_clock_out_time::time, p_notes, p_recorded_by_user_id,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        );
+    END IF;
 
     RETURN QUERY
     SELECT ta.id, ta.tenant_id, ta.branch_id, ta.teacher_id, ta.attendance_date, ta.status,
-           ta.clock_in_time, ta.clock_out_time, ta.notes, ta.recorded_by_user_id, ta.created_at, ta.updated_at
+           ta.clock_in_time, ta.clock_out_time, ta.notes, ta.recorded_by_user_id,
+           ta.created_at, ta.updated_at
     FROM teacher_attendance ta
     WHERE ta.id = v_attendance_id;
 END;
@@ -7216,6 +7876,7 @@ DECLARE
     v_has_access BOOLEAN := FALSE;
     v_active_org_id UUID;
     v_default_org_id UUID;
+    v_active_org_count INT := 0;
 BEGIN
     -- 1. Check if external login is already linked
     SELECT uel.user_id INTO v_user_id
@@ -7231,62 +7892,132 @@ BEGIN
         WHERE u.normalized_email = UPPER(p_email)
         LIMIT 1;
 
-        IF v_user_id IS NULL THEN
-            RETURN QUERY SELECT 'not_registered'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, p_email, NULL::VARCHAR;
-            RETURN;
+        IF v_user_id IS NOT NULL THEN
+            IF NOT v_is_active THEN
+                RETURN QUERY SELECT 'user_inactive'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, NULL::VARCHAR, NULL::VARCHAR;
+                RETURN;
+            END IF;
+
+            INSERT INTO user_external_logins (user_id, provider, provider_key, created_at)
+            VALUES (v_user_id, p_provider, p_provider_key, NOW())
+            ON CONFLICT (provider, provider_key) DO NOTHING;
         END IF;
     ELSE
-        SELECT u.id, u.tenant_id, u.is_active, u.first_name, u.last_name, u.display_name, u.email
-        INTO v_user_id, v_tenant_id, v_is_active, v_first_name, v_last_name, v_display_name, v_user_email
+        SELECT u.tenant_id, u.is_active, u.first_name, u.last_name, u.display_name, u.email
+        INTO v_tenant_id, v_is_active, v_first_name, v_last_name, v_display_name, v_user_email
         FROM users u
         WHERE u.id = v_user_id;
+
+        IF NOT v_is_active THEN
+            RETURN QUERY SELECT 'user_inactive'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, NULL::VARCHAR, NULL::VARCHAR;
+            RETURN;
+        END IF;
     END IF;
 
-    -- 3. Check portal access
-    IF p_required_portal = 'Daycare' THEN
+    -- 3. If user does not exist, auto-provision
+    IF v_user_id IS NULL THEN
+        SELECT t.id INTO v_tenant_id
+        FROM tenants t
+        WHERE t.is_active = TRUE
+        ORDER BY t.created_at ASC
+        LIMIT 1;
+
+        IF v_tenant_id IS NULL THEN
+            RETURN QUERY SELECT 'no_active_tenant'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, NULL::VARCHAR, NULL::VARCHAR;
+            RETURN;
+        END IF;
+
+        v_user_id := gen_random_uuid();
+        v_first_name := COALESCE(p_first_name, split_part(p_email, '@', 1));
+        v_last_name := COALESCE(p_last_name, '');
+        v_display_name := COALESCE(p_display_name, TRIM(v_first_name || ' ' || v_last_name));
+        v_user_email := p_email;
+
+        INSERT INTO users (id, tenant_id, email, normalized_email, first_name, last_name, display_name, is_active, email_confirmed, security_stamp, concurrency_stamp, created_at, updated_at)
+        VALUES (v_user_id, v_tenant_id, p_email, UPPER(p_email), v_first_name, v_last_name, v_display_name, TRUE, TRUE, gen_random_uuid()::text, gen_random_uuid()::text, NOW(), NOW());
+
+        INSERT INTO user_external_logins (user_id, provider, provider_key, created_at)
+        VALUES (v_user_id, p_provider, p_provider_key, NOW())
+        ON CONFLICT (provider, provider_key) DO NOTHING;
+
+        -- Default role for new users
+        INSERT INTO user_roles (user_id, role_id)
+        SELECT v_user_id, r.id
+        FROM roles r
+        WHERE r.name = 'Educator'
+        LIMIT 1;
+    END IF;
+
+    -- 4. Portal-specific access check
+    IF p_required_portal = 'Platform' THEN
         SELECT EXISTS (
             SELECT 1 FROM user_roles ur
             JOIN roles r ON ur.role_id = r.id
-            WHERE ur.user_id = v_user_id AND r.name IN ('PlatformAdmin', 'SuperAdmin')
-            UNION
+            WHERE ur.user_id = v_user_id AND r.name = 'PlatformAdmin'
+        ) INTO v_has_access;
+
+        IF NOT v_has_access THEN
+            RETURN QUERY SELECT 'platform_access_denied'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, NULL::VARCHAR, NULL::VARCHAR;
+            RETURN;
+        END IF;
+    ELSIF p_required_portal = 'Parent' THEN
+        SELECT EXISTS (
+            SELECT 1 FROM child_guardians cg
+            JOIN persons p ON cg.person_id = p.id
+            WHERE p.user_id = v_user_id
+        ) INTO v_has_access;
+
+        IF NOT v_has_access THEN
+            RETURN QUERY SELECT 'parent_access_denied'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, NULL::VARCHAR, NULL::VARCHAR;
+            RETURN;
+        END IF;
+    ELSIF p_required_portal = 'Daycare' THEN
+        SELECT EXISTS (
             SELECT 1 FROM user_organization_roles uor
             JOIN roles r ON uor.role_id = r.id
-            WHERE uor.user_id = v_user_id AND r.name IN ('DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher', 'AssistantTeacher', 'OrganizationAdmin', 'OrganizationOwner')
-            UNION
-            SELECT 1 FROM teachers t
-            WHERE t.user_id = v_user_id
-        ) INTO v_has_access;
-    ELSIF p_required_portal = 'Admin' THEN
-        SELECT EXISTS (
+            WHERE uor.user_id = v_user_id
+              AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
+        )
+        OR EXISTS (
+            SELECT 1 FROM user_branch_assignments uba
+            WHERE uba.user_id = v_user_id AND uba.revoked_at IS NULL
+        )
+        OR EXISTS (
             SELECT 1 FROM user_roles ur
             JOIN roles r ON ur.role_id = r.id
-            WHERE ur.user_id = v_user_id AND r.name IN ('PlatformAdmin', 'SuperAdmin')
-            UNION
-            SELECT 1 FROM user_organization_roles uor
-            JOIN roles r ON uor.role_id = r.id
-            WHERE uor.user_id = v_user_id AND r.name IN ('OrganizationAdmin', 'OrganizationOwner')
+            WHERE ur.user_id = v_user_id
+              AND r.name IN ('PlatformAdmin', 'OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'Teacher', 'LeadTeacher')
         ) INTO v_has_access;
+
+        IF NOT v_has_access THEN
+            RETURN QUERY SELECT 'daycare_access_denied'::VARCHAR, NULL::UUID, NULL::UUID, NULL::UUID, NULL::UUID, NULL::VARCHAR, NULL::VARCHAR;
+            RETURN;
+        END IF;
+    END IF;
+
+    -- 5. Synchronize Google/OAuth profile name if provided
+    IF p_display_name IS NOT NULL AND TRIM(p_display_name) <> '' AND LOWER(TRIM(p_display_name)) NOT IN ('teacher', 'educator', 'admin', 'user') THEN
+        v_display_name := TRIM(p_display_name);
+        v_first_name := COALESCE(NULLIF(TRIM(p_first_name), ''), v_first_name);
+        v_last_name := COALESCE(NULLIF(TRIM(p_last_name), ''), v_last_name);
+
+        UPDATE users 
+        SET display_name = v_display_name,
+            first_name = COALESCE(v_first_name, first_name),
+            last_name = COALESCE(v_last_name, last_name),
+            email_confirmed = TRUE,
+            updated_at = NOW() 
+        WHERE id = v_user_id;
+
+        UPDATE teachers
+        SET display_name = v_display_name,
+            first_name = COALESCE(v_first_name, first_name),
+            last_name = COALESCE(v_last_name, last_name),
+            updated_at = NOW()
+        WHERE user_id = v_user_id;
     ELSE
-        v_has_access := TRUE;
+        UPDATE users SET email_confirmed = TRUE, updated_at = NOW() WHERE id = v_user_id;
     END IF;
-
-    IF NOT v_has_access THEN
-        RETURN QUERY SELECT 'insufficient_permissions'::VARCHAR, v_user_id, v_tenant_id, NULL::UUID, NULL::UUID, v_user_email, NULL::VARCHAR;
-        RETURN;
-    END IF;
-
-    -- 4. Check if account is active
-    IF v_is_active IS NOT TRUE THEN
-        RETURN QUERY SELECT 'account_disabled'::VARCHAR, v_user_id, v_tenant_id, NULL::UUID, NULL::UUID, v_user_email, NULL::VARCHAR;
-        RETURN;
-    END IF;
-
-    -- 5. Link Google external login and confirm email
-    INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
-    VALUES (p_provider, p_provider_key, v_user_id, NOW())
-    ON CONFLICT (provider, provider_key) DO NOTHING;
-
-    UPDATE users SET email_confirmed = TRUE, updated_at = NOW() WHERE id = v_user_id;
 
     -- 6. Resolve display name
     IF v_display_name IS NULL OR TRIM(v_display_name) = '' THEN
@@ -7314,36 +8045,46 @@ BEGIN
     END IF;
 
     -- 9. Resolve active organization ID
-    SELECT uor.organization_id INTO v_active_org_id
-    FROM user_organization_roles uor
-    JOIN roles r ON uor.role_id = r.id
-    JOIN organization_memberships om ON om.user_id = uor.user_id AND om.organization_id = uor.organization_id AND om.status = 'Active'
-    WHERE uor.user_id = v_user_id 
-      AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
-    LIMIT 1;
+    -- If user belongs to multiple active organizations, return NULL so they are routed to /select-organization
+    SELECT COUNT(DISTINCT om.organization_id) INTO v_active_org_count
+    FROM organization_memberships om
+    WHERE om.user_id = v_user_id AND om.status = 'Active';
 
-    IF v_active_org_id IS NULL THEN
+    IF v_active_org_count > 1 THEN
+        v_active_org_id := NULL;
+    ELSIF v_active_org_count = 1 THEN
         SELECT om.organization_id INTO v_active_org_id
         FROM organization_memberships om
         WHERE om.user_id = v_user_id AND om.status = 'Active'
         LIMIT 1;
+    ELSE
+        -- Fallback if memberships pending or in transition
+        SELECT uor.organization_id INTO v_active_org_id
+        FROM user_organization_roles uor
+        JOIN roles r ON uor.role_id = r.id
+        WHERE uor.user_id = v_user_id 
+          AND r.name IN ('OrganizationOwner', 'OrganizationAdmin', 'BranchAdmin', 'DaycareTeacher', 'ClassroomTeacher', 'Teacher', 'LeadTeacher')
+        LIMIT 1;
+
+        IF v_active_org_id IS NULL THEN
+            SELECT uba.organization_id INTO v_active_org_id
+            FROM user_branch_assignments uba
+            WHERE uba.user_id = v_user_id AND uba.revoked_at IS NULL
+            LIMIT 1;
+        END IF;
     END IF;
 
-    IF v_active_org_id IS NULL THEN
-        RETURN QUERY SELECT 'no_organizations'::VARCHAR, v_user_id, v_tenant_id, NULL::UUID, NULL::UUID, v_user_email, v_display_name;
-        RETURN;
+    -- 10. Effective tenant ID
+    IF v_active_org_id IS NOT NULL THEN
+        SELECT o.tenant_id INTO v_effective_tenant_id
+        FROM organizations o
+        WHERE o.id = v_active_org_id;
     END IF;
-
-    -- 10. Resolve effective tenant ID
-    SELECT o.tenant_id INTO v_effective_tenant_id
-    FROM organizations o
-    WHERE o.id = v_active_org_id;
-
     IF v_effective_tenant_id IS NULL THEN
         v_effective_tenant_id := v_tenant_id;
     END IF;
 
-    RETURN QUERY SELECT 
+    RETURN QUERY SELECT
         'success'::VARCHAR,
         v_user_id,
         v_tenant_id,
@@ -7531,20 +8272,62 @@ $$;
 CREATE PROCEDURE public.sp_assign_organization_role(IN p_tenant_id uuid, IN p_organization_id uuid, IN p_user_id uuid, IN p_role_name character varying)
     LANGUAGE plpgsql
     AS $$
+DECLARE
+    v_role_id uuid;
+    v_template_role_id uuid;
+    v_clean_name character varying;
+    v_canonical_tenant_id uuid;
 BEGIN
-    INSERT INTO organization_memberships (user_id, organization_id, tenant_id)
-    SELECT u.id, o.id, o.tenant_id
-    FROM users u JOIN organizations o ON o.tenant_id = u.tenant_id
-    WHERE u.id = p_user_id AND u.tenant_id = p_tenant_id AND o.id = p_organization_id
-    ON CONFLICT DO NOTHING;
+    -- Resolve canonical tenant_id from the organization
+    SELECT tenant_id INTO v_canonical_tenant_id FROM organizations WHERE id = p_organization_id;
+    IF v_canonical_tenant_id IS NULL THEN
+        v_canonical_tenant_id := p_tenant_id;
+    END IF;
 
-    INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
-    SELECT p_user_id, r.id, p_organization_id, p_tenant_id
-    FROM roles r
-    WHERE r.tenant_id = p_tenant_id AND r.name = p_role_name AND r.scope_type = 'Organization'
-      AND EXISTS (SELECT 1 FROM organization_memberships m
-                  WHERE m.user_id = p_user_id AND m.organization_id = p_organization_id AND m.tenant_id = p_tenant_id)
-    ON CONFLICT DO NOTHING;
+    -- 1. Ensure organization membership exists for this user and organization
+    INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status, created_at, updated_at)
+    VALUES (p_user_id, p_organization_id, v_canonical_tenant_id, 'Active', NOW(), NOW())
+    ON CONFLICT (user_id, organization_id) DO UPDATE
+    SET status = 'Active', tenant_id = v_canonical_tenant_id, updated_at = NOW();
+
+    -- Normalize role name
+    v_clean_name := REPLACE(p_role_name, ' ', '');
+
+    -- 2. Find matching role for this tenant
+    SELECT id INTO v_role_id
+    FROM roles
+    WHERE tenant_id = v_canonical_tenant_id AND (name = p_role_name OR name = v_clean_name)
+    LIMIT 1;
+
+    -- If not found under this tenant, see if there's a template/global role or any role with this name, and copy it to this tenant
+    IF v_role_id IS NULL THEN
+        SELECT id INTO v_template_role_id
+        FROM roles
+        WHERE name = p_role_name OR name = v_clean_name
+        LIMIT 1;
+
+        IF v_template_role_id IS NOT NULL THEN
+            INSERT INTO roles (id, tenant_id, name, description, scope_type, created_at)
+            SELECT gen_random_uuid(), v_canonical_tenant_id, r.name, r.description, 'Organization', NOW()
+            FROM roles r
+            WHERE r.id = v_template_role_id
+            RETURNING id INTO v_role_id;
+
+            INSERT INTO role_permissions (role_id, permission_id)
+            SELECT v_role_id, rp.permission_id
+            FROM role_permissions rp
+            WHERE rp.role_id = v_template_role_id
+            ON CONFLICT DO NOTHING;
+        END IF;
+    END IF;
+
+    -- 3. Assign role to user in user_organization_roles
+    IF v_role_id IS NOT NULL THEN
+        INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
+        VALUES (p_user_id, v_role_id, p_organization_id, v_canonical_tenant_id)
+        ON CONFLICT (user_id, role_id, organization_id) DO UPDATE
+        SET tenant_id = v_canonical_tenant_id;
+    END IF;
 END;
 $$;
 
@@ -7583,10 +8366,37 @@ $$;
 
 
 --
--- Name: sp_close_end_of_day_activities(uuid, uuid[], time without time zone); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_assign_user_branch(uuid, uuid, uuid, uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_close_end_of_day_activities(IN p_tenant_id uuid, IN p_schedule_ids uuid[], IN p_end_time time without time zone)
+CREATE PROCEDURE public.sp_assign_user_branch(IN p_tenant_id uuid, IN p_organization_id uuid, IN p_branch_id uuid, IN p_user_id uuid, IN p_assigned_by uuid DEFAULT NULL::uuid)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_canonical_tenant_id uuid;
+BEGIN
+    -- Resolve canonical tenant_id from the organization to guarantee FK integrity
+    SELECT tenant_id INTO v_canonical_tenant_id FROM organizations WHERE id = p_organization_id;
+    IF v_canonical_tenant_id IS NULL THEN
+        v_canonical_tenant_id := p_tenant_id;
+    END IF;
+
+    INSERT INTO user_branch_assignments (user_id, branch_id, organization_id, tenant_id, assigned_by, created_at, revoked_at)
+    VALUES (p_user_id, p_branch_id, p_organization_id, v_canonical_tenant_id, p_assigned_by, NOW(), NULL)
+    ON CONFLICT (user_id, branch_id) DO UPDATE
+    SET revoked_at = NULL,
+        tenant_id = v_canonical_tenant_id,
+        organization_id = p_organization_id,
+        assigned_by = COALESCE(p_assigned_by, user_branch_assignments.assigned_by);
+END;
+$$;
+
+
+--
+-- Name: sp_close_end_of_day_activities(uuid, uuid[], interval); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_close_end_of_day_activities(IN p_tenant_id uuid, IN p_schedule_ids uuid[], IN p_end_time interval)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -7599,14 +8409,53 @@ BEGIN
     WHERE id = ANY(p_schedule_ids);
 
     UPDATE experience_sessions
-    SET status = 'Completed', end_time = p_end_time,
+    SET status = 'Completed',
+        end_time = p_end_time::time,
         actual_notes = CASE WHEN actual_notes IS NULL OR actual_notes = '' THEN 'System Auto-Closed at End of Day'
                             WHEN actual_notes LIKE '%System Auto-Closed%' THEN actual_notes
                             ELSE actual_notes || ' [System Auto-Closed]' END,
         updated_at = CURRENT_TIMESTAMP
     WHERE tenant_id = p_tenant_id
-      AND experience_schedule_id = ANY(p_schedule_ids)
-      AND status NOT IN ('Completed', 'Cancelled', 'Finished');
+      AND (
+          experience_schedule_id = ANY(p_schedule_ids)
+          OR (status NOT IN ('Completed', 'Cancelled', 'Finished') AND session_date = CURRENT_DATE)
+      );
+END;
+$$;
+
+
+--
+-- Name: sp_close_end_of_day_activities(uuid, uuid[], time without time zone); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_close_end_of_day_activities(IN p_tenant_id uuid, IN p_schedule_ids uuid[], IN p_end_time time without time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    CALL public.sp_close_end_of_day_activities(p_tenant_id, p_schedule_ids, p_end_time::interval);
+END;
+$$;
+
+
+--
+-- Name: sp_close_end_of_day_children(interval, uuid, uuid[]); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_close_end_of_day_children(IN p_departure interval, IN p_user_id uuid, IN p_ids uuid[])
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE child_attendance
+    SET departure_time = p_departure::time,
+        status = 'CheckedOut',
+        pickup_person_name = 'System Auto-Closed',
+        pickup_person_relationship = 'System Process',
+        pickup_verification_method = 'System Auto-Closed',
+        pickup_notes = CASE WHEN pickup_notes IS NULL OR pickup_notes = '' THEN 'System auto-checkout at End of Day'
+                            ELSE pickup_notes || ' · System auto-checkout at End of Day' END,
+        departure_verified_by_user_id = CASE WHEN p_user_id = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL ELSE p_user_id END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ANY(p_ids);
 END;
 $$;
 
@@ -7619,16 +8468,7 @@ CREATE PROCEDURE public.sp_close_end_of_day_children(IN p_departure time without
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    UPDATE child_attendance
-    SET departure_time = p_departure,
-        pickup_person_name = 'System Auto-Closed',
-        pickup_person_relationship = 'System Process',
-        pickup_verification_method = 'System Auto-Closed',
-        pickup_notes = CASE WHEN pickup_notes IS NULL OR pickup_notes = '' THEN 'System auto-checkout at End of Day'
-                            ELSE pickup_notes || ' · System auto-checkout at End of Day' END,
-        departure_verified_by_user_id = p_user_id,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ANY(p_ids);
+    CALL public.sp_close_end_of_day_children(p_departure::interval, p_user_id, p_ids);
 END;
 $$;
 
@@ -7653,6 +8493,25 @@ $$;
 
 
 --
+-- Name: sp_close_end_of_day_teachers(interval, uuid[]); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_close_end_of_day_teachers(IN p_clock_out interval, IN p_ids uuid[])
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE teacher_attendance
+    SET clock_out_time = p_clock_out::time,
+        status = 'ClockedOut',
+        notes = CASE WHEN notes IS NULL OR notes = '' THEN 'System auto-checkout at End of Day'
+                     ELSE notes || ' · System auto-checkout at End of Day' END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ANY(p_ids);
+END;
+$$;
+
+
+--
 -- Name: sp_close_end_of_day_teachers(time without time zone, uuid[]); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -7660,12 +8519,7 @@ CREATE PROCEDURE public.sp_close_end_of_day_teachers(IN p_clock_out time without
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    UPDATE teacher_attendance
-    SET clock_out_time = p_clock_out,
-        notes = CASE WHEN notes IS NULL OR notes = '' THEN 'System auto-checkout at End of Day'
-                     ELSE notes || ' · System auto-checkout at End of Day' END,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ANY(p_ids);
+    CALL public.sp_close_end_of_day_teachers(p_clock_out::interval, p_ids);
 END;
 $$;
 
@@ -7706,6 +8560,113 @@ BEGIN
         p_id, p_tenant_id, p_organization_id, p_classroom_id, p_child_id, p_requested_by_user_id,
         p_request_timestamp, p_scope, p_context_preferences, p_evidence_count, p_created_at
     );
+END;
+$$;
+
+
+--
+-- Name: sp_create_admin_user(character varying, character varying, character varying, character varying, character varying, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_create_admin_user(IN p_email character varying, IN p_first_name character varying, IN p_last_name character varying, IN p_password character varying, IN p_role_name character varying, IN p_org_id uuid DEFAULT NULL::uuid)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_user_id uuid;
+    v_role_id uuid;
+    v_tenant_id uuid;
+    v_clean_email character varying;
+    v_platform_admin_count integer;
+BEGIN
+    v_clean_email := lower(trim(p_email));
+    
+    -- Resolve tenant_id (if org provided, use org tenant_id; else default to primary platform tenant)
+    IF p_org_id IS NOT NULL THEN
+        SELECT tenant_id INTO v_tenant_id FROM organizations WHERE id = p_org_id;
+        IF v_tenant_id IS NULL THEN v_tenant_id := p_org_id; END IF;
+    END IF;
+
+    IF v_tenant_id IS NULL THEN
+        v_tenant_id := '10000000-0000-0000-0000-000000000001'::uuid;
+    END IF;
+
+    SELECT id INTO v_user_id FROM users WHERE lower(email) = v_clean_email;
+    
+    IF v_user_id IS NULL THEN
+        v_user_id := gen_random_uuid();
+        INSERT INTO users (
+            id, tenant_id, email, normalized_email, first_name, last_name, display_name, 
+            password_hash, is_active, created_at, updated_at
+        )
+        VALUES (
+            v_user_id, 
+            v_tenant_id,
+            v_clean_email, 
+            upper(v_clean_email), 
+            p_first_name, 
+            p_last_name, 
+            trim(concat(p_first_name, ' ', p_last_name)),
+            COALESCE(NULLIF(p_password, ''), 'TEMP_HASH'),
+            TRUE, 
+            NOW(), 
+            NOW()
+        );
+    ELSE
+        UPDATE users 
+        SET first_name = COALESCE(NULLIF(p_first_name, ''), first_name),
+            last_name = COALESCE(NULLIF(p_last_name, ''), last_name),
+            display_name = trim(concat(COALESCE(NULLIF(p_first_name, ''), first_name), ' ', COALESCE(NULLIF(p_last_name, ''), last_name))),
+            is_active = TRUE,
+            updated_at = NOW()
+        WHERE id = v_user_id;
+    END IF;
+
+    IF p_role_name IN ('PlatformAdmin', 'SuperAdmin') THEN
+        -- Check count of platform administrators (excluding this user if already assigned)
+        SELECT COUNT(DISTINCT ur.user_id) INTO v_platform_admin_count
+        FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        WHERE r.name IN ('PlatformAdmin', 'SuperAdmin')
+          AND ur.user_id != v_user_id;
+
+        IF v_platform_admin_count >= 3 THEN
+            RAISE EXCEPTION 'A maximum of 3 platform administrators can exist at any point in time. Please remove an existing platform administrator before creating a new one.';
+        END IF;
+
+        SELECT id INTO v_role_id FROM roles WHERE name = 'PlatformAdmin' LIMIT 1;
+        IF v_role_id IS NOT NULL THEN
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (v_user_id, v_role_id)
+            ON CONFLICT DO NOTHING;
+        END IF;
+    ELSE
+        -- Organization Admin or Organization Owner
+        SELECT id INTO v_role_id 
+        FROM roles 
+        WHERE name = p_role_name 
+          AND (tenant_id = p_org_id OR tenant_id IS NULL)
+        ORDER BY tenant_id NULLS LAST 
+        LIMIT 1;
+
+        IF p_org_id IS NOT NULL THEN
+            SELECT tenant_id INTO v_tenant_id FROM organizations WHERE id = p_org_id;
+            IF v_tenant_id IS NULL THEN v_tenant_id := p_org_id; END IF;
+
+            INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status)
+            VALUES (v_user_id, p_org_id, v_tenant_id, 'Active')
+            ON CONFLICT (user_id, organization_id) DO UPDATE SET status = 'Active';
+
+            IF v_role_id IS NOT NULL THEN
+                INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
+                VALUES (v_user_id, v_role_id, p_org_id, v_tenant_id)
+                ON CONFLICT (user_id, role_id, organization_id) DO NOTHING;
+
+                INSERT INTO user_roles (user_id, role_id)
+                VALUES (v_user_id, v_role_id)
+                ON CONFLICT DO NOTHING;
+            END IF;
+        END IF;
+    END IF;
 END;
 $$;
 
@@ -7864,10 +8825,33 @@ $$;
 
 
 --
--- Name: sp_create_experience_session(uuid, uuid, uuid, uuid, uuid, date, time without time zone, time without time zone, character varying, uuid, text); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_create_enrollment_application(uuid, uuid, uuid, character varying, character varying, timestamp with time zone, character varying, character varying, character varying, character varying, uuid, timestamp with time zone, character varying, character varying, timestamp with time zone, numeric, numeric, numeric, numeric, text); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_create_experience_session(IN p_id uuid, IN p_tenant_id uuid, IN p_experience_id uuid, IN p_experience_schedule_id uuid, IN p_classroom_id uuid, IN p_session_date date, IN p_start_time time without time zone, IN p_end_time time without time zone, IN p_status character varying, IN p_primary_teacher_id uuid, IN p_actual_notes text)
+CREATE PROCEDURE public.sp_create_enrollment_application(IN p_id uuid, IN p_tenant_id uuid, IN p_branch_id uuid, IN p_child_first_name character varying, IN p_child_last_name character varying, IN p_date_of_birth timestamp with time zone, IN p_gender character varying, IN p_parent_guardian_name character varying, IN p_parent_email character varying, IN p_parent_phone character varying, IN p_target_classroom_id uuid, IN p_desired_start_date timestamp with time zone, IN p_schedule_type character varying, IN p_pipeline_stage character varying, IN p_tour_date timestamp with time zone, IN p_tuition_monthly_rate numeric, IN p_deposit_amount numeric, IN p_sibling_discount_percent numeric, IN p_registration_fee numeric, IN p_internal_notes text)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO enrollment_pipeline_applications (
+        id, tenant_id, branch_id, child_first_name, child_last_name, date_of_birth, gender,
+        parent_guardian_name, parent_email, parent_phone, target_classroom_id, desired_start_date,
+        schedule_type, pipeline_stage, tour_date, tuition_monthly_rate, deposit_amount,
+        sibling_discount_percent, registration_fee, internal_notes
+    ) VALUES (
+        p_id, p_tenant_id, p_branch_id, p_child_first_name, p_child_last_name, p_date_of_birth::DATE, p_gender,
+        p_parent_guardian_name, p_parent_email, p_parent_phone, p_target_classroom_id, p_desired_start_date::DATE,
+        p_schedule_type, p_pipeline_stage, p_tour_date, p_tuition_monthly_rate, p_deposit_amount,
+        p_sibling_discount_percent, p_registration_fee, p_internal_notes
+    );
+END;
+$$;
+
+
+--
+-- Name: sp_create_experience_session(uuid, uuid, uuid, uuid, uuid, timestamp with time zone, interval, interval, character varying, uuid, text); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_create_experience_session(IN p_id uuid, IN p_tenant_id uuid, IN p_experience_id uuid, IN p_experience_schedule_id uuid, IN p_classroom_id uuid, IN p_session_date timestamp with time zone, IN p_start_time interval, IN p_end_time interval, IN p_status character varying, IN p_primary_teacher_id uuid, IN p_actual_notes text)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -7876,7 +8860,7 @@ BEGIN
         session_date, start_time, end_time, status, primary_teacher_id, actual_notes
     ) VALUES (
         p_id, p_tenant_id, p_experience_id, p_experience_schedule_id, p_classroom_id, 
-        p_session_date, p_start_time, p_end_time, p_status, p_primary_teacher_id, p_actual_notes
+        p_session_date::DATE, p_start_time::time, p_end_time::time, p_status, p_primary_teacher_id, p_actual_notes
     );
 END;
 $$;
@@ -7898,6 +8882,27 @@ BEGIN
         p_id, p_tenant_id, p_branch_id, p_application_id, p_child_id, p_parent_name, p_parent_email,
         p_schedule_type, p_billing_cycle, p_base_rate, p_discount_percent, p_effective_rate,
         p_deposit_held, 'Active', p_start_date, TRUE
+    );
+END;
+$$;
+
+
+--
+-- Name: sp_create_family_billing_contract(uuid, uuid, uuid, uuid, uuid, character varying, character varying, character varying, character varying, numeric, numeric, numeric, numeric, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_create_family_billing_contract(IN p_id uuid, IN p_tenant_id uuid, IN p_branch_id uuid, IN p_application_id uuid, IN p_child_id uuid, IN p_parent_name character varying, IN p_parent_email character varying, IN p_schedule_type character varying, IN p_billing_cycle character varying, IN p_base_rate numeric, IN p_discount_percent numeric, IN p_effective_rate numeric, IN p_deposit_held numeric, IN p_start_date timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO family_billing_contracts (
+        id, tenant_id, branch_id, application_id, child_id, parent_name, parent_email,
+        schedule_type, billing_cycle, base_rate, discount_percent, effective_rate,
+        deposit_held, start_date
+    ) VALUES (
+        p_id, p_tenant_id, p_branch_id, p_application_id, p_child_id, p_parent_name, p_parent_email,
+        p_schedule_type, p_billing_cycle, p_base_rate, p_discount_percent, p_effective_rate,
+        p_deposit_held, p_start_date::DATE
     );
 END;
 $$;
@@ -7927,6 +8932,26 @@ $$;
 -- Name: sp_create_journey_entry(uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, character varying, character varying, text, text, text, timestamp with time zone, character varying, boolean, boolean, character varying, timestamp with time zone, uuid, timestamp with time zone, uuid, integer); Type: PROCEDURE; Schema: public; Owner: -
 --
 
+CREATE PROCEDURE public.sp_create_journey_entry(IN p_id uuid, IN p_tenant_id uuid, IN p_child_id uuid, IN p_enrollment_id uuid, IN p_classroom_id uuid, IN p_teacher_id uuid, IN p_experience_id uuid, IN p_experience_schedule_id uuid, IN p_experience_session_id uuid, IN p_experience_participation_id uuid, IN p_little_moment_id uuid, IN p_milestone_id uuid, IN p_journey_type character varying, IN p_title character varying, IN p_observation text, IN p_child_voice text, IN p_teacher_reflection text, IN p_observation_date timestamp with time zone, IN p_participation_type character varying, IN p_is_milestone boolean, IN p_is_parent_visible boolean, IN p_parent_visibility_status character varying, IN p_created_at timestamp with time zone, IN p_created_by uuid, IN p_updated_at timestamp with time zone, IN p_updated_by uuid, IN p_version integer)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    CALL public.sp_create_journey_entry(
+        p_id, p_tenant_id, p_child_id, p_enrollment_id, p_classroom_id, p_teacher_id, 
+        p_experience_id, p_experience_schedule_id, p_experience_session_id, p_experience_participation_id, 
+        p_little_moment_id, p_milestone_id, NULL::UUID,
+        p_journey_type, p_title, p_observation, p_child_voice, p_teacher_reflection, 
+        p_observation_date, p_participation_type, p_is_milestone, p_is_parent_visible, 
+        p_parent_visibility_status, p_created_at, p_created_by, p_updated_at, p_updated_by, p_version
+    );
+END;
+$$;
+
+
+--
+-- Name: sp_create_journey_entry(uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, character varying, character varying, text, text, text, timestamp with time zone, character varying, boolean, boolean, character varying, timestamp with time zone, uuid, timestamp with time zone, uuid, integer); Type: PROCEDURE; Schema: public; Owner: -
+--
+
 CREATE PROCEDURE public.sp_create_journey_entry(IN p_id uuid, IN p_tenant_id uuid, IN p_child_id uuid, IN p_enrollment_id uuid, IN p_classroom_id uuid, IN p_teacher_id uuid, IN p_experience_id uuid, IN p_experience_schedule_id uuid, IN p_experience_session_id uuid, IN p_experience_participation_id uuid, IN p_little_moment_id uuid, IN p_milestone_id uuid, IN p_event_id uuid, IN p_journey_type character varying, IN p_title character varying, IN p_observation text, IN p_child_voice text, IN p_teacher_reflection text, IN p_observation_date timestamp with time zone, IN p_participation_type character varying, IN p_is_milestone boolean, IN p_is_parent_visible boolean, IN p_parent_visibility_status character varying, IN p_created_at timestamp with time zone, IN p_created_by uuid, IN p_updated_at timestamp with time zone, IN p_updated_by uuid, IN p_version integer)
     LANGUAGE plpgsql
     AS $$
@@ -7939,6 +8964,26 @@ BEGIN
         observation_date, participation_type, is_milestone, is_parent_visible, 
         parent_visibility_status, created_at, created_by, updated_at, updated_by, version
     ) VALUES (
+        p_id, p_tenant_id, p_child_id, p_enrollment_id, p_classroom_id, p_teacher_id, 
+        p_experience_id, p_experience_schedule_id, p_experience_session_id, p_experience_participation_id, 
+        p_little_moment_id, p_milestone_id, p_event_id,
+        p_journey_type, p_title, p_observation, p_child_voice, p_teacher_reflection, 
+        p_observation_date, p_participation_type, p_is_milestone, p_is_parent_visible, 
+        p_parent_visibility_status, p_created_at, p_created_by, p_updated_at, p_updated_by, p_version
+    );
+END;
+$$;
+
+
+--
+-- Name: sp_create_journey_entry(uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, uuid, character varying, character varying, text, text, text, timestamp with time zone, character varying, boolean, boolean, character varying, timestamp with time zone, uuid, timestamp with time zone, uuid, integer, text[]); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_create_journey_entry(IN p_id uuid, IN p_tenant_id uuid, IN p_child_id uuid, IN p_enrollment_id uuid, IN p_classroom_id uuid, IN p_teacher_id uuid, IN p_experience_id uuid, IN p_experience_schedule_id uuid, IN p_experience_session_id uuid, IN p_experience_participation_id uuid, IN p_little_moment_id uuid, IN p_milestone_id uuid, IN p_event_id uuid, IN p_journey_type character varying, IN p_title character varying, IN p_observation text, IN p_child_voice text, IN p_teacher_reflection text, IN p_observation_date timestamp with time zone, IN p_participation_type character varying, IN p_is_milestone boolean, IN p_is_parent_visible boolean, IN p_parent_visibility_status character varying, IN p_created_at timestamp with time zone, IN p_created_by uuid, IN p_updated_at timestamp with time zone, IN p_updated_by uuid, IN p_version integer, IN p_photos text[])
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    CALL public.sp_create_journey_entry(
         p_id, p_tenant_id, p_child_id, p_enrollment_id, p_classroom_id, p_teacher_id, 
         p_experience_id, p_experience_schedule_id, p_experience_session_id, p_experience_participation_id, 
         p_little_moment_id, p_milestone_id, p_event_id,
@@ -8129,6 +9174,29 @@ $$;
 
 
 --
+-- Name: sp_create_media_asset(uuid, uuid, uuid, uuid, character varying, uuid, character varying, character varying, character varying, bigint, integer, integer, character varying, character varying, character varying, bigint, integer, integer, character varying, uuid, timestamp with time zone, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_create_media_asset(IN p_id uuid, IN p_tenant_id uuid, IN p_organization_id uuid, IN p_child_id uuid, IN p_entity_type character varying, IN p_entity_id uuid, IN p_display_container character varying, IN p_display_key character varying, IN p_display_content_type character varying, IN p_display_size_bytes bigint, IN p_display_width integer, IN p_display_height integer, IN p_thumbnail_container character varying, IN p_thumbnail_key character varying, IN p_thumbnail_content_type character varying, IN p_thumbnail_size_bytes bigint, IN p_thumbnail_width integer, IN p_thumbnail_height integer, IN p_content_hash character varying, IN p_created_by uuid, IN p_created_at timestamp with time zone, IN p_updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.media_assets (
+        id, tenant_id, organization_id, child_id, entity_type, entity_id,
+        display_container, display_key, display_content_type, display_size_bytes, display_width, display_height,
+        thumbnail_container, thumbnail_key, thumbnail_content_type, thumbnail_size_bytes, thumbnail_width, thumbnail_height,
+        content_hash, created_by, created_at, updated_at
+    ) VALUES (
+        p_id, p_tenant_id, p_organization_id, p_child_id, p_entity_type, p_entity_id,
+        p_display_container, p_display_key, p_display_content_type, p_display_size_bytes, p_display_width, p_display_height,
+        p_thumbnail_container, p_thumbnail_key, p_thumbnail_content_type, p_thumbnail_size_bytes, p_thumbnail_width, p_thumbnail_height,
+        p_content_hash, p_created_by, p_created_at, p_updated_at
+    );
+END;
+$$;
+
+
+--
 -- Name: sp_create_milestone(uuid, uuid, uuid, uuid, uuid, character varying, text, timestamp with time zone, uuid, text, uuid, boolean, character varying, timestamp with time zone, uuid, timestamp with time zone, uuid); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -8157,6 +9225,25 @@ CREATE PROCEDURE public.sp_create_parent_communication(IN p_id uuid, IN p_tenant
     LANGUAGE plpgsql
     AS $$
 BEGIN
+    -- Fallback: resolve organization_id if null or empty
+    IF p_organization_id IS NULL OR p_organization_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
+        IF p_classroom_id IS NOT NULL THEN
+            SELECT b.organization_id INTO p_organization_id
+            FROM classrooms c
+            JOIN branches b ON b.id = c.branch_id
+            WHERE c.id = p_classroom_id
+            LIMIT 1;
+        END IF;
+
+        IF p_organization_id IS NULL OR p_organization_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
+            SELECT id INTO p_organization_id
+            FROM organizations
+            WHERE tenant_id = p_tenant_id
+            ORDER BY created_at ASC
+            LIMIT 1;
+        END IF;
+    END IF;
+
     INSERT INTO parent_communications (
         id, tenant_id, organization_id, classroom_id, child_id,
         recipient_person_id, recipient_user_id, recipient_email, recipient_name, recipient_relationship,
@@ -8245,6 +9332,56 @@ BEGIN
         p_week_start_date, p_week_end_date, p_focus_areas, p_indoor_outdoor_preference, 
         p_materials_notes, p_status, p_created_at, p_updated_at
     );
+END;
+$$;
+
+
+--
+-- Name: sp_delete_admin_user(uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_delete_admin_user(IN p_user_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_is_platform_admin boolean;
+    v_platform_admin_count integer;
+BEGIN
+    -- Check if user is a platform admin
+    SELECT EXISTS (
+        SELECT 1 FROM user_roles 
+        WHERE user_id = p_user_id 
+          AND role_id IN (SELECT id FROM roles WHERE name IN ('PlatformAdmin', 'SuperAdmin'))
+    ) INTO v_is_platform_admin;
+
+    IF v_is_platform_admin THEN
+        SELECT COUNT(DISTINCT ur.user_id) INTO v_platform_admin_count
+        FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        WHERE r.name IN ('PlatformAdmin', 'SuperAdmin');
+
+        IF v_platform_admin_count <= 1 THEN
+            RAISE EXCEPTION 'Cannot delete the only remaining platform administrator. At least one platform administrator must exist.';
+        END IF;
+
+        -- Remove Platform Admin role from user_roles
+        DELETE FROM user_roles 
+        WHERE user_id = p_user_id 
+          AND role_id IN (SELECT id FROM roles WHERE name IN ('PlatformAdmin', 'SuperAdmin'));
+    END IF;
+
+    -- Remove organization roles, memberships, and external logins
+    DELETE FROM user_organization_roles WHERE user_id = p_user_id;
+    DELETE FROM organization_memberships WHERE user_id = p_user_id;
+    DELETE FROM user_external_logins WHERE user_id = p_user_id;
+    DELETE FROM user_roles WHERE user_id = p_user_id;
+
+    -- Attempt deletion from users table; fallback to deactivation if referenced by operational foreign keys
+    BEGIN
+        DELETE FROM users WHERE id = p_user_id;
+    EXCEPTION WHEN foreign_key_violation THEN
+        UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = p_user_id;
+    END;
 END;
 $$;
 
@@ -8437,6 +9574,20 @@ $$;
 
 
 --
+-- Name: sp_delete_media_asset(uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_delete_media_asset(IN p_tenant_id uuid, IN p_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM public.media_assets
+    WHERE id = p_id AND tenant_id = p_tenant_id;
+END;
+$$;
+
+
+--
 -- Name: sp_delete_organization(uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -8497,10 +9648,18 @@ $$;
 CREATE PROCEDURE public.sp_dispatch_teacher_to_classroom(IN p_tenant_id uuid, IN p_classroom_id uuid, IN p_user_id uuid)
     LANGUAGE plpgsql
     AS $$
+DECLARE
+    v_canonical_tenant_id uuid;
 BEGIN
+    SELECT tenant_id INTO v_canonical_tenant_id FROM classrooms WHERE id = p_classroom_id;
+    IF v_canonical_tenant_id IS NULL THEN
+        v_canonical_tenant_id := p_tenant_id;
+    END IF;
+
     INSERT INTO classroom_teachers (id, tenant_id, classroom_id, user_id, is_primary)
-    VALUES (gen_random_uuid(), p_tenant_id, p_classroom_id, p_user_id, FALSE)
-    ON CONFLICT (classroom_id, user_id) DO NOTHING;
+    VALUES (gen_random_uuid(), v_canonical_tenant_id, p_classroom_id, p_user_id, FALSE)
+    ON CONFLICT (classroom_id, user_id) DO UPDATE
+    SET tenant_id = v_canonical_tenant_id;
 END;
 $$;
 
@@ -8541,6 +9700,45 @@ BEGIN
         classroom_id = EXCLUDED.classroom_id,
         enrollment_status = 'Enrolled',
         updated_at = NOW();
+END;
+$$;
+
+
+--
+-- Name: sp_ensure_child_enrolled(uuid, uuid, uuid, character varying, character varying, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_ensure_child_enrolled(IN p_child_id uuid, IN p_tenant_id uuid, IN p_classroom_id uuid, IN p_first_name character varying, IN p_last_name character varying, IN p_date_of_birth timestamp with time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO children (id, tenant_id, classroom_id, first_name, last_name, date_of_birth)
+    VALUES (p_child_id, p_tenant_id, p_classroom_id, p_first_name, p_last_name, p_date_of_birth::DATE)
+    ON CONFLICT (id) DO UPDATE
+    SET classroom_id = EXCLUDED.classroom_id;
+END;
+$$;
+
+
+--
+-- Name: sp_get_branch_location_context(uuid, uuid, refcursor); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_get_branch_location_context(IN p_tenant_id uuid, IN p_branch_id uuid, INOUT cur refcursor DEFAULT 'cur_branch_context'::refcursor)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    OPEN cur FOR
+    SELECT 
+        o.id AS organization_id,
+        o.name::VARCHAR(200) AS organization_name,
+        b.id AS branch_id,
+        b.name::VARCHAR(200) AS branch_name,
+        COALESCE(b.location, 'Main Campus')::VARCHAR(300) AS location
+    FROM branches b
+    JOIN organizations o ON b.organization_id = o.id
+    WHERE b.id = p_branch_id
+      AND b.tenant_id = p_tenant_id;
 END;
 $$;
 
@@ -8603,6 +9801,240 @@ BEGIN
     WHERE tenant_id = p_tenant_id AND child_id = p_child_id
     ORDER BY created_at DESC
     LIMIT 1;
+END;
+$$;
+
+
+--
+-- Name: sp_get_monthly_child_attendance(uuid, uuid, integer, integer, uuid, refcursor); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_get_monthly_child_attendance(IN p_tenant_id uuid, IN p_branch_id uuid, IN p_year integer, IN p_month integer, IN p_classroom_id uuid DEFAULT NULL::uuid, INOUT cur refcursor DEFAULT 'cur_monthly_child_attendance'::refcursor)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_start_date date := make_date(p_year, p_month, 1);
+    v_end_date date := (make_date(p_year, p_month, 1) + interval '1 month - 1 day')::date;
+BEGIN
+    OPEN cur FOR
+    WITH eligible_children AS (
+        SELECT DISTINCT c.id AS child_id,
+               c.first_name::VARCHAR(100) AS first_name,
+               c.last_name::VARCHAR(100) AS last_name,
+               TRIM(c.first_name || ' ' || COALESCE(c.last_name, ''))::VARCHAR(200) AS full_name,
+               c.photo_url,
+               COALESCE(
+                   c.classroom_id,
+                   (SELECT ca2.classroom_id FROM child_attendance ca2 
+                    WHERE ca2.child_id = c.id AND ca2.branch_id = p_branch_id AND ca2.classroom_id IS NOT NULL 
+                    ORDER BY ca2.attendance_date DESC LIMIT 1),
+                   (SELECT e.classroom_id FROM enrollments e 
+                    WHERE e.child_id = c.id AND e.branch_id = p_branch_id AND e.classroom_id IS NOT NULL 
+                    ORDER BY e.created_at DESC LIMIT 1)
+               ) AS default_classroom_id
+        FROM children c
+        WHERE c.tenant_id = p_tenant_id
+          AND (
+              c.classroom_id IN (SELECT id FROM classrooms WHERE branch_id = p_branch_id)
+              OR EXISTS (
+                  SELECT 1 FROM child_attendance ca 
+                  WHERE ca.child_id = c.id 
+                    AND ca.branch_id = p_branch_id 
+                    AND (p_classroom_id IS NULL OR ca.classroom_id = p_classroom_id)
+              )
+              OR EXISTS (
+                  SELECT 1 FROM enrollments e 
+                  WHERE e.child_id = c.id 
+                    AND e.branch_id = p_branch_id 
+                    AND (p_classroom_id IS NULL OR e.classroom_id = p_classroom_id)
+              )
+              OR EXISTS (
+                  SELECT 1 FROM child_care_plans ccp 
+                  WHERE ccp.child_id = c.id 
+                    AND ccp.branch_id = p_branch_id
+              )
+          )
+    ),
+    deduped_attendance AS (
+        SELECT DISTINCT ON (ca.child_id, ca.attendance_date)
+            ca.id AS attendance_id,
+            ca.child_id,
+            ca.branch_id,
+            ca.classroom_id,
+            ca.attendance_date,
+            EXTRACT(DAY FROM ca.attendance_date)::INTEGER AS day_of_month,
+            ca.status::VARCHAR(50) AS status,
+            ca.arrival_time,
+            ca.departure_time,
+            ca.notes
+        FROM child_attendance ca
+        WHERE ca.tenant_id = p_tenant_id
+          AND ca.branch_id = p_branch_id
+          AND ca.attendance_date >= v_start_date
+          AND ca.attendance_date <= v_end_date
+          AND (p_classroom_id IS NULL OR ca.classroom_id = p_classroom_id)
+        ORDER BY ca.child_id, ca.attendance_date, ca.updated_at DESC, ca.created_at DESC
+    )
+    SELECT 
+        ec.child_id,
+        ec.first_name,
+        ec.last_name,
+        ec.full_name,
+        ec.photo_url,
+        COALESCE(da.classroom_id, ec.default_classroom_id) AS classroom_id,
+        COALESCE(cr.name, 'General')::VARCHAR(150) AS classroom_name,
+        da.attendance_id,
+        da.attendance_date,
+        da.day_of_month,
+        da.status,
+        da.arrival_time,
+        da.departure_time,
+        da.notes
+    FROM eligible_children ec
+    LEFT JOIN deduped_attendance da ON ec.child_id = da.child_id
+    LEFT JOIN classrooms cr ON cr.id = COALESCE(da.classroom_id, ec.default_classroom_id)
+    WHERE (p_classroom_id IS NULL OR COALESCE(da.classroom_id, ec.default_classroom_id) = p_classroom_id)
+    ORDER BY ec.full_name, da.day_of_month NULLS LAST;
+END;
+$$;
+
+
+--
+-- Name: sp_get_monthly_teacher_attendance(uuid, uuid, integer, integer, refcursor); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_get_monthly_teacher_attendance(IN p_tenant_id uuid, IN p_branch_id uuid, IN p_year integer, IN p_month integer, INOUT cur refcursor DEFAULT 'cur_monthly_teacher_attendance'::refcursor)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_start_date date := make_date(p_year, p_month, 1);
+    v_end_date date := (make_date(p_year, p_month, 1) + interval '1 month - 1 day')::date;
+BEGIN
+    OPEN cur FOR
+    WITH eligible_teachers AS (
+        SELECT DISTINCT t.id AS teacher_id,
+               t.employee_number::VARCHAR(50) AS employee_number,
+               t.first_name::VARCHAR(100) AS first_name,
+               t.last_name::VARCHAR(100) AS last_name,
+               TRIM(t.first_name || ' ' || COALESCE(t.last_name, ''))::VARCHAR(200) AS full_name,
+               t.profile_photo_url,
+               COALESCE(te.job_title, 'Educator')::VARCHAR(100) AS job_title
+        FROM teachers t
+        LEFT JOIN user_branch_assignments uba ON t.user_id = uba.user_id AND uba.revoked_at IS NULL
+        LEFT JOIN teacher_employments te ON t.id = te.teacher_id
+        WHERE t.tenant_id = p_tenant_id
+          AND (
+              uba.branch_id = p_branch_id
+              OR te.branch_id = p_branch_id
+              OR EXISTS (
+                  SELECT 1 FROM teacher_attendance ta 
+                  WHERE ta.teacher_id = t.id AND ta.branch_id = p_branch_id
+              )
+              OR EXISTS (
+                  SELECT 1 FROM classroom_teachers ct 
+                  JOIN classrooms cr ON ct.classroom_id = cr.id 
+                  WHERE ct.user_id = t.user_id AND cr.branch_id = p_branch_id
+              )
+          )
+    ),
+    deduped_attendance AS (
+        SELECT DISTINCT ON (ta.teacher_id, ta.attendance_date)
+            ta.id AS attendance_id,
+            ta.teacher_id,
+            ta.branch_id,
+            ta.attendance_date,
+            EXTRACT(DAY FROM ta.attendance_date)::INTEGER AS day_of_month,
+            ta.status::VARCHAR(50) AS status,
+            ta.clock_in_time,
+            ta.clock_out_time,
+            ta.notes
+        FROM teacher_attendance ta
+        WHERE ta.tenant_id = p_tenant_id
+          AND ta.branch_id = p_branch_id
+          AND ta.attendance_date >= v_start_date
+          AND ta.attendance_date <= v_end_date
+        ORDER BY ta.teacher_id, ta.attendance_date, ta.updated_at DESC, ta.created_at DESC
+    )
+    SELECT 
+        et.teacher_id,
+        et.employee_number,
+        et.first_name,
+        et.last_name,
+        et.full_name,
+        et.job_title,
+        et.profile_photo_url,
+        da.attendance_id,
+        da.attendance_date,
+        da.day_of_month,
+        da.status,
+        da.clock_in_time,
+        da.clock_out_time,
+        da.notes
+    FROM eligible_teachers et
+    LEFT JOIN deduped_attendance da ON et.teacher_id = da.teacher_id
+    ORDER BY et.full_name, da.day_of_month NULLS LAST;
+END;
+$$;
+
+
+--
+-- Name: sp_get_user_accessible_branches(uuid, uuid, boolean, refcursor); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_get_user_accessible_branches(IN p_tenant_id uuid, IN p_user_id uuid, IN p_is_org_admin boolean, INOUT cur refcursor DEFAULT 'cur_accessible_branches'::refcursor)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    OPEN cur FOR
+    WITH allowed_branches AS (
+        SELECT b.id AS branch_id
+        FROM branches b
+        JOIN organizations o ON b.organization_id = o.id
+        WHERE b.tenant_id = p_tenant_id
+          AND b.is_active = true
+          AND (
+              -- Org Admin can access all branches in tenant
+              p_is_org_admin = true
+              -- Branch Admin / Staff explicitly assigned
+              OR EXISTS (
+                  SELECT 1 FROM user_branch_assignments uba
+                  WHERE uba.user_id = p_user_id
+                    AND uba.branch_id = b.id
+                    AND uba.tenant_id = p_tenant_id
+                    AND uba.revoked_at IS NULL
+              )
+              -- Teachers assigned to classrooms in this branch
+              OR EXISTS (
+                  SELECT 1 FROM classroom_teachers ct
+                  JOIN classrooms cr ON ct.classroom_id = cr.id
+                  WHERE ct.user_id = p_user_id
+                    AND cr.branch_id = b.id
+                    AND cr.tenant_id = p_tenant_id
+              )
+              -- Fallback: Staff with employment in this branch
+              OR EXISTS (
+                  SELECT 1 FROM teachers t
+                  JOIN teacher_employments te ON t.id = te.teacher_id
+                  WHERE t.user_id = p_user_id
+                    AND te.branch_id = b.id
+                    AND t.tenant_id = p_tenant_id
+              )
+          )
+    )
+    SELECT 
+        o.id AS organization_id,
+        o.name::VARCHAR(200) AS organization_name,
+        b.id AS branch_id,
+        b.name::VARCHAR(200) AS branch_name,
+        COALESCE(b.location, 'Main Campus')::VARCHAR(300) AS location,
+        EXISTS (
+            SELECT 1 FROM user_branch_assignments uba 
+            WHERE uba.user_id = p_user_id AND uba.branch_id = b.id
+        ) AS is_primary
+    FROM branches b
+    JOIN organizations o ON b.organization_id = o.id
+    JOIN allowed_branches ab ON b.id = ab.branch_id
+    ORDER BY b.name;
 END;
 $$;
 
@@ -8909,6 +10341,24 @@ $$;
 
 
 --
+-- Name: sp_mark_parent_communications_read_by_parent(uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_mark_parent_communications_read_by_parent(IN p_tenant_id uuid, IN p_child_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE parent_communications
+    SET delivery_status = 'Read', updated_at = NOW()
+    WHERE tenant_id = p_tenant_id
+      AND child_id = p_child_id
+      AND teacher_id != '00000000-0000-0000-0000-000000000000'
+      AND (delivery_status IS NULL OR delivery_status != 'Read');
+END;
+$$;
+
+
+--
 -- Name: sp_provision_platform_organization(uuid, character varying, character varying, character varying, integer); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -9074,37 +10524,72 @@ $$;
 
 
 --
--- Name: sp_record_child_attendance(uuid, uuid, uuid, uuid, uuid, date, character varying, time without time zone, time without time zone, character varying, uuid, character varying, character varying, character varying, character varying, uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_record_child_attendance(uuid, uuid, uuid, uuid, uuid, timestamp with time zone, character varying, interval, interval, character varying, uuid, character varying, character varying, character varying, character varying, uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_record_child_attendance(IN p_id uuid, IN p_tenant_id uuid, IN p_branch_id uuid, IN p_classroom_id uuid, IN p_child_id uuid, IN p_attendance_date date, IN p_status character varying, IN p_arrival_time time without time zone, IN p_departure_time time without time zone, IN p_notes character varying, IN p_recorded_by_user_id uuid, IN p_pickup_person_name character varying, IN p_pickup_person_relationship character varying, IN p_pickup_verification_method character varying, IN p_pickup_notes character varying, IN p_authorized_pickup_id uuid, IN p_departure_verified_by_user_id uuid)
+CREATE PROCEDURE public.sp_record_child_attendance(IN p_id uuid, IN p_tenant_id uuid, IN p_branch_id uuid, IN p_classroom_id uuid, IN p_child_id uuid, IN p_attendance_date timestamp with time zone, IN p_status character varying, IN p_arrival_time interval, IN p_departure_time interval, IN p_notes character varying, IN p_recorded_by_user_id uuid, IN p_pickup_person_name character varying, IN p_pickup_person_relationship character varying, IN p_pickup_verification_method character varying, IN p_pickup_notes character varying, IN p_authorized_pickup_id uuid, IN p_departure_verified_by_user_id uuid)
     LANGUAGE plpgsql
     AS $$
+DECLARE
+    v_existing_id uuid;
 BEGIN
-    INSERT INTO child_attendance (
-        id, tenant_id, branch_id, classroom_id, child_id, attendance_date, status, 
-        arrival_time, departure_time, notes, recorded_by_user_id,
-        pickup_person_name, pickup_person_relationship, pickup_verification_method, pickup_notes, authorized_pickup_id, departure_verified_by_user_id,
-        created_at, updated_at
-    )
-    VALUES (
-        p_id, p_tenant_id, p_branch_id, p_classroom_id, p_child_id, p_attendance_date, p_status, 
-        p_arrival_time, p_departure_time, p_notes, p_recorded_by_user_id,
-        p_pickup_person_name, p_pickup_person_relationship, p_pickup_verification_method, p_pickup_notes, p_authorized_pickup_id, p_departure_verified_by_user_id,
-        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT (id) DO UPDATE SET 
-        status = EXCLUDED.status, 
-        arrival_time = EXCLUDED.arrival_time, 
-        departure_time = EXCLUDED.departure_time, 
-        notes = EXCLUDED.notes,
-        pickup_person_name = EXCLUDED.pickup_person_name,
-        pickup_person_relationship = EXCLUDED.pickup_person_relationship,
-        pickup_verification_method = EXCLUDED.pickup_verification_method,
-        pickup_notes = EXCLUDED.pickup_notes,
-        authorized_pickup_id = EXCLUDED.authorized_pickup_id,
-        departure_verified_by_user_id = EXCLUDED.departure_verified_by_user_id,
-        updated_at = CURRENT_TIMESTAMP;
+    SELECT id INTO v_existing_id
+    FROM child_attendance
+    WHERE tenant_id = p_tenant_id AND child_id = p_child_id AND attendance_date = p_attendance_date::DATE
+    ORDER BY created_at DESC LIMIT 1;
+
+    IF v_existing_id IS NOT NULL THEN
+        UPDATE child_attendance
+        SET status = p_status,
+            arrival_time = COALESCE(p_arrival_time::time, arrival_time),
+            departure_time = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_departure_time::time, departure_time) 
+            END,
+            notes = COALESCE(p_notes, notes),
+            pickup_person_name = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_pickup_person_name, pickup_person_name) 
+            END,
+            pickup_person_relationship = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_pickup_person_relationship, pickup_person_relationship) 
+            END,
+            pickup_verification_method = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_pickup_verification_method, pickup_verification_method) 
+            END,
+            pickup_notes = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_pickup_notes, pickup_notes) 
+            END,
+            authorized_pickup_id = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_authorized_pickup_id, authorized_pickup_id) 
+            END,
+            departure_verified_by_user_id = CASE 
+                WHEN p_status = 'Present' AND p_departure_time IS NULL THEN NULL 
+                ELSE COALESCE(p_departure_verified_by_user_id, departure_verified_by_user_id) 
+            END,
+            classroom_id = COALESCE(p_classroom_id, classroom_id),
+            branch_id = COALESCE(p_branch_id, branch_id),
+            recorded_by_user_id = COALESCE(p_recorded_by_user_id, recorded_by_user_id),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = v_existing_id;
+    ELSE
+        INSERT INTO child_attendance (
+            id, tenant_id, branch_id, classroom_id, child_id, attendance_date, status, 
+            arrival_time, departure_time, notes, recorded_by_user_id,
+            pickup_person_name, pickup_person_relationship, pickup_verification_method, pickup_notes, authorized_pickup_id, departure_verified_by_user_id,
+            created_at, updated_at
+        )
+        VALUES (
+            p_id, p_tenant_id, p_branch_id, p_classroom_id, p_child_id, p_attendance_date::DATE, p_status, 
+            p_arrival_time::time, p_departure_time::time, p_notes, p_recorded_by_user_id,
+            p_pickup_person_name, p_pickup_person_relationship, p_pickup_verification_method, p_pickup_notes, p_authorized_pickup_id, p_departure_verified_by_user_id,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        );
+    END IF;
 END;
 $$;
 
@@ -9182,6 +10667,71 @@ $$;
 
 
 --
+-- Name: sp_remove_teacher_from_classroom(uuid, uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_remove_teacher_from_classroom(IN p_tenant_id uuid, IN p_classroom_id uuid, IN p_user_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM classroom_teachers
+    WHERE classroom_id = p_classroom_id
+      AND user_id = p_user_id
+      AND tenant_id = p_tenant_id;
+END;
+$$;
+
+
+--
+-- Name: sp_remove_user_from_organization(uuid, uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_remove_user_from_organization(IN p_tenant_id uuid, IN p_organization_id uuid, IN p_user_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- Inactivate membership in this organization ONLY
+    UPDATE organization_memberships
+    SET status = 'Inactive', updated_at = NOW()
+    WHERE user_id = p_user_id
+      AND organization_id = p_organization_id
+      AND tenant_id = p_tenant_id;
+
+    -- Revoke branch assignments in this organization ONLY
+    UPDATE user_branch_assignments
+    SET revoked_at = NOW()
+    WHERE user_id = p_user_id
+      AND organization_id = p_organization_id
+      AND tenant_id = p_tenant_id;
+
+    -- Remove classroom assignments belonging to this organization
+    DELETE FROM classroom_teachers ct
+    USING classrooms c, branches b
+    WHERE ct.classroom_id = c.id
+      AND c.branch_id = b.id
+      AND b.organization_id = p_organization_id
+      AND ct.user_id = p_user_id
+      AND ct.tenant_id = p_tenant_id;
+END;
+$$;
+
+
+--
+-- Name: sp_reset_organization_role_permissions(uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_reset_organization_role_permissions(IN p_tenant_id uuid, IN p_organization_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    DELETE FROM organization_role_permissions
+    WHERE tenant_id = p_tenant_id
+      AND organization_id = p_organization_id;
+END;
+$$;
+
+
+--
 -- Name: sp_reverse_payment(uuid, character varying, text, character varying, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -9197,6 +10747,24 @@ BEGIN
         reversal_reason = p_reason,
         reversal_reference = p_reversal_reference
     WHERE id = p_payment_id;
+END;
+$$;
+
+
+--
+-- Name: sp_revoke_user_branch(uuid, uuid, uuid, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_revoke_user_branch(IN p_tenant_id uuid, IN p_organization_id uuid, IN p_branch_id uuid, IN p_user_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE user_branch_assignments
+    SET revoked_at = NOW()
+    WHERE user_id = p_user_id
+      AND branch_id = p_branch_id
+      AND organization_id = p_organization_id
+      AND tenant_id = p_tenant_id;
 END;
 $$;
 
@@ -9281,6 +10849,75 @@ $$;
 
 
 --
+-- Name: sp_seed_dev_parent_environment(uuid, uuid, character varying, uuid, character varying); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_seed_dev_parent_environment(IN p_user_id uuid, IN p_tenant_id uuid, IN p_email character varying, IN p_child_id uuid, IN p_security_stamp character varying)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_teacher_id UUID;
+BEGIN
+    -- 1. Ensure Sunita Patel exists in users
+    INSERT INTO users (
+        id, tenant_id, email, normalized_email, email_confirmed, first_name, last_name, display_name, password_hash, security_stamp, is_active
+    ) VALUES (
+        p_user_id, p_tenant_id, p_email, UPPER(p_email), TRUE, 'Sunita', 'Patel', 'Sunita Patel', '', p_security_stamp, TRUE
+    ) ON CONFLICT (id) DO UPDATE SET is_active = TRUE;
+
+    -- 2. Ensure mock child Aarav Patel exists
+    INSERT INTO children (id, tenant_id, first_name, last_name, date_of_birth, classroom_id, is_active)
+    VALUES (p_child_id, p_tenant_id, 'Aarav', 'Patel', '2023-01-15', '40000000-0000-0000-0000-000000000001', TRUE)
+    ON CONFLICT (id) DO UPDATE SET is_active = TRUE;
+
+    -- 3. Ensure family relationship links Sunita Patel to Aarav Patel
+    INSERT INTO family_relationships (id, tenant_id, child_id, user_id, relationship, is_primary, created_at, status, verified_at)
+    VALUES ('f0000000-0000-0000-0000-000000000001', p_tenant_id, p_child_id, p_user_id, 'Mother', TRUE, NOW(), 'Verified', NOW())
+    ON CONFLICT (child_id, user_id) DO NOTHING;
+
+    -- 4. Ensure person record exists for Family Profile
+    INSERT INTO persons (id, tenant_id, user_id, first_name, last_name, relationship, email, mobile_phone, preferred_contact_method, preferred_language, has_portal_access, receives_daily_updates, receives_photos)
+    VALUES ('70000000-0000-0000-0000-000000000001', p_tenant_id, p_user_id, 'Sunita', 'Patel', 'Mother', p_email, '416-555-0199', 'Mobile', 'English', TRUE, TRUE, TRUE)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 5. Ensure child guardian record exists
+    INSERT INTO child_guardians (id, tenant_id, child_id, person_id, relationship, is_primary, has_legal_custody, can_pickup, can_receive_information, can_authorize_medical_care)
+    VALUES ('80000000-0000-0000-0000-000000000001', p_tenant_id, p_child_id, '70000000-0000-0000-0000-000000000001', 'Mother', TRUE, TRUE, TRUE, TRUE, TRUE)
+    ON CONFLICT (child_id, person_id) DO NOTHING;
+
+    -- 6. Ensure sample journey entries and milestones exist
+    SELECT id INTO v_teacher_id FROM teachers WHERE tenant_id = p_tenant_id LIMIT 1;
+    IF v_teacher_id IS NOT NULL THEN
+        INSERT INTO child_journey_entries (id, tenant_id, child_id, teacher_id, journey_type, title, observation, child_voice, observation_date, is_parent_visible, parent_visibility_status)
+        VALUES ('90000000-0000-0000-0000-000000000001', p_tenant_id, p_child_id, v_teacher_id, 'Art & Sensory', 'Exploring Watercolor Rainbows', 'Aarav mixed colors and identified secondary hues.', 'Look, I made green!', NOW(), TRUE, 'Approved')
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO child_milestones (id, tenant_id, child_id, teacher_id, title, description, milestone_date, parent_visible, status)
+        VALUES ('91000000-0000-0000-0000-000000000001', p_tenant_id, p_child_id, v_teacher_id, 'Collaborative Tower Building', 'Constructed a stable 12-block tower with peers demonstrating turn-taking.', NOW(), TRUE, 'Active')
+        ON CONFLICT (id) DO NOTHING;
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: sp_set_tenant_ai_settings(uuid, character varying, character varying); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_set_tenant_ai_settings(IN p_tenant_id uuid, IN p_encrypted_key character varying, IN p_ai_provider character varying)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE tenants 
+    SET encrypted_ai_api_key = p_encrypted_key,
+        ai_provider = COALESCE(p_ai_provider, 'GoogleGemini'),
+        updated_at = NOW()
+    WHERE id = p_tenant_id;
+END;
+$$;
+
+
+--
 -- Name: sp_set_tenant_encrypted_ai_api_key(uuid, character varying); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -9310,6 +10947,96 @@ BEGIN
         p_start_time, 'Active', p_notes, p_started_by_user_id, p_started_by_name,
         p_parent_visible, p_created_at, p_updated_at
     );
+END;
+$$;
+
+
+--
+-- Name: sp_sync_parent_external_login(character varying, character varying, character varying, character varying, character varying, character varying, uuid, uuid, uuid, uuid, boolean); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_sync_parent_external_login(IN p_provider character varying, IN p_provider_key character varying, IN p_email character varying, IN p_first_name character varying, IN p_last_name character varying, IN p_display_name character varying, IN p_default_tenant_id uuid, IN p_default_org_id uuid, INOUT io_user_id uuid DEFAULT NULL::uuid, INOUT io_tenant_id uuid DEFAULT NULL::uuid, INOUT io_is_active boolean DEFAULT NULL::boolean)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_existing_user_id UUID;
+    v_existing_tenant_id UUID;
+    v_existing_is_active BOOLEAN;
+    v_parent_role_id UUID;
+BEGIN
+    -- Check if provider key already linked
+    SELECT user_id INTO v_existing_user_id
+    FROM user_external_logins
+    WHERE provider = p_provider AND provider_key = p_provider_key;
+
+    IF v_existing_user_id IS NOT NULL THEN
+        SELECT id, tenant_id, is_active
+        INTO io_user_id, io_tenant_id, io_is_active
+        FROM users
+        WHERE id = v_existing_user_id;
+        RETURN;
+    END IF;
+
+    -- Check if user exists by normalized email
+    SELECT id, tenant_id, is_active
+    INTO v_existing_user_id, v_existing_tenant_id, v_existing_is_active
+    FROM users
+    WHERE normalized_email = UPPER(p_email)
+    LIMIT 1;
+
+    IF v_existing_user_id IS NOT NULL THEN
+        -- Reactivate if previously inactive or has active enrolled child
+        UPDATE users
+        SET is_active = TRUE, email_confirmed = TRUE, updated_at = NOW()
+        WHERE id = v_existing_user_id;
+
+        INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
+        VALUES (p_provider, p_provider_key, v_existing_user_id, NOW())
+        ON CONFLICT (provider, provider_key) DO NOTHING;
+
+        io_user_id := v_existing_user_id;
+        io_tenant_id := v_existing_tenant_id;
+        io_is_active := TRUE;
+    ELSE
+        -- Auto-create new parent user account
+        io_user_id := gen_random_uuid();
+        io_tenant_id := p_default_tenant_id;
+        io_is_active := TRUE;
+
+        INSERT INTO users (
+            id, tenant_id, email, normalized_email, email_confirmed,
+            first_name, last_name, display_name, password_hash, security_stamp, is_active, created_at, updated_at
+        ) VALUES (
+            io_user_id, io_tenant_id, p_email, UPPER(p_email), TRUE,
+            p_first_name, p_last_name, p_display_name, '', gen_random_uuid()::varchar, TRUE, NOW(), NOW()
+        );
+
+        INSERT INTO user_external_logins (provider, provider_key, user_id, created_at)
+        VALUES (p_provider, p_provider_key, io_user_id, NOW())
+        ON CONFLICT (provider, provider_key) DO NOTHING;
+
+        -- Ensure organization membership
+        INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status, created_at, updated_at)
+        VALUES (io_user_id, p_default_org_id, io_tenant_id, 'Active', NOW(), NOW())
+        ON CONFLICT (user_id, organization_id) DO UPDATE SET status = 'Active';
+
+        -- Assign Parent role
+        SELECT id INTO v_parent_role_id
+        FROM roles
+        WHERE name = 'Parent' AND tenant_id = io_tenant_id
+        LIMIT 1;
+
+        IF v_parent_role_id IS NOT NULL THEN
+            INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
+            VALUES (io_user_id, v_parent_role_id, p_default_org_id, io_tenant_id)
+            ON CONFLICT DO NOTHING;
+        END IF;
+
+        -- Ensure person record
+        INSERT INTO persons (id, tenant_id, user_id, first_name, last_name, relationship, email, preferred_language, has_portal_access, receives_daily_updates, receives_photos)
+        SELECT gen_random_uuid(), io_tenant_id, io_user_id, p_first_name, p_last_name, 'Parent', p_email, 'English', TRUE, TRUE, TRUE
+        WHERE NOT EXISTS (SELECT 1 FROM persons WHERE user_id = io_user_id);
+    END IF;
 END;
 $$;
 
@@ -9362,11 +11089,17 @@ BEGIN
         ) ON CONFLICT (normalized_email) DO NOTHING;
 
         SELECT id INTO v_user_id FROM users WHERE normalized_email = v_norm_email LIMIT 1;
+    ELSE
+        -- Ensure user is active when linked as guardian
+        UPDATE users 
+        SET is_active = TRUE, email_confirmed = TRUE, updated_at = NOW() 
+        WHERE id = v_user_id;
+    END IF;
 
-        SELECT id INTO v_role_id FROM roles WHERE name = 'Parent' AND (tenant_id = p_tenant_id OR tenant_id IS NULL) LIMIT 1;
-        IF v_role_id IS NOT NULL THEN
-            INSERT INTO user_roles (user_id, role_id) VALUES (v_user_id, v_role_id) ON CONFLICT DO NOTHING;
-        END IF;
+    -- Assign role if available
+    SELECT id INTO v_role_id FROM roles WHERE name = 'Parent' AND (tenant_id = p_tenant_id OR tenant_id IS NULL) LIMIT 1;
+    IF v_role_id IS NOT NULL THEN
+        INSERT INTO user_roles (user_id, role_id) VALUES (v_user_id, v_role_id) ON CONFLICT DO NOTHING;
     END IF;
 
     -- 2. Find or create Person
@@ -9376,12 +11109,19 @@ BEGIN
         INSERT INTO persons (
             id, tenant_id, user_id, first_name, last_name, relationship, email, mobile_phone, has_portal_access, receives_daily_updates, receives_photos, created_at, updated_at
         ) VALUES (
-            v_person_id, p_tenant_id, v_user_id, v_first_name, v_last_name, v_rel, v_trimmed_email, NULLIF(TRIM(p_phone), ''), TRUE, TRUE, TRUE, NOW(), NOW()
+            v_person_id, p_tenant_id, v_user_id, v_first_name, v_last_name, v_rel, v_trimmed_email, p_phone, TRUE, TRUE, TRUE, NOW(), NOW()
         );
     ELSE
-        IF p_phone IS NOT NULL AND TRIM(p_phone) <> '' THEN
-            UPDATE persons SET mobile_phone = TRIM(p_phone), updated_at = NOW() WHERE id = v_person_id;
-        END IF;
+        UPDATE persons
+        SET first_name = v_first_name,
+            last_name = v_last_name,
+            relationship = v_rel,
+            mobile_phone = COALESCE(NULLIF(TRIM(p_phone), ''), mobile_phone),
+            has_portal_access = TRUE,
+            receives_daily_updates = TRUE,
+            receives_photos = TRUE,
+            updated_at = NOW()
+        WHERE id = v_person_id;
     END IF;
 
     -- 3. Link child_guardians
@@ -9389,8 +11129,8 @@ BEGIN
         id, tenant_id, child_id, person_id, relationship, is_primary, has_legal_custody, can_pickup, can_receive_information, can_authorize_medical_care
     ) VALUES (
         gen_random_uuid(), p_tenant_id, p_child_id, v_person_id, v_rel, TRUE, TRUE, TRUE, TRUE, TRUE
-    ) ON CONFLICT (child_id, person_id) DO UPDATE SET 
-        relationship = EXCLUDED.relationship, 
+    ) ON CONFLICT (child_id, person_id) DO UPDATE SET
+        relationship = EXCLUDED.relationship,
         can_pickup = TRUE;
 
     -- 4. Link family_relationships
@@ -9398,7 +11138,7 @@ BEGIN
         id, tenant_id, child_id, user_id, relationship, is_primary, created_at, status, verified_at
     ) VALUES (
         gen_random_uuid(), p_tenant_id, p_child_id, v_user_id, v_rel, TRUE, NOW(), 'Verified', NOW()
-    ) ON CONFLICT (child_id, user_id) DO UPDATE SET 
+    ) ON CONFLICT (child_id, user_id) DO UPDATE SET
         relationship = EXCLUDED.relationship,
         status = 'Verified',
         revoked_at = NULL,
@@ -9410,6 +11150,156 @@ BEGIN
     ) VALUES (
         gen_random_uuid(), p_tenant_id, p_child_id, v_person_id, v_rel, TRUE, 'Primary guardian on file.'
     ) ON CONFLICT DO NOTHING;
+END;
+$$;
+
+
+--
+-- Name: sp_sync_parent_relationships(uuid, character varying, character varying, character varying, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_sync_parent_relationships(IN p_user_id uuid, IN p_email character varying, IN p_first_name character varying, IN p_last_name character varying, IN p_tenant_id uuid)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- 1. Automatically link any active children whose enrollment draft_data matches this parent's email
+    INSERT INTO family_relationships (id, tenant_id, child_id, user_id, relationship, is_primary, created_at, status, verified_at)
+    SELECT gen_random_uuid(), c.tenant_id, c.id, p_user_id, 
+           COALESCE(NULLIF(TRIM((c.draft_data::jsonb)->>'parentRelationship'), ''), 'Parent'), 
+           TRUE, NOW(), 'Verified', NOW()
+    FROM children c
+    WHERE c.is_active = TRUE
+      AND (c.draft_data::jsonb)->>'parentEmail' ILIKE p_email
+    ON CONFLICT (child_id, user_id) DO UPDATE 
+    SET status = 'Verified', revoked_at = NULL, verified_at = NOW();
+
+    -- 2. Also ensure person record exists for this parent
+    INSERT INTO persons (id, tenant_id, user_id, first_name, last_name, relationship, email, preferred_language, has_portal_access, receives_daily_updates, receives_photos)
+    SELECT gen_random_uuid(), c.tenant_id, p_user_id, p_first_name, p_last_name, 'Parent', p_email, 'English', TRUE, TRUE, TRUE
+    FROM children c
+    WHERE c.is_active = TRUE AND (c.draft_data::jsonb)->>'parentEmail' ILIKE p_email
+      AND NOT EXISTS (SELECT 1 FROM persons WHERE tenant_id = c.tenant_id AND user_id = p_user_id);
+
+    -- 3. In development / demo, automatically connect to sample child if no relationships exist
+    IF NOT EXISTS (SELECT 1 FROM family_relationships WHERE user_id = p_user_id AND status = 'Verified' AND revoked_at IS NULL) THEN
+        INSERT INTO family_relationships (id, tenant_id, child_id, user_id, relationship, is_primary, created_at, status, verified_at)
+        SELECT gen_random_uuid(), p_tenant_id, c.id, p_user_id, 'Parent', TRUE, NOW(), 'Verified', NOW()
+        FROM children c
+        WHERE c.tenant_id = p_tenant_id
+        LIMIT 1
+        ON CONFLICT DO NOTHING;
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: sp_update_admin_user(uuid, character varying, character varying, character varying, character varying, character varying, character varying, uuid); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_update_admin_user(IN p_user_id uuid, IN p_email character varying, IN p_first_name character varying, IN p_last_name character varying, IN p_password character varying, IN p_role_name character varying, IN p_account_status character varying, IN p_org_id uuid DEFAULT NULL::uuid)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_clean_email character varying;
+    v_old_is_platform_admin boolean;
+    v_new_is_platform_admin boolean;
+    v_platform_admin_count integer;
+    v_platform_role_id uuid;
+    v_target_role_id uuid;
+    v_tenant_id uuid;
+    v_is_active boolean;
+BEGIN
+    v_clean_email := lower(trim(p_email));
+    v_is_active := (lower(trim(p_account_status)) = 'active');
+    
+    SELECT id INTO v_platform_role_id FROM roles WHERE name = 'PlatformAdmin' LIMIT 1;
+
+    -- Check if user currently has platform admin role
+    SELECT EXISTS (
+        SELECT 1 FROM user_roles 
+        WHERE user_id = p_user_id 
+          AND role_id IN (SELECT id FROM roles WHERE name IN ('PlatformAdmin', 'SuperAdmin'))
+    ) INTO v_old_is_platform_admin;
+
+    v_new_is_platform_admin := (p_role_name IN ('PlatformAdmin', 'SuperAdmin'));
+
+    -- If promoting to platform admin from a non-platform admin role, check limit of 3
+    IF v_new_is_platform_admin AND NOT v_old_is_platform_admin THEN
+        SELECT COUNT(DISTINCT ur.user_id) INTO v_platform_admin_count
+        FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        WHERE r.name IN ('PlatformAdmin', 'SuperAdmin');
+
+        IF v_platform_admin_count >= 3 THEN
+            RAISE EXCEPTION 'A maximum of 3 platform administrators can exist at any point in time. Please remove an existing platform administrator before promoting a new one.';
+        END IF;
+    END IF;
+
+    -- If demoting from platform admin to an org role, ensure not the last one
+    IF v_old_is_platform_admin AND NOT v_new_is_platform_admin THEN
+        SELECT COUNT(DISTINCT ur.user_id) INTO v_platform_admin_count
+        FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        WHERE r.name IN ('PlatformAdmin', 'SuperAdmin');
+
+        IF v_platform_admin_count <= 1 THEN
+            RAISE EXCEPTION 'Cannot demote the only remaining platform administrator. At least one platform administrator must exist.';
+        END IF;
+    END IF;
+
+    -- Update users table
+    UPDATE users 
+    SET email = v_clean_email,
+        normalized_email = upper(v_clean_email),
+        first_name = p_first_name,
+        last_name = p_last_name,
+        display_name = trim(concat(p_first_name, ' ', p_last_name)),
+        is_active = v_is_active,
+        password_hash = CASE WHEN p_password IS NOT NULL AND trim(p_password) != '' THEN p_password ELSE password_hash END,
+        updated_at = NOW()
+    WHERE id = p_user_id;
+
+    -- Handle role transitions
+    IF v_new_is_platform_admin THEN
+        IF v_platform_role_id IS NOT NULL THEN
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (p_user_id, v_platform_role_id)
+            ON CONFLICT DO NOTHING;
+        END IF;
+    ELSE
+        -- Remove platform admin role if previously held
+        IF v_platform_role_id IS NOT NULL THEN
+            DELETE FROM user_roles WHERE user_id = p_user_id AND role_id = v_platform_role_id;
+        END IF;
+
+        -- Assign target organization role
+        IF p_org_id IS NOT NULL THEN
+            SELECT tenant_id INTO v_tenant_id FROM organizations WHERE id = p_org_id;
+            IF v_tenant_id IS NULL THEN v_tenant_id := p_org_id; END IF;
+
+            SELECT id INTO v_target_role_id 
+            FROM roles 
+            WHERE name = p_role_name 
+              AND (tenant_id = p_org_id OR tenant_id IS NULL)
+            ORDER BY tenant_id NULLS LAST 
+            LIMIT 1;
+
+            INSERT INTO organization_memberships (user_id, organization_id, tenant_id, status)
+            VALUES (p_user_id, p_org_id, v_tenant_id, p_account_status)
+            ON CONFLICT (user_id, organization_id) DO UPDATE SET status = p_account_status;
+
+            IF v_target_role_id IS NOT NULL THEN
+                INSERT INTO user_organization_roles (user_id, role_id, organization_id, tenant_id)
+                VALUES (p_user_id, v_target_role_id, p_org_id, v_tenant_id)
+                ON CONFLICT (user_id, role_id, organization_id) DO NOTHING;
+
+                INSERT INTO user_roles (user_id, role_id)
+                VALUES (p_user_id, v_target_role_id)
+                ON CONFLICT DO NOTHING;
+            END IF;
+        END IF;
+    END IF;
 END;
 $$;
 
@@ -9480,41 +11370,17 @@ $$;
 
 
 --
--- Name: sp_update_child(uuid, uuid, character varying, character varying, date, uuid, text, integer, character varying, text, boolean, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_update_child(uuid, uuid, character varying, character varying, timestamp with time zone, uuid, text, integer, character varying, text, boolean, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_update_child(IN p_id uuid, IN p_tenant_id uuid, IN p_first_name character varying, IN p_last_name character varying, IN p_date_of_birth date, IN p_classroom_id uuid, IN p_photo_url text, IN p_profile_completion_percentage integer, IN p_enrollment_status character varying, IN p_draft_data text, IN p_is_active boolean, IN p_updated_at timestamp with time zone)
+CREATE PROCEDURE public.sp_update_child(IN p_id uuid, IN p_tenant_id uuid, IN p_first_name character varying, IN p_last_name character varying, IN p_date_of_birth timestamp with time zone, IN p_classroom_id uuid, IN p_photo_url text, IN p_profile_completion_percentage integer, IN p_enrollment_status character varying, IN p_draft_data text, IN p_is_active boolean, IN p_updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE children
     SET first_name = p_first_name,
         last_name = p_last_name,
-        date_of_birth = p_date_of_birth,
-        classroom_id = p_classroom_id,
-        photo_url = p_photo_url,
-        profile_completion_percentage = p_profile_completion_percentage,
-        enrollment_status = p_enrollment_status,
-        draft_data = p_draft_data,
-        is_active = p_is_active,
-        updated_at = p_updated_at
-    WHERE id = p_id AND tenant_id = p_tenant_id;
-END;
-$$;
-
-
---
--- Name: sp_update_child(uuid, uuid, character varying, character varying, date, uuid, character varying, integer, character varying, jsonb, boolean, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
---
-
-CREATE PROCEDURE public.sp_update_child(IN p_id uuid, IN p_tenant_id uuid, IN p_first_name character varying, IN p_last_name character varying, IN p_date_of_birth date, IN p_classroom_id uuid, IN p_photo_url character varying, IN p_profile_completion_percentage integer, IN p_enrollment_status character varying, IN p_draft_data jsonb, IN p_is_active boolean, IN p_updated_at timestamp with time zone)
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    UPDATE children
-    SET first_name = p_first_name,
-        last_name = p_last_name,
-        date_of_birth = p_date_of_birth,
+        date_of_birth = p_date_of_birth::DATE,
         classroom_id = p_classroom_id,
         photo_url = p_photo_url,
         profile_completion_percentage = p_profile_completion_percentage,
@@ -9706,16 +11572,16 @@ $$;
 
 
 --
--- Name: sp_update_event(uuid, uuid, character varying, text, uuid, date, time without time zone, time without time zone, character varying, uuid, character varying, character varying, uuid, boolean, text[], timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_update_event(uuid, uuid, character varying, text, uuid, timestamp with time zone, interval, interval, character varying, uuid, character varying, character varying, uuid, boolean, text[], timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_update_event(IN p_id uuid, IN p_tenant_id uuid, IN p_title character varying, IN p_description text, IN p_event_type_id uuid, IN p_event_date date, IN p_start_time time without time zone, IN p_end_time time without time zone, IN p_location character varying, IN p_organizer_id uuid, IN p_status character varying, IN p_scope character varying, IN p_branch_id uuid, IN p_is_organization_wide boolean, IN p_photo_urls text[], IN p_updated_at timestamp with time zone)
+CREATE PROCEDURE public.sp_update_event(IN p_id uuid, IN p_tenant_id uuid, IN p_title character varying, IN p_description text, IN p_event_type_id uuid, IN p_event_date timestamp with time zone, IN p_start_time interval, IN p_end_time interval, IN p_location character varying, IN p_organizer_id uuid, IN p_status character varying, IN p_scope character varying, IN p_branch_id uuid, IN p_is_organization_wide boolean, IN p_photo_urls text[], IN p_updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE events 
     SET title = p_title, description = p_description, event_type_id = p_event_type_id, 
-        event_date = p_event_date, start_time = p_start_time, end_time = p_end_time, 
+        event_date = p_event_date::DATE, start_time = p_start_time::time, end_time = p_end_time::time, 
         location = p_location, organizer_id = p_organizer_id, status = p_status, 
         scope = p_scope, branch_id = p_branch_id, is_organization_wide = p_is_organization_wide, 
         photo_urls = p_photo_urls, updated_at = p_updated_at
@@ -9840,20 +11706,20 @@ $$;
 
 
 --
--- Name: sp_update_experience_schedule(uuid, uuid, date, character varying, character varying, uuid, time without time zone, time without time zone, text, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_update_experience_schedule(uuid, uuid, timestamp with time zone, character varying, character varying, uuid, interval, interval, text, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_update_experience_schedule(IN p_id uuid, IN p_tenant_id uuid, IN p_scheduled_date date, IN p_time_of_day character varying, IN p_status character varying, IN p_primary_teacher_id uuid, IN p_planned_start_time time without time zone, IN p_planned_end_time time without time zone, IN p_preparation_notes text, IN p_updated_at timestamp with time zone)
+CREATE PROCEDURE public.sp_update_experience_schedule(IN p_id uuid, IN p_tenant_id uuid, IN p_scheduled_date timestamp with time zone, IN p_time_of_day character varying, IN p_status character varying, IN p_primary_teacher_id uuid, IN p_planned_start_time interval, IN p_planned_end_time interval, IN p_preparation_notes text, IN p_updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE experience_schedules
-    SET scheduled_date = p_scheduled_date,
+    SET scheduled_date = p_scheduled_date::DATE,
         time_of_day = p_time_of_day,
         status = p_status,
         primary_teacher_id = p_primary_teacher_id,
-        planned_start_time = p_planned_start_time,
-        planned_end_time = p_planned_end_time,
+        planned_start_time = p_planned_start_time::time,
+        planned_end_time = p_planned_end_time::time,
         preparation_notes = p_preparation_notes,
         updated_at = p_updated_at
     WHERE id = p_id AND tenant_id = p_tenant_id;
@@ -9862,18 +11728,18 @@ $$;
 
 
 --
--- Name: sp_update_experience_session(uuid, uuid, character varying, text, time without time zone, time without time zone); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_update_experience_session(uuid, uuid, character varying, text, interval, interval); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_update_experience_session(IN p_id uuid, IN p_tenant_id uuid, IN p_status character varying, IN p_actual_notes text, IN p_start_time time without time zone, IN p_end_time time without time zone)
+CREATE PROCEDURE public.sp_update_experience_session(IN p_id uuid, IN p_tenant_id uuid, IN p_status character varying, IN p_actual_notes text, IN p_start_time interval, IN p_end_time interval)
     LANGUAGE plpgsql
     AS $$
 BEGIN
     UPDATE experience_sessions SET
         status = p_status,
         actual_notes = p_actual_notes,
-        start_time = p_start_time,
-        end_time = p_end_time,
+        start_time = p_start_time::time,
+        end_time = p_end_time::time,
         updated_at = NOW()
     WHERE id = p_id AND tenant_id = p_tenant_id;
 END;
@@ -10379,10 +12245,10 @@ $$;
 
 
 --
--- Name: sp_update_teacher(uuid, uuid, uuid, uuid, character varying, character varying, character varying, character varying, character varying, character varying, text, date, character varying, character varying, text, character varying, text, character varying, jsonb, integer, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
+-- Name: sp_update_teacher(uuid, uuid, uuid, uuid, character varying, character varying, character varying, character varying, character varying, character varying, text, timestamp with time zone, character varying, character varying, text, character varying, text, character varying, jsonb, integer, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
-CREATE PROCEDURE public.sp_update_teacher(IN p_id uuid, IN p_tenant_id uuid, IN p_person_id uuid, IN p_user_id uuid, IN p_employee_number character varying, IN p_first_name character varying, IN p_middle_name character varying, IN p_last_name character varying, IN p_preferred_name character varying, IN p_display_name character varying, IN p_profile_photo_url text, IN p_date_of_birth date, IN p_gender character varying, IN p_preferred_language character varying, IN p_other_languages text, IN p_pronouns character varying, IN p_bio text, IN p_status character varying, IN p_draft_data jsonb, IN p_profile_completion_percentage integer, IN p_updated_at timestamp with time zone)
+CREATE PROCEDURE public.sp_update_teacher(IN p_id uuid, IN p_tenant_id uuid, IN p_person_id uuid, IN p_user_id uuid, IN p_employee_number character varying, IN p_first_name character varying, IN p_middle_name character varying, IN p_last_name character varying, IN p_preferred_name character varying, IN p_display_name character varying, IN p_profile_photo_url text, IN p_date_of_birth timestamp with time zone, IN p_gender character varying, IN p_preferred_language character varying, IN p_other_languages text, IN p_pronouns character varying, IN p_bio text, IN p_status character varying, IN p_draft_data jsonb, IN p_profile_completion_percentage integer, IN p_updated_at timestamp with time zone)
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -10396,7 +12262,7 @@ BEGIN
         preferred_name = p_preferred_name,
         display_name = p_display_name,
         profile_photo_url = p_profile_photo_url,
-        date_of_birth = p_date_of_birth,
+        date_of_birth = p_date_of_birth::DATE,
         gender = p_gender,
         preferred_language = p_preferred_language,
         other_languages = p_other_languages,
@@ -10476,6 +12342,31 @@ $$;
 
 
 --
+-- Name: sp_upsert_daily_readiness_log(uuid, uuid, uuid, uuid, date, character varying, boolean, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sp_upsert_daily_readiness_log(p_tenant_id uuid, p_organization_id uuid, p_branch_id uuid, p_classroom_id uuid, p_check_date date, p_item_id character varying, p_is_completed boolean, p_user_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.daily_readiness_checklist_logs (
+        tenant_id, organization_id, branch_id, classroom_id, check_date, item_id, is_completed, updated_by_user_id, updated_at
+    )
+    VALUES (
+        p_tenant_id, p_organization_id, p_branch_id, p_classroom_id, p_check_date, p_item_id, p_is_completed, p_user_id, NOW()
+    )
+    ON CONFLICT (tenant_id, organization_id, check_date, item_id)
+    DO UPDATE SET
+        is_completed = EXCLUDED.is_completed,
+        updated_by_user_id = EXCLUDED.updated_by_user_id,
+        updated_at = NOW(),
+        branch_id = COALESCE(EXCLUDED.branch_id, daily_readiness_checklist_logs.branch_id),
+        classroom_id = COALESCE(EXCLUDED.classroom_id, daily_readiness_checklist_logs.classroom_id);
+END;
+$$;
+
+
+--
 -- Name: sp_upsert_organization_billing_settings(uuid, uuid, uuid, character varying, character varying, timestamp with time zone, timestamp with time zone, boolean, text, character varying, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -10504,6 +12395,73 @@ $$;
 
 
 --
+-- Name: sp_upsert_organization_role_permission(uuid, uuid, character varying, character varying, boolean); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_upsert_organization_role_permission(IN p_tenant_id uuid, IN p_organization_id uuid, IN p_role_name character varying, IN p_feature_key character varying, IN p_is_allowed boolean)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO organization_role_permissions (
+        tenant_id,
+        organization_id,
+        role_name,
+        feature_key,
+        is_allowed,
+        updated_at
+    )
+    VALUES (
+        p_tenant_id,
+        p_organization_id,
+        p_role_name,
+        p_feature_key,
+        p_is_allowed,
+        NOW()
+    )
+    ON CONFLICT (tenant_id, organization_id, role_name, feature_key)
+    DO UPDATE SET
+        is_allowed = EXCLUDED.is_allowed,
+        updated_at = NOW();
+END;
+$$;
+
+
+--
+-- Name: sp_upsert_tenant_preferences(uuid, character varying, character varying, jsonb, jsonb, jsonb, jsonb, jsonb); Type: PROCEDURE; Schema: public; Owner: -
+--
+
+CREATE PROCEDURE public.sp_upsert_tenant_preferences(IN p_tenant_id uuid, IN p_currency character varying, IN p_time_zone character varying, IN p_operating_hours_json jsonb, IN p_statutory_ratios_json jsonb, IN p_billing_rules_json jsonb, IN p_safety_policies_json jsonb, IN p_custom_settings_json jsonb)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO public.tenant_preferences (
+        tenant_id, currency, time_zone,
+        operating_hours_json, statutory_ratios_json,
+        billing_rules_json, safety_policies_json,
+        custom_settings_json, updated_at
+    ) VALUES (
+        p_tenant_id, p_currency, p_time_zone,
+        COALESCE(p_operating_hours_json, '{"openTime": "08:00", "closeTime": "18:00", "workingDays": ["Monday","Tuesday","Wednesday","Thursday","Friday"]}'::jsonb),
+        COALESCE(p_statutory_ratios_json, '{"Infant": 4, "Toddler": 7, "Preschool": 10, "Kindergarten": 15}'::jsonb),
+        COALESCE(p_billing_rules_json, '{"siblingDiscountPercent": 10.0, "latePickupFeePerMinute": 1.0, "gracePeriodMinutes": 15, "invoiceDueDays": 15}'::jsonb),
+        COALESCE(p_safety_policies_json, '{"napCheckIntervalMinutes": 15, "requireDualMedicationSignoff": false, "minEmergencyContacts": 2}'::jsonb),
+        COALESCE(p_custom_settings_json, '{}'::jsonb),
+        now()
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+        currency = EXCLUDED.currency,
+        time_zone = EXCLUDED.time_zone,
+        operating_hours_json = EXCLUDED.operating_hours_json,
+        statutory_ratios_json = EXCLUDED.statutory_ratios_json,
+        billing_rules_json = EXCLUDED.billing_rules_json,
+        safety_policies_json = EXCLUDED.safety_policies_json,
+        custom_settings_json = EXCLUDED.custom_settings_json,
+        updated_at = now();
+END;
+$$;
+
+
+--
 -- Name: sp_verify_emergency_contact(uuid, uuid, character varying, timestamp with time zone, timestamp with time zone); Type: PROCEDURE; Schema: public; Owner: -
 --
 
@@ -10518,6 +12476,51 @@ BEGIN
         review_due_at = p_review_due_at,
         updated_at = CURRENT_TIMESTAMP
     WHERE tenant_id = p_tenant_id AND id = p_id;
+END;
+$$;
+
+
+--
+-- Name: trg_event_classrooms_no_overlap(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.trg_event_classrooms_no_overlap() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    e record;
+BEGIN
+    SELECT id, tenant_id, event_date, start_time, end_time, status INTO e FROM events WHERE id = NEW.event_id;
+    IF FOUND AND e.status <> 'Cancelled' THEN
+        PERFORM public.fn_assert_classroom_free(e.tenant_id, NEW.classroom_id, e.event_date, e.start_time, e.end_time, e.id);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: trg_events_no_overlap(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.trg_events_no_overlap() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    r record;
+BEGIN
+    IF NEW.status = 'Cancelled' THEN
+        RETURN NEW;
+    END IF;
+    IF NEW.event_date IS DISTINCT FROM OLD.event_date
+       OR NEW.start_time IS DISTINCT FROM OLD.start_time
+       OR NEW.end_time IS DISTINCT FROM OLD.end_time
+       OR (OLD.status = 'Cancelled') THEN
+        FOR r IN SELECT classroom_id FROM event_classrooms WHERE event_id = NEW.id ORDER BY classroom_id LOOP
+            PERFORM public.fn_assert_classroom_free(NEW.tenant_id, r.classroom_id, NEW.event_date, NEW.start_time, NEW.end_time, NEW.id);
+        END LOOP;
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
@@ -10638,6 +12641,47 @@ CREATE TABLE public.addresses (
     province character varying(100) NOT NULL,
     postal_code character varying(50) NOT NULL,
     country character varying(100) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_personal_access_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_personal_access_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    token_name character varying(100) NOT NULL,
+    token_prefix character varying(32) NOT NULL,
+    token_hash character varying(128) NOT NULL,
+    role character varying(50) NOT NULL,
+    scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    is_revoked boolean DEFAULT false NOT NULL,
+    expires_at timestamp with time zone,
+    last_used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_webhook_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_webhook_subscriptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    name character varying(100) NOT NULL,
+    webhook_url text NOT NULL,
+    secret_key character varying(128) NOT NULL,
+    subscribed_events text[] DEFAULT '{}'::text[] NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    last_triggered_at timestamp with time zone,
+    failure_count integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -11504,6 +13548,45 @@ CREATE TABLE public.consent_templates (
 
 
 --
+-- Name: daily_readiness_checklist_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.daily_readiness_checklist_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    branch_id uuid,
+    classroom_id uuid,
+    check_date date NOT NULL,
+    item_id character varying(100) NOT NULL,
+    is_completed boolean NOT NULL,
+    updated_by_user_id uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: daycare_announcements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.daycare_announcements (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    branch_id uuid,
+    title character varying(255) NOT NULL,
+    content text NOT NULL,
+    tag character varying(50) DEFAULT 'Notice'::character varying NOT NULL,
+    is_urgent boolean DEFAULT false NOT NULL,
+    author_name character varying(150),
+    author_role character varying(50),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_active boolean DEFAULT true NOT NULL
+);
+
+
+--
 -- Name: development_areas; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11987,6 +14070,23 @@ CREATE TABLE public.invoices (
 
 
 --
+-- Name: master_lookups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.master_lookups (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    category character varying(50) NOT NULL,
+    code character varying(50) NOT NULL,
+    display_name character varying(100) NOT NULL,
+    display_order integer DEFAULT 0 NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    metadata_json jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: material_loans; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12210,6 +14310,36 @@ CREATE TABLE public.material_shipments (
 
 
 --
+-- Name: media_assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_assets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    organization_id uuid,
+    child_id uuid,
+    entity_type character varying(50) NOT NULL,
+    entity_id uuid,
+    display_container character varying(100) NOT NULL,
+    display_key character varying(255) NOT NULL,
+    display_content_type character varying(100) NOT NULL,
+    display_size_bytes bigint NOT NULL,
+    display_width integer NOT NULL,
+    display_height integer NOT NULL,
+    thumbnail_container character varying(100) NOT NULL,
+    thumbnail_key character varying(255) NOT NULL,
+    thumbnail_content_type character varying(100) NOT NULL,
+    thumbnail_size_bytes bigint NOT NULL,
+    thumbnail_width integer NOT NULL,
+    thumbnail_height integer NOT NULL,
+    content_hash character varying(128) NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: medication_administrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12253,6 +14383,22 @@ CREATE TABLE public.organization_memberships (
     organization_id uuid NOT NULL,
     tenant_id uuid NOT NULL,
     status character varying(50) DEFAULT 'Active'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: organization_role_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.organization_role_permissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    role_name character varying(100) NOT NULL,
+    feature_key character varying(100) NOT NULL,
+    is_allowed boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -12309,7 +14455,9 @@ CREATE TABLE public.parent_communications (
     delivery_error text,
     idempotency_key character varying(100),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_agent_draft boolean DEFAULT false NOT NULL,
+    agent_token_id uuid
 );
 
 
@@ -12802,6 +14950,23 @@ CREATE TABLE public.teachers (
 
 
 --
+-- Name: tenant_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tenant_preferences (
+    tenant_id uuid NOT NULL,
+    currency character varying(10) DEFAULT 'INR'::character varying NOT NULL,
+    time_zone character varying(100) DEFAULT 'Asia/Kolkata'::character varying NOT NULL,
+    operating_hours_json jsonb DEFAULT '{"openTime": "08:00", "closeTime": "18:00", "workingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]}'::jsonb NOT NULL,
+    statutory_ratios_json jsonb DEFAULT '{"Infant": 4, "Toddler": 7, "Preschool": 10, "Kindergarten": 15}'::jsonb NOT NULL,
+    billing_rules_json jsonb DEFAULT '{"invoiceDueDays": 15, "gracePeriodMinutes": 15, "latePickupFeePerMinute": 1.0, "siblingDiscountPercent": 10.0}'::jsonb NOT NULL,
+    safety_policies_json jsonb DEFAULT '{"minEmergencyContacts": 2, "napCheckIntervalMinutes": 15, "requireDualMedicationSignoff": false}'::jsonb NOT NULL,
+    custom_settings_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: tenants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12812,7 +14977,8 @@ CREATE TABLE public.tenants (
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    encrypted_ai_api_key character varying(1000)
+    encrypted_ai_api_key character varying(1000),
+    ai_provider character varying(50) DEFAULT 'GoogleGemini'::character varying
 );
 
 
@@ -12992,6 +15158,30 @@ ALTER TABLE ONLY public.activity_recommendation_requests
 
 ALTER TABLE ONLY public.addresses
     ADD CONSTRAINT addresses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_personal_access_tokens agent_personal_access_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_personal_access_tokens
+    ADD CONSTRAINT agent_personal_access_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_personal_access_tokens agent_personal_access_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_personal_access_tokens
+    ADD CONSTRAINT agent_personal_access_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: agent_webhook_subscriptions agent_webhook_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_webhook_subscriptions
+    ADD CONSTRAINT agent_webhook_subscriptions_pkey PRIMARY KEY (id);
 
 
 --
@@ -13411,6 +15601,22 @@ ALTER TABLE ONLY public.consent_templates
 
 
 --
+-- Name: daily_readiness_checklist_logs daily_readiness_checklist_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_readiness_checklist_logs
+    ADD CONSTRAINT daily_readiness_checklist_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: daycare_announcements daycare_announcements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daycare_announcements
+    ADD CONSTRAINT daycare_announcements_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: development_areas development_areas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13699,6 +15905,14 @@ ALTER TABLE ONLY public.marketplace_orders
 
 
 --
+-- Name: master_lookups master_lookups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.master_lookups
+    ADD CONSTRAINT master_lookups_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: material_loans material_loans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13795,6 +16009,14 @@ ALTER TABLE ONLY public.material_shipments
 
 
 --
+-- Name: media_assets media_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_assets
+    ADD CONSTRAINT media_assets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: medication_administrations medication_administrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13832,6 +16054,14 @@ ALTER TABLE ONLY public.organization_intelligence_insights
 
 ALTER TABLE ONLY public.organization_memberships
     ADD CONSTRAINT organization_memberships_pkey PRIMARY KEY (user_id, organization_id);
+
+
+--
+-- Name: organization_role_permissions organization_role_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_role_permissions
+    ADD CONSTRAINT organization_role_permissions_pkey PRIMARY KEY (id);
 
 
 --
@@ -14083,6 +16313,14 @@ ALTER TABLE ONLY public.teachers
 
 
 --
+-- Name: tenant_preferences tenant_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tenant_preferences
+    ADD CONSTRAINT tenant_preferences_pkey PRIMARY KEY (tenant_id);
+
+
+--
 -- Name: tenants tenants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14131,6 +16369,14 @@ ALTER TABLE ONLY public.organization_memberships
 
 
 --
+-- Name: organization_role_permissions uk_org_role_feature; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_role_permissions
+    ADD CONSTRAINT uk_org_role_feature UNIQUE (tenant_id, organization_id, role_name, feature_key);
+
+
+--
 -- Name: organizations uk_organizations_tenant; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14155,11 +16401,27 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: daily_readiness_checklist_logs uq_daily_readiness_item; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_readiness_checklist_logs
+    ADD CONSTRAINT uq_daily_readiness_item UNIQUE (tenant_id, organization_id, check_date, item_id);
+
+
+--
 -- Name: marketplace_orders uq_marketplace_orders_txn; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.marketplace_orders
     ADD CONSTRAINT uq_marketplace_orders_txn UNIQUE (organization_id, platform_experience_id, transaction_reference);
+
+
+--
+-- Name: master_lookups uq_master_lookups_category_code; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.master_lookups
+    ADD CONSTRAINT uq_master_lookups_category_code UNIQUE (category, code);
 
 
 --
@@ -14239,6 +16501,27 @@ ALTER TABLE ONLY public.weekly_planning_draft_requests
 --
 
 CREATE INDEX idx_addresses_tenant ON public.addresses USING btree (tenant_id);
+
+
+--
+-- Name: idx_agent_tokens_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_tokens_hash ON public.agent_personal_access_tokens USING btree (token_hash) WHERE (is_revoked = false);
+
+
+--
+-- Name: idx_agent_tokens_tenant_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_tokens_tenant_user ON public.agent_personal_access_tokens USING btree (tenant_id, user_id);
+
+
+--
+-- Name: idx_agent_webhooks_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_webhooks_tenant ON public.agent_webhook_subscriptions USING btree (tenant_id) WHERE (is_active = true);
 
 
 --
@@ -14547,6 +16830,13 @@ CREATE INDEX idx_consent_templates_doc_type ON public.consent_templates USING bt
 --
 
 CREATE INDEX idx_consent_templates_tenant_org ON public.consent_templates USING btree (tenant_id, organization_id);
+
+
+--
+-- Name: idx_daycare_announcements_org; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_daycare_announcements_org ON public.daycare_announcements USING btree (tenant_id, organization_id, created_at DESC);
 
 
 --
@@ -14935,6 +17225,13 @@ CREATE INDEX idx_marketplace_orders_org ON public.marketplace_orders USING btree
 
 
 --
+-- Name: idx_master_lookups_category; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_master_lookups_category ON public.master_lookups USING btree (category, is_active, display_order);
+
+
+--
 -- Name: idx_mat_inspections_loan; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15026,6 +17323,27 @@ CREATE INDEX idx_mat_shipments_order ON public.material_shipments USING btree (o
 
 
 --
+-- Name: idx_media_assets_child; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_media_assets_child ON public.media_assets USING btree (child_id);
+
+
+--
+-- Name: idx_media_assets_entity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_media_assets_entity ON public.media_assets USING btree (entity_type, entity_id);
+
+
+--
+-- Name: idx_media_assets_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_media_assets_tenant ON public.media_assets USING btree (tenant_id);
+
+
+--
 -- Name: idx_org_billing_settings_org; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15075,10 +17393,24 @@ CREATE INDEX idx_org_intel_tenant_org ON public.organization_intelligence_insigh
 
 
 --
+-- Name: idx_org_role_perms_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_org_role_perms_lookup ON public.organization_role_permissions USING btree (tenant_id, organization_id, role_name);
+
+
+--
 -- Name: idx_organizations_tenant; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_organizations_tenant ON public.organizations USING btree (tenant_id);
+
+
+--
+-- Name: idx_parent_comms_agent_draft; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_parent_comms_agent_draft ON public.parent_communications USING btree (tenant_id, is_agent_draft, status);
 
 
 --
@@ -15163,6 +17495,13 @@ CREATE INDEX idx_platform_exp_status ON public.platform_experiences USING btree 
 --
 
 CREATE INDEX idx_platform_exp_ver_exp ON public.platform_experience_versions USING btree (platform_experience_id);
+
+
+--
+-- Name: idx_readiness_logs_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_readiness_logs_lookup ON public.daily_readiness_checklist_logs USING btree (tenant_id, organization_id, check_date);
 
 
 --
@@ -15313,6 +17652,20 @@ CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON public.audit_log FOR EAC
 
 
 --
+-- Name: event_classrooms event_classrooms_no_overlap; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER event_classrooms_no_overlap BEFORE INSERT OR UPDATE ON public.event_classrooms FOR EACH ROW EXECUTE FUNCTION public.trg_event_classrooms_no_overlap();
+
+
+--
+-- Name: events events_no_overlap; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER events_no_overlap BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.trg_events_no_overlap();
+
+
+--
 -- Name: tenants tenants_ensure_roles; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -15372,6 +17725,38 @@ ALTER TABLE ONLY public.activity_recommendation_items
 
 ALTER TABLE ONLY public.addresses
     ADD CONSTRAINT addresses_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: agent_personal_access_tokens agent_personal_access_tokens_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_personal_access_tokens
+    ADD CONSTRAINT agent_personal_access_tokens_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_personal_access_tokens agent_personal_access_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_personal_access_tokens
+    ADD CONSTRAINT agent_personal_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_webhook_subscriptions agent_webhook_subscriptions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_webhook_subscriptions
+    ADD CONSTRAINT agent_webhook_subscriptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_webhook_subscriptions agent_webhook_subscriptions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_webhook_subscriptions
+    ADD CONSTRAINT agent_webhook_subscriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -17543,6 +19928,30 @@ ALTER TABLE ONLY public.material_shipments
 
 
 --
+-- Name: media_assets media_assets_child_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_assets
+    ADD CONSTRAINT media_assets_child_id_fkey FOREIGN KEY (child_id) REFERENCES public.children(id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_assets media_assets_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_assets
+    ADD CONSTRAINT media_assets_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: media_assets media_assets_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_assets
+    ADD CONSTRAINT media_assets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: medication_administrations medication_administrations_administered_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -17671,11 +20080,35 @@ ALTER TABLE ONLY public.organization_memberships
 
 
 --
+-- Name: organization_role_permissions organization_role_permissions_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_role_permissions
+    ADD CONSTRAINT organization_role_permissions_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_role_permissions organization_role_permissions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_role_permissions
+    ADD CONSTRAINT organization_role_permissions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: organizations organizations_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.organizations
     ADD CONSTRAINT organizations_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: parent_communications parent_communications_agent_token_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parent_communications
+    ADD CONSTRAINT parent_communications_agent_token_id_fkey FOREIGN KEY (agent_token_id) REFERENCES public.agent_personal_access_tokens(id) ON DELETE SET NULL;
 
 
 --
@@ -17927,6 +20360,14 @@ ALTER TABLE ONLY public.teacher_handovers
 
 
 --
+-- Name: tenant_preferences tenant_preferences_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tenant_preferences
+    ADD CONSTRAINT tenant_preferences_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: user_branch_assignments user_branch_assignments_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18034,5 +20475,5 @@ ALTER TABLE ONLY public.weekly_planning_draft_requests
 -- PostgreSQL database dump complete
 --
 
-\unrestrict LTCoGMcAl9xbIfsxlldfDnXsY5a86BPKYuYCUohJdHNeWXGbqKJ4xtuTweb05pz
+\unrestrict wIueYdwq30QsgWyIieIJQWT5fByroMCzvP1MbEo27ejXwPv5z0v7kYKGRHPYxtv
 

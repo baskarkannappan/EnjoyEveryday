@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict XgffPUfRawMDCRRcwMRRaV12thoBQecxN2L2oxCnbOaSgqt6JGIaQ2zMguVcSaf
+\restrict Z7NgvNjgBYSjbNmLsikFcKUOPVAt7xhXnm6TgNb0ckPAAoOPZJclECGZypnFjDc
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -58,7 +58,9 @@ CREATE TABLE public.parent_communications (
     delivery_error text,
     idempotency_key character varying(100),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_agent_draft boolean DEFAULT false NOT NULL,
+    agent_token_id uuid
 );
 
 
@@ -68,6 +70,13 @@ CREATE TABLE public.parent_communications (
 
 ALTER TABLE ONLY public.parent_communications
     ADD CONSTRAINT parent_communications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_parent_comms_agent_draft; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_parent_comms_agent_draft ON public.parent_communications USING btree (tenant_id, is_agent_draft, status);
 
 
 --
@@ -89,6 +98,14 @@ CREATE INDEX idx_parent_comms_tenant_child ON public.parent_communications USING
 --
 
 CREATE INDEX idx_parent_comms_tenant_status ON public.parent_communications USING btree (tenant_id, status);
+
+
+--
+-- Name: parent_communications parent_communications_agent_token_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parent_communications
+    ADD CONSTRAINT parent_communications_agent_token_id_fkey FOREIGN KEY (agent_token_id) REFERENCES public.agent_personal_access_tokens(id) ON DELETE SET NULL;
 
 
 --
@@ -143,5 +160,5 @@ ALTER TABLE ONLY public.parent_communications
 -- PostgreSQL database dump complete
 --
 
-\unrestrict XgffPUfRawMDCRRcwMRRaV12thoBQecxN2L2oxCnbOaSgqt6JGIaQ2zMguVcSaf
+\unrestrict Z7NgvNjgBYSjbNmLsikFcKUOPVAt7xhXnm6TgNb0ckPAAoOPZJclECGZypnFjDc
 

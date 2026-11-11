@@ -21,6 +21,26 @@ public interface IUserRepository
     Task AssignBranchToUserAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, Guid? assignedBy = null, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
+    /// <summary>Revokes a user's assignment to a physical branch location.</summary>
+    Task RevokeBranchAssignmentAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <summary>Removes a teacher assignment from a specific classroom.</summary>
+    Task RemoveTeacherFromClassroomAsync(Guid tenantId, Guid classroomId, Guid userId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <summary>Promotes a teacher to Lead Teacher in an organization/branch context with classroom assignments.</summary>
+    Task PromoteTeacherToLeadAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, Guid promotedBy, IEnumerable<Guid> classroomIds, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <summary>Updates classroom assignments for a teacher/lead teacher within a specific branch.</summary>
+    Task UpdateTeacherClassroomsAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, IEnumerable<Guid> classroomIds, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <summary>Deactivates a user's membership and branch/classroom assignments in ONE organization only.</summary>
+    Task RemoveUserFromOrganizationAsync(Guid tenantId, Guid organizationId, Guid userId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     /// <summary>Gets all users in a tenant with their resolved role hierarchy, organization assignments, and associations.</summary>
     Task<IEnumerable<UserHierarchyRecord>> GetUsersHierarchyAsync(Guid tenantId, CancellationToken cancellationToken = default)
         => Task.FromResult(Enumerable.Empty<UserHierarchyRecord>());

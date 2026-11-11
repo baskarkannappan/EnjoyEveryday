@@ -33,10 +33,12 @@ public class ChildrenController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<Child>> CreateChild([FromBody] CreateChildRequest request, CancellationToken cancellationToken)
+    public ActionResult CreateChild([FromBody] CreateChildRequest request, CancellationToken cancellationToken)
     {
-        var child = await _childService.CreateChildAsync(request.FirstName, request.LastName, request.DateOfBirth, request.ClassroomId, null, cancellationToken);
-        return CreatedAtAction(nameof(GetChild), new { id = child.Id }, child);
+        return BadRequest(new
+        {
+            error = "Direct child creation is disabled. All new children must enter through the official Inquiry and Admission pipeline (/enrollment or /api/admissions/inquiry)."
+        });
     }
 }
 

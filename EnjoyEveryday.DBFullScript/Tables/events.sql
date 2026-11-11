@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mnbhDee6v3NDzjS0GFAWBoQpy2QRUehoGy2WffoOOQAEa90IRnDoSB8DhNtmc0d
+\restrict 6GPF9FsSchhuN0e2qIaeNZdMLwUjGfOfnYoqyPx0Tf57Lh9qOWh76OayGlaergR
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -84,6 +84,13 @@ CREATE INDEX idx_events_tenant ON public.events USING btree (tenant_id);
 
 
 --
+-- Name: events events_no_overlap; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER events_no_overlap BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.trg_events_no_overlap();
+
+
+--
 -- Name: events events_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -119,5 +126,5 @@ ALTER TABLE ONLY public.events
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mnbhDee6v3NDzjS0GFAWBoQpy2QRUehoGy2WffoOOQAEa90IRnDoSB8DhNtmc0d
+\unrestrict 6GPF9FsSchhuN0e2qIaeNZdMLwUjGfOfnYoqyPx0Tf57Lh9qOWh76OayGlaergR
 

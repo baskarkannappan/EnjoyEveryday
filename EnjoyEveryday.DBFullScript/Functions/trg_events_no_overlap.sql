@@ -1,0 +1,4 @@
+﻿-- Function: public.trg_events_no_overlap
+-- Backup generated on 2026-11-11 09:06:11
+
+CREATE OR REPLACE FUNCTION public.trg_events_no_overlap()  RETURNS trigger  LANGUAGE plpgsql AS $function$ DECLARE     r record; BEGIN     IF NEW.status = 'Cancelled' THEN         RETURN NEW;     END IF;     IF NEW.event_date IS DISTINCT FROM OLD.event_date        OR NEW.start_time IS DISTINCT FROM OLD.start_time        OR NEW.end_time IS DISTINCT FROM OLD.end_time        OR (OLD.status = 'Cancelled') THEN         FOR r IN SELECT classroom_id FROM event_classrooms WHERE event_id = NEW.id ORDER BY classroom_id LOOP             PERFORM public.fn_assert_classroom_free(NEW.tenant_id, r.classroom_id, NEW.event_date, NEW.start_time, NEW.end_time, NEW.id);         END LOOP;     END IF;     RETURN NEW; END; $function$ ;

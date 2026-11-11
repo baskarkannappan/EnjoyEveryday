@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict lFHcIzTaKU1JLANMlzX31uRMM96Kpc7KtLI4lobyGVOxeITxb8VoKeeLVHvtSYF
+\restrict PTgfjznTNkt8AvmrkXhjhhCYwQ7HV9vM1YSLo0SG78QPj5wNbv7vuznGsUEFdcz
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -66,5 +66,5 @@ ALTER TABLE ONLY public.teacher_employments
 -- PostgreSQL database dump complete
 --
 
-\unrestrict lFHcIzTaKU1JLANMlzX31uRMM96Kpc7KtLI4lobyGVOxeITxb8VoKeeLVHvtSYF
+\unrestrict PTgfjznTNkt8AvmrkXhjhhCYwQ7HV9vM1YSLo0SG78QPj5wNbv7vuznGsUEFdcz
 

@@ -43,13 +43,24 @@ Before a student can be onboarded, enrolled, or assigned to a branch/classroom, 
 ### Mandatory Pre-Conditions
 1. **Branch Setup**: Branch exists and is active (`is_active = true`).
 2. **Classroom Setup**: At least one active non-pool classroom exists in the branch.
-3. **Branch Lead Teacher**: An active Lead Teacher exists in the branch (via role `LeadTeacher` assigned to branch, or primary educator in `classroom_teachers`).
+3. **Branch Lead Teacher**: An active Lead Teacher exists in the branch:
+   - User assigned role `LeadTeacher` / `Lead Teacher` in the branch's organization or tenant, AND
+   - Assigned to the branch via `user_branch_assignments` (unrevoked) OR assigned to a classroom within the branch in `classroom_teachers` (multi-tenant safe resolution).
+   - Fallback: Any active educator assigned to a branch classroom with `is_primary = true`.
 4. **Classroom Active**: The selected classroom is active (`is_active = true` and `status != 'Inactive'`).
 5. **Assigned Educator**: At least one active teacher is assigned to the classroom in `classroom_teachers`.
 6. **Available Capacity**: Classroom enrolled count (`currentEnrolled`) is strictly less than classroom capacity (`currentEnrolled < capacity`).
 
 ### Application Enforcement Points
 * **UI**:
+  - `ChildrenDirectoryView.razor` replaces standalone child addition with `+ Start New Admission`, routing users to `/enrollment?action=new-inquiry`. `ChildFormModal.razor` is strictly dedicated to editing existing child profiles.
+  - `ChildEnrollment.razor` automatically redirects any `/children/add` requests to `/enrollment?action=new-inquiry`.
+* **Backend**:
+  - `ChildService.CreateChildAsync` enforces `isOfficialAdmission: true`, disallowing direct child creation without the official pipeline.
+  - `ChildrenController` rejects direct `POST /api/children` requests with HTTP 400 Bad Request, directing callers to `/enrollment` or `/api/admissions/inquiry`.
+  - `EnrollmentPipelineService.FinalizeEnrollmentAndBillingAsync` checks `app.PipelineStage != "Enrolled"` to prevent duplicate submissions and double-invoicing.
+* **Database**:
+  - `sp_ensure_child_enrolled` handles idempotent upserting of child records upon official admission confirmation.
   - `ChildEnrollmentWizard.razor` (Step 7: Branch & Classroom selection): Displays readiness warnings, action buttons (`Create Classroom`, `Create Lead Teacher`, `Assign Teacher`, `Manage Classrooms`), and status badges (`Ready`, `No Teacher Assigned`, `Full`, `Inactive`). Blocks advancing to Step 8 if unready.
   - `FinalizeEnrollmentModal.razor` (Admissions Pipeline): Re-checks target classroom readiness, displays status banner, and disables the "Confirm Enrollment & Bind Tuition Plan" button if unready.
 * **Server-Side & APIs**:

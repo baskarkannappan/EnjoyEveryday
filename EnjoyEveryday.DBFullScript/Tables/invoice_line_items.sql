@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict a4txTTwcHSzPdZJIi4AdAD2aQNKlyDoS62i83wJDiqIkxy7RDjZStRWwqrDSwJn
+\restrict LZ3BcXDD5iN2fWkeWla26Rh1E8GKNCRTOpYzfdCTsJBnf5n5XuP4zqvkWHBLais
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -66,5 +66,5 @@ ALTER TABLE ONLY public.invoice_line_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict a4txTTwcHSzPdZJIi4AdAD2aQNKlyDoS62i83wJDiqIkxy7RDjZStRWwqrDSwJn
+\unrestrict LZ3BcXDD5iN2fWkeWla26Rh1E8GKNCRTOpYzfdCTsJBnf5n5XuP4zqvkWHBLais
 

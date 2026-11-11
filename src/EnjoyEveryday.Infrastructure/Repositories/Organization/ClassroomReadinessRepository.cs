@@ -52,11 +52,29 @@ public class ClassroomReadinessRepository : IClassroomReadinessRepository
         var leadTeacherCount = await conn.ExecuteScalarAsync<int>(
             @"SELECT COUNT(DISTINCT u.id)
               FROM users u
-              JOIN user_organization_roles uor ON uor.user_id = u.id
-              JOIN roles r ON uor.role_id = r.id AND (r.name = 'LeadTeacher' OR r.name = 'Lead Teacher')
-              JOIN user_branch_assignments uba ON uba.user_id = u.id AND uba.branch_id = @BranchId AND uba.revoked_at IS NULL
+              JOIN (
+                  SELECT uor.user_id
+                  FROM user_organization_roles uor
+                  JOIN roles r ON uor.role_id = r.id AND (r.name = 'LeadTeacher' OR r.name = 'Lead Teacher')
+                  WHERE uor.tenant_id = @TenantId OR uor.organization_id = (SELECT organization_id FROM branches WHERE id = @BranchId)
+                  UNION
+                  SELECT ur.user_id
+                  FROM user_roles ur
+                  JOIN roles r ON ur.role_id = r.id AND (r.name = 'LeadTeacher' OR r.name = 'Lead Teacher')
+              ) lead_users ON lead_users.user_id = u.id
               LEFT JOIN teachers t ON t.user_id = u.id
-              WHERE u.tenant_id = @TenantId AND u.is_active = true AND (t.status IS NULL OR t.status != 'Inactive')",
+              WHERE u.is_active = true AND (t.status IS NULL OR t.status != 'Inactive')
+                AND (
+                    EXISTS (
+                        SELECT 1 FROM user_branch_assignments uba
+                        WHERE uba.user_id = u.id AND uba.branch_id = @BranchId AND uba.revoked_at IS NULL
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM classroom_teachers ct
+                        JOIN classrooms c ON ct.classroom_id = c.id
+                        WHERE ct.user_id = u.id AND c.branch_id = @BranchId
+                    )
+                )",
             new { TenantId = tenantId, BranchId = branchId });
 
         if (leadTeacherCount == 0)
@@ -67,7 +85,7 @@ public class ClassroomReadinessRepository : IClassroomReadinessRepository
                   JOIN classrooms c ON ct.classroom_id = c.id
                   JOIN users u ON ct.user_id = u.id
                   LEFT JOIN teachers t ON t.user_id = u.id
-                  WHERE c.tenant_id = @TenantId AND c.branch_id = @BranchId AND ct.is_primary = true
+                  WHERE c.branch_id = @BranchId AND ct.is_primary = true
                     AND u.is_active = true AND (t.status IS NULL OR t.status != 'Inactive')",
                 new { TenantId = tenantId, BranchId = branchId });
         }
@@ -76,21 +94,23 @@ public class ClassroomReadinessRepository : IClassroomReadinessRepository
         var teacherCounts = (await conn.QueryAsync<ClassroomCountRow>(
             @"SELECT ct.classroom_id as ClassroomId, COUNT(DISTINCT ct.user_id) as Count
               FROM classroom_teachers ct
+              JOIN classrooms c ON ct.classroom_id = c.id
               JOIN users u ON ct.user_id = u.id
               LEFT JOIN teachers t ON t.user_id = u.id
-              WHERE ct.tenant_id = @TenantId
+              WHERE c.branch_id = @BranchId
                 AND u.is_active = true AND (t.status IS NULL OR t.status != 'Inactive')
               GROUP BY ct.classroom_id",
-            new { TenantId = tenantId })).ToDictionary(r => r.ClassroomId, r => r.Count);
+            new { TenantId = tenantId, BranchId = branchId })).ToDictionary(r => r.ClassroomId, r => r.Count);
 
         // 5. Enrolled children per classroom
         var enrollmentCounts = (await conn.QueryAsync<ClassroomCountRow>(
             @"SELECT ch.classroom_id as ClassroomId, COUNT(*) as Count
               FROM children ch
-              WHERE ch.tenant_id = @TenantId
+              JOIN classrooms c ON ch.classroom_id = c.id
+              WHERE c.branch_id = @BranchId
                 AND ch.is_active = true AND (ch.enrollment_status IS NULL OR ch.enrollment_status != 'Withdrawn')
               GROUP BY ch.classroom_id",
-            new { TenantId = tenantId })).ToDictionary(r => r.ClassroomId, r => r.Count);
+            new { TenantId = tenantId, BranchId = branchId })).ToDictionary(r => r.ClassroomId, r => r.Count);
 
         var classroomDataList = classrooms.Select(c => new ClassroomReadinessData
         {

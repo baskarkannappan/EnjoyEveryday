@@ -132,8 +132,13 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
             }
         }
 
-        // Fetch live scopes from database
-        var classroomIds = await _scopeRepo.GetAssignedClassroomIdsAsync(tenantId, userId, ct);
+        // Fetch live scopes from database scoped to current organization and active branch
+        var classroomIds = await _scopeRepo.GetAssignedClassroomIdsAsync(
+            tenantId, 
+            userId, 
+            orgId != Guid.Empty ? orgId : null, 
+            _userContext.BranchId, 
+            ct);
         profile.AssignedClassroomIds = new HashSet<Guid>(classroomIds);
 
         if (orgId != Guid.Empty)

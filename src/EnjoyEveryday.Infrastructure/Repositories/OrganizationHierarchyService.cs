@@ -129,13 +129,28 @@ public class OrganizationHierarchyService : IOrganizationHierarchyService
                 @"SELECT ct.classroom_id, u.id as user_id,
                          COALESCE(NULLIF(TRIM(u.display_name), ''), TRIM(u.first_name || ' ' || u.last_name), u.email) as name,
                          u.email,
-                         ct.is_primary,
-                         CASE WHEN ct.is_primary THEN 'Lead Teacher' ELSE 'Educator' END as role_name
+                         (ct.is_primary OR EXISTS (
+                             SELECT 1 FROM user_organization_roles uor
+                             JOIN roles r ON uor.role_id = r.id
+                             WHERE uor.user_id = u.id
+                               AND (uor.organization_id = @OrgId OR uor.tenant_id = @TenantId)
+                               AND (r.name = 'LeadTeacher' OR r.name = 'Lead Teacher')
+                         )) as is_primary,
+                         CASE 
+                             WHEN (ct.is_primary OR EXISTS (
+                                 SELECT 1 FROM user_organization_roles uor
+                                 JOIN roles r ON uor.role_id = r.id
+                                 WHERE uor.user_id = u.id
+                                   AND (uor.organization_id = @OrgId OR uor.tenant_id = @TenantId)
+                                   AND (r.name = 'LeadTeacher' OR r.name = 'Lead Teacher')
+                             )) THEN 'Lead Teacher' 
+                             ELSE 'Educator' 
+                         END as role_name
                   FROM classroom_teachers ct
                   JOIN users u ON ct.user_id = u.id
                   WHERE ct.classroom_id = ANY(@ClassroomIds)
-                  ORDER BY ct.is_primary DESC, name",
-                new { ClassroomIds = classroomIds })).ToList();
+                  ORDER BY is_primary DESC, name",
+                new { ClassroomIds = classroomIds, OrgId = organizationId, TenantId = tenantId })).ToList();
         }
 
         // 7. Fetch Children counts and initial children per classroom

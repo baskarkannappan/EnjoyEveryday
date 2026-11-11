@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict fnMhCkAa9Bnf025k6LmedwyC07t0juQM971PuBNESJfIkuIbN26byWWnX7oCdOA
+\restrict vW0ue12T6ZMy1aNEDFE7Zvcks5CewYdBfxqElv5uExr0QK3XZ4FgQEDNDpdoB0V
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -72,5 +72,5 @@ ALTER TABLE ONLY public.teachers
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fnMhCkAa9Bnf025k6LmedwyC07t0juQM971PuBNESJfIkuIbN26byWWnX7oCdOA
+\unrestrict vW0ue12T6ZMy1aNEDFE7Zvcks5CewYdBfxqElv5uExr0QK3XZ4FgQEDNDpdoB0V
 

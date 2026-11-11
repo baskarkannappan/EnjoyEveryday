@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict GN5R3N3vPvGAmTJZPAS6Ffg2hTOANogYxBLdepLmuA8BdgFsZPYbBgjdZMsU9nN
+\restrict TrR7sDDmnApaJLfOPmg1UZavHh2mE2Ezz0gUtN0n8duq97l35m4vysZDCD5IKIb
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -67,5 +67,5 @@ CREATE INDEX idx_rec_req_classroom ON public.activity_recommendation_requests US
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GN5R3N3vPvGAmTJZPAS6Ffg2hTOANogYxBLdepLmuA8BdgFsZPYbBgjdZMsU9nN
+\unrestrict TrR7sDDmnApaJLfOPmg1UZavHh2mE2Ezz0gUtN0n8duq97l35m4vysZDCD5IKIb
 

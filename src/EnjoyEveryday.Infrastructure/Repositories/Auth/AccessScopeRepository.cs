@@ -61,10 +61,15 @@ public class AccessScopeRepository : IAccessScopeRepository
 
     public async Task<IReadOnlySet<Guid>> GetAssignedClassroomIdsAsync(Guid tenantId, Guid userId, CancellationToken ct = default)
     {
+        return await GetAssignedClassroomIdsAsync(tenantId, userId, null, null, ct);
+    }
+
+    public async Task<IReadOnlySet<Guid>> GetAssignedClassroomIdsAsync(Guid tenantId, Guid userId, Guid? organizationId, Guid? branchId, CancellationToken ct = default)
+    {
         using var c = await _connectionFactory.CreateConnectionAsync(ct);
         return (await c.QueryFunctionAsync<Guid>(
             "fn_get_assigned_classroom_ids",
-            new { TenantId = tenantId, UserId = userId },
+            new { TenantId = tenantId, UserId = userId, OrganizationId = organizationId, BranchId = branchId },
             cancellationToken: ct)).ToHashSet();
     }
 

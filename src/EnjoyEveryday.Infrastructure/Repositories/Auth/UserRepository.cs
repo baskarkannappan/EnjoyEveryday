@@ -131,6 +131,66 @@ public class UserRepository : IUserRepository
             cancellationToken: cancellationToken);
     }
 
+    public async Task RevokeBranchAssignmentAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_revoke_user_branch",
+            new { TenantId = tenantId, OrganizationId = organizationId, BranchId = branchId, UserId = userId },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task RemoveTeacherFromClassroomAsync(Guid tenantId, Guid classroomId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_remove_teacher_from_classroom",
+            new { TenantId = tenantId, ClassroomId = classroomId, UserId = userId },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task RemoveUserFromOrganizationAsync(Guid tenantId, Guid organizationId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_remove_user_from_organization",
+            new { TenantId = tenantId, OrganizationId = organizationId, UserId = userId },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task PromoteTeacherToLeadAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, Guid promotedBy, IEnumerable<Guid> classroomIds, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_promote_teacher_to_lead",
+            new
+            {
+                TenantId = tenantId,
+                OrganizationId = organizationId,
+                BranchId = branchId,
+                UserId = userId,
+                PromotedBy = promotedBy,
+                ClassroomIds = classroomIds.ToArray()
+            },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task UpdateTeacherClassroomsAsync(Guid tenantId, Guid organizationId, Guid branchId, Guid userId, IEnumerable<Guid> classroomIds, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_update_teacher_classrooms",
+            new
+            {
+                TenantId = tenantId,
+                OrganizationId = organizationId,
+                BranchId = branchId,
+                UserId = userId,
+                ClassroomIds = classroomIds.ToArray()
+            },
+            cancellationToken: cancellationToken);
+    }
+
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

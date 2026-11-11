@@ -5,6 +5,9 @@
 @using EnjoyEveryday.UI.Shared.Components.TeacherWizard
 @using System.Text.Json
 
+@using EnjoyEveryday.UI.Shared.Components.Users
+@using EnjoyEveryday.Shared.Authorization
+
 @inject UserService UserService
 @inject ITeacherService TeacherService
 @inject NavigationManager NavigationManager
@@ -13,6 +16,8 @@
 @inject EnjoyEveryday.Application.Services.ExperienceService ExperienceService
 @inject IJSRuntime JSRuntime
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 
 <PageHero 
     Eyebrow="PEOPLE" 
@@ -24,6 +29,18 @@
         </button>
         @if (_canManage)
         {
+            @if (_teacher?.UserId.HasValue == true && !_isLeadTeacher)
+            {
+                <button class="secondary" @onclick="() => _showPromoteModal = true" style="border-color: var(--accent, #557c6c); color: var(--accent-dark, #31523c); font-weight: 700;">
+                    🎓 Promote to Lead
+                </button>
+            }
+            @if (_teacher?.UserId.HasValue == true)
+            {
+                <button class="secondary" @onclick="() => _showManageClassroomsModal = true" style="font-weight: 650;">
+                    🏫 Manage Classrooms
+                </button>
+            }
             <button class="secondary" style="color: #dc3545; border-color: #dc3545;" @onclick="DeleteTeacher">
                 Delete
             </button>
@@ -35,6 +52,24 @@
 </PageHero>
 
 <div class="content">
+    <!-- FLOATING TOAST -->
+    @if (!string.IsNullOrEmpty(_toastMessage))
+    {
+        <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: #263a32; color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px;">
+            <span style="font-size: 16px;">✨</span>
+            <span>@_toastMessage</span>
+            <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;">✕</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_successBanner))
+    {
+        <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #31523c); padding: 12px 16px; font-size: 13px; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <span>✨ @_successBanner</span>
+            <button type="button" @onclick="() => _successBanner = null" style="background: none; border: none; cursor: pointer; color: var(--accent-dark, #31523c); font-size: 16px;">✕</button>
+        </div>
+    }
+
     @if (_isLoading)
     {
         <LoadingState Message="Loading educator profile..." />
@@ -47,6 +82,25 @@
     {
         <TeacherProfileCard Teacher="@_teacher" Model="@_model" />
     }
+
+    @if (_teacher?.UserId.HasValue == true)
+    {
+        <PromoteTeacherModal IsOpen="@_showPromoteModal"
+                             UserId="@_teacher.UserId.Value"
+                             TeacherName="@_teacher.FullName"
+                             TeacherEmail="@_teacherUserEmail"
+                             CurrentRole="@(_isLeadTeacher ? "Lead Teacher" : "Teacher")"
+                             OnClose="() => _showPromoteModal = false"
+                             OnPromoted="HandlePromoted" />
+
+        <ManageTeacherClassroomsModal IsOpen="@_showManageClassroomsModal"
+                                      UserId="@_teacher.UserId.Value"
+                                      TeacherName="@_teacher.FullName"
+                                      TeacherEmail="@_teacherUserEmail"
+                                      TeacherRole="@(_isLeadTeacher ? "Lead Teacher" : "Teacher")"
+                                      OnClose="() => _showManageClassroomsModal = false"
+                                      OnSaved="HandleClassroomsSaved" />
+    }
 </div>
 
 @code {
@@ -55,6 +109,12 @@
 
     private bool _isLoading = true;
     private bool _canManage = false;
+    private bool _isLeadTeacher = false;
+    private string _teacherUserEmail = "";
+    private bool _showPromoteModal = false;
+    private bool _showManageClassroomsModal = false;
+    private string? _successBanner;
+    private string? _toastMessage;
     private Teacher? _teacher;
     private TeacherCreationWizard.TeacherWizardModel _model = new();
 
@@ -65,13 +125,45 @@
             var profile = await PageAuth.GetUserProfileAsync();
             _canManage = profile.IsOrgAdmin || profile.IsBranchAdmin;
 
-            var user = await UserService.GetUserByIdAsync(Id);
-            if (user != null)
+            var tenantId = TenantContext.TenantId;
+            var orgId = profile.OrganizationId != Guid.Empty ? profile.OrganizationId : (Guid?)null;
+
+            // 1. Direct lookup by teacher id or user id in active tenant
+            _teacher = await TeacherService.GetTeacherByIdAsync(tenantId, Id);
+
+            // 2. If not found, check organization teacher list
+            if (_teacher == null)
             {
-                var allTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId);
-                _teacher = allTeachers.FirstOrDefault(t => t.UserId == user.Id);
+                var allTeachers = (await TeacherService.GetAllTeachersAsync(tenantId, orgId)).ToList();
+                _teacher = allTeachers.FirstOrDefault(t => t.Id == Id || t.UserId == Id);
+            }
+
+            // 3. Fallback to user lookup if teacher profile linked to user in another tenant
+            if (_teacher == null)
+            {
+                var user = await UserService.GetUserByIdAsync(Id);
+                if (user != null)
+                {
+                    var userTeachers = await TeacherService.GetAllTeachersAsync(user.TenantId, orgId);
+                    _teacher = userTeachers.FirstOrDefault(t => t.UserId == user.Id);
+                }
+            }
                 
-                if (_teacher != null && !string.IsNullOrWhiteSpace(_teacher.DraftData))
+            if (_teacher != null)
+            {
+                if (_teacher.UserId.HasValue)
+                {
+                    var user = await UserService.GetUserByIdAsync(_teacher.UserId.Value);
+                    _teacherUserEmail = user?.Email ?? "";
+
+                    if (orgId.HasValue)
+                    {
+                        var roles = await AccessScopeRepo.GetOrganizationRoleNamesAsync(tenantId, orgId.Value, _teacher.UserId.Value);
+                        _isLeadTeacher = roles.Any(r => r.Equals(RoleTemplates.LeadTeacher, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(_teacher.DraftData))
                 {
                     try
                     {
@@ -88,6 +180,27 @@
         {
             _isLoading = false;
         }
+    }
+
+    private async Task HandlePromoted(string message)
+    {
+        _showPromoteModal = false;
+        _successBanner = message;
+        _toastMessage = message;
+        _isLeadTeacher = true;
+        await NotificationService.ShowSuccessAsync(message);
+        await OnInitializedAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleClassroomsSaved(string message)
+    {
+        _showManageClassroomsModal = false;
+        _successBanner = message;
+        _toastMessage = message;
+        await NotificationService.ShowSuccessAsync(message);
+        await OnInitializedAsync();
+        StateHasChanged();
     }
 
     private async Task DeleteTeacher()

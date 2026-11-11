@@ -48,6 +48,9 @@ public partial class EnrollmentPipeline : ComponentBase
     private bool _isError;
 
     // Modal state
+    [SupplyParameterFromQuery(Name = "action")]
+    public string? Action { get; set; }
+
     private bool _isNewInquiryModalOpen;
     private CreateApplicationRequest _newInquiry = new();
 
@@ -83,6 +86,14 @@ public partial class EnrollmentPipeline : ComponentBase
         }
 
         await LoadDataAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (string.Equals(Action, "new-inquiry", StringComparison.OrdinalIgnoreCase) && !_isNewInquiryModalOpen)
+        {
+            OpenNewInquiryModal();
+        }
     }
 
     private async Task LoadDataAsync()

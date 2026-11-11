@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict zpdlIhhkheliURvM4z1xiJ72tqe7ElagPdOnx6aUxwoYTyAy9WMtF0rCFGenFqm
+\restrict nxGWvjpYAhetAgQGbbc8h7Uf8WknBztCI2EjyN2ZXBTwuUaPbq56CqmilzC1Qo6
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -112,5 +112,5 @@ ALTER TABLE ONLY public.material_loans
 -- PostgreSQL database dump complete
 --
 
-\unrestrict zpdlIhhkheliURvM4z1xiJ72tqe7ElagPdOnx6aUxwoYTyAy9WMtF0rCFGenFqm
+\unrestrict nxGWvjpYAhetAgQGbbc8h7Uf8WknBztCI2EjyN2ZXBTwuUaPbq56CqmilzC1Qo6
 

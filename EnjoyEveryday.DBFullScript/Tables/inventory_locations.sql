@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict B1hJPlIzimnf5MF7xEnBm7KItM6szGmjHzfKvEbBFYHyE8WHzFMGmMwCiuHk9qg
+\restrict HZH9yj1PfSVKkj9YBHbEbmJwdBMqWPQI4ngOFoHiTY4r9fvSJYyBgIpwipCv6uT
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -58,5 +58,5 @@ ALTER TABLE ONLY public.inventory_locations
 -- PostgreSQL database dump complete
 --
 
-\unrestrict B1hJPlIzimnf5MF7xEnBm7KItM6szGmjHzfKvEbBFYHyE8WHzFMGmMwCiuHk9qg
+\unrestrict HZH9yj1PfSVKkj9YBHbEbmJwdBMqWPQI4ngOFoHiTY4r9fvSJYyBgIpwipCv6uT
 

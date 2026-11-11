@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 1cTtisw0Osn0XEfZSorshwVSpFf4tYdBE5uneQigcFr0ox9Y5Hie8Y9azjcsKjc
+\restrict BVF2C6QXUg2f68yjoTlDSBec84SMBOAQPJYKB8DOP1IfT2z83NETRUUUBsvumYu
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -58,5 +58,5 @@ ALTER TABLE ONLY public.teacher_availabilities
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 1cTtisw0Osn0XEfZSorshwVSpFf4tYdBE5uneQigcFr0ox9Y5Hie8Y9azjcsKjc
+\unrestrict BVF2C6QXUg2f68yjoTlDSBec84SMBOAQPJYKB8DOP1IfT2z83NETRUUUBsvumYu
 

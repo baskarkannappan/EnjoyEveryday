@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict CXvPC9e3g9UcOOzZbRCkETmjHOsTiVaC4aK8UNmfht6HJ46d9bkQMqByvhoVtMI
+\restrict gef9CCF9Hvo6M1H2GcNPmB3GRBlMho0QPZ8YM0Hc9UPiSrdcHINb6ZDgwu5Z0tv
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -62,5 +62,5 @@ ALTER TABLE ONLY public.teacher_certifications
 -- PostgreSQL database dump complete
 --
 
-\unrestrict CXvPC9e3g9UcOOzZbRCkETmjHOsTiVaC4aK8UNmfht6HJ46d9bkQMqByvhoVtMI
+\unrestrict gef9CCF9Hvo6M1H2GcNPmB3GRBlMho0QPZ8YM0Hc9UPiSrdcHINb6ZDgwu5Z0tv
 

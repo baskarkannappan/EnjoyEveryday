@@ -60,6 +60,16 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.C
         options.ClientSecret = !string.IsNullOrWhiteSpace(clientSecret) ? clientSecret : "mock-client-secret";
         options.SignInScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
         options.SaveTokens = true;
+        options.Events.OnRedirectToAuthorizationEndpoint = context =>
+        {
+            var uri = context.RedirectUri;
+            if (!uri.Contains("prompt="))
+            {
+                uri += (uri.Contains("?") ? "&" : "?") + "prompt=select_account";
+            }
+            context.Response.Redirect(uri);
+            return Task.CompletedTask;
+        };
     });
 
 builder.Services.AddAuthorization();

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict UaQN9T7a5tWRzxMywV669Vr4pTvD0aGJ0EBX7ZhSwDBdL2DzNtEq9iJz1grV7LB
+\restrict aSkrhdu6gFg3Z5om4g51yBn8E9qWohNZcbB0FfVbnsCkrSeIDdd9kNFR3sfqcYO
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -84,5 +84,5 @@ ALTER TABLE ONLY public.authorized_pickups
 -- PostgreSQL database dump complete
 --
 
-\unrestrict UaQN9T7a5tWRzxMywV669Vr4pTvD0aGJ0EBX7ZhSwDBdL2DzNtEq9iJz1grV7LB
+\unrestrict aSkrhdu6gFg3Z5om4g51yBn8E9qWohNZcbB0FfVbnsCkrSeIDdd9kNFR3sfqcYO
 

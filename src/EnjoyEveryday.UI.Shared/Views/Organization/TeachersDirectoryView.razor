@@ -2,6 +2,7 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Users
 @using System.Text.Json
 
 @inject UserService UserService
@@ -12,6 +13,7 @@
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 
 <div class="content">
     <PageHero Eyebrow="@(_isTeacherOnly ? "MY TEAM" : (_isBranchAdmin ? "BRANCH OPERATIONS" : "PEOPLE"))"
@@ -29,6 +31,14 @@
             }
         </RightContent>
     </PageHero>
+
+    @if (!string.IsNullOrEmpty(_successBanner))
+    {
+        <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #31523c); padding: 12px 16px; font-size: 13px; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <span>✨ @_successBanner</span>
+            <button type="button" @onclick="() => _successBanner = null" style="background: none; border: none; cursor: pointer; color: var(--accent-dark, #31523c); font-size: 16px;">✕</button>
+        </div>
+    }
 
     @if (_teachers == null)
     {
@@ -55,11 +65,59 @@
                                 Status="@teacher.Status"
                                 Progress="@teacher.ProfileCompletionPercentage"
                                 HighlightTitle="Today's support"
-                                HighlightText="4 experiences planned. Keep room for child-led exploration." />
+                                HighlightText="4 experiences planned. Keep room for child-led exploration.">
+                        <ActionTemplate>
+                            @if ((_isOrgAdmin || _isBranchAdmin) && teacher.UserId.HasValue)
+                            {
+                                <div @onclick:stopPropagation="true" style="display: flex; gap: 6px;">
+                                    <button type="button" 
+                                            class="btn secondary" 
+                                            @onclick='() => OpenPromoteModal(teacher)' 
+                                            style="padding: 3px 8px; font-size: 11px; font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c); background: white;">
+                                        🎓 Promote
+                                    </button>
+                                    <button type="button" 
+                                            class="btn secondary" 
+                                            @onclick='() => OpenManageClassroomsModal(teacher)' 
+                                            style="padding: 3px 8px; font-size: 11px; font-weight: 650; color: var(--text, #26332d); background: white;">
+                                        🏫 Classrooms
+                                    </button>
+                                </div>
+                            }
+                        </ActionTemplate>
+                    </PersonCard>
                 </div>
             }
         </div>
     }
+
+    <!-- FLOATING TOAST -->
+    @if (!string.IsNullOrEmpty(_toastMessage))
+    {
+        <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: #263a32; color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.25); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px;">
+            <span style="font-size: 16px;">✨</span>
+            <span>@_toastMessage</span>
+            <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;">✕</button>
+        </div>
+    }
+
+    <!-- PROMOTE TEACHER MODAL -->
+    <PromoteTeacherModal IsOpen="@_showPromoteModal"
+                         UserId="@_modalUserId"
+                         TeacherName="@_modalTeacherName"
+                         TeacherEmail="@_modalTeacherEmail"
+                         CurrentRole="Teacher"
+                         OnClose="() => _showPromoteModal = false"
+                         OnPromoted="HandlePromotedSuccess" />
+
+    <!-- MANAGE CLASSROOMS MODAL -->
+    <ManageTeacherClassroomsModal IsOpen="@_showManageClassroomsModal"
+                                  UserId="@_modalUserId"
+                                  TeacherName="@_modalTeacherName"
+                                  TeacherEmail="@_modalTeacherEmail"
+                                  TeacherRole="Educator"
+                                  OnClose="() => _showManageClassroomsModal = false"
+                                  OnSaved="HandleClassroomsSavedSuccess" />
 </div>
 
 @code {
@@ -71,6 +129,14 @@
     private bool _isTeacherOnly = false;
     private HashSet<Guid> _assignedBranchIds = new();
     private HashSet<Guid> _assignedClassroomIds = new();
+
+    private bool _showPromoteModal = false;
+    private bool _showManageClassroomsModal = false;
+    private Guid _modalUserId;
+    private string _modalTeacherName = "";
+    private string _modalTeacherEmail = "";
+    private string? _successBanner;
+    private string? _toastMessage;
 
     [Inject]
     private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
@@ -258,5 +324,47 @@
         }
 
         return list;
+    }
+
+    private void OpenPromoteModal(Teacher teacher)
+    {
+        if (teacher.UserId.HasValue)
+        {
+            _modalUserId = teacher.UserId.Value;
+            _modalTeacherName = teacher.FullName;
+            _modalTeacherEmail = "";
+            _showPromoteModal = true;
+        }
+    }
+
+    private void OpenManageClassroomsModal(Teacher teacher)
+    {
+        if (teacher.UserId.HasValue)
+        {
+            _modalUserId = teacher.UserId.Value;
+            _modalTeacherName = teacher.FullName;
+            _modalTeacherEmail = "";
+            _showManageClassroomsModal = true;
+        }
+    }
+
+    private async Task HandlePromotedSuccess(string message)
+    {
+        _showPromoteModal = false;
+        _successBanner = message;
+        _toastMessage = message;
+        await NotificationService.ShowSuccessAsync(message);
+        await LoadTeachersAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleClassroomsSavedSuccess(string message)
+    {
+        _showManageClassroomsModal = false;
+        _successBanner = message;
+        _toastMessage = message;
+        await NotificationService.ShowSuccessAsync(message);
+        await LoadTeachersAsync();
+        StateHasChanged();
     }
 }

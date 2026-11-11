@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict oAyaMgd3aNXhf0dolooii7BfcerwOCp0fKsxAyQYMOpop80Er8Qp6ebg8YCKnLC
+\restrict Pe3aIlgCdYRqqM71BpKMRxegsVuog6OIpzNLbFa78l0VdYdF83wUfcYWMnvsX2C
 
 -- Dumped from database version 15.19
 -- Dumped by pg_dump version 15.19
@@ -57,5 +57,5 @@ ALTER TABLE ONLY public.teacher_observations
 -- PostgreSQL database dump complete
 --
 
-\unrestrict oAyaMgd3aNXhf0dolooii7BfcerwOCp0fKsxAyQYMOpop80Er8Qp6ebg8YCKnLC
+\unrestrict Pe3aIlgCdYRqqM71BpKMRxegsVuog6OIpzNLbFa78l0VdYdF83wUfcYWMnvsX2C
 

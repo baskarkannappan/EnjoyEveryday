@@ -20,6 +20,8 @@ public interface IAccessScopeRepository
 
     Task<IReadOnlySet<Guid>> GetAssignedBranchIdsAsync(Guid tenantId, Guid organizationId, Guid userId, CancellationToken ct = default);
     Task<IReadOnlySet<Guid>> GetAssignedClassroomIdsAsync(Guid tenantId, Guid userId, CancellationToken ct = default);
+    Task<IReadOnlySet<Guid>> GetAssignedClassroomIdsAsync(Guid tenantId, Guid userId, Guid? organizationId, Guid? branchId, CancellationToken ct = default)
+        => GetAssignedClassroomIdsAsync(tenantId, userId, ct);
     /// <summary>Branches that contain at least one classroom the user is assigned to.</summary>
     Task<IReadOnlySet<Guid>> GetBranchIdsOfAssignedClassroomsAsync(Guid tenantId, Guid userId, CancellationToken ct = default);
 
