@@ -3,8 +3,10 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
 @inject IPlatformAdminService PlatformService
 @inject NavigationManager Navigation
+@inject IAppNotificationService NotificationService
 @rendermode InteractiveServer
 
 <PageTitle>Platform Admin Dashboard — EnjoyEveryday</PageTitle>
@@ -483,15 +485,23 @@
 
     private async Task ApplyFiltersAsync()
     {
-        _organizations = await PlatformService.GetOrganizationsOverviewAsync(
-            search: _searchQuery,
-            accountStatus: _accountFilter,
-            financialStatus: _financialFilter,
-            lifecycleStage: _selectedStageFilter);
-
-        if (_organizations.Count > 0 && _invoiceOrgId == Guid.Empty)
+        try
         {
-            _invoiceOrgId = _organizations[0].Id;
+            _organizations = await PlatformService.GetOrganizationsOverviewAsync(
+                search: _searchQuery,
+                accountStatus: _accountFilter,
+                financialStatus: _financialFilter,
+                lifecycleStage: _selectedStageFilter);
+
+            if (_organizations.Count > 0 && _invoiceOrgId == Guid.Empty)
+            {
+                _invoiceOrgId = _organizations[0].Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -547,6 +557,16 @@
         await ApplyFiltersAsync();
     }
 
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
+
     private async Task ResetFilters()
     {
         _searchQuery = "";
@@ -559,19 +579,41 @@
 
     private async Task ApproveOrg(PlatformOrganizationDto org)
     {
-        await PlatformService.UpdateAccountStatusAsync(org.Id, AccountStatus.Active, "Approved by Platform Admin during onboarding review.");
-        await LoadDashboardDataAsync();
+        try
+        {
+            await PlatformService.UpdateAccountStatusAsync(org.Id, AccountStatus.Active, "Approved by Platform Admin during onboarding review.");
+            ShowToast($"Organization '{org.Name}' approved successfully.", isError: false);
+            await LoadDashboardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to approve organization: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task VerifyPaymentForOrg(PlatformOrganizationDto org)
     {
-        var payments = await PlatformService.GetPaymentsAsync(awaitingVerificationOnly: true);
-        var p = payments.FirstOrDefault(x => x.OrganizationId == org.Id);
-        if (p != null)
+        try
         {
-            await PlatformService.VerifyPaymentWorkflowAsync(p.Id);
+            var payments = await PlatformService.GetPaymentsAsync(awaitingVerificationOnly: true);
+            var p = payments.FirstOrDefault(x => x.OrganizationId == org.Id);
+            if (p != null)
+            {
+                await PlatformService.VerifyPaymentWorkflowAsync(p.Id);
+                ShowToast($"Payment verified for '{org.Name}'.", isError: false);
+            }
+            else
+            {
+                ShowToast($"No pending payment found for '{org.Name}'.", isError: true);
+            }
+            await LoadDashboardDataAsync();
         }
-        await LoadDashboardDataAsync();
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to verify payment: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void ViewOrgDetails(PlatformOrganizationDto org)
@@ -586,12 +628,21 @@
     private async Task SubmitNewOrganization()
     {
         if (string.IsNullOrWhiteSpace(_newOrgName) || string.IsNullOrWhiteSpace(_newOrgAdminEmail)) return;
-        await PlatformService.CreateOrganizationWorkflowAsync(_newOrgName, _newOrgLocation, _newOrgPlanId, _newOrgAdminEmail);
-        _newOrgName = "";
-        _newOrgLocation = "";
-        _newOrgAdminEmail = "";
-        _showNewOrgModal = false;
-        await LoadDashboardDataAsync();
+        try
+        {
+            await PlatformService.CreateOrganizationWorkflowAsync(_newOrgName, _newOrgLocation, _newOrgPlanId, _newOrgAdminEmail);
+            _newOrgName = "";
+            _newOrgLocation = "";
+            _newOrgAdminEmail = "";
+            _showNewOrgModal = false;
+            ShowToast("New organization provisioned successfully.", isError: false);
+            await LoadDashboardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to create organization: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenInvoiceModal() => _showInvoiceModal = true;
@@ -600,9 +651,18 @@
     private async Task SubmitInvoice()
     {
         if (_invoiceAmount <= 0 || _invoiceOrgId == Guid.Empty) return;
-        await PlatformService.IssueInvoiceWorkflowAsync(_invoiceOrgId, _invoiceAmount, _invoiceDescription);
-        _showInvoiceModal = false;
-        await LoadDashboardDataAsync();
+        try
+        {
+            await PlatformService.IssueInvoiceWorkflowAsync(_invoiceOrgId, _invoiceAmount, _invoiceDescription);
+            _showInvoiceModal = false;
+            ShowToast("Invoice issued successfully.", isError: false);
+            await LoadDashboardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to issue invoice: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenAuditModal() => _showAuditModal = true;
@@ -616,4 +676,14 @@
         if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
         return $"{(int)diff.TotalDays}d ago";
     }
+}
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
 }

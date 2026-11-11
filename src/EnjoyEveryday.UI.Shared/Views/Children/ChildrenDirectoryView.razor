@@ -2,12 +2,14 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
 
 @inject ChildService ChildService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject OrganizationService OrgService
 @inject NavigationManager NavigationManager
+@inject IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo
@@ -266,23 +268,41 @@
         await LoadChildrenAsync();
     }
 
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
+
     private async Task LoadChildrenAsync()
     {
-        var allChildren = await ChildService.GetChildrenAsync();
-        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        try
         {
-            // Boundary enforcement: Branch admins only see children in their branch classrooms
-            var branchClassroomIds = _classrooms.Keys.ToHashSet();
-            _children = allChildren.Where(c => c.ClassroomId.HasValue && branchClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+            var allChildren = await ChildService.GetChildrenAsync();
+            if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+            {
+                // Boundary enforcement: Branch admins only see children in their branch classrooms
+                var branchClassroomIds = _classrooms.Keys.ToHashSet();
+                _children = allChildren.Where(c => c.ClassroomId.HasValue && branchClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+            }
+            else if (_isTeacherOnly)
+            {
+                // Boundary enforcement: Teachers only see children in their assigned classrooms
+                _children = allChildren.Where(c => c.ClassroomId.HasValue && _assignedClassroomIds.Contains(c.ClassroomId.Value)).ToList();
+            }
+            else
+            {
+                _children = allChildren;
+            }
         }
-        else if (_isTeacherOnly)
+        catch (Exception ex)
         {
-            // Boundary enforcement: Teachers only see children in their assigned classrooms
-            _children = allChildren.Where(c => c.ClassroomId.HasValue && _assignedClassroomIds.Contains(c.ClassroomId.Value)).ToList();
-        }
-        else
-        {
-            _children = allChildren;
+            ShowToast($"Failed to load children: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -306,32 +326,51 @@
         if (string.IsNullOrWhiteSpace(_currentChild.FirstName) ||
             string.IsNullOrWhiteSpace(_currentChild.LastName))
         {
+            ShowToast("Child first and last name are required.", isError: true);
             return;
         }
 
-        if (_isEditing)
+        try
         {
-            await ChildService.UpdateChildAsync(_currentChild);
-        }
-        else
-        {
-            // Direct child creation is prohibited. Redirect to admissions pipeline.
+            if (_isEditing)
+            {
+                await ChildService.UpdateChildAsync(_currentChild);
+                ShowToast("Child profile updated successfully.", isError: false);
+            }
+            else
+            {
+                // Direct child creation is prohibited. Redirect to admissions pipeline.
+                CloseDialog();
+                NavigationManager.NavigateTo("/enrollment?action=new-inquiry");
+                return;
+            }
+
+            await LoadChildrenAsync();
             CloseDialog();
-            NavigationManager.NavigateTo("/enrollment?action=new-inquiry");
-            return;
         }
-
-        await LoadChildrenAsync();
-        CloseDialog();
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to save child: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task DeleteChildAsync()
     {
         if (_currentChild.Id != Guid.Empty)
         {
-            await ChildService.DeleteChildAsync(_currentChild.Id);
-            await LoadChildrenAsync();
-            CloseDialog();
+            try
+            {
+                await ChildService.DeleteChildAsync(_currentChild.Id);
+                ShowToast("Child record removed.", isError: false);
+                await LoadChildrenAsync();
+                CloseDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to delete child: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
 
@@ -342,4 +381,14 @@
 
         return firstName.Substring(0, 1).ToUpperInvariant();
     }
+}
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
 }

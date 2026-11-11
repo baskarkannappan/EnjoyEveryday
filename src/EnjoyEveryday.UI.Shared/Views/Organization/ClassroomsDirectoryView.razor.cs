@@ -6,6 +6,7 @@ using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
+using EnjoyEveryday.UI.Shared.Services;
 using Microsoft.AspNetCore.Components;
 
 namespace EnjoyEveryday.UI.Shared.Views.Organization;
@@ -17,6 +18,7 @@ public partial class ClassroomsDirectoryView : ComponentBase
     [Inject] private OrganizationService OrgService { get; set; } = default!;
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     [Inject] private IUserContext UserContext { get; set; } = default!;
+    [Inject] private IAppNotificationService NotificationService { get; set; } = default!;
 
     [Inject] private EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext { get; set; } = default!;
     [Inject] private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
@@ -27,6 +29,16 @@ public partial class ClassroomsDirectoryView : ComponentBase
     private Dictionary<Guid, Branch> _branches = new();
     private Guid _selectedBranchId = Guid.Empty;
     private string _searchQuery = "";
+
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
 
     private bool _isOrgAdmin = false;
     private bool _isBranchAdmin = false;
@@ -109,25 +121,33 @@ public partial class ClassroomsDirectoryView : ComponentBase
 
     private async Task LoadClassroomsAsync()
     {
-        if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+        try
         {
-            var branchId = _selectedBranchId != Guid.Empty ? _selectedBranchId : _assignedBranchIds.First();
-            _classrooms = await ClassroomService.GetClassroomsAsync(branchId);
+            if (_isBranchAdmin && _assignedBranchIds.Count > 0)
+            {
+                var branchId = _selectedBranchId != Guid.Empty ? _selectedBranchId : _assignedBranchIds.First();
+                _classrooms = await ClassroomService.GetClassroomsAsync(branchId);
+            }
+            else if (_isTeacherOnly)
+            {
+                var allClasses = await ClassroomService.GetAllClassroomsAsync();
+                _classrooms = allClasses.Where(c => _assignedClassroomIds.Contains(c.Id)).ToList();
+            }
+            else if (_selectedBranchId != Guid.Empty)
+            {
+                _classrooms = await ClassroomService.GetClassroomsAsync(_selectedBranchId);
+            }
+            else
+            {
+                _classrooms = await ClassroomService.GetAllClassroomsAsync();
+            }
+            StateHasChanged();
         }
-        else if (_isTeacherOnly)
+        catch (Exception ex)
         {
-            var allClasses = await ClassroomService.GetAllClassroomsAsync();
-            _classrooms = allClasses.Where(c => _assignedClassroomIds.Contains(c.Id)).ToList();
+            ShowToast($"Failed to load classrooms: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
-        else if (_selectedBranchId != Guid.Empty)
-        {
-            _classrooms = await ClassroomService.GetClassroomsAsync(_selectedBranchId);
-        }
-        else
-        {
-            _classrooms = await ClassroomService.GetAllClassroomsAsync();
-        }
-        StateHasChanged();
     }
 
     private void HandleAddClassroom()
@@ -183,6 +203,7 @@ public partial class ClassroomsDirectoryView : ComponentBase
     {
         if (string.IsNullOrWhiteSpace(_currentClassroom.Name))
         {
+            ShowToast("Classroom name is required.", isError: true);
             return;
         }
 
@@ -190,31 +211,50 @@ public partial class ClassroomsDirectoryView : ComponentBase
             ? _currentClassroom.BranchId
             : (_selectedBranchId != Guid.Empty ? _selectedBranchId : _defaultBranchId);
 
-        if (_isEditing)
+        try
         {
-            await ClassroomService.UpdateClassroomAsync(_currentClassroom);
-        }
-        else
-        {
-            await ClassroomService.CreateClassroomAsync(
-                targetBranch,
-                _currentClassroom.Name,
-                _currentClassroom.AgeGroup,
-                _currentClassroom.Capacity,
-                _currentClassroom.Environment ?? "Indoor");
-        }
+            if (_isEditing)
+            {
+                await ClassroomService.UpdateClassroomAsync(_currentClassroom);
+                ShowToast("Classroom updated successfully.", isError: false);
+            }
+            else
+            {
+                await ClassroomService.CreateClassroomAsync(
+                    targetBranch,
+                    _currentClassroom.Name,
+                    _currentClassroom.AgeGroup,
+                    _currentClassroom.Capacity,
+                    _currentClassroom.Environment ?? "Indoor");
+                ShowToast($"Classroom '{_currentClassroom.Name}' created successfully.", isError: false);
+            }
 
-        await LoadClassroomsAsync();
-        CloseDialog();
+            await LoadClassroomsAsync();
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to save classroom: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task DeleteClassroomAsync()
     {
         if (_currentClassroom.Id != Guid.Empty)
         {
-            await ClassroomService.DeleteClassroomAsync(_currentClassroom.Id);
-            await LoadClassroomsAsync();
-            CloseDialog();
+            try
+            {
+                await ClassroomService.DeleteClassroomAsync(_currentClassroom.Id);
+                ShowToast("Classroom removed.", isError: false);
+                await LoadClassroomsAsync();
+                CloseDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to delete classroom: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
 }

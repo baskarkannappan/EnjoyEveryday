@@ -7,8 +7,10 @@
 @inject ClassroomService ClassroomService
 @inject ExperienceService ExperienceService
 @using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.UI.Shared.Services
 @inject IClassroomRepository ClassroomRepository
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject IAppNotificationService NotificationService
 @rendermode InteractiveServer
  <section id="page-planner" class="page active">
     <PageHero 
@@ -164,7 +166,27 @@
                                  OnSave="ConfirmSchedule"
                                  OnDelete="DeleteSchedule" />
 }
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
+}
+
 @code {
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
     private DateOnly _currentDate;
     private DateTime? _currentDateTime;
     private List<Classroom> _classrooms = new();
@@ -195,11 +217,19 @@
     private async Task LoadSchedules()
     {
         if (string.IsNullOrEmpty(_selectedClassroomId)) return;
-        StateHasChanged();
-        var cid = Guid.Parse(_selectedClassroomId);
-        // Load for current month
-        _schedules = (await PlannerService.GetMonthlyScheduleAsync(cid, _currentDate.Year, _currentDate.Month)).ToList();
-        StateHasChanged();
+        try
+        {
+            StateHasChanged();
+            var cid = Guid.Parse(_selectedClassroomId);
+            // Load for current month
+            _schedules = (await PlannerService.GetMonthlyScheduleAsync(cid, _currentDate.Year, _currentDate.Month)).ToList();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to load schedule: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
         private async Task OnCalendarValueChanged()
     {
@@ -265,11 +295,19 @@
     {
         if (_currentScheduleId.HasValue)
         {
-            await PlannerService.DeleteScheduleAsync(_currentScheduleId.Value);
-            await EnsureClassroomSelectedAsync();
-
-        await LoadSchedules();
-            CloseDialog();
+            try
+            {
+                await PlannerService.DeleteScheduleAsync(_currentScheduleId.Value);
+                await EnsureClassroomSelectedAsync();
+                await LoadSchedules();
+                CloseDialog();
+                ShowToast("Schedule deleted successfully.");
+            }
+            catch (Exception ex)
+            {
+                ShowToast(ex.Message, isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
 
@@ -283,38 +321,54 @@
         if (string.IsNullOrEmpty(_dialogSelectedExperienceId) || string.IsNullOrEmpty(_selectedClassroomId)) return;
         var expId = Guid.Parse(_dialogSelectedExperienceId);
         var clsId = Guid.Parse(_selectedClassroomId);
-        
-        if (_currentScheduleId.HasValue)
-        {
-            var scheduleToUpdate = _schedules.FirstOrDefault(s => s.Id == _currentScheduleId.Value);
-            if (scheduleToUpdate != null)
-            {
-                scheduleToUpdate.ExperienceId = expId;
-                scheduleToUpdate.TimeOfDay = _dialogTimeOfDay;
-                scheduleToUpdate.ScheduledDate = _dialogDate;
-                await PlannerService.UpdateScheduleAsync(scheduleToUpdate);
-            }
-        }
-        else
-        {
-            await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
-        }
-        
-        await EnsureClassroomSelectedAsync();
 
-        await LoadSchedules();
-        CloseDialog();
+        try
+        {
+            if (_currentScheduleId.HasValue)
+            {
+                var scheduleToUpdate = _schedules.FirstOrDefault(s => s.Id == _currentScheduleId.Value);
+                if (scheduleToUpdate != null)
+                {
+                    scheduleToUpdate.ExperienceId = expId;
+                    scheduleToUpdate.TimeOfDay = _dialogTimeOfDay;
+                    scheduleToUpdate.ScheduledDate = _dialogDate;
+                    await PlannerService.UpdateScheduleAsync(scheduleToUpdate);
+                }
+            }
+            else
+            {
+                await PlannerService.ScheduleExperienceAsync(expId, clsId, _dialogDate, _dialogTimeOfDay);
+            }
+            
+            await EnsureClassroomSelectedAsync();
+            await LoadSchedules();
+            CloseDialog();
+            ShowToast("Schedule saved successfully.");
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task EnsureClassroomSelectedAsync()
     {
         if (string.IsNullOrEmpty(_selectedClassroomId))
         {
-            var classrooms = await ClassroomRepository.GetAllAsync(TenantContext.TenantId);
-            var fallback = classrooms.FirstOrDefault();
-            if (fallback != null)
+            try
             {
-                _selectedClassroomId = fallback.Id.ToString();
+                var classrooms = await ClassroomRepository.GetAllAsync(TenantContext.TenantId);
+                var fallback = classrooms.FirstOrDefault();
+                if (fallback != null)
+                {
+                    _selectedClassroomId = fallback.Id.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to load classrooms: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
             }
         }
     }

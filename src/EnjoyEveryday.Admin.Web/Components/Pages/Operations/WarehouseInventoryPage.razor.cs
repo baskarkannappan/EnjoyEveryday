@@ -1,5 +1,6 @@
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.UI.Shared.Services;
 using Microsoft.AspNetCore.Components;
 
 namespace EnjoyEveryday.Admin.Web.Components.Pages.Operations;
@@ -8,6 +9,19 @@ public partial class WarehouseInventoryPage : ComponentBase
 {
     [Inject]
     private IMaterialMarketplaceService MaterialService { get; set; } = default!;
+
+    [Inject]
+    private IAppNotificationService NotificationService { get; set; } = default!;
+
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
 
     private List<InventoryLocation> _locations = new();
     private List<InventoryBalance> _balances = new();
@@ -320,24 +334,42 @@ public partial class WarehouseInventoryPage : ComponentBase
     {
         if (_adjustModalItem == null) return;
 
-        await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+        try
         {
-            ProductId = _adjustModalItem.MaterialProductId,
-            LocationId = _selectedLocationId,
-            TransactionType = _adjustTxType,
-            QuantityDelta = _adjustDelta,
-            Notes = _adjustNotes
-        });
+            await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+            {
+                ProductId = _adjustModalItem.MaterialProductId,
+                LocationId = _selectedLocationId,
+                TransactionType = _adjustTxType,
+                QuantityDelta = _adjustDelta,
+                Notes = _adjustNotes
+            });
 
-        _adjustModalItem = null;
-        await LoadInventoryDataAsync();
+            _adjustModalItem = null;
+            ShowToast("Stock adjustment recorded successfully.");
+            await LoadInventoryDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task SanitizeCleaningStock(InventoryBalance item)
     {
         if (item.UnderCleaningStock <= 0) return;
-        await MaterialService.SanitizeAndRestockCleaningItemsAsync(item.MaterialProductId, item.UnderCleaningStock);
-        await LoadInventoryDataAsync();
+        try
+        {
+            await MaterialService.SanitizeAndRestockCleaningItemsAsync(item.MaterialProductId, item.UnderCleaningStock);
+            ShowToast("Cleaning items sanitized and returned to available stock.");
+            await LoadInventoryDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenAddProductModal()
@@ -359,138 +391,181 @@ public partial class WarehouseInventoryPage : ComponentBase
     {
         if (string.IsNullOrWhiteSpace(_newSku) || string.IsNullOrWhiteSpace(_newName)) return;
 
-        var req = new SaveMaterialProductRequest
+        try
         {
-            Sku = _newSku.Trim(),
-            Name = _newName.Trim(),
-            Category = _newCategory,
-            MaterialType = _newType,
-            Description = _newDesc.Trim(),
-            SafetyInstructions = _newSafety.Trim(),
-            AllowPurchase = _newBuyPrice > 0,
-            PurchasePrice = _newBuyPrice,
-            AllowBorrow = _newRentalFee > 0,
-            RentalFee = _newRentalFee,
-            RefundableDeposit = _newDeposit,
-            DefaultLoanDurationDays = 14,
-            MaxLoanDurationDays = 30,
-            IsActive = true
-        };
-
-        var id = await MaterialService.SaveProductAsync(req);
-
-        if (_newInitialStock > 0 && _selectedLocationId != Guid.Empty)
-        {
-            await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+            var req = new SaveMaterialProductRequest
             {
-                ProductId = id,
-                LocationId = _selectedLocationId,
-                TransactionType = "Receipt",
-                QuantityDelta = _newInitialStock,
-                Notes = "Initial catalog opening inventory"
-            });
+                Sku = _newSku.Trim(),
+                Name = _newName.Trim(),
+                Category = _newCategory,
+                MaterialType = _newType,
+                Description = _newDesc.Trim(),
+                SafetyInstructions = _newSafety.Trim(),
+                AllowPurchase = _newBuyPrice > 0,
+                PurchasePrice = _newBuyPrice,
+                AllowBorrow = _newRentalFee > 0,
+                RentalFee = _newRentalFee,
+                RefundableDeposit = _newDeposit,
+                DefaultLoanDurationDays = 14,
+                MaxLoanDurationDays = 30,
+                IsActive = true
+            };
+
+            var id = await MaterialService.SaveProductAsync(req);
+
+            if (_newInitialStock > 0 && _selectedLocationId != Guid.Empty)
+            {
+                await MaterialService.AdjustInventoryStockAsync(new AdjustStockRequest
+                {
+                    ProductId = id,
+                    LocationId = _selectedLocationId,
+                    TransactionType = "Receipt",
+                    QuantityDelta = _newInitialStock,
+                    Notes = "Initial catalog opening inventory"
+                });
+            }
+
+            _isAddProductOpen = false;
+            ShowToast("New product added to catalog successfully.");
+
+            _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+            await LoadInventoryDataAsync();
         }
-
-        _isAddProductOpen = false;
-
-        _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
-        await LoadInventoryDataAsync();
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task OpenEditProductModal(InventoryBalance bal, MaterialProduct? prod)
     {
-        var product = prod ?? await MaterialService.GetProductDetailsAsync(bal.MaterialProductId);
-        if (product == null) return;
+        try
+        {
+            var product = prod ?? await MaterialService.GetProductDetailsAsync(bal.MaterialProductId);
+            if (product == null) return;
 
-        // Fetch full details with offering
-        var full = await MaterialService.GetProductDetailsAsync(product.Id) ?? product;
+            // Fetch full details with offering
+            var full = await MaterialService.GetProductDetailsAsync(product.Id) ?? product;
 
-        _editProductModalItem = full;
-        _editProductId = full.Id;
-        _editSku = full.Sku;
-        _editName = full.Name;
-        _editCategory = full.Category;
-        _editType = full.MaterialType;
-        _editDesc = full.Description ?? "";
-        _editSafety = full.SafetyInstructions ?? "";
-        _editAgeMin = full.AgeMinMonths;
-        _editAgeMax = full.AgeMaxMonths;
-        _editIsActive = full.IsActive;
+            _editProductModalItem = full;
+            _editProductId = full.Id;
+            _editSku = full.Sku;
+            _editName = full.Name;
+            _editCategory = full.Category;
+            _editType = full.MaterialType;
+            _editDesc = full.Description ?? "";
+            _editSafety = full.SafetyInstructions ?? "";
+            _editAgeMin = full.AgeMinMonths;
+            _editAgeMax = full.AgeMaxMonths;
+            _editIsActive = full.IsActive;
 
-        var offering = full.Offering;
-        _editBuyPrice = offering?.PurchasePrice ?? 0m;
-        _editRentalFee = offering?.RentalFee ?? 0m;
-        _editDeposit = offering?.RefundableDeposit ?? 0m;
-        _editDefaultLoanDays = offering?.DefaultLoanDurationDays ?? 14;
-        _editMaxLoanDays = offering?.MaxLoanDurationDays ?? 30;
+            var offering = full.Offering;
+            _editBuyPrice = offering?.PurchasePrice ?? 0m;
+            _editRentalFee = offering?.RentalFee ?? 0m;
+            _editDeposit = offering?.RefundableDeposit ?? 0m;
+            _editDefaultLoanDays = offering?.DefaultLoanDurationDays ?? 14;
+            _editMaxLoanDays = offering?.MaxLoanDurationDays ?? 30;
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task SubmitEditProduct()
     {
         if (string.IsNullOrWhiteSpace(_editSku) || string.IsNullOrWhiteSpace(_editName)) return;
 
-        var req = new SaveMaterialProductRequest
+        try
         {
-            Id = _editProductId,
-            Sku = _editSku.Trim(),
-            Name = _editName.Trim(),
-            Category = _editCategory,
-            MaterialType = _editType,
-            Description = _editDesc.Trim(),
-            SafetyInstructions = _editSafety.Trim(),
-            AgeMinMonths = _editAgeMin,
-            AgeMaxMonths = _editAgeMax,
-            AllowPurchase = _editBuyPrice > 0,
-            PurchasePrice = _editBuyPrice,
-            AllowBorrow = _editRentalFee > 0,
-            RentalFee = _editRentalFee,
-            RefundableDeposit = _editDeposit,
-            DefaultLoanDurationDays = _editDefaultLoanDays,
-            MaxLoanDurationDays = _editMaxLoanDays,
-            IsActive = _editIsActive
-        };
+            var req = new SaveMaterialProductRequest
+            {
+                Id = _editProductId,
+                Sku = _editSku.Trim(),
+                Name = _editName.Trim(),
+                Category = _editCategory,
+                MaterialType = _editType,
+                Description = _editDesc.Trim(),
+                SafetyInstructions = _editSafety.Trim(),
+                AgeMinMonths = _editAgeMin,
+                AgeMaxMonths = _editAgeMax,
+                AllowPurchase = _editBuyPrice > 0,
+                PurchasePrice = _editBuyPrice,
+                AllowBorrow = _editRentalFee > 0,
+                RentalFee = _editRentalFee,
+                RefundableDeposit = _editDeposit,
+                DefaultLoanDurationDays = _editDefaultLoanDays,
+                MaxLoanDurationDays = _editMaxLoanDays,
+                IsActive = _editIsActive
+            };
 
-        await MaterialService.SaveProductAsync(req);
-        _editProductModalItem = null;
+            await MaterialService.SaveProductAsync(req);
+            _editProductModalItem = null;
+            ShowToast("Product details updated successfully.");
 
-        _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
-        await LoadInventoryDataAsync();
+            _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+            await LoadInventoryDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task ToggleProductStatusAsync(MaterialProduct prod, bool newStatus)
     {
-        var detailed = await MaterialService.GetProductDetailsAsync(prod.Id) ?? prod;
-        var off = detailed.Offering;
-
-        var req = new SaveMaterialProductRequest
+        try
         {
-            Id = detailed.Id,
-            Sku = detailed.Sku,
-            Name = detailed.Name,
-            Category = detailed.Category,
-            MaterialType = detailed.MaterialType,
-            Description = detailed.Description,
-            SafetyInstructions = detailed.SafetyInstructions,
-            AgeMinMonths = detailed.AgeMinMonths,
-            AgeMaxMonths = detailed.AgeMaxMonths,
-            AllowPurchase = off?.AllowPurchase ?? (off?.PurchasePrice > 0),
-            PurchasePrice = off?.PurchasePrice ?? 0,
-            AllowBorrow = off?.AllowBorrow ?? (off?.RentalFee > 0),
-            RentalFee = off?.RentalFee ?? 0,
-            RefundableDeposit = off?.RefundableDeposit ?? 0,
-            DefaultLoanDurationDays = off?.DefaultLoanDurationDays ?? 14,
-            MaxLoanDurationDays = off?.MaxLoanDurationDays ?? 30,
-            IsActive = newStatus
-        };
+            var detailed = await MaterialService.GetProductDetailsAsync(prod.Id) ?? prod;
+            var off = detailed.Offering;
 
-        await MaterialService.SaveProductAsync(req);
-        _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
-        await LoadInventoryDataAsync();
+            var req = new SaveMaterialProductRequest
+            {
+                Id = detailed.Id,
+                Sku = detailed.Sku,
+                Name = detailed.Name,
+                Category = detailed.Category,
+                MaterialType = detailed.MaterialType,
+                Description = detailed.Description,
+                SafetyInstructions = detailed.SafetyInstructions,
+                AgeMinMonths = detailed.AgeMinMonths,
+                AgeMaxMonths = detailed.AgeMaxMonths,
+                AllowPurchase = off?.AllowPurchase ?? (off?.PurchasePrice > 0),
+                PurchasePrice = off?.PurchasePrice ?? 0,
+                AllowBorrow = off?.AllowBorrow ?? (off?.RentalFee > 0),
+                RentalFee = off?.RentalFee ?? 0,
+                RefundableDeposit = off?.RefundableDeposit ?? 0,
+                DefaultLoanDurationDays = off?.DefaultLoanDurationDays ?? 14,
+                MaxLoanDurationDays = off?.MaxLoanDurationDays ?? 30,
+                IsActive = newStatus
+            };
+
+            await MaterialService.SaveProductAsync(req);
+            ShowToast($"Product status updated to {(newStatus ? "Active" : "Archived")}.");
+            _products = await MaterialService.GetCatalogProductsAsync(activeOnly: false);
+            await LoadInventoryDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task OpenLedgerDrawer(InventoryBalance bal)
     {
-        _ledgerModalItem = bal;
-        _ledgerHistory = await MaterialService.GetProductLedgerHistoryAsync(bal.MaterialProductId);
+        try
+        {
+            _ledgerModalItem = bal;
+            _ledgerHistory = await MaterialService.GetProductLedgerHistoryAsync(bal.MaterialProductId);
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 }

@@ -20,8 +20,8 @@
 
     @if (!string.IsNullOrEmpty(_notificationMessage))
     {
-        <div class="alert-banner">
-            <span>✓ @_notificationMessage</span>
+        <div class="alert-banner" style="@(_isNotificationError ? "background: #fff5f5; border-color: #fed7d7; color: #9b2c2c;" : "")">
+            <span>@(_isNotificationError ? "⚠️" : "✓") @_notificationMessage</span>
             <button class="close-alert" @onclick="() => _notificationMessage = null">✕</button>
         </div>
     }
@@ -391,6 +391,8 @@
     // Deactivate input
     private string _deactivateReason = "";
 
+    private bool _isNotificationError = false;
+
     protected override async Task OnInitializedAsync()
     {
         await LoadDataAsync();
@@ -398,16 +400,24 @@
 
     private async Task LoadDataAsync()
     {
-        _orgs = await PlatformService.GetOrganizationsOverviewAsync();
-        _availablePlans = await PlatformService.GetPlansAsync();
-
-        if (_availablePlans.Count > 0)
+        try
         {
-            if (_createPlanId == Guid.Empty)
+            _orgs = await PlatformService.GetOrganizationsOverviewAsync();
+            _availablePlans = await PlatformService.GetPlansAsync();
+
+            if (_availablePlans.Count > 0)
             {
-                _createPlanId = _availablePlans[0].Id;
-                await RefreshAvailableTariffsAsync(_createPlanId);
+                if (_createPlanId == Guid.Empty)
+                {
+                    _createPlanId = _availablePlans[0].Id;
+                    await RefreshAvailableTariffsAsync(_createPlanId);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to load organizations: {ex.Message}";
+            _isNotificationError = true;
         }
     }
 
@@ -422,8 +432,16 @@
 
     private async Task RefreshAvailableTariffsAsync(Guid planId)
     {
-        _availableTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
-        _createTariffId = _availableTariffs.FirstOrDefault()?.Id;
+        try
+        {
+            _availableTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
+            _createTariffId = _availableTariffs.FirstOrDefault()?.Id;
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to refresh tariffs: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task OnCreatePlanSelectionChanged(ChangeEventArgs e)
@@ -440,8 +458,16 @@
         if (Guid.TryParse(e.Value?.ToString(), out var planId))
         {
             _assignPlanId = planId;
-            _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
-            _assignTariffId = _assignTariffs.FirstOrDefault()?.Id;
+            try
+            {
+                _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
+                _assignTariffId = _assignTariffs.FirstOrDefault()?.Id;
+            }
+            catch (Exception ex)
+            {
+                _notificationMessage = $"Failed to load plan tariffs: {ex.Message}";
+                _isNotificationError = true;
+            }
         }
     }
 
@@ -474,11 +500,19 @@
 
     private async Task OpenPlanTariffModal(PlatformOrganizationDto org)
     {
-        _selectedOrg = org;
-        _assignPlanId = org.PlanId;
-        _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(org.PlanId);
-        _assignTariffId = org.TariffId ?? _assignTariffs.FirstOrDefault()?.Id;
-        _showPlanTariffModal = true;
+        try
+        {
+            _selectedOrg = org;
+            _assignPlanId = org.PlanId;
+            _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(org.PlanId);
+            _assignTariffId = org.TariffId ?? _assignTariffs.FirstOrDefault()?.Id;
+            _showPlanTariffModal = true;
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to load tariffs: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private void OpenDeactivateModal(PlatformOrganizationDto org)
@@ -501,57 +535,112 @@
     private async Task SubmitCreateOrganization()
     {
         if (string.IsNullOrWhiteSpace(_createName) || string.IsNullOrWhiteSpace(_createAdminEmail)) return;
-        var created = await PlatformService.CreateOrganizationWorkflowAsync(_createName, _createLocation, _createPlanId, _createAdminEmail, _createBranchCount, _createTariffId);
-        _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully.";
-        CloseModals();
-        await LoadDataAsync();
+        try
+        {
+            var created = await PlatformService.CreateOrganizationWorkflowAsync(_createName, _createLocation, _createPlanId, _createAdminEmail, _createBranchCount, _createTariffId);
+            _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully.";
+            _isNotificationError = false;
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to create organization: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task SubmitEditOrganization()
     {
         if (_selectedOrg == null || string.IsNullOrWhiteSpace(_editName)) return;
-        var ok = await PlatformService.UpdateOrganizationAsync(_selectedOrg.Id, _editName, _editLocation, _editAdminEmail, _editBranchCount);
-        if (ok)
+        try
         {
-            _notificationMessage = $"Organization '{_editName}' details updated.";
+            var ok = await PlatformService.UpdateOrganizationAsync(_selectedOrg.Id, _editName, _editLocation, _editAdminEmail, _editBranchCount);
+            if (ok)
+            {
+                _notificationMessage = $"Organization '{_editName}' details updated.";
+                _isNotificationError = false;
+            }
+            CloseModals();
+            await LoadDataAsync();
         }
-        CloseModals();
-        await LoadDataAsync();
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to update organization: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task SubmitStatusChange()
     {
         if (_selectedOrg == null || string.IsNullOrWhiteSpace(_statusReason)) return;
-        var ok = await PlatformService.UpdateAccountStatusAsync(_selectedOrg.Id, _targetStatus, _statusReason);
-        if (ok)
+        try
         {
-            _notificationMessage = $"Organization status transitioned to '{_targetStatus}'.";
+            var ok = await PlatformService.UpdateAccountStatusAsync(_selectedOrg.Id, _targetStatus, _statusReason);
+            if (ok)
+            {
+                _notificationMessage = $"Organization status transitioned to '{_targetStatus}'.";
+                _isNotificationError = false;
+            }
+            CloseModals();
+            await LoadDataAsync();
         }
-        CloseModals();
-        await LoadDataAsync();
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to change status: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task SubmitPlanTariffChange()
     {
         if (_selectedOrg == null) return;
-        var ok = await PlatformService.AssignPlanAndTariffToOrganizationAsync(_selectedOrg.Id, _assignPlanId, _assignTariffId);
-        if (ok)
+        try
         {
-            _notificationMessage = $"Plan and tariff updated for '{_selectedOrg.Name}'.";
+            var ok = await PlatformService.AssignPlanAndTariffToOrganizationAsync(_selectedOrg.Id, _assignPlanId, _assignTariffId);
+            if (ok)
+            {
+                _notificationMessage = $"Plan and tariff updated for '{_selectedOrg.Name}'.";
+                _isNotificationError = false;
+            }
+            CloseModals();
+            await LoadDataAsync();
         }
-        CloseModals();
-        await LoadDataAsync();
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to assign plan/tariff: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task SubmitDeactivate()
     {
         if (_selectedOrg == null || string.IsNullOrWhiteSpace(_deactivateReason)) return;
-        var ok = await PlatformService.DeactivateOrganizationAsync(_selectedOrg.Id, _deactivateReason);
-        if (ok)
+        try
         {
-            _notificationMessage = $"Organization '{_selectedOrg.Name}' suspended.";
+            var ok = await PlatformService.DeactivateOrganizationAsync(_selectedOrg.Id, _deactivateReason);
+            if (ok)
+            {
+                _notificationMessage = $"Organization '{_selectedOrg.Name}' suspended.";
+                _isNotificationError = false;
+            }
+            CloseModals();
+            await LoadDataAsync();
         }
-        CloseModals();
-        await LoadDataAsync();
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to deactivate organization: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
+}
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_notificationMessage) && _isNotificationError)
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: #782828; color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid #a83232; max-width: 480px;">
+        <span style="font-size: 16px;">⚠️</span>
+        <span style="line-height: 1.4; flex: 1;">@_notificationMessage</span>
+        <button type="button" @onclick="() => _notificationMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
 }

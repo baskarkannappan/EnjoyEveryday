@@ -144,9 +144,9 @@
     <!-- Feedback Message Banner -->
     @if (!string.IsNullOrEmpty(_feedbackMessage))
     {
-        <div style="background: #edf3ee; border: 1px solid #dce7de; color: #385542; padding: 12px 16px; border-radius: 0px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
-            <div><strong>Notice:</strong> @_feedbackMessage</div>
-            <button @onclick="() => _feedbackMessage = null" style="background: none; border: none; font-size: 16px; cursor: pointer; color: #385542;">×</button>
+        <div style="background: @(_feedbackIsError ? "#fff5f5" : "#edf3ee"); border: 1px solid @(_feedbackIsError ? "#fed7d7" : "#dce7de"); color: @(_feedbackIsError ? "#9b2c2c" : "#385542"); padding: 12px 16px; border-radius: 0px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+            <div><strong>@(_feedbackIsError ? "Error:" : "Notice:")</strong> @_feedbackMessage</div>
+            <button @onclick="() => _feedbackMessage = null" style="background: none; border: none; font-size: 16px; cursor: pointer; color: inherit;">×</button>
         </div>
     }
 
@@ -539,6 +539,7 @@
     private string _activeFilter = "all";
     private string _searchQuery = string.Empty;
     private string? _feedbackMessage;
+    private bool _feedbackIsError;
 
     private ConsentDashboardKpi _kpi = new();
     private List<ChildConsentDocument> _documents = new();
@@ -568,18 +569,26 @@
 
     private async Task LoadDataAsync()
     {
-        _kpi = await ConsentService.GetDashboardKpisAsync();
-        _documents = (await ConsentService.GetDocumentsAsync()).ToList();
-        _templates = (await ConsentService.GetTemplatesAsync()).ToList();
-        _children = (await ChildService.GetChildrenAsync()).ToList();
+        try
+        {
+            _kpi = await ConsentService.GetDashboardKpisAsync();
+            _documents = (await ConsentService.GetDocumentsAsync()).ToList();
+            _templates = (await ConsentService.GetTemplatesAsync()).ToList();
+            _children = (await ChildService.GetChildrenAsync()).ToList();
 
-        if (_children.Any() && _newDraftChildId == Guid.Empty)
-        {
-            _newDraftChildId = _children.First().Id;
+            if (_children.Any() && _newDraftChildId == Guid.Empty)
+            {
+                _newDraftChildId = _children.First().Id;
+            }
+            if (_templates.Any() && _newDraftTemplateId == Guid.Empty)
+            {
+                _newDraftTemplateId = _templates.First().Id;
+            }
         }
-        if (_templates.Any() && _newDraftTemplateId == Guid.Empty)
+        catch (Exception ex)
         {
-            _newDraftTemplateId = _templates.First().Id;
+            _feedbackMessage = $"Failed to load consent documents: {ex.Message}";
+            _feedbackIsError = true;
         }
     }
 
@@ -642,10 +651,19 @@
             SigningDeadline = _newDraftDeadline
         };
 
-        var doc = await ConsentService.CreateDraftAsync(request);
-        _isCreateModalOpen = false;
-        _feedbackMessage = $"Draft created for document '{doc.DocumentTitle}'. Ready for review.";
-        await LoadDataAsync();
+        try
+        {
+            var doc = await ConsentService.CreateDraftAsync(request);
+            _isCreateModalOpen = false;
+            _feedbackMessage = $"Draft created for document '{doc.DocumentTitle}'. Ready for review.";
+            _feedbackIsError = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to create consent draft: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private void OpenAdminReviewModal(ChildConsentDocument doc)
@@ -665,46 +683,82 @@
             ReviewNotes = _reviewNotes
         };
 
-        var updated = await ConsentService.AdminReviewAsync(request);
-        _selectedDocForReview = null;
-        _feedbackMessage = approve
-            ? $"Document '{updated.DocumentTitle}' approved to send."
-            : $"Document '{updated.DocumentTitle}' sent back with changes requested.";
-        await LoadDataAsync();
+        try
+        {
+            var updated = await ConsentService.AdminReviewAsync(request);
+            _selectedDocForReview = null;
+            _feedbackMessage = approve
+                ? $"Document '{updated.DocumentTitle}' approved to send."
+                : $"Document '{updated.DocumentTitle}' sent back with changes requested.";
+            _feedbackIsError = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Review submission failed: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private async Task SendInvitationAsync(ChildConsentDocument doc)
     {
-        var baseUrl = NavigationManager.BaseUri;
-        var (success, token, message) = await ConsentService.SendInvitationAsync(doc.Id, baseUrl);
-        _feedbackMessage = success
-            ? $"Invitation sent for '{doc.DocumentTitle}'. Secure parent signing link active: {baseUrl}consent/sign/{token}"
-            : message;
-        await LoadDataAsync();
+        try
+        {
+            var baseUrl = NavigationManager.BaseUri;
+            var (success, token, message) = await ConsentService.SendInvitationAsync(doc.Id, baseUrl);
+            _feedbackMessage = success
+                ? $"Invitation sent for '{doc.DocumentTitle}'. Secure parent signing link active: {baseUrl}consent/sign/{token}"
+                : message;
+            _feedbackIsError = !success;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to send invitation: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private async Task SendReminderAsync(ChildConsentDocument doc)
     {
-        var baseUrl = NavigationManager.BaseUri;
-        var (success, message) = await ConsentService.SendReminderAsync(doc.Id, baseUrl);
-        _feedbackMessage = message;
-        await LoadDataAsync();
+        try
+        {
+            var baseUrl = NavigationManager.BaseUri;
+            var (success, message) = await ConsentService.SendReminderAsync(doc.Id, baseUrl);
+            _feedbackMessage = message;
+            _feedbackIsError = !success;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to send reminder: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private async Task SendRemindersToAllPendingAsync()
     {
-        var pending = _documents.Where(d => d.Status == ConsentWorkflowStatus.SentToParent || d.Status == ConsentWorkflowStatus.Opened).ToList();
-        var baseUrl = NavigationManager.BaseUri;
-        int sent = 0;
-        foreach (var doc in pending)
+        try
         {
-            var (res, _) = await ConsentService.SendReminderAsync(doc.Id, baseUrl);
-            if (res) sent++;
+            var pending = _documents.Where(d => d.Status == ConsentWorkflowStatus.SentToParent || d.Status == ConsentWorkflowStatus.Opened).ToList();
+            var baseUrl = NavigationManager.BaseUri;
+            int sent = 0;
+            foreach (var doc in pending)
+            {
+                var (res, _) = await ConsentService.SendReminderAsync(doc.Id, baseUrl);
+                if (res) sent++;
+            }
+            _feedbackMessage = sent > 0
+                ? $"Dispatched {sent} reminder notification(s) to parents awaiting signature."
+                : "No eligible documents awaiting reminder dispatch at this time.";
+            _feedbackIsError = false;
+            await LoadDataAsync();
         }
-        _feedbackMessage = sent > 0
-            ? $"Dispatched {sent} reminder notification(s) to parents awaiting signature."
-            : "No eligible documents awaiting reminder dispatch at this time.";
-        await LoadDataAsync();
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to dispatch reminders: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private void OpenPreviewModal(ChildConsentDocument doc)
@@ -714,12 +768,28 @@
 
     private async Task OpenEvidenceModal(ChildConsentDocument doc)
     {
-        _selectedDocEvidence = await ConsentService.GetSignedCertificateAsync(doc.Id);
+        try
+        {
+            _selectedDocEvidence = await ConsentService.GetSignedCertificateAsync(doc.Id);
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to retrieve certificate: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private async Task OpenAuditModal(ChildConsentDocument doc)
     {
-        _selectedDocAudit = await ConsentService.GetDocumentByIdAsync(doc.Id);
+        try
+        {
+            _selectedDocAudit = await ConsentService.GetDocumentByIdAsync(doc.Id);
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to load document audit: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private void OpenWithdrawModal(ChildConsentDocument doc)
@@ -731,10 +801,19 @@
     private async Task ConfirmWithdrawConsentAsync()
     {
         if (_selectedDocForWithdraw == null) return;
-        await ConsentService.WithdrawConsentAsync(_selectedDocForWithdraw.Id, _withdrawReason ?? "Administrative withdrawal");
-        _selectedDocForWithdraw = null;
-        _feedbackMessage = "Consent successfully marked as withdrawn. Historical evidence preserved.";
-        await LoadDataAsync();
+        try
+        {
+            await ConsentService.WithdrawConsentAsync(_selectedDocForWithdraw.Id, _withdrawReason ?? "Administrative withdrawal");
+            _selectedDocForWithdraw = null;
+            _feedbackMessage = "Consent successfully marked as withdrawn. Historical evidence preserved.";
+            _feedbackIsError = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Failed to withdraw consent: {ex.Message}";
+            _feedbackIsError = true;
+        }
     }
 
     private void CloseModals()

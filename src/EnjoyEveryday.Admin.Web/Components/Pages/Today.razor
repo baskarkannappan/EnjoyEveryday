@@ -8,6 +8,7 @@
 @inject ExecutionService ExecutionService
 @inject ExperienceService ExperienceService
 @inject ClassroomContextService ContextService
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @rendermode InteractiveServer
 <section
     id="page-today"
@@ -96,6 +97,17 @@
         </div>
     </div>
 </section>
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
+}
+
 @code {
     private List<ExperienceSchedule> _schedules = new();
     private List<Experience> _experiences = new();
@@ -141,8 +153,16 @@
         _feedbackNotes = string.Empty;
         if (schedule.Status == "Planned")
         {
-            await ExecutionService.StartExperienceAsync(schedule.Id, Guid.Parse("50000000-0000-0000-0000-000000000001"));
-            schedule.Status = "Started";
+            try
+            {
+                await ExecutionService.StartExperienceAsync(schedule.Id, Guid.Parse("50000000-0000-0000-0000-000000000001"));
+                schedule.Status = "Started";
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to start experience: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
     private void CloseExecutionDialog()
@@ -153,11 +173,30 @@
     {
         if (_activeSchedule != null && !string.IsNullOrEmpty(_selectedRating))
         {
-            // Note: For now using a dummy TeacherId since auth is not fully implemented on UI side.
-            await ExecutionService.CompleteExperienceAsync(_activeSchedule.Id, Guid.NewGuid(), _selectedStars, _selectedRating, _feedbackNotes);
-            _activeSchedule.Status = "Completed";
-            _activeSchedule = null;
+            try
+            {
+                // Note: For now using a dummy TeacherId since auth is not fully implemented on UI side.
+                await ExecutionService.CompleteExperienceAsync(_activeSchedule.Id, Guid.NewGuid(), _selectedStars, _selectedRating, _feedbackNotes);
+                _activeSchedule.Status = "Completed";
+                _activeSchedule = null;
+                ShowToast("Experience completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to complete experience: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
+    }
+
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
     }
     private string GetExperienceType(Experience experience)
     {

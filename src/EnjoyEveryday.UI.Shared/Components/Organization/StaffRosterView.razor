@@ -12,6 +12,7 @@
 @inject ITenantContext TenantContext
 @inject IAccessScopeRepository AccessScopeRepo
 @inject ISystemLookupCatalog LookupCatalog
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 
 <div class="roster-page-container">
     <PageHero Eyebrow="COMPLIANCE &amp; STAFFING"
@@ -734,13 +735,32 @@
         _ => "breached"
     };
 
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
+
     private async Task DispatchFloat(Guid classroomId)
     {
         if (_overview?.AvailableFloatTeachers.Any() == true)
         {
-            var floatTeacher = _overview.AvailableFloatTeachers.First();
-            await RosterService.DispatchFloatTeacherAsync(floatTeacher.TeacherId, classroomId);
-            await LoadRosterAsync();
+            try
+            {
+                var floatTeacher = _overview.AvailableFloatTeachers.First();
+                await RosterService.DispatchFloatTeacherAsync(floatTeacher.TeacherId, classroomId);
+                ShowToast($"Float educator {floatTeacher.TeacherName} dispatched successfully.", isError: false);
+                await LoadRosterAsync();
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to dispatch float educator: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
 
@@ -769,11 +789,20 @@
             CoverageStatus = "Uncovered"
         };
 
-        await RosterService.SubmitStaffLeaveAsync(leave);
-        _isLeaveModalOpen = false;
-        _newLeaveTeacherId = Guid.Empty;
-        _newLeaveReason = "";
-        await LoadRosterAsync();
+        try
+        {
+            await RosterService.SubmitStaffLeaveAsync(leave);
+            _isLeaveModalOpen = false;
+            _newLeaveTeacherId = Guid.Empty;
+            _newLeaveReason = "";
+            ShowToast("Staff leave recorded successfully.", isError: false);
+            await LoadRosterAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to submit staff leave: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenSubModal(StaffLeaveItem leave)
@@ -787,10 +816,19 @@
     {
         if (_selectedLeaveForSub == null || _selectedSubTeacherId == Guid.Empty) return;
 
-        await RosterService.AssignSubstituteCoverageAsync(_selectedLeaveForSub.Id, _selectedSubTeacherId);
-        _isSubModalOpen = false;
-        _selectedLeaveForSub = null;
-        await LoadRosterAsync();
+        try
+        {
+            await RosterService.AssignSubstituteCoverageAsync(_selectedLeaveForSub.Id, _selectedSubTeacherId);
+            _isSubModalOpen = false;
+            _selectedLeaveForSub = null;
+            ShowToast("Substitute coverage assigned successfully.", isError: false);
+            await LoadRosterAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to assign substitute: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task OpenReassignModal(ActivityCoverageNeedRecord need)
@@ -837,4 +875,14 @@
             _reassigning = false;
         }
     }
+}
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
 }

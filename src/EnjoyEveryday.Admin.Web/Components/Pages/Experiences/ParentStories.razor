@@ -6,6 +6,7 @@
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @rendermode InteractiveServer
 <PageHero 
     Eyebrow="PARENT CONNECTION" 
@@ -49,6 +50,16 @@
                       OnClose="CloseDialog"
                       OnSave="ConfirmStory" />
 
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
+}
+
 @code {
         private string _newStoryContent = string.Empty;
     private bool _isModalOpen = false;
@@ -71,12 +82,31 @@
     private async Task ConfirmStory()
     {
         if (string.IsNullOrEmpty(_selectedChildId) || string.IsNullOrEmpty(_newStoryContent)) return;
-        var childId = Guid.Parse(_selectedChildId);
-        // Assuming a dummy teacher ID for now, since we don't have auth context in this simplified view
-        var teacherId = Guid.NewGuid(); 
-        await JourneyService.CreateStoryAsync(childId, teacherId, null, _newStoryContent);
-        await LoadChildData();
-        CloseDialog();
+        try
+        {
+            var childId = Guid.Parse(_selectedChildId);
+            // Assuming a dummy teacher ID for now, since we don't have auth context in this simplified view
+            var teacherId = Guid.NewGuid(); 
+            await JourneyService.CreateStoryAsync(childId, teacherId, null, _newStoryContent);
+            await LoadChildData();
+            CloseDialog();
+            ShowToast("Parent story published successfully.");
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
     }
 
     private List<Child> _children = new();
@@ -85,27 +115,35 @@
     private List<ChildStory> _stories = new();
     protected override async Task OnInitializedAsync()
     {
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        try
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
+            var orgs = await OrganizationService.GetOrganizationsAsync();
+            var org = orgs.FirstOrDefault();
+            if (org != null)
             {
-                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-                var classroom = classrooms.FirstOrDefault();
-                if (classroom != null)
+                var branches = await BranchService.GetBranchesAsync(org.Id);
+                var branch = branches.FirstOrDefault();
+                if (branch != null)
                 {
-                    _children = (await ChildService.GetChildrenByClassroomAsync(classroom.Id)).ToList();
-                    _activeChild = _children.FirstOrDefault();
-                    if (_activeChild != null)
+                    var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
+                    var classroom = classrooms.FirstOrDefault();
+                    if (classroom != null)
                     {
-                        _selectedChildId = _activeChild.Id.ToString();
-                        await LoadChildData();
+                        _children = (await ChildService.GetChildrenByClassroomAsync(classroom.Id)).ToList();
+                        _activeChild = _children.FirstOrDefault();
+                        if (_activeChild != null)
+                        {
+                            _selectedChildId = _activeChild.Id.ToString();
+                            await LoadChildData();
+                        }
                     }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to initialize stories: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -113,10 +151,18 @@
     {
         if (Guid.TryParse(_selectedChildId, out var id))
         {
-            _activeChild = _children.FirstOrDefault(c => c.Id == id);
-            if (_activeChild != null)
+            try
             {
-                _stories = (await JourneyService.GetChildStoriesAsync(_activeChild.Id)).ToList();
+                _activeChild = _children.FirstOrDefault(c => c.Id == id);
+                if (_activeChild != null)
+                {
+                    _stories = (await JourneyService.GetChildStoriesAsync(_activeChild.Id)).ToList();
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to load child stories: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
             }
         }
     }

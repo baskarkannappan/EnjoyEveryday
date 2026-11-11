@@ -76,3 +76,11 @@ tags:
 * **Problem**: The `roles` table contains columns `(id, tenant_id, name, description, scope_type, created_at)`. It does NOT have `is_system` or `updated_at`. When dynamically instantiating a tenant-scoped role from global template roles (e.g., `LeadTeacher`), attempting to reference non-existent columns causes error `42703: column "is_system" of relation "roles" does not exist`.
 * **Fix**: In `sp_assign_organization_role`, insert only valid columns `(id, tenant_id, name, description, scope_type, created_at)` and copy mapped permissions from `role_permissions`.
 
+## 10. Non-Breaking Blazor UI Error Handling & Floating Toast Notifications
+* **Problem**: Unhandled exceptions in Blazor event handlers (`@onclick`, `@onchange`) bubble up directly to the root `GlobalErrorBoundary`, which replaces the entire active page layout with a generic crash screen (`Something went wrong`). For example, business validation failures such as `InvalidOperationException: "An invoice must contain at least one line item before publishing"` in `BillingPage` or network timeouts during inventory adjustments crash the whole user session.
+* **Fix**:
+  1. Every asynchronous user action or form submission must be wrapped in `try ... catch (Exception ex)`.
+  2. Errors must be displayed directly to the user as non-intrusive floating toast notifications (`ShowToast(ex.Message, isError: true)` with theme accents `#782828` error / `#263a32` success).
+  3. Exceptions should also be forwarded to `IAppNotificationService.HandleExceptionAsync(ex)` for centralized logging and notification dispatch without breaking the Blazor circuit.
+
+

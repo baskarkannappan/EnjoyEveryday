@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Shared.Tenancy;
+using EnjoyEveryday.UI.Shared.Services;
 using Microsoft.AspNetCore.Components;
 
 namespace EnjoyEveryday.Admin.Web.Components.Pages.Operations;
@@ -17,8 +18,21 @@ public partial class MarketplaceOperationsPage : ComponentBase
     [Inject]
     private IUserContext UserContext { get; set; } = default!;
 
+    [Inject]
+    private IAppNotificationService NotificationService { get; set; } = default!;
+
     private string _activeQueue = "Requests";
     private bool _isLoading = true;
+
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
 
     private List<MaterialOrder> _orders = new();
     private List<MaterialLoan> _loans = new();
@@ -115,17 +129,33 @@ public partial class MarketplaceOperationsPage : ComponentBase
 
     private async Task OpenOrderDetails(MaterialOrder order)
     {
-        _selectedOrder = order;
-        _orderTimeline = await MaterialService.GetOrderTimelineAsync(order.Id);
-        _isTimelineOpen = true;
+        try
+        {
+            _selectedOrder = order;
+            _orderTimeline = await MaterialService.GetOrderTimelineAsync(order.Id);
+            _isTimelineOpen = true;
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to load order details: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task OpenOrderFromLoan(MaterialLoan loan)
     {
-        var ord = _orders.FirstOrDefault(o => o.Id == loan.OrderId) ?? await MaterialService.GetOrderDetailsAsync(loan.OrderId);
-        if (ord != null)
+        try
         {
-            await OpenOrderDetails(ord);
+            var ord = _orders.FirstOrDefault(o => o.Id == loan.OrderId) ?? await MaterialService.GetOrderDetailsAsync(loan.OrderId);
+            if (ord != null)
+            {
+                await OpenOrderDetails(ord);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to load order from loan: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -155,26 +185,53 @@ public partial class MarketplaceOperationsPage : ComponentBase
             ValidUntil = _quoteValidUntil.HasValue ? new DateTimeOffset(_quoteValidUntil.Value) : DateTimeOffset.UtcNow.AddDays(7)
         };
 
-        await MaterialService.IssueOrderQuotationAsync(req);
-        _quotationModalOrder = null;
-        await LoadQueueDataAsync();
+        try
+        {
+            await MaterialService.IssueOrderQuotationAsync(req);
+            _quotationModalOrder = null;
+            ShowToast("Quotation issued successfully.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to issue quotation: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task RejectOrder(MaterialOrder order)
     {
-        await MaterialService.ReviewMaterialOrderAsync(new ReviewOrderRequest
+        try
         {
-            OrderId = order.Id,
-            Approve = false,
-            RejectionReason = "Item or rental capacity unavailable for selected dates."
-        });
-        await LoadQueueDataAsync();
+            await MaterialService.ReviewMaterialOrderAsync(new ReviewOrderRequest
+            {
+                OrderId = order.Id,
+                Approve = false,
+                RejectionReason = "Item or rental capacity unavailable for selected dates."
+            });
+            ShowToast($"Order {order.OrderNumber} rejected.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to reject order: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task ApproveOrderDirectly(MaterialOrder order)
     {
-        await MaterialService.ApproveAndConfirmMaterialOrderAsync(order.Id);
-        await LoadQueueDataAsync();
+        try
+        {
+            await MaterialService.ApproveAndConfirmMaterialOrderAsync(order.Id);
+            ShowToast($"Order {order.OrderNumber} confirmed.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to approve order: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenManualPaymentModal(MaterialOrder order)
@@ -190,17 +247,26 @@ public partial class MarketplaceOperationsPage : ComponentBase
     {
         if (_manualPaymentOrder == null) return;
 
-        await MaterialService.RecordManualMaterialPaymentAsync(new RecordManualOrderPaymentRequest
+        try
         {
-            OrderId = _manualPaymentOrder.Id,
-            Amount = _manualPaymentAmount,
-            PaymentMethod = _manualPaymentMethod,
-            ReceiptNumber = _manualReceiptNumber,
-            Notes = _manualPaymentNotes
-        });
+            await MaterialService.RecordManualMaterialPaymentAsync(new RecordManualOrderPaymentRequest
+            {
+                OrderId = _manualPaymentOrder.Id,
+                Amount = _manualPaymentAmount,
+                PaymentMethod = _manualPaymentMethod,
+                ReceiptNumber = _manualReceiptNumber,
+                Notes = _manualPaymentNotes
+            });
 
-        _manualPaymentOrder = null;
-        await LoadQueueDataAsync();
+            _manualPaymentOrder = null;
+            ShowToast("Payment recorded successfully.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to record payment: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task AllocateStock(MaterialOrder order)
@@ -210,16 +276,20 @@ public partial class MarketplaceOperationsPage : ComponentBase
         try
         {
             await MaterialService.AllocateStockAndPrepareOrderAsync(order.Id);
+            ShowToast($"Stock allocated for {order.OrderNumber}.", isError: false);
             await LoadQueueDataAsync();
         }
         catch (InvalidOperationException ex)
         {
             _operationErrorMessage = ex.Message;
             _insufficientStockOrder = order;
+            ShowToast(ex.Message, isError: true);
         }
         catch (Exception ex)
         {
             _operationErrorMessage = ex.Message;
+            ShowToast($"Stock allocation failed: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -256,11 +326,14 @@ public partial class MarketplaceOperationsPage : ComponentBase
             await MaterialService.AllocateStockAndPrepareOrderAsync(_insufficientStockOrder.Id);
             _insufficientStockOrder = null;
             _operationErrorMessage = null;
+            ShowToast("Replenished and allocated successfully.", isError: false);
             await LoadQueueDataAsync();
         }
         catch (Exception ex)
         {
             _operationErrorMessage = $"Quick replenish failed: {ex.Message}";
+            ShowToast(_operationErrorMessage, isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
         }
     }
 
@@ -277,34 +350,61 @@ public partial class MarketplaceOperationsPage : ComponentBase
     {
         if (_dispatchOrder == null) return;
 
-        await MaterialService.DispatchOrderShipmentAsync(new DispatchShipmentRequest
+        try
         {
-            OrderId = _dispatchOrder.Id,
-            CarrierName = _dispatchCarrier,
-            TrackingReference = _dispatchTrackingNumber,
-            EstimatedDeliveryDate = _dispatchEstDelivery.HasValue ? new DateTimeOffset(_dispatchEstDelivery.Value) : DateTimeOffset.UtcNow.AddDays(2),
-            DispatchNotes = _dispatchNotes
-        });
+            await MaterialService.DispatchOrderShipmentAsync(new DispatchShipmentRequest
+            {
+                OrderId = _dispatchOrder.Id,
+                CarrierName = _dispatchCarrier,
+                TrackingReference = _dispatchTrackingNumber,
+                EstimatedDeliveryDate = _dispatchEstDelivery.HasValue ? new DateTimeOffset(_dispatchEstDelivery.Value) : DateTimeOffset.UtcNow.AddDays(2),
+                DispatchNotes = _dispatchNotes
+            });
 
-        _dispatchOrder = null;
-        await LoadQueueDataAsync();
+            _dispatchOrder = null;
+            ShowToast("Shipment dispatched successfully.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to dispatch shipment: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task MarkDelivered(MaterialOrder order)
     {
-        await MaterialService.ConfirmDeliveryReceiptAsync(new ConfirmDeliveryReceiptRequest
+        try
         {
-            OrderId = order.Id,
-            IsDeliveredSuccessfully = true,
-            Notes = "Carrier delivery update recorded by Platform Operations"
-        });
-        await LoadQueueDataAsync();
+            await MaterialService.ConfirmDeliveryReceiptAsync(new ConfirmDeliveryReceiptRequest
+            {
+                OrderId = order.Id,
+                IsDeliveredSuccessfully = true,
+                Notes = "Carrier delivery update recorded by Platform Operations"
+            });
+            ShowToast($"Order {order.OrderNumber} marked as delivered.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to mark delivered: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task ReceiveReturnAtWarehouse(MaterialLoan loan)
     {
-        await MaterialService.ReceiveLoanReturnAtWarehouseAsync(loan.Id, loan.QuantityIssued, "Package received at central intake dock");
-        await LoadQueueDataAsync();
+        try
+        {
+            await MaterialService.ReceiveLoanReturnAtWarehouseAsync(loan.Id, loan.QuantityIssued, "Package received at central intake dock");
+            ShowToast("Loan package checked in at warehouse dock.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to receive return: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenInspectionModal(MaterialLoan loan)
@@ -324,21 +424,30 @@ public partial class MarketplaceOperationsPage : ComponentBase
     {
         if (_inspectionLoan == null) return;
 
-        await MaterialService.CompleteReturnInspectionAsync(new CompleteReturnInspectionRequest
+        try
         {
-            LoanId = _inspectionLoan.Id,
-            ReturnedQuantity = _inspectionLoan.QuantityIssued,
-            Condition = _inspectCondition,
-            QuantityApprovedForStock = _inspectApprovedQty,
-            QuantityRequiringCleaning = _inspectCleaningQty,
-            QuantityDamaged = _inspectDamagedQty,
-            QuantityMissing = _inspectMissingQty,
-            DepositDisposition = _inspectDepositDisposition,
-            DepositDeductionAmount = _inspectDeductionAmount,
-            InspectionNotes = _inspectNotes
-        });
+            await MaterialService.CompleteReturnInspectionAsync(new CompleteReturnInspectionRequest
+            {
+                LoanId = _inspectionLoan.Id,
+                ReturnedQuantity = _inspectionLoan.QuantityIssued,
+                Condition = _inspectCondition,
+                QuantityApprovedForStock = _inspectApprovedQty,
+                QuantityRequiringCleaning = _inspectCleaningQty,
+                QuantityDamaged = _inspectDamagedQty,
+                QuantityMissing = _inspectMissingQty,
+                DepositDisposition = _inspectDepositDisposition,
+                DepositDeductionAmount = _inspectDeductionAmount,
+                InspectionNotes = _inspectNotes
+            });
 
-        _inspectionLoan = null;
-        await LoadQueueDataAsync();
+            _inspectionLoan = null;
+            ShowToast("Inspection logged and stock balances updated.", isError: false);
+            await LoadQueueDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to complete inspection: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 }

@@ -13,6 +13,7 @@
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 
 @* <PageTopbar Breadcrumb="Little Stars Daycare / Experiences" Title="Experiences">
     <RightContent>
@@ -174,13 +175,30 @@
     // History & Compare
     private List<ExperienceVersion>? _versions;
     private bool _hideHistoryDialog = true;
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
 
     private async Task OpenHistoryDialog()
     {
         CloseViewDialog();
-        var vlist = await ExperienceService.GetExperienceHistoryAsync(_currentExperience!.Id);
-        _versions = vlist.ToList();
-        _hideHistoryDialog = false;
+        try
+        {
+            var vlist = await ExperienceService.GetExperienceHistoryAsync(_currentExperience!.Id);
+            _versions = vlist.ToList();
+            _hideHistoryDialog = false;
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to load version history: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void CloseHistoryDialog()
@@ -208,16 +226,25 @@
 
     private async Task DuplicateExperience()
     {
-        var sourceExp = _currentExperience;
-        await ExperienceService.CreateExperienceAsync(
-            sourceExp.Title + " (Copy)",
-            sourceExp.Description ?? "",
-            sourceExp.DnaPayload ?? "{}",
-            _defaultUserId,
-            "Idea"
-        );
-        await LoadExperiencesAsync();
-        CloseViewDialog();
+        try
+        {
+            var sourceExp = _currentExperience;
+            await ExperienceService.CreateExperienceAsync(
+                sourceExp.Title + " (Copy)",
+                sourceExp.Description ?? "",
+                sourceExp.DnaPayload ?? "{}",
+                _defaultUserId,
+                "Idea"
+            );
+            ShowToast("Experience duplicated successfully.", isError: false);
+            await LoadExperiencesAsync();
+            CloseViewDialog();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to duplicate experience: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private bool _isScheduleModalOpen = false;
@@ -248,13 +275,26 @@
 
     private async Task SaveScheduleAsync()
     {
-        var classrooms = await ClassroomRepository.GetAllAsync(TenantContext.TenantId);
-        var classroom = classrooms.FirstOrDefault();
-        if (classroom != null)
+        try
         {
-            await PlannerService.ScheduleExperienceAsync(_currentExperience.Id, classroom.Id, DateOnly.FromDateTime(_scheduleDate), _scheduleTimeOfDay);
+            var classrooms = await ClassroomRepository.GetAllAsync(TenantContext.TenantId);
+            var classroom = classrooms.FirstOrDefault();
+            if (classroom != null)
+            {
+                await PlannerService.ScheduleExperienceAsync(_currentExperience.Id, classroom.Id, DateOnly.FromDateTime(_scheduleDate), _scheduleTimeOfDay);
+                ShowToast("Experience scheduled successfully.", isError: false);
+            }
+            else
+            {
+                ShowToast("No classroom available to schedule.", isError: true);
+            }
+            _isScheduleModalOpen = false;
         }
-        _isScheduleModalOpen = false;
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to schedule experience: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void CloseViewDialog()
@@ -285,7 +325,15 @@
 
     private async Task LoadExperiencesAsync()
     {
-        _experiences = await ExperienceService.GetExperiencesAsync();
+        try
+        {
+            _experiences = await ExperienceService.GetExperiencesAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to load experiences: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private void OpenAddExperienceModal()
@@ -324,40 +372,73 @@
 
     private async Task SaveExperienceAsync()
     {
-        if (string.IsNullOrWhiteSpace(_currentExperience.Title)) return;
-
-        if (_isEditing)
+        if (string.IsNullOrWhiteSpace(_currentExperience.Title))
         {
-            await ExperienceService.UpdateExperienceAsync(
-                _currentExperience.Id,
-                _currentExperience.Title,
-                _currentExperience.Description ?? "",
-                _currentExperience.DnaPayload ?? "{}",
-                _currentExperience.Status ?? "Idea",
-                "Manual Update",
-                _defaultUserId);
-        }
-        else
-        {
-            await ExperienceService.CreateExperienceAsync(
-                _currentExperience.Title,
-                _currentExperience.Description ?? "",
-                _currentExperience.DnaPayload ?? "{}",
-                _defaultUserId,
-                _currentExperience.Status);
+            ShowToast("Experience title is required.", isError: true);
+            return;
         }
 
-        await LoadExperiencesAsync();
-        CloseDialog();
+        try
+        {
+            if (_isEditing)
+            {
+                await ExperienceService.UpdateExperienceAsync(
+                    _currentExperience.Id,
+                    _currentExperience.Title,
+                    _currentExperience.Description ?? "",
+                    _currentExperience.DnaPayload ?? "{}",
+                    _currentExperience.Status ?? "Idea",
+                    "Manual Update",
+                    _defaultUserId);
+                ShowToast("Experience updated successfully.", isError: false);
+            }
+            else
+            {
+                await ExperienceService.CreateExperienceAsync(
+                    _currentExperience.Title,
+                    _currentExperience.Description ?? "",
+                    _currentExperience.DnaPayload ?? "{}",
+                    _defaultUserId,
+                    _currentExperience.Status);
+                ShowToast($"Experience '{_currentExperience.Title}' created successfully.", isError: false);
+            }
+
+            await LoadExperiencesAsync();
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to save experience: {ex.Message}", isError: true);
+            await NotificationService.HandleExceptionAsync(ex);
+        }
     }
 
     private async Task DeleteExperienceAsync()
     {
         if (_currentExperience.Id != Guid.Empty)
         {
-            await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);
-            await LoadExperiencesAsync();
-            CloseDialog();
+            try
+            {
+                await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);
+                ShowToast("Experience removed.", isError: false);
+                await LoadExperiencesAsync();
+                CloseDialog();
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Failed to delete experience: {ex.Message}", isError: true);
+                await NotificationService.HandleExceptionAsync(ex);
+            }
         }
     }
+}
+
+<!-- FLOATING TOAST NOTIFICATION -->
+@if (!string.IsNullOrEmpty(_toastMessage))
+{
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 10000; background: @(_toastIsError ? "#782828" : "#263a32"); color: white; padding: 14px 20px; border-radius: 0px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 13px; border: 1px solid @(_toastIsError ? "#a83232" : "#3e6253"); max-width: 480px;">
+        <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
+        <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
+        <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
 }
