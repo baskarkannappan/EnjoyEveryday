@@ -1,17 +1,21 @@
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.UI.Shared.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
 namespace EnjoyEveryday.Admin.Web.Components.Pages.Billing;
 
-public partial class BillingPage : ComponentBase
+public partial class BillingPage : ComponentBase, IDisposable
 {
     [Inject]
     private IBillingService BillingService { get; set; } = default!;
 
     [Inject]
     private IPlatformAdminService PlatformService { get; set; } = default!;
+
+    [Inject]
+    private IAppNotificationService NotificationService { get; set; } = default!;
 
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
@@ -24,6 +28,74 @@ public partial class BillingPage : ComponentBase
     private string _activeTab = "All";
     private bool _isLoading = true;
     private string? _statusNotification;
+    private string? _toastMessage;
+    private bool _toastIsError;
+    private CancellationTokenSource? _toastCts;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        _statusNotification = message;
+
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+        _toastCts = new CancellationTokenSource();
+        var token = _toastCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(6000, token);
+                if (!token.IsCancellationRequested)
+                {
+                    await InvokeAsync(() =>
+                    {
+                        if (_toastMessage == message)
+                        {
+                            _toastMessage = null;
+                            StateHasChanged();
+                        }
+                    });
+                }
+            }
+            catch (TaskCanceledException) { }
+        }, token);
+
+        StateHasChanged();
+    }
+
+    private async Task HandleErrorAsync(Exception ex, string? fallback = null)
+    {
+        try
+        {
+            await NotificationService.HandleExceptionAsync(ex, fallback);
+        }
+        catch
+        {
+            // Deterministic local toast handles display
+        }
+
+        var actualEx = ex is AggregateException agg && agg.InnerExceptions.Count == 1
+            ? agg.InnerExceptions[0]
+            : ex;
+
+        while (actualEx.InnerException != null &&
+               !(actualEx is InvalidOperationException || actualEx is KeyNotFoundException || actualEx is UnauthorizedAccessException || actualEx is ArgumentException))
+        {
+            actualEx = actualEx.InnerException;
+        }
+
+        var message = !string.IsNullOrWhiteSpace(actualEx.Message) ? actualEx.Message : (fallback ?? "An unexpected error occurred.");
+        ShowToast(message, isError: true);
+    }
+
+    public void Dispose()
+    {
+        _toastCts?.Cancel();
+        _toastCts?.Dispose();
+    }
 
     // Create / Edit modal state
     private bool _showInvoiceModal = false;
@@ -103,6 +175,10 @@ public partial class BillingPage : ComponentBase
                 _currentBillingSettings = await BillingService.GetBillingSettingsAsync(_selectedOrgId.Value);
             }
         }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Failed to load billing records.");
+        }
         finally
         {
             _isLoading = false;
@@ -149,16 +225,23 @@ public partial class BillingPage : ComponentBase
 
     private async Task OnOrganizationChanged(ChangeEventArgs e)
     {
-        var val = e.Value?.ToString();
-        if (Guid.TryParse(val, out var parsed))
+        try
         {
-            _selectedOrgId = parsed;
-            _currentBillingSettings = await BillingService.GetBillingSettingsAsync(parsed);
+            var val = e.Value?.ToString();
+            if (Guid.TryParse(val, out var parsed))
+            {
+                _selectedOrgId = parsed;
+                _currentBillingSettings = await BillingService.GetBillingSettingsAsync(parsed);
+            }
+            else
+            {
+                _selectedOrgId = null;
+                _currentBillingSettings = null;
+            }
         }
-        else
+        catch (Exception ex)
         {
-            _selectedOrgId = null;
-            _currentBillingSettings = null;
+            await HandleErrorAsync(ex, "Failed to switch organization.");
         }
     }
 
@@ -208,7 +291,7 @@ public partial class BillingPage : ComponentBase
             {
                 Description = inv.Description ?? "Platform Fee",
                 Quantity = 1,
-                UnitPrice = inv.Subtotal,
+                UnitPrice = inv.Subtotal > 0 ? inv.Subtotal : 299.00m,
                 Category = "Subscription"
             });
         }
@@ -236,7 +319,13 @@ public partial class BillingPage : ComponentBase
     {
         if (!_editingInvoiceId.HasValue && _invoiceOrgId == Guid.Empty)
         {
-            _statusNotification = "Please select a target daycare organization.";
+            ShowToast("Please select a target daycare organization.", isError: true);
+            return;
+        }
+
+        if (!_lineItems.Any())
+        {
+            ShowToast("An invoice must contain at least one line item.", isError: true);
             return;
         }
 
@@ -254,7 +343,7 @@ public partial class BillingPage : ComponentBase
                     TaxRatePercentage = _invoiceTaxRate,
                     LineItems = _lineItems
                 });
-                _statusNotification = "Draft invoice successfully updated.";
+                ShowToast("Draft invoice successfully updated.", isError: false);
             }
             else
             {
@@ -269,7 +358,7 @@ public partial class BillingPage : ComponentBase
                     TaxRatePercentage = _invoiceTaxRate,
                     LineItems = _lineItems
                 });
-                _statusNotification = $"Draft invoice {inv.InvoiceNumber} created successfully.";
+                ShowToast($"Draft invoice {inv.InvoiceNumber} created successfully.", isError: false);
             }
 
             CloseModals();
@@ -277,7 +366,7 @@ public partial class BillingPage : ComponentBase
         }
         catch (Exception ex)
         {
-            _statusNotification = $"Error saving invoice: {ex.Message}";
+            await HandleErrorAsync(ex, "Error saving invoice.");
         }
     }
 
@@ -285,7 +374,13 @@ public partial class BillingPage : ComponentBase
     {
         if (!_editingInvoiceId.HasValue && _invoiceOrgId == Guid.Empty)
         {
-            _statusNotification = "Please select a target daycare organization.";
+            ShowToast("Please select a target daycare organization.", isError: true);
+            return;
+        }
+
+        if (!_lineItems.Any())
+        {
+            ShowToast("An invoice must contain at least one line item before publishing.", isError: true);
             return;
         }
 
@@ -321,21 +416,35 @@ public partial class BillingPage : ComponentBase
             }
 
             await BillingService.PublishInvoiceAsync(inv.Id);
-            _statusNotification = $"Invoice {inv.InvoiceNumber} published and available to the daycare organization.";
+            ShowToast($"Invoice {inv.InvoiceNumber} published and available to the daycare organization.", isError: false);
             CloseModals();
             await LoadDataAsync();
         }
         catch (Exception ex)
         {
-            _statusNotification = $"Error publishing invoice: {ex.Message}";
+            await HandleErrorAsync(ex, "Error publishing invoice.");
         }
     }
 
     private async Task PublishInvoice(Guid invoiceId)
     {
-        var inv = await BillingService.PublishInvoiceAsync(invoiceId);
-        _statusNotification = $"Invoice {inv.InvoiceNumber} successfully published.";
-        await LoadDataAsync();
+        try
+        {
+            var targetInvoice = _allInvoices.FirstOrDefault(i => i.Id == invoiceId);
+            if (targetInvoice != null && !targetInvoice.LineItems.Any())
+            {
+                ShowToast("An invoice must contain at least one line item before publishing. Please edit the draft to add line items.", isError: true);
+                return;
+            }
+
+            var inv = await BillingService.PublishInvoiceAsync(invoiceId);
+            ShowToast($"Invoice {inv.InvoiceNumber} successfully published.", isError: false);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Failed to publish invoice.");
+        }
     }
 
     private void OpenRecordPaymentModal(Invoice inv)
@@ -353,19 +462,26 @@ public partial class BillingPage : ComponentBase
     {
         if (_selectedInvoiceForAction == null) return;
 
-        var payment = await BillingService.RecordPaymentAsync(new RecordPaymentRequest
+        try
         {
-            InvoiceId = _selectedInvoiceForAction.Id,
-            Amount = _paymentAmount,
-            PaymentMethod = _paymentMethod,
-            PaymentReference = _paymentReference,
-            PaymentDate = DateTime.SpecifyKind(_paymentDate, DateTimeKind.Utc),
-            Notes = _paymentNotes
-        });
+            var payment = await BillingService.RecordPaymentAsync(new RecordPaymentRequest
+            {
+                InvoiceId = _selectedInvoiceForAction.Id,
+                Amount = _paymentAmount,
+                PaymentMethod = _paymentMethod,
+                PaymentReference = _paymentReference,
+                PaymentDate = DateTime.SpecifyKind(_paymentDate, DateTimeKind.Utc),
+                Notes = _paymentNotes
+            });
 
-        _statusNotification = $"Payment of {payment.Amount:C2} ({payment.PaymentReference}) recorded successfully.";
-        CloseModals();
-        await LoadDataAsync();
+            ShowToast($"Payment of {payment.Amount:C2} ({payment.PaymentReference}) recorded successfully.", isError: false);
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error recording payment.");
+        }
     }
 
     private void OpenVoidModal(Invoice inv)
@@ -379,10 +495,17 @@ public partial class BillingPage : ComponentBase
     {
         if (_selectedInvoiceForAction == null) return;
 
-        await BillingService.VoidInvoiceAsync(_selectedInvoiceForAction.Id, _voidReason);
-        _statusNotification = $"Invoice {_selectedInvoiceForAction.InvoiceNumber} has been voided.";
-        CloseModals();
-        await LoadDataAsync();
+        try
+        {
+            await BillingService.VoidInvoiceAsync(_selectedInvoiceForAction.Id, _voidReason);
+            ShowToast($"Invoice {_selectedInvoiceForAction.InvoiceNumber} has been voided.", isError: false);
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error voiding invoice.");
+        }
     }
 
     private void OpenBillingSettingsModal()
@@ -401,32 +524,53 @@ public partial class BillingPage : ComponentBase
     {
         if (!_selectedOrgId.HasValue) return;
 
-        _currentBillingSettings = await BillingService.UpdateBillingModeAsync(new UpdateBillingModeRequest
+        try
         {
-            OrganizationId = _selectedOrgId.Value,
-            Mode = _targetBillingMode,
-            Frequency = _targetFrequency,
-            EffectiveDate = DateTime.SpecifyKind(_targetEffectiveDate, DateTimeKind.Utc),
-            Reason = _billingSettingsReason
-        });
+            _currentBillingSettings = await BillingService.UpdateBillingModeAsync(new UpdateBillingModeRequest
+            {
+                OrganizationId = _selectedOrgId.Value,
+                Mode = _targetBillingMode,
+                Frequency = _targetFrequency,
+                EffectiveDate = DateTime.SpecifyKind(_targetEffectiveDate, DateTimeKind.Utc),
+                Reason = _billingSettingsReason
+            });
 
-        _statusNotification = $"Billing mode for {GetOrgName(_selectedOrgId.Value)} set to {_targetBillingMode}.";
-        CloseModals();
-        await LoadDataAsync();
+            ShowToast($"Billing mode for {GetOrgName(_selectedOrgId.Value)} set to {_targetBillingMode}.", isError: false);
+            CloseModals();
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error updating billing settings.");
+        }
     }
 
     private async Task RunScheduledBillingAsync()
     {
-        var runResult = await BillingService.ExecuteAutomaticBillingRunAsync(DateTimeOffset.UtcNow);
-        _statusNotification = $"Automatic Billing Run Completed: {runResult.GeneratedInvoices} invoice(s) generated for {runResult.ProcessedOrganizations} organization(s).";
-        await LoadDataAsync();
+        try
+        {
+            var runResult = await BillingService.ExecuteAutomaticBillingRunAsync(DateTimeOffset.UtcNow);
+            ShowToast($"Automatic Billing Run Completed: {runResult.GeneratedInvoices} invoice(s) generated for {runResult.ProcessedOrganizations} organization(s).", isError: false);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error running scheduled billing.");
+        }
     }
 
     private async Task OpenPreviewModal(Invoice inv)
     {
-        _selectedInvoiceForAction = inv;
-        _invoicePayments = await BillingService.GetInvoicePaymentsAsync(inv.Id);
-        _showPreviewModal = true;
+        try
+        {
+            _selectedInvoiceForAction = inv;
+            _invoicePayments = await BillingService.GetInvoicePaymentsAsync(inv.Id);
+            _showPreviewModal = true;
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error opening invoice preview.");
+        }
     }
 
     private void OpenRecordCashModal(Invoice inv)
@@ -455,13 +599,13 @@ public partial class BillingPage : ComponentBase
                 Notes = _cashNotes
             });
 
-            _statusNotification = $"Cash payment of {payment.Amount:C2} (Receipt #{payment.ReceiptNumber}) recorded successfully.";
+            ShowToast($"Cash payment of {payment.Amount:C2} (Receipt #{payment.ReceiptNumber}) recorded successfully.", isError: false);
             CloseModals();
             await LoadDataAsync();
         }
         catch (Exception ex)
         {
-            _statusNotification = $"Error recording cash payment: {ex.Message}";
+            await HandleErrorAsync(ex, "Error recording cash payment.");
         }
     }
 
@@ -483,19 +627,26 @@ public partial class BillingPage : ComponentBase
                 PaymentId = _selectedPaymentForReversal.Id,
                 Reason = _reversalReason
             });
-            _statusNotification = $"Payment {_selectedPaymentForReversal.PaymentReference} reversed. Balance restored.";
+            ShowToast($"Payment {_selectedPaymentForReversal.PaymentReference} reversed. Balance restored.", isError: false);
             CloseModals();
             await LoadDataAsync();
         }
         catch (Exception ex)
         {
-            _statusNotification = $"Error reversing payment: {ex.Message}";
+            await HandleErrorAsync(ex, "Error reversing payment.");
         }
     }
 
     private async Task PrintInvoice()
     {
-        await JS.InvokeVoidAsync("window.print");
+        try
+        {
+            await JS.InvokeVoidAsync("window.print");
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Failed to initiate print.");
+        }
     }
 
     private void CloseModals()

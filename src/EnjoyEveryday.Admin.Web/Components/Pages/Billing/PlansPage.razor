@@ -19,8 +19,8 @@
 
     @if (!string.IsNullOrEmpty(_notificationMessage))
     {
-        <div class="alert-banner">
-            <span>✓ @_notificationMessage</span>
+        <div class="alert-banner" style="@(_isNotificationError ? "background: #fff5f5; border-color: #fed7d7; color: #9b2c2c;" : "")">
+            <span>@(_isNotificationError ? "⚠️" : "✓") @_notificationMessage</span>
             <button class="close-alert" @onclick="() => _notificationMessage = null">✕</button>
         </div>
     }
@@ -348,6 +348,7 @@
     private BillingFrequency _newTariffFrequency = BillingFrequency.Monthly;
     private decimal _newTariffPrice = 199.00m;
     private decimal _newTariffDiscount = 0;
+    private bool _isNotificationError = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -356,10 +357,18 @@
 
     private async Task LoadPlansAsync()
     {
-        _plans = await PlatformService.GetPlansAsync(includeInactive: true);
-        if (_selectedPlan != null)
+        try
         {
-            _selectedPlan = _plans.FirstOrDefault(p => p.Id == _selectedPlan.Id);
+            _plans = await PlatformService.GetPlansAsync(includeInactive: true);
+            if (_selectedPlan != null)
+            {
+                _selectedPlan = _plans.FirstOrDefault(p => p.Id == _selectedPlan.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to load plans: {ex.Message}";
+            _isNotificationError = true;
         }
     }
 
@@ -410,52 +419,97 @@
     private async Task SubmitCreatePlan()
     {
         if (string.IsNullOrWhiteSpace(_newPlanName) || string.IsNullOrWhiteSpace(_newPlanCode) || _newPlanBasePrice <= 0) return;
-        var p = await PlatformService.CreatePlanAsync(
-            _newPlanName, _newPlanCode, _newPlanDescription, _newPlanBasePrice,
-            _newPlanBranches, _newPlanClassrooms, _newPlanChildren, _newPlanIncludesAi);
-        _notificationMessage = $"Plan '{p.Name}' ({p.Code}) created successfully.";
-        CloseModals();
-        await LoadPlansAsync();
+        try
+        {
+            var p = await PlatformService.CreatePlanAsync(
+                _newPlanName, _newPlanCode, _newPlanDescription, _newPlanBasePrice,
+                _newPlanBranches, _newPlanClassrooms, _newPlanChildren, _newPlanIncludesAi);
+            _notificationMessage = $"Plan '{p.Name}' ({p.Code}) created successfully.";
+            _isNotificationError = false;
+            CloseModals();
+            await LoadPlansAsync();
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to create plan: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task SubmitEditPlan()
     {
         if (_selectedPlan == null || string.IsNullOrWhiteSpace(_editPlanName) || _editPlanBasePrice <= 0) return;
-        var ok = await PlatformService.UpdatePlanAsync(
-            _selectedPlan.Id, _editPlanName, _editPlanDescription, _editPlanBasePrice,
-            _editPlanBranches, _editPlanClassrooms, _editPlanChildren, _editPlanIncludesAi);
-        if (ok)
+        try
         {
-            _notificationMessage = $"Plan '{_editPlanName}' updated successfully.";
+            var ok = await PlatformService.UpdatePlanAsync(
+                _selectedPlan.Id, _editPlanName, _editPlanDescription, _editPlanBasePrice,
+                _editPlanBranches, _editPlanClassrooms, _editPlanChildren, _editPlanIncludesAi);
+            if (ok)
+            {
+                _notificationMessage = $"Plan '{_editPlanName}' updated successfully.";
+                _isNotificationError = false;
+            }
+            CloseModals();
+            await LoadPlansAsync();
         }
-        CloseModals();
-        await LoadPlansAsync();
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to update plan: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task DeactivatePlan(SubscriptionPlan plan)
     {
-        var ok = await PlatformService.DeactivatePlanAsync(plan.Id);
-        if (ok)
+        try
         {
-            _notificationMessage = $"Plan '{plan.Name}' archived.";
+            var ok = await PlatformService.DeactivatePlanAsync(plan.Id);
+            if (ok)
+            {
+                _notificationMessage = $"Plan '{plan.Name}' archived.";
+                _isNotificationError = false;
+            }
+            await LoadPlansAsync();
         }
-        await LoadPlansAsync();
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to archive plan: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task SubmitCreateTariff()
     {
         if (_selectedPlan == null || string.IsNullOrWhiteSpace(_newTariffName) || _newTariffPrice <= 0) return;
-        await PlatformService.CreateTariffAsync(
-            _selectedPlan.Id, _newTariffName, _newTariffFrequency, _newTariffPrice, _newTariffDiscount);
-        _newTariffName = "";
-        _notificationMessage = "New tariff schedule added.";
-        await LoadPlansAsync();
+        try
+        {
+            await PlatformService.CreateTariffAsync(
+                _selectedPlan.Id, _newTariffName, _newTariffFrequency, _newTariffPrice, _newTariffDiscount);
+            _newTariffName = "";
+            _notificationMessage = "New tariff schedule added.";
+            _isNotificationError = false;
+            await LoadPlansAsync();
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to add tariff: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 
     private async Task DeactivateTariff(Guid tariffId)
     {
-        await PlatformService.DeactivateTariffAsync(tariffId);
-        _notificationMessage = "Tariff deactivated.";
-        await LoadPlansAsync();
+        try
+        {
+            await PlatformService.DeactivateTariffAsync(tariffId);
+            _notificationMessage = "Tariff deactivated.";
+            _isNotificationError = false;
+            await LoadPlansAsync();
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to deactivate tariff: {ex.Message}";
+            _isNotificationError = true;
+        }
     }
 }

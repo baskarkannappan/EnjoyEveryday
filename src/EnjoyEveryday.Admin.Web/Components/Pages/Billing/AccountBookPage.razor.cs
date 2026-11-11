@@ -32,6 +32,16 @@ public partial class AccountBookPage : ComponentBase
     private string _cashReceiptNumber = "RCPT-202610-842";
     private string _cashNotes = "Cash paid at central office counter";
 
+    private string? _toastMessage;
+    private bool _toastIsError;
+
+    private void ShowToast(string message, bool isError = false)
+    {
+        _toastMessage = message;
+        _toastIsError = isError;
+        StateHasChanged();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await LoadDataAsync();
@@ -47,7 +57,7 @@ public partial class AccountBookPage : ComponentBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading account book: {ex.Message}");
+            ShowToast($"Error loading account book: {ex.Message}", isError: true);
         }
         finally
         {
@@ -63,11 +73,18 @@ public partial class AccountBookPage : ComponentBase
 
     private async Task ApplyFilters()
     {
-        _transactions = await AccountBookService.GetUnifiedLedgerAsync(
-            activeTab: _activeTab,
-            categoryFilter: _categoryFilter,
-            statusFilter: _statusFilter,
-            searchQuery: _searchQuery);
+        try
+        {
+            _transactions = await AccountBookService.GetUnifiedLedgerAsync(
+                activeTab: _activeTab,
+                categoryFilter: _categoryFilter,
+                statusFilter: _statusFilter,
+                searchQuery: _searchQuery);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to apply filters: {ex.Message}", isError: true);
+        }
     }
 
     private async Task ClearSearch()
@@ -87,8 +104,15 @@ public partial class AccountBookPage : ComponentBase
 
     private async Task OpenInvestigation(string reference)
     {
-        _newInvestigationNote = "";
-        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(reference);
+        try
+        {
+            _newInvestigationNote = "";
+            _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(reference);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to open investigation: {ex.Message}", isError: true);
+        }
     }
 
     private void CloseInvestigation()
@@ -100,36 +124,68 @@ public partial class AccountBookPage : ComponentBase
     {
         if (_investigationItem == null || string.IsNullOrWhiteSpace(_newInvestigationNote)) return;
 
-        await AccountBookService.AddInvestigationNoteAsync(_investigationItem.Transaction.Reference, _newInvestigationNote);
-        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
-        _newInvestigationNote = "";
+        try
+        {
+            await AccountBookService.AddInvestigationNoteAsync(_investigationItem.Transaction.Reference, _newInvestigationNote);
+            _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+            _newInvestigationNote = "";
+            ShowToast("Note added successfully.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to add note: {ex.Message}", isError: true);
+        }
     }
 
     private async Task VerifyCurrentTransaction()
     {
         if (_investigationItem == null) return;
 
-        await AccountBookService.VerifyAndReconcileTransactionAsync(_investigationItem.Transaction.Reference, "Manually verified by Platform Admin");
-        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
-        await LoadDataAsync();
+        try
+        {
+            await AccountBookService.VerifyAndReconcileTransactionAsync(_investigationItem.Transaction.Reference, "Manually verified by Platform Admin");
+            _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+            ShowToast("Transaction verified and reconciled.", isError: false);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Verification failed: {ex.Message}", isError: true);
+        }
     }
 
     private async Task ReleaseCurrentDeposit()
     {
         if (_investigationItem == null) return;
 
-        await AccountBookService.ReleaseDepositAsync(_investigationItem.Transaction.Reference, _investigationItem.ExpectedAmount, "Kit returned in good condition. Security deposit refunded in full.");
-        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
-        await LoadDataAsync();
+        try
+        {
+            await AccountBookService.ReleaseDepositAsync(_investigationItem.Transaction.Reference, _investigationItem.ExpectedAmount, "Kit returned in good condition. Security deposit refunded in full.");
+            _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+            ShowToast("Security deposit released.", isError: false);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Release failed: {ex.Message}", isError: true);
+        }
     }
 
     private async Task ReprocessCurrentRefund()
     {
         if (_investigationItem == null) return;
 
-        await AccountBookService.ProcessRefundAsync(_investigationItem.Transaction.Reference, _investigationItem.ExpectedAmount, "Refund reprocessed to verified destination bank account.");
-        _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
-        await LoadDataAsync();
+        try
+        {
+            await AccountBookService.ProcessRefundAsync(_investigationItem.Transaction.Reference, _investigationItem.ExpectedAmount, "Refund reprocessed to verified destination bank account.");
+            _investigationItem = await AccountBookService.GetInvestigationDetailsAsync(_investigationItem.Transaction.Reference);
+            ShowToast("Refund reprocessed successfully.", isError: false);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Refund reprocessing failed: {ex.Message}", isError: true);
+        }
     }
 
     private void OpenRecordCashModal()
@@ -143,17 +199,25 @@ public partial class AccountBookPage : ComponentBase
 
     private async Task SubmitCashPayment()
     {
-        await AccountBookService.RecordCashReceiptAsync(new RecordManualCashReceiptCommand
+        try
         {
-            TransactionReference = _cashRef,
-            Amount = _cashAmount,
-            ReceiptNumber = _cashReceiptNumber,
-            Notes = _cashNotes
-        });
+            await AccountBookService.RecordCashReceiptAsync(new RecordManualCashReceiptCommand
+            {
+                TransactionReference = _cashRef,
+                Amount = _cashAmount,
+                ReceiptNumber = _cashReceiptNumber,
+                Notes = _cashNotes
+            });
 
-        _isRecordCashModalOpen = false;
-        await LoadDataAsync();
-        await OpenInvestigation(_cashRef);
+            _isRecordCashModalOpen = false;
+            ShowToast("Cash payment recorded successfully.", isError: false);
+            await LoadDataAsync();
+            await OpenInvestigation(_cashRef);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Failed to record cash payment: {ex.Message}", isError: true);
+        }
     }
 
     private string GetFormattedAmount(AccountBookTransactionDto tx)
