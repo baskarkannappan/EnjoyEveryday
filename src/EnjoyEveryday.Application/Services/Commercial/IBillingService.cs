@@ -111,6 +111,16 @@ public class AutomaticBillingRunResult
     public List<string> Errors { get; set; } = new();
 }
 
+public class TuitionBillingRunResult
+{
+    public int ProcessedContracts { get; set; }
+    public int InvoicesGenerated { get; set; }
+    public int SkippedExisting { get; set; }
+    public int Errors { get; set; }
+    public decimal TotalAmountBilled { get; set; }
+    public List<string> ErrorDetails { get; set; } = new();
+}
+
 public interface IBillingService
 {
     Task<Invoice> CreateDraftInvoiceAsync(CreateDraftInvoiceRequest request, CancellationToken ct = default);
@@ -133,4 +143,5 @@ public interface IBillingService
     Task<OrganizationBillingSettings> GetBillingSettingsAsync(Guid organizationId, CancellationToken ct = default);
     Task<OrganizationBillingSettings> UpdateBillingModeAsync(UpdateBillingModeRequest request, CancellationToken ct = default);
     Task<AutomaticBillingRunResult> ExecuteAutomaticBillingRunAsync(DateTimeOffset asOfDate, CancellationToken ct = default);
+    Task<TuitionBillingRunResult> ExecuteMonthlyTuitionBillingRunAsync(Guid tenantId, DateTimeOffset asOfDate, Guid? branchId = null, CancellationToken ct = default);
 }

@@ -1,0 +1,215 @@
+@page "/consent/sign/{Token}"
+@page "/consent/document/{DocumentId:guid}"
+@rendermode InteractiveServer
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.SafetyTrust
+@inject IConsentService ConsentService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Electronic Consent Signing — EnjoyEveryday Parent Portal</PageTitle>
+
+<div class="content" style="max-width: 900px; margin: 0 auto; padding: 24px 20px 80px;">
+    <!-- Top Back Navigation -->
+    <div style="margin-bottom: 20px;">
+        <a href="/family" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-size: 13px; font-weight: 700;">
+            <span>← Back to Family Profile</span>
+        </a>
+    </div>
+
+    <div class="signing-container">
+        <ConsentSigningCard Session="@_session"
+                            IsLoading="@_isLoading"
+                            IsSubmitting="@_isSubmitting"
+                            IsSignedSuccess="@_isSignedSuccess"
+                            ErrorMessage="@_errorMessage"
+                            @bind-LegalIntentConfirmed="_legalIntentConfirmed"
+                            @bind-TypedLegalName="_typedLegalName"
+                            SelectedChoices="@_selectedChoices"
+                            OnChoiceChanged="HandleChoiceChanged"
+                            OnSubmitSignature="SubmitSignatureAsync"
+                            OnDeclineDocument="DeclineDocumentAsync" />
+    </div>
+
+    @if (_isSignedSuccess || (_session != null && _session.IsAlreadySigned))
+    {
+        <div style="margin-top: 24px; text-align: center;">
+            <a href="/family" class="btn primary" style="padding: 10px 24px; font-size: 14px; text-decoration: none;">
+                Return to Family &amp; Guardian Profile
+            </a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? Token { get; set; }
+
+    [Parameter]
+    public Guid? DocumentId { get; set; }
+
+    private bool _isLoading = true;
+    private bool _isSubmitting = false;
+    private bool _isSignedSuccess = false;
+    private string? _errorMessage;
+
+    private ParentSigningSession? _session;
+    private bool _legalIntentConfirmed = false;
+    private string _typedLegalName = string.Empty;
+    private Dictionary<string, string> _selectedChoices = new();
+    private string _effectiveToken = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadSessionAsync();
+    }
+
+    private async Task LoadSessionAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(Token))
+            {
+                // Check if the token is a Guid (document ID) passed in the sign URL
+                if (Guid.TryParse(Token, out var docId))
+                {
+                    _session = await ConsentService.GetSigningSessionForParentAsync(docId);
+                    if (_session != null && !string.IsNullOrEmpty(_session.ActiveRawToken))
+                    {
+                        _effectiveToken = _session.ActiveRawToken;
+                    }
+                }
+                else
+                {
+                    _session = await ConsentService.GetSigningSessionByTokenAsync(Token);
+                    _effectiveToken = Token;
+                }
+            }
+            else if (DocumentId.HasValue && DocumentId.Value != Guid.Empty)
+            {
+                _session = await ConsentService.GetSigningSessionForParentAsync(DocumentId.Value);
+                if (_session != null && !string.IsNullOrEmpty(_session.ActiveRawToken))
+                {
+                    _effectiveToken = _session.ActiveRawToken;
+                }
+            }
+            else
+            {
+                _session = new ParentSigningSession
+                {
+                    IsInvalid = true,
+                    ErrorMessage = "No consent document or signing token was specified."
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _session = new ParentSigningSession
+            {
+                IsInvalid = true,
+                ErrorMessage = $"Unable to load consent session: {ex.Message}"
+            };
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+
+        if (_session != null && !_session.IsInvalid && !_session.IsAlreadySigned && !_session.IsExpired)
+        {
+            _typedLegalName = _session.SignerName;
+            _selectedChoices.Clear();
+            foreach (var ch in _session.Choices)
+            {
+                _selectedChoices[ch.SectionKey] = ch.Choice;
+            }
+        }
+    }
+
+    private void HandleChoiceChanged((string SectionKey, string Value) choice)
+    {
+        _selectedChoices[choice.SectionKey] = choice.Value;
+    }
+
+    private async Task SubmitSignatureAsync()
+    {
+        if (!_legalIntentConfirmed)
+        {
+            _errorMessage = "Please confirm your electronic signature intent before submitting.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_typedLegalName))
+        {
+            _errorMessage = "Please enter your typed legal name.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_effectiveToken) && _session?.ActiveRawToken != null)
+        {
+            _effectiveToken = _session.ActiveRawToken;
+        }
+
+        if (string.IsNullOrWhiteSpace(_effectiveToken))
+        {
+            _errorMessage = "Signing session expired or invalid. Please reload the page.";
+            return;
+        }
+
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        var request = new SubmitSignatureRequest
+        {
+            RawToken = _effectiveToken,
+            DocumentId = _session?.DocumentId ?? Guid.Empty,
+            TypedLegalName = _typedLegalName.Trim(),
+            LegalIntentConfirmed = true,
+            Choices = _selectedChoices,
+            IpAddress = "127.0.0.1",
+            UserAgent = "EnjoyEveryday Parent Portal"
+        };
+
+        var (success, msg) = await ConsentService.SignDocumentAsync(request);
+        _isSubmitting = false;
+
+        if (success)
+        {
+            _isSignedSuccess = true;
+        }
+        else
+        {
+            _errorMessage = msg ?? "Failed to complete signature. Please try again.";
+        }
+    }
+
+    private async Task DeclineDocumentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_effectiveToken) && _session?.ActiveRawToken != null)
+        {
+            _effectiveToken = _session.ActiveRawToken;
+        }
+
+        if (string.IsNullOrWhiteSpace(_effectiveToken)) return;
+
+        _isSubmitting = true;
+        _errorMessage = null;
+
+        var (success, msg) = await ConsentService.DeclineDocumentAsync(_effectiveToken, "Declined by parent in Parent Portal");
+        _isSubmitting = false;
+
+        if (success)
+        {
+            await LoadSessionAsync();
+        }
+        else
+        {
+            _errorMessage = msg ?? "Failed to decline document.";
+        }
+    }
+}
+

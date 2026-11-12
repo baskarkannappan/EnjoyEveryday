@@ -52,6 +52,7 @@ public interface IMaterialMarketplaceRepository
     Task<Guid> CreateShipmentAsync(MaterialShipment shipment, CancellationToken ct = default);
     Task<MaterialShipment?> GetShipmentByOrderIdAsync(Guid orderId, CancellationToken ct = default);
     Task UpdateShipmentStatusAsync(Guid shipmentId, string deliveryStatus, DateTimeOffset? actualDeliveryDate, string? proofNotes, CancellationToken ct = default);
+    Task ReverseDispatchedInventoryAsync(Guid orderId, string actorEmail, CancellationToken ct = default);
 
     // Reusable Loans & Return Inspections
     Task CreateLoansAsync(List<MaterialLoan> loans, CancellationToken ct = default);

@@ -22,6 +22,8 @@ public interface IChildJourneyService
 
     Task CreateMilestoneAsync(ChildMilestone milestone, CancellationToken cancellationToken = default);
     Task<IEnumerable<ChildMilestone>> GetMilestonesAsync(Guid childId, CancellationToken cancellationToken = default);
+    Task<bool> HasJourneyEntryForParticipationAsync(Guid participationId, CancellationToken cancellationToken = default);
+    Task ApproveJourneyEntryAsync(Guid entryId, Guid approvedByUserId, CancellationToken cancellationToken = default);
 }
 
 public class ChildJourneyService : IChildJourneyService
@@ -157,5 +159,25 @@ public class ChildJourneyService : IChildJourneyService
     public async Task<IEnumerable<ChildMilestone>> GetMilestonesAsync(Guid childId, CancellationToken cancellationToken = default)
     {
         return await _repository.GetMilestonesForChildAsync(_tenantContext.TenantId, childId, cancellationToken);
+    }
+
+    public async Task<bool> HasJourneyEntryForParticipationAsync(Guid participationId, CancellationToken cancellationToken = default)
+    {
+        return await _repository.HasJourneyEntryForParticipationAsync(_tenantContext.TenantId, participationId, cancellationToken);
+    }
+
+    public async Task ApproveJourneyEntryAsync(Guid entryId, Guid approvedByUserId, CancellationToken cancellationToken = default)
+    {
+        await _repository.ApproveJourneyEntryAsync(_tenantContext.TenantId, entryId, approvedByUserId, cancellationToken);
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = _tenantContext.TenantId,
+            UserId = approvedByUserId,
+            Action = "JourneyApproved",
+            EntityType = "ChildJourneyEntry",
+            EntityId = entryId,
+            Details = new { EntryId = entryId, ApprovedBy = approvedByUserId, ApprovedAt = DateTimeOffset.UtcNow }
+        }, cancellationToken);
     }
 }

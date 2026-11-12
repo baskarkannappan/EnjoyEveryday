@@ -1,5 +1,9 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
 @inject IParentService ParentService
 @inject ParentLocalizationService Localization
+@inject IJSRuntime JS
+@implements IDisposable
 
 @if (IsOpen)
 {
@@ -8,12 +12,20 @@
             <div class="modal-header">
                 <div>
                     <span class="modal-eyebrow">@Localization.T("Action.ViewInvoices")</span>
-                    <h3 class="modal-title">Tuition & Billing Statements</h3>
+                    <h3 class="modal-title">Tuition &amp; Billing Statements</h3>
                 </div>
                 <button class="close-btn" @onclick="Close" aria-label="Close">✕</button>
             </div>
 
             <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_statusMessage))
+                {
+                    <div class="alert @(_isSuccess ? "alert-success" : "alert-error")">
+                        <span>@(_isSuccess ? "✨" : "⚠️") @_statusMessage</span>
+                        <button type="button" class="alert-dismiss" @onclick="() => _statusMessage = null">✕</button>
+                    </div>
+                }
+
                 @if (isLoading)
                 {
                     <div class="loading-wrap">
@@ -55,6 +67,16 @@
                                     {
                                         <span class="status-badge unpaid">Due</span>
                                     }
+
+                                    @if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Paid)
+                                    {
+                                        <button type="button" 
+                                                class="btn-pay-now" 
+                                                @onclick="() => InitiatePaymentAsync(inv)"
+                                                disabled="@_isProcessingPayment">
+                                            @(_isProcessingPayment && _processingInvoiceId == inv.Id ? "Opening..." : $"Pay ₹{inv.BalanceDue:N0}")
+                                        </button>
+                                    }
                                 </div>
                             </div>
                         }
@@ -63,7 +85,7 @@
             </div>
 
             <div class="modal-footer">
-                <span class="footer-note">Online payments via Razorpay / UPI are supported through the finance office.</span>
+                <span class="footer-note">Online payments via UPI, Debit/Credit Cards &amp; NetBanking are processed securely through Razorpay.</span>
                 <button class="primary" @onclick="Close">@Localization.T("Action.Close")</button>
             </div>
         </div>
@@ -76,32 +98,198 @@
     [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
 
     private bool isLoading = true;
+    private bool _isProcessingPayment = false;
+    private Guid? _processingInvoiceId;
+    private string? _statusMessage;
+    private bool _isSuccess = true;
     private List<Invoice> invoices = new();
+    private DotNetObjectReference<InvoicesListModal>? _dotNetRef;
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
 
     protected override async Task OnParametersSetAsync()
     {
         if (IsOpen && ChildId != Guid.Empty)
         {
-            isLoading = true;
-            try
+            await LoadInvoicesAsync();
+        }
+    }
+
+    private async Task LoadInvoicesAsync()
+    {
+        isLoading = true;
+        try
+        {
+            invoices = await ParentService.GetChildInvoicesAsync(ChildId);
+        }
+        catch
+        {
+            invoices = new();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task InitiatePaymentAsync(Invoice invoice)
+    {
+        _isProcessingPayment = true;
+        _processingInvoiceId = invoice.Id;
+        _statusMessage = null;
+
+        try
+        {
+            var order = await ParentService.CreateInvoicePaymentOrderAsync(ChildId, invoice.Id);
+
+            var options = new
             {
-                invoices = await ParentService.GetChildInvoicesAsync(ChildId);
+                key = order.KeyId,
+                amount = order.AmountInPaise,
+                currency = order.Currency,
+                name = order.OrganizationName,
+                description = $"Tuition #{order.InvoiceNumber}",
+                orderId = order.OrderId,
+                invoiceNumber = order.InvoiceNumber,
+                invoiceId = invoice.Id.ToString(),
+                childId = ChildId.ToString(),
+                prefillName = order.PrefillName,
+                prefillEmail = order.PrefillEmail,
+                prefillContact = order.PrefillContact
+            };
+
+            await JS.InvokeVoidAsync("initiateRazorpayPayment", options, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            _isSuccess = false;
+            _statusMessage = $"Unable to initiate payment: {ex.Message}";
+            _isProcessingPayment = false;
+            _processingInvoiceId = null;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnRazorpaySuccess(RazorpayCallbackResponse response)
+    {
+        if (!_processingInvoiceId.HasValue) return;
+
+        try
+        {
+            var result = await ParentService.VerifyAndApplyPaymentAsync(
+                ChildId,
+                _processingInvoiceId.Value,
+                response.OrderId,
+                response.PaymentId,
+                response.Signature);
+
+            if (result.Success)
+            {
+                _isSuccess = true;
+                _statusMessage = $"Payment of ₹{result.AmountPaid:N0} successfully applied (Ref: {response.PaymentId}).";
+                await LoadInvoicesAsync();
             }
-            catch
+            else
             {
-                invoices = new();
-            }
-            finally
-            {
-                isLoading = false;
+                _isSuccess = false;
+                _statusMessage = result.ErrorMessage ?? "Payment verification failed.";
             }
         }
+        catch (Exception ex)
+        {
+            _isSuccess = false;
+            _statusMessage = $"Error recording payment confirmation: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessingPayment = false;
+            _processingInvoiceId = null;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task OnRazorpayFailed(RazorpayErrorResponse error)
+    {
+        _isSuccess = false;
+        _statusMessage = $"Payment failed ({error.Code}): {error.Description}";
+        _isProcessingPayment = false;
+        _processingInvoiceId = null;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnRazorpayDismiss()
+    {
+        _isProcessingPayment = false;
+        _processingInvoiceId = null;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task OnRazorpayError(string message)
+    {
+        _isSuccess = false;
+        _statusMessage = message;
+
+        // If in test/simulation mode with placeholder keys, offer instant simulation
+        if (_processingInvoiceId.HasValue && (message.Contains("blocking") || message.Contains("Simulation")))
+        {
+            try
+            {
+                var mockPaymentId = $"pay_sim_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}_{Guid.NewGuid().ToString("N")[..6]}";
+                var mockOrderId = $"order_sim_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+                var mockSig = "sim_sig_ok";
+
+                var result = await ParentService.VerifyAndApplyPaymentAsync(ChildId, _processingInvoiceId.Value, mockOrderId, mockPaymentId, mockSig);
+                if (result.Success)
+                {
+                    _isSuccess = true;
+                    _statusMessage = $"Test simulation payment of ₹{result.AmountPaid:N0} successfully verified and credited!";
+                    await LoadInvoicesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusMessage = $"Simulation fallback failed: {ex.Message}";
+            }
+        }
+
+        _isProcessingPayment = false;
+        _processingInvoiceId = null;
+        StateHasChanged();
     }
 
     private async Task Close()
     {
         IsOpen = false;
         await IsOpenChanged.InvokeAsync(false);
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    public class RazorpayCallbackResponse
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public string PaymentId { get; set; } = string.Empty;
+        public string Signature { get; set; } = string.Empty;
+    }
+
+    public class RazorpayErrorResponse
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Source { get; set; } = string.Empty;
+        public string Step { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
     }
 }
 
@@ -119,60 +307,55 @@
     }
 
     .modal-card {
-        background: var(--surface, #ffffff);
+        background: #ffffff;
         border: 1px solid var(--border, #e4e7df);
-        border-radius: var(--radius, 18px);
-        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        border-radius: 0px;
+        box-shadow: 0 16px 40px rgba(40, 55, 47, 0.16);
+        max-width: 600px;
         width: 100%;
-        max-width: 520px;
-        overflow: hidden;
+        max-height: 85vh;
         display: flex;
         flex-direction: column;
-        max-height: 85vh;
+        overflow: hidden;
     }
 
     .modal-header {
-        padding: 18px 22px;
+        padding: 18px 24px;
         border-bottom: 1px solid var(--border, #e4e7df);
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
-        background: var(--surface-soft, #f8f9f5);
+        align-items: center;
     }
 
     .modal-eyebrow {
         font-size: 11px;
-        font-weight: 800;
-        color: var(--accent, #557c6c);
+        font-weight: 750;
+        letter-spacing: 0.5px;
+        color: var(--accent-dark, #31523c);
         text-transform: uppercase;
-        letter-spacing: 0.6px;
+        display: block;
+        margin-bottom: 2px;
     }
 
     .modal-title {
-        font-size: 17px;
+        margin: 0;
+        font-size: 18px;
         font-weight: 750;
         color: var(--text, #26332d);
-        margin: 2px 0 0;
     }
 
     .close-btn {
-        background: transparent;
+        background: none;
         border: none;
-        font-size: 16px;
-        color: var(--muted, #6c7870);
+        font-size: 18px;
         cursor: pointer;
-        padding: 4px;
-        line-height: 1;
+        color: var(--muted, #6c7870);
     }
 
     .modal-body {
-        padding: 20px 22px;
+        padding: 20px 24px;
         overflow-y: auto;
-    }
-
-    .loading-wrap {
-        padding: 24px;
-        text-align: center;
+        flex: 1;
     }
 
     .invoices-list {
@@ -182,30 +365,33 @@
     }
 
     .invoice-item-card {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 0px;
+        padding: 14px 16px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 14px 16px;
-        background: var(--surface-soft, #f8f9f5);
-        border: 1px solid var(--border, #e4e7df);
-        border-radius: 12px;
+        gap: 16px;
     }
 
     .invoice-num {
-        font-size: 14px;
+        font-size: 13.5px;
         font-weight: 750;
         color: var(--text, #26332d);
+        margin-bottom: 2px;
     }
 
     .invoice-desc {
-        font-size: 12.5px;
+        font-size: 12px;
         color: var(--muted, #6c7870);
-        margin: 2px 0 4px;
+        margin-bottom: 4px;
     }
 
     .invoice-date {
-        font-size: 11.5px;
+        font-size: 11px;
         color: var(--muted, #6c7870);
+        font-weight: 600;
     }
 
     .invoice-amount-block {
@@ -213,7 +399,7 @@
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 4px;
+        gap: 6px;
     }
 
     .amount {
@@ -223,55 +409,112 @@
     }
 
     .status-badge {
-        font-size: 11px;
-        font-weight: 750;
-        padding: 3px 8px;
-        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 0px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
     }
 
     .status-badge.paid {
-        background: var(--accent-light, #e6eee9);
-        color: var(--accent-dark, #31523c);
+        background: #e6f4ea;
+        color: #137333;
+        border: 1px solid #ceead6;
     }
 
     .status-badge.partial {
-        background: #fefcbf;
-        color: #744210;
+        background: #fef7e0;
+        color: #b06000;
+        border: 1px solid #feefc3;
     }
 
     .status-badge.overdue {
-        background: #fff5f5;
-        color: #9b2c2c;
+        background: #fce8e6;
+        color: #c5221f;
+        border: 1px solid #fad2cf;
     }
 
     .status-badge.unpaid {
-        background: #ebf8ff;
-        color: #2b6cb0;
+        background: #eef2ed;
+        color: var(--text, #26332d);
+        border: 1px solid #d9e2db;
     }
 
-    .modal-footer {
-        padding: 14px 22px;
-        border-top: 1px solid var(--border, #e4e7df);
-        background: var(--surface-soft, #f8f9f5);
+    .btn-pay-now {
+        background: #31523c;
+        color: #ffffff;
+        border: none;
+        padding: 5px 12px;
+        font-size: 11.5px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        transition: background 0.15s ease;
+    }
+
+    .btn-pay-now:hover:not(:disabled) {
+        background: #23412f;
+    }
+
+    .btn-pay-now:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .alert {
+        padding: 10px 14px;
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-bottom: 14px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 12px;
+    }
+
+    .alert-error {
+        background: #fdf2f2;
+        border: 1px solid #f5c6cb;
+        color: #9b2c2c;
+    }
+
+    .alert-success {
+        background: var(--accent-light, #e6eee9);
+        border: 1px solid #c8dacd;
+        color: var(--accent-dark, #31523c);
+    }
+
+    .alert-dismiss {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .modal-footer {
+        padding: 14px 24px;
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--surface-soft, #f8f9f5);
     }
 
     .footer-note {
-        font-size: 12px;
+        font-size: 11.5px;
         color: var(--muted, #6c7870);
         line-height: 1.35;
-        flex: 1;
+        max-width: 75%;
     }
 
-    .modal-footer button {
-        padding: 8px 18px;
-        border-radius: 10px;
-        font-size: 13.5px;
+    .primary {
+        background: white;
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        padding: 7px 16px;
         font-weight: 700;
         cursor: pointer;
-        flex-shrink: 0;
     }
 </style>

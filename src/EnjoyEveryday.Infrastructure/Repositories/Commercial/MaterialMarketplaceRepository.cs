@@ -529,6 +529,16 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
         }, cancellationToken: ct);
     }
 
+    public async Task ReverseDispatchedInventoryAsync(Guid orderId, string actorEmail, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteProcedureAsync("sp_reverse_dispatched_inventory", new
+        {
+            OrderId = orderId,
+            ActorEmail = actorEmail
+        }, cancellationToken: ct);
+    }
+
     #endregion
 
     #region Loans & Returns

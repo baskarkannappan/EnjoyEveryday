@@ -130,19 +130,28 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
     private readonly IAuditService _auditService;
     private readonly ILogger<EnrollmentPipelineService> _logger;
     private readonly IClassroomReadinessService? _readinessService;
+    private readonly IChildRepository? _childRepository;
+    private readonly IEmailNotificationService? _emailService;
+    private readonly IPlatformBusinessEventService? _eventService;
 
     public EnrollmentPipelineService(
         IEnrollmentPipelineRepository repository,
         ITenantContext tenantContext,
         IAuditService? auditService = null,
         ILogger<EnrollmentPipelineService>? logger = null,
-        IClassroomReadinessService? readinessService = null)
+        IClassroomReadinessService? readinessService = null,
+        IChildRepository? childRepository = null,
+        IEmailNotificationService? emailService = null,
+        IPlatformBusinessEventService? eventService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _auditService = auditService ?? new NullAuditService();
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<EnrollmentPipelineService>.Instance;
         _readinessService = readinessService;
+        _childRepository = childRepository;
+        _emailService = emailService;
+        _eventService = eventService;
     }
 
     public async Task<PipelineOverviewDto> GetPipelineOverviewAsync(Guid? branchId = null, CancellationToken ct = default)
@@ -268,6 +277,66 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             EntityId = applicationId,
             Details = new { newStage }
         }, ct);
+
+        // Send stage transition email with mandatory Org Admin CC
+        if (_emailService != null)
+        {
+            try
+            {
+                var app = await GetApplicationByIdAsync(applicationId, ct);
+                if (app != null && !string.IsNullOrWhiteSpace(app.ParentEmail))
+                {
+                    Guid orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+                    if (app.TargetClassroomId.HasValue)
+                    {
+                        var scope = await _repository.GetClassroomScopeAsync(tenantId, app.TargetClassroomId.Value, ct);
+                        if (scope.OrganizationId.HasValue) orgId = scope.OrganizationId.Value;
+                    }
+
+                    var orgAdminEmail = _eventService != null
+                        ? await _eventService.ResolveOrganizationAdminEmailAsync(orgId, ct)
+                        : null;
+
+                    string stageDesc = newStage switch
+                    {
+                        "Enquiry" => "Your inquiry has been received. Our admissions team will be in touch shortly.",
+                        "TourScheduled" => $"A daycare center tour has been scheduled for {tourDate:MMMM dd, yyyy}.",
+                        "ApplicationSubmitted" => "Your child's enrollment application has been successfully submitted.",
+                        "UnderReview" => "Your application is currently under review by our admissions committee.",
+                        "OfferSent" => "Congratulations! An enrollment offer has been extended for your child.",
+                        "Enrolled" => "Enrollment is complete! Welcome to the EnjoyEveryday family.",
+                        _ => $"Your enrollment status has been updated to: {newStage}"
+                    };
+
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _emailService.SendOnboardingStageNotificationAsync(
+                                recipientEmail: app.ParentEmail.Trim(),
+                                parentName: app.ParentGuardianName ?? "Parent Guardian",
+                                childName: app.ChildFirstName,
+                                stage: newStage,
+                                stageDescription: stageDesc,
+                                daycareName: "EnjoyEveryday",
+                                actionRequired: null,
+                                actionUrl: "https://localhost:7005/",
+                                orgAdminCcEmail: orgAdminEmail ?? "admin@littlestars.com",
+                                tenantId: tenantId,
+                                ct: CancellationToken.None);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to send onboarding stage notification email for application {Id}", applicationId);
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error preparing onboarding stage email for application {Id}", applicationId);
+            }
+        }
     }
 
     public async Task<Guid> FinalizeEnrollmentAndBillingAsync(FinalizeEnrollmentContractRequest request, CancellationToken ct = default)
@@ -304,6 +373,57 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         // 2. Create or ensure child record in children table
         await _repository.EnsureChildEnrolledAsync(childId, tenantId, request.ClassroomId, app.ChildFirstName, app.ChildLastName, app.DateOfBirth, ct);
 
+        // 2b. Establish parent-guardian and family relationship records
+        if (_childRepository != null && !string.IsNullOrWhiteSpace(app.ParentEmail))
+        {
+            try
+            {
+                await _childRepository.SyncParentGuardianAsync(
+                    tenantId,
+                    childId,
+                    app.ParentEmail.Trim(),
+                    app.ParentGuardianName?.Trim() ?? "Parent Guardian",
+                    "Parent",
+                    app.ParentPhone?.Trim() ?? string.Empty,
+                    ct);
+
+                _logger.LogInformation("Successfully established guardian and family relationship for parent {Email} to child {ChildId} ({FullName})", 
+                    app.ParentEmail, childId, app.ChildFullName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to establish parent guardian {Email} for enrolled child {ChildId}", 
+                    app.ParentEmail, childId);
+            }
+        }
+
+        // 2c. Send branded parent welcome onboarding email with mandatory Org Admin CC
+        if (_emailService != null && !string.IsNullOrWhiteSpace(app.ParentEmail))
+        {
+            var orgAdminCc = _eventService != null
+                ? await _eventService.ResolveOrganizationAdminEmailAsync(organizationId, ct)
+                : null;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _emailService.SendParentWelcomeAsync(
+                        recipientEmail: app.ParentEmail.Trim(),
+                        parentName: app.ParentGuardianName?.Trim() ?? "Parent Guardian",
+                        childName: app.ChildFirstName,
+                        portalUrl: "https://localhost:7005/",
+                        orgAdminCcEmail: orgAdminCc,
+                        tenantId: tenantId,
+                        ct: CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not send welcome onboarding email to {Email}", app.ParentEmail);
+                }
+            });
+        }
+
         // 3. Create family billing contract
         var contractId = Guid.NewGuid();
         var effectiveRate = Math.Round(request.BaseMonthlyRate * (1 - (request.SiblingDiscountPercent / 100m)), 2);
@@ -315,8 +435,8 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             BranchId = branchId,
             ApplicationId = app.Id,
             ChildId = childId,
-            ParentName = app.ParentGuardianName,
-            ParentEmail = app.ParentEmail,
+            ParentName = app.ParentGuardianName ?? "Parent Guardian",
+            ParentEmail = app.ParentEmail ?? string.Empty,
             ScheduleType = request.ScheduleType,
             BillingCycle = request.BillingCycle,
             BaseRate = request.BaseMonthlyRate,

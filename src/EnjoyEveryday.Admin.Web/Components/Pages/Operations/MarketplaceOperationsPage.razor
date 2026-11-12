@@ -73,6 +73,9 @@
 
     <!-- TABS -->
     <div class="ops-tabs">
+        <button class="ops-tab @(_activeQueue == "All" ? "active" : "")" @onclick='() => SetQueue("All")'>
+            All Orders (@_orders.Count)
+        </button>
         <button class="ops-tab @(_activeQueue == "Requests" ? "active" : "")" @onclick='() => SetQueue("Requests")'>
             📋 Requests for Review (@_orders.Count(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || o.WorkflowStatus == MaterialWorkflowStatus.UnderReview))
         </button>
@@ -85,9 +88,31 @@
         <button class="ops-tab @(_activeQueue == "Returns" ? "active" : "")" @onclick='() => SetQueue("Returns")'>
             🔍 Return Inspections (@_loans.Count(l => l.ReturnStatus == MaterialLoanStatus.ReturnInTransit || l.ReturnStatus == MaterialLoanStatus.Received || l.ReturnStatus == MaterialLoanStatus.InUse))
         </button>
-        <button class="ops-tab @(_activeQueue == "All" ? "active" : "")" @onclick='() => SetQueue("All")'>
-            All Orders (@_orders.Count)
-        </button>
+    </div>
+
+    <!-- SEARCH & FILTER CONTROLS -->
+    <div style="display: flex; gap: 12px; margin: 18px 0; align-items: center; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 260px;">
+            <input style="width: 100%; padding: 10px 14px; border: 1px solid var(--border, #e4e7df); border-radius: 10px; background: var(--surface, #ffffff); color: var(--text, #26332d); font-size: 13.5px;"
+                   placeholder="Search orders by number, organization, product or requester..."
+                   @bind="_searchQuery" @bind:event="oninput" />
+        </div>
+        <div style="min-width: 200px;">
+            <select style="width: 100%; padding: 10px 14px; border: 1px solid var(--border, #e4e7df); border-radius: 10px; background: var(--surface, #ffffff); color: var(--text, #26332d); font-size: 13.5px;"
+                    @bind="_selectedOrgFilter">
+                <option value="All">All Organizations</option>
+                @foreach (var orgName in OrganizationsList)
+                {
+                    <option value="@orgName">@orgName</option>
+                }
+            </select>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_searchQuery) || _selectedOrgFilter != "All")
+        {
+            <button class="btn secondary" style="padding: 9px 14px; font-size: 13px;" @onclick='() => { _searchQuery = ""; _selectedOrgFilter = "All"; }'>
+                Clear Filters ✕
+            </button>
+        }
     </div>
 
     <!-- CONTENT QUEUES -->

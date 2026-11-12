@@ -21,4 +21,7 @@ public interface IBillingRepository
     Task<OrganizationBillingSettings?> GetBillingSettingsAsync(Guid organizationId, CancellationToken ct = default);
     Task<bool> UpsertBillingSettingsAsync(OrganizationBillingSettings settings, CancellationToken ct = default);
     Task<List<OrganizationBillingSettings>> GetOrganizationsDueForAutomaticBillingAsync(DateTimeOffset asOfDate, CancellationToken ct = default);
+    Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid tenantId, Guid? branchId = null, CancellationToken ct = default);
+    Task<bool> HasWebhookEventBeenProcessedAsync(string eventId, CancellationToken ct = default) => Task.FromResult(false);
+    Task RecordWebhookEventAsync(string eventId, string eventType, Guid? invoiceId, string? paymentId, long? amountPaise, string? currency, string status, string? payloadJson, string? errorMessage = null, CancellationToken ct = default) => Task.CompletedTask;
 }

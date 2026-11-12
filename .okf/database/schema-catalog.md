@@ -1,8 +1,8 @@
 ---
 okf_version: "0.2.0"
 type: concept
-title: "Database Schema Catalog (133 Tables)"
-description: "Categorized dictionary of all 133 PostgreSQL database tables grouped by functional domain."
+title: "Database Schema Catalog (135 Tables)"
+description: "Categorized dictionary of all 135 PostgreSQL database tables grouped by functional domain."
 parent: "index.md"
 status: active
 generated: "2026-11-05"
@@ -13,7 +13,7 @@ tags:
   - dictionary
 ---
 
-# Database Schema Catalog (133 Tables)
+# Database Schema Catalog (135 Tables)
 
 All tables belong to the `public` schema and enforce multi-tenancy via `tenant_id UUID NOT NULL` indexed by `idx_<table>_tenant`.
 
@@ -65,9 +65,15 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `child_journey_entries`, `child_journey_developments`, `child_journey_evidence`, `child_stories`: Parent timeline moments.
 * `activity_recommendation_requests`, `activity_recommendation_items`, `activity_recommendation_decisions`: ADK activity suggestions.
 
-## 7. Commercial, Billing & Marketplace (15 Tables)
+## 7. Commercial, Billing & Marketplace (18 Tables)
 * `invoices`, `invoice_line_items`, `payments`, `family_billing_contracts`: Tuition billing.
 * `organization_billing_settings`, `organization_entitlements`: Tenant plan tier and add-ons.
+* `razorpay_webhook_events`: Idempotent processing and reconciliation ledger for Razorpay webhook event payloads.
 * `material_products`, `material_offerings`, `material_orders`, `material_order_items`, `marketplace_orders`: Curriculum materials.
 * `inventory_locations`, `inventory_balances`, `inventory_ledger`, `material_shipments`: Warehouse inventory.
+* `platform_business_events`: Centralized cross-application immutable event store capturing commercial events (material orders, experience acquisitions, subscription payments) across all organizations.
+* `platform_admin_notifications`: Real-time and persistent in-app notifications for platform administrators with read/unread tracking and direct action URLs.
+
+## 8. Communications, Messaging & Notifications (1 Table)
+* `email_notification_logs`: Multi-tenant audit trail of all outbound Azure Communication Services (ACS) emails (recipient, cc_recipients, subject, type, status, metadata, error trace).
 

@@ -94,6 +94,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IBranchBenchmarkingRepository, BranchBenchmarkingRepository>();
         services.AddScoped<IChildDevelopmentPortfolioRepository, ChildDevelopmentPortfolioRepository>();
         services.AddScoped<IPlatformAdminRepository, PlatformAdminRepository>();
+        services.AddScoped<IPlatformBusinessEventRepository, PlatformBusinessEventRepository>();
         services.AddScoped<IAgentTokenRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentTokenRepository>();
         services.AddScoped<IAgentWebhookRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentWebhookRepository>();
         services.AddScoped<IDaycareAnnouncementRepository, DaycareAnnouncementRepository>();
@@ -102,6 +103,9 @@ public static class InfrastructureServiceRegistration
         services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(
             configuration.GetSection(EnjoyEveryday.Application.Services.RazorpaySettings.SectionName));
         services.AddHttpClient<EnjoyEveryday.Application.Services.IRazorpayGateway, EnjoyEveryday.Infrastructure.Services.RazorpayGateway>();
+
+        // Azure Communication Services (ACS) Email
+        services.AddScoped<EnjoyEveryday.Application.Services.IEmailNotificationService, EnjoyEveryday.Infrastructure.Services.Communication.AzureCommunicationEmailService>();
 
         // Realtime Notifications
         services.AddScoped<EnjoyEveryday.Application.Services.IRealtimeNotificationService, EnjoyEveryday.Infrastructure.Services.HttpRealtimeNotificationService>();

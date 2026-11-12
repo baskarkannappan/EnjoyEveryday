@@ -21,4 +21,6 @@ public interface IChildJourneyRepository
     Task CreateMilestoneAsync(ChildMilestone milestone, CancellationToken cancellationToken = default);
     Task<IEnumerable<ChildMilestone>> GetMilestonesForChildAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default);
     Task<Guid> ResolveTeacherIdAsync(Guid tenantId, Guid teacherOrUserId, Guid? classroomId = null, CancellationToken cancellationToken = default);
+    Task<bool> HasJourneyEntryForParticipationAsync(Guid tenantId, Guid participationId, CancellationToken cancellationToken = default);
+    Task ApproveJourneyEntryAsync(Guid tenantId, Guid entryId, Guid approvedByUserId, CancellationToken cancellationToken = default);
 }

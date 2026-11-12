@@ -183,4 +183,23 @@ public class ChildService
         var tenantId = _tenantContext.TenantId;
         await _childRepository.SyncParentGuardianAsync(tenantId, childId, parentEmail, parentName, relationship, phone, cancellationToken);
     }
+
+    public async Task<IEnumerable<ChildGuardianDto>> GetChildGuardiansAsync(Guid childId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        return await _childRepository.GetChildGuardiansAsync(tenantId, childId, cancellationToken);
+    }
+
+    public async Task AddOrUpdateGuardianAsync(Guid childId, string parentEmail, string parentName, string relationship, string phone, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        await _childRepository.SyncParentGuardianAsync(tenantId, childId, parentEmail, parentName, relationship, phone, cancellationToken);
+    }
+
+    public async Task RevokeGuardianAccessAsync(Guid childId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var tenantId = _tenantContext.TenantId;
+        var revokedBy = _userContext.UserId;
+        await _childRepository.RevokeChildGuardianAsync(tenantId, childId, userId, revokedBy, cancellationToken);
+    }
 }

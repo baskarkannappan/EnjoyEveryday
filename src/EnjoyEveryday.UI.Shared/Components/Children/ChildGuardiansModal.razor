@@ -1,0 +1,483 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Repositories
+@namespace EnjoyEveryday.UI.Shared.Components.Children
+@inject ChildService ChildService
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <span class="modal-eyebrow">FAMILY RELATIONSHIPS &amp; ACCESS</span>
+                    <h3 class="modal-title">Guardians for @ChildName</h3>
+                </div>
+                <button class="close-btn" @onclick="Close" aria-label="Close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <span>⚠️ @_errorMessage</span>
+                        <button type="button" class="alert-dismiss" @onclick="() => _errorMessage = null">✕</button>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(_successMessage))
+                {
+                    <div class="alert alert-success">
+                        <span>✨ @_successMessage</span>
+                        <button type="button" class="alert-dismiss" @onclick="() => _successMessage = null">✕</button>
+                    </div>
+                }
+
+                @if (_isLoading)
+                {
+                    <div style="padding: 24px; text-align: center; color: var(--muted, #6c7870);">
+                        Loading guardians...
+                    </div>
+                }
+                else
+                {
+                    <!-- EXISTING GUARDIANS LIST -->
+                    <div class="section-label">Currently Associated Guardians (@_guardians.Count)</div>
+                    @if (!_guardians.Any())
+                    {
+                        <div class="empty-guardians">
+                            <span style="font-size: 24px;">👨‍👩‍👧</span>
+                            <p>No guardians currently associated with this child. Add the primary contact below.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="guardians-list">
+                            @foreach (var g in _guardians)
+                            {
+                                <div class="guardian-row @(g.Status == "Revoked" ? "revoked" : "")">
+                                    <div class="guardian-avatar">
+                                        @(g.FirstName.Length > 0 ? g.FirstName[0].ToString().ToUpper() : "?")
+                                    </div>
+                                    <div class="guardian-info">
+                                        <div class="guardian-name-row">
+                                            <strong>@g.FullName</strong>
+                                            @if (g.IsPrimary)
+                                            {
+                                                <span class="badge badge-primary">Primary</span>
+                                            }
+                                            <span class="badge badge-rel">@g.Relationship</span>
+                                            @if (g.Status == "Verified")
+                                            {
+                                                <span class="badge badge-verified">✓ Portal Active</span>
+                                            }
+                                            else if (g.Status == "Revoked")
+                                            {
+                                                <span class="badge badge-revoked">✕ Revoked</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge badge-pending">Pending Verification</span>
+                                            }
+                                        </div>
+                                        <div class="guardian-meta">
+                                            <span>📧 @g.Email</span>
+                                            @if (!string.IsNullOrEmpty(g.Phone))
+                                            {
+                                                <span>📱 @g.Phone</span>
+                                            }
+                                            <span>🛄 Pickup: @(g.CanPickup ? "Authorized" : "Not Permitted")</span>
+                                        </div>
+                                    </div>
+                                    <div class="guardian-actions">
+                                        @if (g.UserId.HasValue && g.Status != "Revoked")
+                                        {
+                                            <button type="button" 
+                                                    class="btn-revoke" 
+                                                    @onclick="() => RevokeAccessAsync(g)" 
+                                                    title="Revoke portal access and permissions">
+                                                Revoke Access
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- ADD OR UPDATE GUARDIAN SECTION -->
+                    <div class="add-guardian-box">
+                        <div class="section-label" style="margin-top: 0;">Add or Associate Guardian</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Parent / Guardian Name *</label>
+                                <input type="text" class="input" placeholder="e.g. Priya Sharma" @bind="_newName" />
+                            </div>
+                            <div class="form-group">
+                                <label>Email Address *</label>
+                                <input type="email" class="input" placeholder="name@example.com" @bind="_newEmail" />
+                            </div>
+                            <div class="form-group">
+                                <label>Relationship</label>
+                                <select class="input" @bind="_newRelationship">
+                                    <option value="Mother">Mother</option>
+                                    <option value="Father">Father</option>
+                                    <option value="Legal Guardian">Legal Guardian</option>
+                                    <option value="Step-Parent">Step-Parent</option>
+                                    <option value="Grandparent">Grandparent</option>
+                                    <option value="Other">Other Authorized Contact</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Phone Number</label>
+                                <input type="tel" class="input" placeholder="+91 98765 43210" @bind="_newPhone" />
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                            <button type="button" class="btn primary" @onclick="SaveGuardianAsync" disabled="@_isSaving">
+                                @(_isSaving ? "Saving..." : "+ Save & Link Guardian")
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="modal-footer">
+                <span class="footer-note">Guardians with verified portal accounts can sign in via Google OAuth matching their email.</span>
+                <button type="button" class="btn secondary" @onclick="Close">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid ChildId { get; set; }
+    [Parameter] public string ChildName { get; set; } = "Child";
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public EventCallback OnUpdated { get; set; }
+
+    private bool _isLoading = true;
+    private bool _isSaving = false;
+    private List<ChildGuardianDto> _guardians = new();
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private string _newName = "";
+    private string _newEmail = "";
+    private string _newRelationship = "Mother";
+    private string _newPhone = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && ChildId != Guid.Empty)
+        {
+            await LoadGuardiansAsync();
+        }
+    }
+
+    private async Task LoadGuardiansAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        try
+        {
+            var result = await ChildService.GetChildGuardiansAsync(ChildId);
+            _guardians = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load guardians: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveGuardianAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newEmail) || !string.IsNullOrWhiteSpace(_newEmail) && !_newEmail.Contains('@'))
+        {
+            _errorMessage = "A valid email address is required to link a guardian.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_newName))
+        {
+            _errorMessage = "Guardian full name is required.";
+            return;
+        }
+
+        _isSaving = true;
+        _errorMessage = null;
+        _successMessage = null;
+
+        try
+        {
+            await ChildService.AddOrUpdateGuardianAsync(ChildId, _newEmail.Trim(), _newName.Trim(), _newRelationship, _newPhone?.Trim() ?? "");
+            _successMessage = $"Successfully linked {_newName} as {_newRelationship}.";
+            _newName = "";
+            _newEmail = "";
+            _newPhone = "";
+            await LoadGuardiansAsync();
+            await OnUpdated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save guardian: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task RevokeAccessAsync(ChildGuardianDto guardian)
+    {
+        if (!guardian.UserId.HasValue) return;
+
+        _errorMessage = null;
+        _successMessage = null;
+
+        try
+        {
+            await ChildService.RevokeGuardianAccessAsync(ChildId, guardian.UserId.Value);
+            _successMessage = $"Revoked portal access for {guardian.FullName}.";
+            await LoadGuardiansAsync();
+            await OnUpdated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to revoke access: {ex.Message}";
+        }
+    }
+
+    private async Task Close()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.45);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1200;
+        padding: 16px;
+    }
+    .modal-card {
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 0px;
+        box-shadow: 0 16px 40px rgba(40, 55, 47, 0.16);
+        max-width: 680px;
+        width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .modal-header {
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .modal-eyebrow {
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.5px;
+        color: var(--accent-dark, #31523c);
+        text-transform: uppercase;
+        display: block;
+        margin-bottom: 2px;
+    }
+    .modal-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        color: var(--muted, #6c7870);
+    }
+    .modal-body {
+        padding: 20px 24px;
+        overflow-y: auto;
+        flex: 1;
+    }
+    .section-label {
+        font-size: 12px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-bottom: 10px;
+    }
+    .guardians-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    .guardian-row {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+    .guardian-row.revoked {
+        opacity: 0.6;
+        background: #fdf2f2;
+        border-color: #f5c6cb;
+    }
+    .guardian-avatar {
+        width: 38px;
+        height: 38px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #31523c);
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .guardian-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .guardian-name-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 3px;
+    }
+    .guardian-meta {
+        font-size: 12px;
+        color: var(--muted, #6c7870);
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .badge {
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 0px;
+    }
+    .badge-primary { background: var(--accent-dark, #31523c); color: #fff; }
+    .badge-rel { background: #eef2ed; color: var(--text, #26332d); }
+    .badge-verified { background: #e6f4ea; color: #137333; border: 1px solid #ceead6; }
+    .badge-pending { background: #fef7e0; color: #b06000; border: 1px solid #feefc3; }
+    .badge-revoked { background: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }
+    .btn-revoke {
+        background: none;
+        border: 1px solid #fed7d7;
+        color: #9b2c2c;
+        font-size: 11px;
+        font-weight: 650;
+        padding: 4px 8px;
+        cursor: pointer;
+    }
+    .btn-revoke:hover {
+        background: #fff5f5;
+    }
+    .add-guardian-box {
+        background: #ffffff;
+        border: 1px dashed var(--accent, #557c6c);
+        padding: 16px;
+        margin-top: 10px;
+    }
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    @@media (max-width: 600px) {
+        .form-grid { grid-template-columns: 1fr; }
+    }
+    .form-group label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+        margin-bottom: 4px;
+    }
+    .input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 7px 10px;
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        font-size: 12.5px;
+    }
+    .input:focus {
+        border-color: var(--accent, #557c6c);
+        outline: none;
+        background: #ffffff;
+    }
+    .alert {
+        padding: 10px 14px;
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-bottom: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .alert-error { background: #fdf2f2; border: 1px solid #f5c6cb; color: #9b2c2c; }
+    .alert-success { background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #31523c); }
+    .alert-dismiss { background: none; border: none; cursor: pointer; font-size: 14px; }
+    .empty-guardians {
+        text-align: center;
+        padding: 18px;
+        color: var(--muted, #6c7870);
+        font-size: 12.5px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        margin-bottom: 14px;
+    }
+    .modal-footer {
+        padding: 14px 24px;
+        border-top: 1px solid var(--border, #e4e7df);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--surface-soft, #f8f9f5);
+    }
+    .footer-note {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+    }
+    .btn.primary {
+        background: #31523c;
+        color: #ffffff;
+        border: none;
+        font-weight: 700;
+        padding: 8px 16px;
+        cursor: pointer;
+    }
+    .btn.primary:hover { background: #23412f; }
+    .btn.secondary {
+        background: #ffffff;
+        color: var(--text, #26332d);
+        border: 1px solid var(--border, #e4e7df);
+        font-weight: 650;
+        padding: 8px 16px;
+        cursor: pointer;
+    }
+</style>

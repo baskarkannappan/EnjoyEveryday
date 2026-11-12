@@ -101,6 +101,7 @@ builder.Services.AddScoped<EnjoyEveryday.Shared.Authorization.IOrganizationPermi
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService, EnjoyEveryday.Daycare.Web.Services.PageAuthorizationService>();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService, EnjoyEveryday.Daycare.Web.Services.UserViewPreferenceService>();
 builder.Services.AddHostedService<EnjoyEveryday.Daycare.Web.Services.DaycareEndOfDayBackgroundService>();
+builder.Services.AddHostedService<EnjoyEveryday.Daycare.Web.Services.MonthlyTuitionBillingBackgroundService>();
 
 var app = builder.Build();
 

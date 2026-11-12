@@ -49,11 +49,13 @@ public class ParentSigningSession
     public bool IsAlreadySigned { get; set; }
     public bool IsInvalid { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? ActiveRawToken { get; set; }
 }
 
 public class SubmitSignatureRequest
 {
     public string RawToken { get; set; } = string.Empty;
+    public Guid DocumentId { get; set; }
     public string TypedLegalName { get; set; } = string.Empty;
     public bool LegalIntentConfirmed { get; set; }
     public Dictionary<string, string> Choices { get; set; } = new();
@@ -84,6 +86,7 @@ public interface IConsentService
     Task<(bool success, string? message)> SendReminderAsync(Guid documentId, string baseUrl, CancellationToken ct = default);
 
     Task<ParentSigningSession> GetSigningSessionByTokenAsync(string rawToken, CancellationToken ct = default);
+    Task<ParentSigningSession> GetSigningSessionForParentAsync(Guid documentId, CancellationToken ct = default);
     Task<(bool success, string? message)> SignDocumentAsync(SubmitSignatureRequest request, CancellationToken ct = default);
     Task<(bool success, string? message)> DeclineDocumentAsync(string rawToken, string reason, CancellationToken ct = default);
     Task<ChildConsentDocument> WithdrawConsentAsync(Guid documentId, string reason, CancellationToken ct = default);
@@ -102,6 +105,7 @@ public class ConsentService : IConsentService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IAuditService _auditService;
+    private readonly IPlatformBusinessEventService? _eventService;
 
     public ConsentService(
         IConsentRepository repository,
@@ -111,7 +115,8 @@ public class ConsentService : IConsentService
         IConsentEmailService emailService,
         ITenantContext tenantContext,
         IUserContext userContext,
-        IAuditService auditService)
+        IAuditService auditService,
+        IPlatformBusinessEventService? eventService = null)
     {
         _repository = repository;
         _childRepository = childRepository;
@@ -121,6 +126,7 @@ public class ConsentService : IConsentService
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
+        _eventService = eventService;
     }
 
     private static string HashToken(string rawToken)
@@ -403,6 +409,10 @@ public class ConsentService : IConsentService
         doc.SentAt = DateTime.UtcNow;
         await _repository.UpdateDocumentAsync(doc, ct);
 
+        var orgAdminEmail = _eventService != null && doc.OrganizationId.HasValue
+            ? await _eventService.ResolveOrganizationAdminEmailAsync(doc.OrganizationId.Value, ct)
+            : null;
+
         var delivery = await _emailService.SendSigningInvitationAsync(
             signer.SignerEmailSnapshot,
             signer.SignerNameSnapshot,
@@ -411,6 +421,7 @@ public class ConsentService : IConsentService
             signer.TokenExpiresAt,
             rawToken,
             baseUrl,
+            orgAdminEmail,
             ct);
 
         await _repository.AddAuditEventAsync(new ConsentAuditEvent
@@ -454,6 +465,10 @@ public class ConsentService : IConsentService
         signer.LastInvitationSentAt = DateTime.UtcNow;
         await _repository.UpdateSignerAsync(signer, ct);
 
+        var orgAdminEmail = _eventService != null && doc.OrganizationId.HasValue
+            ? await _eventService.ResolveOrganizationAdminEmailAsync(doc.OrganizationId.Value, ct)
+            : null;
+
         var delivery = await _emailService.SendSigningReminderAsync(
             signer.SignerEmailSnapshot,
             signer.SignerNameSnapshot,
@@ -462,6 +477,7 @@ public class ConsentService : IConsentService
             signer.TokenExpiresAt,
             rawToken,
             baseUrl,
+            orgAdminEmail,
             ct);
 
         await _repository.AddAuditEventAsync(new ConsentAuditEvent
@@ -563,7 +579,100 @@ public class ConsentService : IConsentService
             SignerRelationship = signer.SignerRelationship,
             SigningDeadline = doc.SigningDeadline,
             Status = doc.Status,
-            Choices = choices
+            Choices = choices,
+            ActiveRawToken = rawToken
+        };
+    }
+
+    public async Task<ParentSigningSession> GetSigningSessionForParentAsync(Guid documentId, CancellationToken ct = default)
+    {
+        var doc = await _repository.GetDocumentByIdAsync(_tenantContext.TenantId, documentId, ct);
+        if (doc == null)
+        {
+            return new ParentSigningSession { IsInvalid = true, ErrorMessage = "Associated consent document not found." };
+        }
+
+        // Verify parent authorization for this child
+        if (_userContext?.UserId != null && _userContext.UserId != Guid.Empty)
+        {
+            var authorizedChildren = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, ct);
+            if (!authorizedChildren.Any(c => c.ChildId == doc.ChildId))
+            {
+                return new ParentSigningSession { IsInvalid = true, ErrorMessage = "You are not authorized to review or sign documents for this child." };
+            }
+        }
+
+        var signer = doc.Signers.FirstOrDefault(s => !string.IsNullOrEmpty(_userContext?.Email) && s.SignerEmailSnapshot.Equals(_userContext.Email, StringComparison.OrdinalIgnoreCase))
+                     ?? doc.Signers.FirstOrDefault();
+
+        if (signer == null)
+        {
+            return new ParentSigningSession { IsInvalid = true, ErrorMessage = "Signer profile not configured for this consent document." };
+        }
+
+        if (signer.SigningStatus == "Signed" || doc.Status == ConsentWorkflowStatus.Signed)
+        {
+            return new ParentSigningSession
+            {
+                DocumentId = doc.Id,
+                SignerId = signer.Id,
+                DocumentTitle = doc.DocumentTitle,
+                DocumentSnapshot = doc.DocumentSnapshot,
+                ChildName = doc.ChildName ?? "Child",
+                SignerName = signer.SignerNameSnapshot,
+                IsAlreadySigned = true,
+                Status = doc.Status
+            };
+        }
+
+        if (signer.TokenExpiresAt.HasValue && signer.TokenExpiresAt.Value < DateTime.UtcNow)
+        {
+            return new ParentSigningSession
+            {
+                DocumentId = doc.Id,
+                SignerId = signer.Id,
+                DocumentTitle = doc.DocumentTitle,
+                ChildName = doc.ChildName ?? "Child",
+                IsExpired = true,
+                Status = ConsentWorkflowStatus.Expired,
+                ErrorMessage = "This signing invitation has passed its expiration deadline."
+            };
+        }
+
+        // Generate or refresh active token for this authenticated parent session
+        var rawToken = GenerateRawToken();
+        signer.TokenHash = HashToken(rawToken);
+        signer.TokenExpiresAt = doc.SigningDeadline ?? DateTime.UtcNow.AddDays(7);
+        if (signer.SigningStatus != "Signed")
+        {
+            signer.SigningStatus = "Opened";
+            signer.LastOpenedAt = DateTime.UtcNow;
+        }
+        await _repository.UpdateSignerAsync(signer, ct);
+
+        if (doc.Status == ConsentWorkflowStatus.SentToParent)
+        {
+            doc.Status = ConsentWorkflowStatus.Opened;
+            await _repository.UpdateDocumentAsync(doc, ct);
+        }
+
+        var choices = (await _repository.GetChoicesByDocumentIdAsync(doc.TenantId, doc.Id, ct)).ToList();
+
+        return new ParentSigningSession
+        {
+            DocumentId = doc.Id,
+            SignerId = signer.Id,
+            DocumentTitle = doc.DocumentTitle,
+            DocumentSnapshot = doc.DocumentSnapshot,
+            TemplateVersion = doc.TemplateVersion,
+            ChildName = doc.ChildName ?? "Child",
+            SignerName = signer.SignerNameSnapshot,
+            SignerEmail = signer.SignerEmailSnapshot,
+            SignerRelationship = signer.SignerRelationship,
+            SigningDeadline = doc.SigningDeadline,
+            Status = doc.Status,
+            Choices = choices,
+            ActiveRawToken = rawToken
         };
     }
 
@@ -654,13 +763,18 @@ public class ConsentService : IConsentService
             SafeMetadata = JsonSerializer.Serialize(new { checksum = checksum, storageKey = storageKey })
         }, ct);
 
-        // Send parent confirmation email
+        // Send parent confirmation email with mandatory Org Admin CC
+        var orgAdminCc = _eventService != null && doc.OrganizationId.HasValue
+            ? await _eventService.ResolveOrganizationAdminEmailAsync(doc.OrganizationId.Value, ct)
+            : null;
+
         _ = _emailService.SendSigningConfirmationAsync(
             signer.SignerEmailSnapshot,
             signer.SignatureLegalName,
             doc.ChildName?.Split(' ').FirstOrDefault() ?? "Your Child",
             doc.DocumentTitle,
             doc.SignedAt.Value,
+            orgAdminCc,
             ct);
 
         return (true, "Document successfully signed.");

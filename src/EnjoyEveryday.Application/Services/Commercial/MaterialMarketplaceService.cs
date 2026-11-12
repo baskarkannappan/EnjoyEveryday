@@ -28,6 +28,7 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
     private readonly ILogger<MaterialMarketplaceService> _logger;
+    private readonly IPlatformBusinessEventService? _eventService;
 
     public MaterialMarketplaceService(
         IMaterialMarketplaceRepository materialRepository,
@@ -40,7 +41,8 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
         IUserContext userContext,
         ITenantContext tenantContext,
         IAuditService auditService,
-        ILogger<MaterialMarketplaceService> logger)
+        ILogger<MaterialMarketplaceService> logger,
+        IPlatformBusinessEventService? eventService = null)
     {
         _materialRepository = materialRepository;
         _organizationRepository = organizationRepository;
@@ -53,6 +55,7 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
         _tenantContext = tenantContext;
         _auditService = auditService;
         _logger = logger;
+        _eventService = eventService;
     }
 
     #region Catalog & Warehouse
@@ -430,6 +433,34 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
             }
         }
 
+        if (_eventService != null)
+        {
+            try
+            {
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = "MaterialOrderCreated",
+                    TenantId = _tenantContext.TenantId,
+                    OrganizationId = request.OrganizationId,
+                    BranchId = request.BranchId,
+                    InitiatedByUserId = _userContext.UserId,
+                    TransactionReference = orderNumber,
+                    TransactionCategory = "MaterialMarketplace",
+                    Title = $"New Material Order: {orderNumber}",
+                    Description = $"Order {orderNumber} ({orderItems.Count} item(s)) submitted by {_userContext.Email} for amount ₹{totalAmount:N2}.",
+                    Amount = totalAmount,
+                    Currency = "INR",
+                    Status = initialStatus,
+                    ActionUrl = "/marketplace-operations",
+                    Metadata = new { OrderId = orderId, OrderNumber = orderNumber, ItemsCount = orderItems.Count, TotalAmount = totalAmount }
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish business event for created order {OrderNumber}", orderNumber);
+            }
+        }
+
         return (await _materialRepository.GetOrderByIdAsync(orderId, ct))!;
     }
 
@@ -635,16 +666,21 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
             await EnsureOrganizationAccessAsync(order.OrganizationId, ct);
         }
 
-        if (order.WorkflowStatus == MaterialWorkflowStatus.Dispatched ||
-            order.WorkflowStatus == MaterialWorkflowStatus.Delivered ||
+        if (order.WorkflowStatus == MaterialWorkflowStatus.Delivered ||
             order.WorkflowStatus == MaterialWorkflowStatus.Completed)
         {
-            throw new InvalidOperationException("Cannot cancel an order that has already been dispatched or delivered.");
+            throw new InvalidOperationException("Cannot cancel an order that has already been delivered or completed.");
         }
 
-        // Release any reserved stock
+        // If already dispatched, reverse inventory back to warehouse
+        if (order.WorkflowStatus == MaterialWorkflowStatus.Dispatched)
+        {
+            await _materialRepository.ReverseDispatchedInventoryAsync(order.Id, _userContext.Email ?? "PlatformAdmin", ct);
+        }
+
+        // Release any reserved stock if order was confirmed/allocated
         var central = await _materialRepository.GetCentralWarehouseLocationAsync(ct);
-        if (central != null && (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed || order.WorkflowStatus == MaterialWorkflowStatus.StockAllocated))
+        if (central != null && (order.WorkflowStatus == MaterialWorkflowStatus.Confirmed || order.WorkflowStatus == MaterialWorkflowStatus.StockAllocated || order.WorkflowStatus == MaterialWorkflowStatus.PickingPacking))
         {
             foreach (var item in order.Items)
             {
@@ -700,6 +736,34 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
             Notes = reason,
             IsInternalNote = false
         }, ct);
+
+        if (_eventService != null)
+        {
+            try
+            {
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = "MaterialOrderCancelled",
+                    TenantId = order.TenantId,
+                    OrganizationId = order.OrganizationId,
+                    BranchId = order.BranchId,
+                    InitiatedByUserId = _userContext.UserId,
+                    TransactionReference = order.OrderNumber,
+                    TransactionCategory = "MaterialMarketplace",
+                    Title = $"Order Cancelled: {order.OrderNumber}",
+                    Description = $"Order {order.OrderNumber} was cancelled by {(_userContext.Email ?? "User")}. Reason: {reason}",
+                    Amount = order.TotalAmount,
+                    Currency = order.Currency,
+                    Status = MaterialWorkflowStatus.Cancelled,
+                    ActionUrl = "/marketplace-operations",
+                    Metadata = new { OrderId = order.Id, OrderNumber = order.OrderNumber, Reason = reason }
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish business event for cancelled order {OrderNumber}", order.OrderNumber);
+            }
+        }
     }
 
     #endregion
@@ -947,6 +1011,11 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
         var order = await _materialRepository.GetOrderByIdAsync(request.OrderId, ct);
         if (order == null) throw new KeyNotFoundException("Order not found.");
 
+        if (order.WorkflowStatus == MaterialWorkflowStatus.Dispatched || order.FulfilmentStatus == "Dispatched")
+        {
+            throw new InvalidOperationException($"Order {order.OrderNumber} has already been dispatched.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.CarrierName))
             throw new ArgumentException("Carrier name is required.");
         if (string.IsNullOrWhiteSpace(request.TrackingReference))
@@ -954,6 +1023,21 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
 
         var central = await _materialRepository.GetCentralWarehouseLocationAsync(ct);
         if (central == null) throw new InvalidOperationException("No central warehouse location found.");
+
+        bool wasAllocated = order.WorkflowStatus == MaterialWorkflowStatus.PickingPacking || order.FulfilmentStatus == "Allocated";
+
+        // If stock was not previously reserved/allocated, validate available stock first
+        if (!wasAllocated)
+        {
+            foreach (var item in order.Items)
+            {
+                var bal = await _materialRepository.GetInventoryBalanceAsync(item.MaterialProductId, central.Id, ct);
+                if (bal == null || bal.AvailableStock < item.Quantity)
+                {
+                    throw new InvalidOperationException($"Insufficient available warehouse stock to dispatch '{item.ProductName}'. Available: {bal?.AvailableStock ?? 0}, Required: {item.Quantity}");
+                }
+            }
+        }
 
         var shipment = new MaterialShipment
         {
@@ -970,20 +1054,23 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
 
         await _materialRepository.CreateShipmentAsync(shipment, ct);
 
-        // Move inventory: from Reserved -> Dispatched
+        // Move inventory: from Allocated (Reserved) or Available -> Dispatched
         var loansToCreate = new List<MaterialLoan>();
 
         foreach (var item in order.Items)
         {
+            int reservedDelta = wasAllocated ? -item.Quantity : 0;
+            int availableDelta = wasAllocated ? 0 : -item.Quantity;
+
             if (item.FulfilmentMode == MaterialFulfilmentMode.Purchase)
             {
-                // Purchased items: deduct from warehouse total & reserved stock, mark dispatched
+                // Purchased items: deduct from warehouse total & mark dispatched
                 await _materialRepository.UpdateInventoryBalanceAtomicAsync(
                     item.MaterialProductId,
                     central.Id,
                     totalDelta: -item.Quantity,
-                    availableDelta: 0,
-                    reservedDelta: -item.Quantity,
+                    availableDelta: availableDelta,
+                    reservedDelta: reservedDelta,
                     dispatchedDelta: item.Quantity,
                     onLoanDelta: 0,
                     underInspectionDelta: 0,
@@ -1000,8 +1087,8 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
                     LocationId = central.Id,
                     TransactionType = MaterialInventoryTransactionType.DispatchPurchase,
                     QuantityDelta = -item.Quantity,
-                    AvailableDelta = 0,
-                    ReservedDelta = -item.Quantity,
+                    AvailableDelta = availableDelta,
+                    ReservedDelta = reservedDelta,
                     ReferenceType = "Shipment",
                     ReferenceId = shipment.Id,
                     Notes = $"Dispatched purchase on {shipment.ShipmentNumber}",
@@ -1010,13 +1097,13 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
             }
             else // Borrow
             {
-                // Borrowed items: keep in total stock, move from reserved -> dispatched
+                // Borrowed items: keep in total stock, move from reserved/available -> dispatched
                 await _materialRepository.UpdateInventoryBalanceAtomicAsync(
                     item.MaterialProductId,
                     central.Id,
                     totalDelta: 0,
-                    availableDelta: 0,
-                    reservedDelta: -item.Quantity,
+                    availableDelta: availableDelta,
+                    reservedDelta: reservedDelta,
                     dispatchedDelta: item.Quantity,
                     onLoanDelta: 0,
                     underInspectionDelta: 0,
@@ -1051,8 +1138,8 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
                     LocationId = central.Id,
                     TransactionType = MaterialInventoryTransactionType.DispatchLoan,
                     QuantityDelta = 0,
-                    AvailableDelta = 0,
-                    ReservedDelta = -item.Quantity,
+                    AvailableDelta = availableDelta,
+                    ReservedDelta = reservedDelta,
                     OnLoanDelta = 0,
                     ReferenceType = "Shipment",
                     ReferenceId = shipment.Id,
@@ -1087,6 +1174,34 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
             Notes = request.DispatchNotes,
             IsInternalNote = false
         }, ct);
+
+        if (_eventService != null)
+        {
+            try
+            {
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = "MaterialOrderDispatched",
+                    TenantId = order.TenantId,
+                    OrganizationId = order.OrganizationId,
+                    BranchId = order.BranchId,
+                    InitiatedByUserId = _userContext.UserId,
+                    TransactionReference = order.OrderNumber,
+                    TransactionCategory = "MaterialMarketplace",
+                    Title = $"Order Dispatched: {order.OrderNumber}",
+                    Description = $"Order {order.OrderNumber} was dispatched via {request.CarrierName} ({request.TrackingReference}).",
+                    Amount = order.TotalAmount,
+                    Currency = order.Currency,
+                    Status = MaterialWorkflowStatus.Dispatched,
+                    ActionUrl = "/marketplace-operations",
+                    Metadata = new { OrderId = order.Id, OrderNumber = order.OrderNumber, Carrier = request.CarrierName, Tracking = request.TrackingReference }
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish business event for dispatched order {OrderNumber}", order.OrderNumber);
+            }
+        }
     }
 
     public async Task ConfirmDeliveryReceiptAsync(ConfirmDeliveryReceiptRequest request, CancellationToken ct = default)

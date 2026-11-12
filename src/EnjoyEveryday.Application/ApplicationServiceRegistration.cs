@@ -111,6 +111,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<BranchBenchmarkingService>();
         services.AddScoped<IDaycareAnnouncementService, DaycareAnnouncementService>();
         services.AddScoped<DaycareAnnouncementService>();
+        services.AddScoped<IPlatformBusinessEventService, PlatformBusinessEventService>();
+        services.AddScoped<PlatformBusinessEventService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>(sp => new AppIdentityContext(

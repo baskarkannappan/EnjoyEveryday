@@ -21,8 +21,21 @@ public partial class MarketplaceOperationsPage : ComponentBase
     [Inject]
     private IAppNotificationService NotificationService { get; set; } = default!;
 
-    private string _activeQueue = "Requests";
+    [SupplyParameterFromQuery(Name = "search")]
+    public string? Search { get; set; }
+
+    private string _activeQueue = "All";
+    private string _searchQuery = "";
+    private string _selectedOrgFilter = "All";
     private bool _isLoading = true;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(Search))
+        {
+            _searchQuery = Search.Trim();
+        }
+    }
 
     private string? _toastMessage;
     private bool _toastIsError;
@@ -113,17 +126,45 @@ public partial class MarketplaceOperationsPage : ComponentBase
         _activeQueue = queue;
     }
 
+    private List<string> OrganizationsList =>
+        _orders.Select(o => o.OrganizationName)
+               .Where(n => !string.IsNullOrWhiteSpace(n))
+               .Select(n => n!)
+               .Distinct()
+               .OrderBy(n => n)
+               .ToList();
+
     private IEnumerable<MaterialOrder> FilteredOrders
     {
         get
         {
-            return _activeQueue switch
+            var query = _orders.AsEnumerable();
+
+            if (_activeQueue == "Requests")
+                query = query.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || o.WorkflowStatus == MaterialWorkflowStatus.UnderReview);
+            else if (_activeQueue == "Fulfilment")
+                query = query.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Confirmed || o.WorkflowStatus == MaterialWorkflowStatus.PickingPacking);
+            else if (_activeQueue == "Shipments")
+                query = query.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Dispatched || o.WorkflowStatus == MaterialWorkflowStatus.InTransit);
+
+            if (_selectedOrgFilter != "All")
             {
-                "Requests" => _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.RequestSubmitted || o.WorkflowStatus == MaterialWorkflowStatus.UnderReview),
-                "Fulfilment" => _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Confirmed || o.WorkflowStatus == MaterialWorkflowStatus.PickingPacking),
-                "Shipments" => _orders.Where(o => o.WorkflowStatus == MaterialWorkflowStatus.Dispatched || o.WorkflowStatus == MaterialWorkflowStatus.InTransit),
-                _ => _orders
-            };
+                query = query.Where(o => string.Equals(o.OrganizationName, _selectedOrgFilter, StringComparison.OrdinalIgnoreCase) ||
+                                         o.OrganizationId.ToString() == _selectedOrgFilter);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var s = _searchQuery.Trim().ToLowerInvariant();
+                query = query.Where(o =>
+                    (o.OrderNumber != null && o.OrderNumber.ToLowerInvariant().Contains(s)) ||
+                    (o.OrganizationName != null && o.OrganizationName.ToLowerInvariant().Contains(s)) ||
+                    (o.RequestingUserEmail != null && o.RequestingUserEmail.ToLowerInvariant().Contains(s)) ||
+                    (o.DeliveryAddress != null && o.DeliveryAddress.ToLowerInvariant().Contains(s)) ||
+                    o.Items.Any(i => i.ProductName != null && i.ProductName.ToLowerInvariant().Contains(s)));
+            }
+
+            return query;
         }
     }
 

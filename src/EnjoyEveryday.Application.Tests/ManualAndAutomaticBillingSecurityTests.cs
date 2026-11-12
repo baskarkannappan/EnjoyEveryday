@@ -527,6 +527,11 @@ public class ManualAndAutomaticBillingSecurityTests
                 .ToList();
             return Task.FromResult(list);
         }
+
+        public Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid tenantId, Guid? branchId = null, CancellationToken ct = default)
+        {
+            return Task.FromResult(new List<FamilyBillingContract>());
+        }
     }
 
     private class MockOrganizationRepository : IOrganizationRepository

@@ -165,4 +165,22 @@ public class ChildJourneyRepository : IChildJourneyRepository
             new { TenantId = tenantId, TeacherOrUserId = teacherOrUserId, ClassroomId = classroomId },
             cancellationToken: cancellationToken);
     }
+
+    public async Task<bool> HasJourneyEntryForParticipationAsync(Guid tenantId, Guid participationId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.ExecuteScalarFunctionAsync<bool>(
+            "public.fn_has_journey_entry_for_participation",
+            new { TenantId = tenantId, ParticipationId = participationId },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task ApproveJourneyEntryAsync(Guid tenantId, Guid entryId, Guid approvedByUserId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "public.sp_approve_journey_entry",
+            new { TenantId = tenantId, EntryId = entryId, ApprovedBy = approvedByUserId },
+            cancellationToken: cancellationToken);
+    }
 }

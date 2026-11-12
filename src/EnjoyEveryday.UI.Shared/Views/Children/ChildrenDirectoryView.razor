@@ -2,6 +2,7 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Shared.Authorization
 @using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Components.Children
 @using EnjoyEveryday.UI.Shared.Services
 
 @inject ChildService ChildService
@@ -104,18 +105,35 @@
                     }
                 }
 
-                <div @onclick="() => OpenEditChildModal(child)" style="cursor: pointer;">
+                <div @onclick="() => OpenEditChildModal(child)" style="cursor: pointer; display: flex; flex-direction: column; height: 100%;">
                     <PersonCard AvatarInitials="@GetInitials(child.FirstName)"
                                 PhotoUrl="@child.PhotoUrl"
                                 Name="@child.FullName"
                                 Subtitle="@($"{branchName} • {className}")"
                                 Progress="@child.ProfileCompletionPercentage"
                                 Status="@child.EnrollmentStatus"
-                                LargeAvatar="true" />
+                                LargeAvatar="true">
+                        <ActionTemplate>
+                            <div @onclick:stopPropagation="true" style="display: flex; gap: 6px;">
+                                <button type="button" 
+                                        class="btn secondary" 
+                                        @onclick="() => OpenGuardiansModal(child)"
+                                        style="padding: 3px 8px; font-size: 11px; font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c); background: white;">
+                                    👥 Guardians
+                                </button>
+                            </div>
+                        </ActionTemplate>
+                    </PersonCard>
                 </div>
             }
         </div>
     }
+
+    <ChildGuardiansModal IsOpen="@_isGuardiansModalOpen"
+                         ChildId="@_guardiansModalChildId"
+                         ChildName="@_guardiansModalChildName"
+                         IsOpenChanged="val => _isGuardiansModalOpen = val"
+                         OnUpdated="LoadChildrenAsync" />
 
     <ChildFormModal IsOpen="_isModalOpen"
                     IsEditing="_isEditing"
@@ -136,6 +154,17 @@
     private Child _currentChild = new();
     private bool _isModalOpen = false;
     private bool _isEditing = false;
+
+    private bool _isGuardiansModalOpen = false;
+    private Guid _guardiansModalChildId = Guid.Empty;
+    private string _guardiansModalChildName = "";
+
+    private void OpenGuardiansModal(Child child)
+    {
+        _guardiansModalChildId = child.Id;
+        _guardiansModalChildName = child.FullName;
+        _isGuardiansModalOpen = true;
+    }
 
     private Guid _selectedBranchId = Guid.Empty;
     private Guid SelectedBranchId

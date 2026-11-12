@@ -111,4 +111,28 @@ public class ChildRepository : IChildRepository
             },
             cancellationToken: cancellationToken);
     }
+
+    public async Task<IEnumerable<ChildGuardianDto>> GetChildGuardiansAsync(Guid tenantId, Guid childId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryFunctionAsync<ChildGuardianDto>(
+            "fn_get_child_guardians_for_admin",
+            new { TenantId = tenantId, ChildId = childId },
+            cancellationToken: cancellationToken);
+    }
+
+    public async Task RevokeChildGuardianAsync(Guid tenantId, Guid childId, Guid userId, Guid? revokedBy = null, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        await connection.ExecuteProcedureAsync(
+            "sp_revoke_child_guardian",
+            new
+            {
+                TenantId = tenantId,
+                ChildId = childId,
+                UserId = userId,
+                RevokedBy = revokedBy
+            },
+            cancellationToken: cancellationToken);
+    }
 }

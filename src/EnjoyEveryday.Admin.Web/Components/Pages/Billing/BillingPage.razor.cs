@@ -20,6 +20,9 @@ public partial class BillingPage : ComponentBase, IDisposable
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
+    [Inject]
+    private EnjoyEveryday.Shared.Tenancy.ITenantContext? TenantContext { get; set; }
+
     private List<PlatformOrganizationDto> _organizations = new();
     private List<Invoice> _allInvoices = new();
     private OrganizationBillingSettings? _currentBillingSettings;
@@ -550,12 +553,30 @@ public partial class BillingPage : ComponentBase, IDisposable
         try
         {
             var runResult = await BillingService.ExecuteAutomaticBillingRunAsync(DateTimeOffset.UtcNow);
-            ShowToast($"Automatic Billing Run Completed: {runResult.GeneratedInvoices} invoice(s) generated for {runResult.ProcessedOrganizations} organization(s).", isError: false);
+            ShowToast($"Automatic Platform Billing Run Completed: {runResult.GeneratedInvoices} invoice(s) generated for {runResult.ProcessedOrganizations} organization(s).", isError: false);
             await LoadDataAsync();
         }
         catch (Exception ex)
         {
             await HandleErrorAsync(ex, "Error running scheduled billing.");
+        }
+    }
+
+    private async Task RunTuitionBillingAsync()
+    {
+        try
+        {
+            var tenantId = TenantContext?.TenantId != null && TenantContext.TenantId != Guid.Empty
+                ? TenantContext.TenantId
+                : Guid.Parse("10000000-0000-0000-0000-000000000001");
+
+            var runResult = await BillingService.ExecuteMonthlyTuitionBillingRunAsync(tenantId, DateTimeOffset.UtcNow);
+            ShowToast($"Tuition Billing Run Completed: {runResult.InvoicesGenerated} invoice(s) generated, {runResult.SkippedExisting} existing skipped. Total: \u20b9{runResult.TotalAmountBilled:N2}", isError: false);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error running tuition billing.");
         }
     }
 

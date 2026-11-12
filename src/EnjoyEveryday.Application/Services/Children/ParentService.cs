@@ -82,6 +82,32 @@ public interface IParentService
     Task ApprovePrivacyAndTrustAsync(Guid childId, string approvedByName, CancellationToken cancellationToken = default);
     Task MarkMessagesAsReadAsync(Guid childId, CancellationToken cancellationToken = default);
     Task<List<Invoice>> GetChildInvoicesAsync(Guid childId, CancellationToken cancellationToken = default);
+    Task<ParentPaymentOrderDto> CreateInvoicePaymentOrderAsync(Guid childId, Guid invoiceId, CancellationToken ct = default);
+    Task<ParentPaymentResultDto> VerifyAndApplyPaymentAsync(Guid childId, Guid invoiceId, string orderId, string paymentId, string signature, CancellationToken ct = default);
+}
+
+public class ParentPaymentOrderDto
+{
+    public string KeyId { get; set; } = string.Empty;
+    public string OrderId { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public long AmountInPaise { get; set; }
+    public string Currency { get; set; } = "INR";
+    public string InvoiceNumber { get; set; } = string.Empty;
+    public string OrganizationName { get; set; } = string.Empty;
+    public string PrefillName { get; set; } = string.Empty;
+    public string PrefillEmail { get; set; } = string.Empty;
+    public string PrefillContact { get; set; } = string.Empty;
+}
+
+public class ParentPaymentResultDto
+{
+    public bool Success { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? PaymentId { get; set; }
+    public decimal AmountPaid { get; set; }
+    public decimal NewBalanceDue { get; set; }
+    public string NewStatus { get; set; } = string.Empty;
 }
 
 public class ParentService : IParentService
@@ -99,6 +125,7 @@ public class ParentService : IParentService
     private readonly IBillingService? _billingService;
     private readonly IConsentService? _consentService;
     private readonly IRealtimeNotificationService? _realtimeNotificationService;
+    private readonly IRazorpayGateway? _razorpayGateway;
 
     public ParentService(
         IParentRepository parentRepository,
@@ -113,7 +140,8 @@ public class ParentService : IParentService
         ISecurePickupService? pickupService = null,
         IBillingService? billingService = null,
         IConsentService? consentService = null,
-        IRealtimeNotificationService? realtimeNotificationService = null)
+        IRealtimeNotificationService? realtimeNotificationService = null,
+        IRazorpayGateway? razorpayGateway = null)
     {
         _parentRepository = parentRepository;
         _scheduleRepository = scheduleRepository;
@@ -125,6 +153,7 @@ public class ParentService : IParentService
         _billingService = billingService;
         _consentService = consentService;
         _realtimeNotificationService = realtimeNotificationService;
+        _razorpayGateway = razorpayGateway;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
@@ -777,6 +806,99 @@ public class ParentService : IParentService
         if (_billingService == null) return new List<Invoice>();
         var allInvoices = await _billingService.GetAllInvoicesAsync(ct: cancellationToken);
         return allInvoices;
+    }
+
+    public async Task<ParentPaymentOrderDto> CreateInvoicePaymentOrderAsync(Guid childId, Guid invoiceId, CancellationToken ct = default)
+    {
+        await ValidateAccessOrThrow(childId, ct);
+        if (_billingService == null) throw new InvalidOperationException("Billing service is currently unavailable.");
+        if (_razorpayGateway == null) throw new InvalidOperationException("Payment gateway is currently unavailable.");
+
+        var invoice = await _billingService.GetInvoiceByIdAsync(invoiceId, ct)
+            ?? throw new KeyNotFoundException($"Invoice {invoiceId} was not found.");
+
+        if (invoice.BalanceDue <= 0 || invoice.Status == InvoiceStatus.Paid)
+        {
+            throw new InvalidOperationException("This invoice has already been fully paid.");
+        }
+
+        long amountInPaise = (long)Math.Round(invoice.BalanceDue * 100, MidpointRounding.AwayFromZero);
+        var targetCurrency = string.IsNullOrWhiteSpace(invoice.Currency) ? "INR" : invoice.Currency.ToUpperInvariant();
+
+        var notes = new Dictionary<string, string>
+        {
+            ["invoice_id"] = invoice.Id.ToString(),
+            ["child_id"] = childId.ToString(),
+            ["tenant_id"] = invoice.TenantId.ToString()
+        };
+
+        var gatewayResult = await _razorpayGateway.CreateOrderAsync(amountInPaise, targetCurrency, invoice.InvoiceNumber, notes, ct);
+
+        return new ParentPaymentOrderDto
+        {
+            KeyId = _razorpayGateway.Settings.KeyId,
+            OrderId = gatewayResult.OrderId,
+            Amount = invoice.BalanceDue,
+            AmountInPaise = amountInPaise,
+            Currency = targetCurrency,
+            InvoiceNumber = invoice.InvoiceNumber,
+            OrganizationName = "EnjoyEveryday Daycare",
+            PrefillName = !string.IsNullOrWhiteSpace(_userContext.Email) ? _userContext.Email : "Parent Guardian",
+            PrefillEmail = _userContext.Email ?? "",
+            PrefillContact = ""
+        };
+    }
+
+    public async Task<ParentPaymentResultDto> VerifyAndApplyPaymentAsync(Guid childId, Guid invoiceId, string orderId, string paymentId, string signature, CancellationToken ct = default)
+    {
+        await ValidateAccessOrThrow(childId, ct);
+        if (_billingService == null) throw new InvalidOperationException("Billing service is currently unavailable.");
+        if (_razorpayGateway == null) throw new InvalidOperationException("Payment gateway is currently unavailable.");
+
+        var invoice = await _billingService.GetInvoiceByIdAsync(invoiceId, ct)
+            ?? throw new KeyNotFoundException($"Invoice {invoiceId} was not found.");
+
+        // 1. Verify cryptographic signature
+        var isValid = _razorpayGateway.VerifyPaymentSignature(orderId, paymentId, signature);
+        if (!isValid)
+        {
+            return new ParentPaymentResultDto
+            {
+                Success = false,
+                ErrorMessage = "Payment signature could not be verified by the server. Transaction was not confirmed."
+            };
+        }
+
+        // 2. Apply payment
+        var paymentAmount = invoice.BalanceDue;
+        var verifyRequest = new VerifyRazorpayPaymentRequest
+        {
+            InvoiceId = invoiceId,
+            RazorpayOrderId = orderId,
+            RazorpayPaymentId = paymentId,
+            RazorpaySignature = signature
+        };
+
+        var verifyResult = await _billingService.VerifyRazorpayPaymentAsync(verifyRequest, ct);
+        if (!verifyResult.Success)
+        {
+            return new ParentPaymentResultDto
+            {
+                Success = false,
+                ErrorMessage = verifyResult.ErrorMessage ?? "Payment verification failed."
+            };
+        }
+
+        var updatedInvoice = verifyResult.Invoice ?? await _billingService.GetInvoiceByIdAsync(invoiceId, ct);
+
+        return new ParentPaymentResultDto
+        {
+            Success = true,
+            PaymentId = paymentId,
+            AmountPaid = paymentAmount,
+            NewBalanceDue = updatedInvoice?.BalanceDue ?? 0,
+            NewStatus = updatedInvoice?.Status.ToString() ?? "Paid"
+        };
     }
 
     public async Task<AuthorizedPickupDto> SaveAuthorizedPickupAsync(Guid childId, AuthorizedPickupDto dto, CancellationToken cancellationToken = default)

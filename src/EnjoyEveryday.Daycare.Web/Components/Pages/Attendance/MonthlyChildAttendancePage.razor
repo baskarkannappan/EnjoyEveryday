@@ -13,6 +13,7 @@
 @inject IPageAuthorizationService PageAuth
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Children Monthly Attendance — EnjoyEveryday</PageTitle>
@@ -22,6 +23,12 @@
               Title="Children Monthly Attendance Register"
               Subtitle="Comprehensive read-only monthly attendance register for enrolled children.">
         <RightContent>
+            <button class="btn secondary" @onclick="ExportCsvComplianceReportAsync" title="Export monthly compliance record in CSV format">
+                <span>📥 Export CSV</span>
+            </button>
+            <button class="btn secondary" @onclick="PrintReportAsync" title="Print-ready compliance record">
+                <span>🖨️ Print / PDF</span>
+            </button>
             <a href="/management/attendance" class="btn secondary">
                 <span>Today's Daily Overview</span>
             </a>
@@ -187,5 +194,66 @@
             Navigation.NavigateTo("/attendance/monthly-teachers");
         }
     }
+
+    private async Task ExportCsvComplianceReportAsync()
+    {
+        if (_rows == null || _rows.Count == 0) return;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"# EnjoyEveryday State Licensing Attendance & Compliance Report");
+        sb.AppendLine($"# Organization: \"{_organizationName}\", Branch: \"{_branchName}\", Location: \"{_location}\"");
+        sb.AppendLine($"# Period: {_selectedYear}-{_selectedMonth:D2}, Generated At: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+        sb.AppendLine($"# Total Enrolled: {_summary.TotalEnrolledOrStaff}, Working Days: {_summary.WorkingDaysElapsed}");
+        sb.AppendLine();
+        sb.AppendLine("\"Student Name\",\"Classroom\",\"Date\",\"Day of Week\",\"Status\",\"Check-In Time\",\"Check-Out Time\",\"Attendance Code\",\"Notes\"");
+
+        foreach (var row in _rows)
+        {
+            var studentName = (row.FullName ?? string.Empty).Replace("\"", "\"\"");
+            var classroom = (row.ClassroomName ?? "General").Replace("\"", "\"\"");
+
+            foreach (var cell in row.DailyCells)
+            {
+                if (cell.IsWeekend && string.IsNullOrWhiteSpace(cell.RawStatus)) continue;
+
+                var dateStr = cell.Date.ToString("yyyy-MM-dd");
+                var dayOfWeek = cell.Date.ToString("dddd");
+                var status = (cell.RawStatus ?? (cell.IsFuture ? "Scheduled" : "No Record")).Replace("\"", "\"\"");
+                var inTime = cell.InTime.HasValue ? cell.InTime.Value.ToString(@"hh\:mm") : "-";
+                var outTime = cell.OutTime.HasValue ? cell.OutTime.Value.ToString(@"hh\:mm") : "-";
+                var code = cell.Code;
+                var notes = (cell.Notes ?? string.Empty).Replace("\"", "\"\"");
+
+                sb.AppendLine($"\"{studentName}\",\"{classroom}\",\"{dateStr}\",\"{dayOfWeek}\",\"{status}\",\"{inTime}\",\"{outTime}\",\"{code}\",\"{notes}\"");
+            }
+        }
+
+        var fileName = $"Compliance_Attendance_{_branchName.Replace(" ", "_")}_{_selectedYear}_{_selectedMonth:D2}.csv";
+        await JS.InvokeVoidAsync("window.downloadFile", fileName, "text/csv;charset=utf-8", sb.ToString());
+    }
+
+    private async Task PrintReportAsync()
+    {
+        await JS.InvokeVoidAsync("window.printCurrentPage");
+    }
 }
+
+<style>
+@@media print {
+    .btn, nav, .sidebar, .header-actions, .search-row, .tabs {
+        display: none !important;
+    }
+    body, .content {
+        background: white !important;
+        color: black !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        zoom: 0.9 !important;
+    }
+    .monthly-grid-wrapper, .attendance-table {
+        box-shadow: none !important;
+        border: 1px solid #333 !important;
+    }
+}
+</style>
 

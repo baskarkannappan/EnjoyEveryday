@@ -11,6 +11,7 @@
 @inject ClassroomService ClassroomService
 @inject BranchService BranchService
 @inject TimeProvider TimeProvider
+@inject IChildJourneyService JourneyService
 @if (IsOpen)
 {
     <div class="active-session-modal-backdrop" @onclick="CloseDialog">
@@ -43,7 +44,7 @@
                         Loading experience session...
                     </div>
                 }
-                else
+                else if (_currentModalStep == 1)
                 {
                     <!-- Children Participation Section -->
                     <div class="section-header-row">
@@ -164,22 +165,107 @@
                         </div>
                     </div>
                 }
+                else if (_currentModalStep == 2)
+                {
+                    <!-- STEP 2: CHILD JOURNEY MOMENTS REVIEW -->
+                    <div class="journey-review-container">
+                        <div class="review-banner">
+                            <div class="review-banner-icon">🌿</div>
+                            <div>
+                                <div class="review-banner-title">Step 2 of 2: Create Child Journey Moments (Optional)</div>
+                                <div class="review-banner-sub">
+                                    Select participating children to record in their learning timeline. Moments will be saved with <strong>PendingReview</strong> status for educator review before publication to the Parent Portal.
+                                </div>
+                            </div>
+                            <div class="review-banner-actions">
+                                <button type="button" class="btn secondary btn-sm" @onclick="ToggleSelectAllJourneys">
+                                    @(_journeyDrafts.All(d => d.Selected) ? "Deselect All" : "Select All")
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="journey-drafts-list">
+                            @foreach (var draft in _journeyDrafts)
+                            {
+                                <div class="journey-draft-card @(draft.Selected ? "selected" : "")">
+                                    <div class="draft-card-header">
+                                        <label class="draft-child-label">
+                                            <input type="checkbox" @bind="draft.Selected" disabled="@draft.AlreadyHasMoment" />
+                                            <div class="draft-avatar">@(!string.IsNullOrEmpty(draft.ChildName) ? draft.ChildName[0] : 'C')</div>
+                                            <div>
+                                                <span class="draft-child-name">@draft.ChildName</span>
+                                                <span class="draft-part-pill @draft.ParticipationStatus.ToLowerInvariant()">@draft.ParticipationStatus</span>
+                                            </div>
+                                        </label>
+                                        @if (draft.AlreadyHasMoment)
+                                        {
+                                            <span class="already-saved-pill">✓ Moment Already Saved</span>
+                                        }
+                                    </div>
+
+                                    @if (draft.Selected && !draft.AlreadyHasMoment)
+                                    {
+                                        <div class="draft-card-body">
+                                            <div class="draft-field">
+                                                <label class="draft-field-label">Moment Title</label>
+                                                <input type="text" class="draft-input" @bind="draft.Title" />
+                                            </div>
+                                            <div class="draft-field">
+                                                <label class="draft-field-label">Observation Notes (Editable)</label>
+                                                <textarea class="draft-textarea" rows="2" @bind="draft.Observation"></textarea>
+                                            </div>
+                                            <div class="draft-row">
+                                                <div class="draft-field flex-1">
+                                                    <label class="draft-field-label">Child Voice (Optional)</label>
+                                                    <input type="text" class="draft-input" @bind="draft.ChildVoice" placeholder="What the child said or expressed..." />
+                                                </div>
+                                                <div class="draft-field flex-1">
+                                                    <label class="draft-field-label">Teacher Reflection</label>
+                                                    <input type="text" class="draft-input" @bind="draft.TeacherReflection" placeholder="Educator observation note..." />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
             </div>
 
             <!-- Modal Footer -->
             <div class="session-modal-footer">
-                @if (!string.IsNullOrEmpty(_sessionClosedError))
+                @if (_currentModalStep == 1)
                 {
-                    <span class="warning-text" style="color: #9b2c2c;">@_sessionClosedError</span>
+                    @if (!string.IsNullOrEmpty(_sessionClosedError))
+                    {
+                        <span class="warning-text" style="color: #9b2c2c;">@_sessionClosedError</span>
+                    }
+                    else if (_showParticipationWarning)
+                    {
+                        <span class="warning-text">No participation recorded. Click again to confirm completion.</span>
+                    }
+                    <button class="btn secondary" @onclick="CloseDialog">Close (Keep Active)</button>
+                    <button class="btn primary btn-end-save" @onclick="TryEndSession" disabled="@IsDaycareClosedForModal" style="@(IsDaycareClosedForModal ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsDaycareClosedForModal ? "Daycare is closed — cannot end session" : "End Session & Save")">
+                        ✓ End Session &amp; Save
+                    </button>
                 }
-                else if (_showParticipationWarning)
+                else if (_currentModalStep == 2)
                 {
-                    <span class="warning-text">No participation recorded. Click again to confirm completion.</span>
+                    <button class="btn secondary" @onclick="SkipJourneyAndFinish" disabled="@_isSavingJourneyMoments">
+                        Skip Journey Generation &amp; Finish
+                    </button>
+                    <button class="btn primary btn-end-save" @onclick="SaveJourneyMomentsAndFinish" disabled="@_isSavingJourneyMoments">
+                        @if (_isSavingJourneyMoments)
+                        {
+                            <span>Saving Moments...</span>
+                        }
+                        else
+                        {
+                            <span>✓ Save Journey Moments &amp; Finish</span>
+                        }
+                    </button>
                 }
-                <button class="btn secondary" @onclick="CloseDialog">Close (Keep Active)</button>
-                <button class="btn primary btn-end-save" @onclick="TryEndSession" disabled="@IsDaycareClosedForModal" style="@(IsDaycareClosedForModal ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsDaycareClosedForModal ? "Daycare is closed — cannot end session" : "End Session & Save")">
-                    ✓ End Session &amp; Save
-                </button>
             </div>
         </div>
     </div>
@@ -534,6 +620,162 @@
     font-size: 12px;
     font-weight: 700;
 }
+
+.journey-review-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.review-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: #eef4f0;
+    border: 1px solid #c8dacd;
+    padding: 14px 18px;
+    border-radius: 0px;
+}
+
+.review-banner-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.review-banner-title {
+    font-weight: 750;
+    font-size: 14px;
+    color: #26332d;
+    margin-bottom: 2px;
+}
+
+.review-banner-sub {
+    font-size: 12px;
+    color: #4f6356;
+}
+
+.review-banner-actions {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.journey-drafts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 52vh;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.journey-draft-card {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 0px;
+    padding: 14px 16px;
+    transition: border-color 0.15s ease;
+}
+
+.journey-draft-card.selected {
+    border-color: #52745e;
+    background: #fbfcfb;
+}
+
+.draft-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.draft-child-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.draft-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 0px;
+    background: #e6eee9;
+    color: #31523c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.draft-child-name {
+    font-weight: 750;
+    font-size: 13.5px;
+    color: var(--text, #26332d);
+    margin-right: 8px;
+}
+
+.draft-part-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 0px;
+    background: #e6eee9;
+    color: #31523c;
+    border: 1px solid #c8dacd;
+}
+
+.already-saved-pill {
+    font-size: 11px;
+    font-weight: 700;
+    color: #52745e;
+    background: #edf3ee;
+    padding: 3px 8px;
+    border: 1px solid #c8dacd;
+}
+
+.draft-card-body {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border, #e4e7df);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.draft-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.draft-field-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted, #6c7870);
+    text-transform: uppercase;
+}
+
+.draft-input, .draft-textarea {
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 0px;
+    background: #ffffff;
+    color: var(--text, #26332d);
+    box-sizing: border-box;
+}
+
+.draft-row {
+    display: flex;
+    gap: 12px;
+}
+
+.flex-1 {
+    flex: 1;
+}
 </style>
 
 <AddJourneyMomentDialog @ref="_momentDialog" 
@@ -574,6 +816,24 @@
     private int _stars = 5;
     private string _rating = "Great";
     private string _notes = "";
+
+    private int _currentModalStep = 1;
+    private bool _isSavingJourneyMoments = false;
+    private List<ChildJourneyDraftItem> _journeyDrafts = new();
+
+    private class ChildJourneyDraftItem
+    {
+        public Guid ChildId { get; set; }
+        public string ChildName { get; set; } = "";
+        public string ParticipationStatus { get; set; } = "Participated";
+        public Guid ParticipationId { get; set; }
+        public bool Selected { get; set; } = true;
+        public string Title { get; set; } = "";
+        public string Observation { get; set; } = "";
+        public string? ChildVoice { get; set; }
+        public string? TeacherReflection { get; set; }
+        public bool AlreadyHasMoment { get; set; }
+    }
     
     private string GetStarStyle(int starValue)
     {
@@ -608,6 +868,8 @@
 
     private async Task LoadDataAsync()
     {
+        _currentModalStep = 1;
+        _journeyDrafts.Clear();
         _session = await SessionRepository.GetSessionByScheduleIdAsync(ScheduleId);
         
         if (_session != null)
@@ -757,13 +1019,130 @@
             {
                 // Already completed or closed by another teacher/action
             }
-            
+
+            // Prepare Journey moments review step for participating children
+            var participatingChildren = _children
+                .Where(c => _participations.TryGetValue(c.Id, out var p) && p.ParticipationStatus != "Absent" && _presentChildIds.Contains(c.Id))
+                .ToList();
+
+            if (participatingChildren.Any())
+            {
+                _journeyDrafts.Clear();
+                foreach (var child in participatingChildren)
+                {
+                    var p = _participations[child.Id];
+                    bool hasExisting = p.Id != Guid.Empty && await JourneyService.HasJourneyEntryForParticipationAsync(p.Id);
+
+                    string baseObs = !string.IsNullOrWhiteSpace(p.ParticipationNotes)
+                        ? p.ParticipationNotes
+                        : (!string.IsNullOrWhiteSpace(_notes)
+                            ? $"{child.FirstName} actively engaged in '{_experienceTitle}'. {_notes}"
+                            : $"{child.FirstName} engaged enthusiastically in today's '{_experienceTitle}' experience ({p.ParticipationStatus}).");
+
+                    _journeyDrafts.Add(new ChildJourneyDraftItem
+                    {
+                        ChildId = child.Id,
+                        ChildName = $"{child.FirstName} {child.LastName}".Trim(),
+                        ParticipationStatus = p.ParticipationStatus,
+                        ParticipationId = p.Id,
+                        Selected = !hasExisting,
+                        Title = _experienceTitle,
+                        Observation = baseObs,
+                        ChildVoice = "",
+                        TeacherReflection = _rating switch
+                        {
+                            "Great" => "Child thoroughly enjoyed the activity and engaged well with peers.",
+                            "Good" => "Child followed along and met session expectations.",
+                            _ => ""
+                        },
+                        AlreadyHasMoment = hasExisting
+                    });
+                }
+
+                _currentModalStep = 2;
+                StateHasChanged();
+                return;
+            }
+
             if (OnSessionEnded.HasDelegate)
             {
                 await OnSessionEnded.InvokeAsync();
             }
-            
+
             CloseDialog();
+        }
+    }
+
+    private void ToggleSelectAllJourneys()
+    {
+        bool allSelected = _journeyDrafts.Where(d => !d.AlreadyHasMoment).All(d => d.Selected);
+        foreach (var draft in _journeyDrafts.Where(d => !d.AlreadyHasMoment))
+        {
+            draft.Selected = !allSelected;
+        }
+    }
+
+    private async Task SkipJourneyAndFinish()
+    {
+        _currentModalStep = 1;
+        if (OnSessionEnded.HasDelegate)
+        {
+            await OnSessionEnded.InvokeAsync();
+        }
+        CloseDialog();
+    }
+
+    private async Task SaveJourneyMomentsAndFinish()
+    {
+        if (_session == null) return;
+        _isSavingJourneyMoments = true;
+        try
+        {
+            var selectedDrafts = _journeyDrafts.Where(d => d.Selected && !d.AlreadyHasMoment).ToList();
+            foreach (var draft in selectedDrafts)
+            {
+                var entry = new ChildJourneyEntry
+                {
+                    Id = Guid.NewGuid(),
+                    ChildId = draft.ChildId,
+                    ClassroomId = _session.ClassroomId,
+                    TeacherId = TeacherId,
+                    ExperienceId = _session.ExperienceId,
+                    ExperienceScheduleId = _session.ExperienceScheduleId,
+                    ExperienceSessionId = _session.Id,
+                    ExperienceParticipationId = draft.ParticipationId != Guid.Empty ? draft.ParticipationId : (Guid?)null,
+                    JourneyType = "ActivityObservation",
+                    Title = !string.IsNullOrWhiteSpace(draft.Title) ? draft.Title : _experienceTitle,
+                    Observation = !string.IsNullOrWhiteSpace(draft.Observation) ? draft.Observation : $"Participated in {_experienceTitle}.",
+                    ChildVoice = draft.ChildVoice,
+                    TeacherReflection = draft.TeacherReflection,
+                    ObservationDate = DateTimeOffset.UtcNow,
+                    ParticipationType = draft.ParticipationStatus,
+                    IsParentVisible = false,
+                    ParentVisibilityStatus = "PendingReview",
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+
+                await JourneyService.CreateJourneyEntryAsync(entry, Enumerable.Empty<Guid>());
+            }
+
+            if (OnSessionEnded.HasDelegate)
+            {
+                await OnSessionEnded.InvokeAsync();
+            }
+
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving journey moments from session: {ex.Message}");
+            CloseDialog();
+        }
+        finally
+        {
+            _isSavingJourneyMoments = false;
+            _currentModalStep = 1;
         }
     }
 

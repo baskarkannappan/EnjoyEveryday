@@ -26,17 +26,20 @@ public class ExperienceMarketplaceService
     private readonly IExperienceRepository _experienceRepo;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
+    private readonly IPlatformBusinessEventService? _eventService;
 
     public ExperienceMarketplaceService(
         IExperienceMarketplaceRepository marketplaceRepo,
         IExperienceRepository experienceRepo,
         ITenantContext tenantContext,
-        IUserContext userContext)
+        IUserContext userContext,
+        IPlatformBusinessEventService? eventService = null)
     {
         _marketplaceRepo = marketplaceRepo;
         _experienceRepo = experienceRepo;
         _tenantContext = tenantContext;
         _userContext = userContext;
+        _eventService = eventService;
     }
 
     private bool IsPlatformAdmin() =>
@@ -209,6 +212,43 @@ public class ExperienceMarketplaceService
             Details = JsonSerializer.Serialize(new { OrderId = order.Id, TxnRef = txnRef, Amount = exp.PriceAmount }),
             CreatedAt = DateTimeOffset.UtcNow
         }, ct);
+
+        if (_eventService != null)
+        {
+            try
+            {
+                var isSubscription = exp.PricingModel == ExperiencePricingModel.IncludedInSubscription;
+                var eventType = isSubscription ? "ExperienceAcquired" : "ExperiencePurchased";
+
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = eventType,
+                    TenantId = _tenantContext.TenantId,
+                    OrganizationId = orgId.Value,
+                    InitiatedByUserId = _userContext.UserId,
+                    TransactionReference = txnRef,
+                    TransactionCategory = "ExperienceMarketplace",
+                    Title = isSubscription ? $"Experience Acquired: {exp.Title}" : $"Experience Purchased: {exp.Title}",
+                    Description = isSubscription
+                        ? $"Organization acquired experience '{exp.Title}' ({exp.Category}) under their active subscription."
+                        : $"Organization purchased experience '{exp.Title}' ({exp.Category}) for {exp.PriceAmount:N2} {exp.Currency}.",
+                    Amount = isSubscription ? 0m : exp.PriceAmount,
+                    Currency = exp.Currency,
+                    Status = "Completed",
+                    ActionUrl = "/monetization",
+                    Metadata = new
+                    {
+                        OrderId = order.Id,
+                        PlatformExperienceId = platformExperienceId,
+                        ExperienceTitle = exp.Title,
+                        Publisher = exp.CreatorAttribution ?? "Platform Curator",
+                        PricingModel = exp.PricingModel.ToString(),
+                        TransactionReference = txnRef
+                    }
+                }, ct);
+            }
+            catch { /* fail-safe */ }
+        }
 
         return entitlement;
     }

@@ -590,6 +590,23 @@ public partial class ChildJourneyView : ComponentBase
             await DeleteEntry(item.Id);
         }
     }
+
+    private async Task HandleApprove(JourneyItemViewModel item)
+    {
+        try
+        {
+            var approverId = UserContext?.UserId != null && UserContext.UserId != Guid.Empty
+                ? UserContext.UserId
+                : Guid.Empty;
+
+            await JourneyService.ApproveJourneyEntryAsync(item.Id, approverId);
+            await LoadJourneyDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error approving journey entry: {ex.Message}");
+        }
+    }
     
     private async Task DeleteEntry(Guid entryId)
     {

@@ -16,4 +16,5 @@ public class ParentMessageNotification
     public string Content { get; set; } = string.Empty;
     public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
     public bool IsFromParent { get; set; } = true;
+    public bool IsQuietHours => Timestamp.ToLocalTime().Hour >= 20 || Timestamp.ToLocalTime().Hour < 7;
 }

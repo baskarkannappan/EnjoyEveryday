@@ -17,6 +17,8 @@ public class BillingService : IBillingService
     private readonly IAuditService _auditService;
     private readonly ILogger<BillingService> _logger;
     private readonly IRazorpayGateway _razorpayGateway;
+    private readonly IEmailNotificationService? _emailService;
+    private readonly IPlatformBusinessEventService? _eventService;
 
     public BillingService(
         IBillingRepository billingRepository,
@@ -26,7 +28,9 @@ public class BillingService : IBillingService
         IUserContext userContext,
         IAuditService auditService,
         ILogger<BillingService> logger,
-        IRazorpayGateway? razorpayGateway = null)
+        IRazorpayGateway? razorpayGateway = null,
+        IEmailNotificationService? emailService = null,
+        IPlatformBusinessEventService? eventService = null)
     {
         _billingRepository = billingRepository;
         _organizationRepository = organizationRepository;
@@ -36,6 +40,8 @@ public class BillingService : IBillingService
         _auditService = auditService;
         _logger = logger;
         _razorpayGateway = razorpayGateway ?? new DefaultFallbackRazorpayGateway();
+        _emailService = emailService;
+        _eventService = eventService;
     }
 
     public async Task<Invoice> CreateDraftInvoiceAsync(CreateDraftInvoiceRequest request, CancellationToken ct = default)
@@ -348,6 +354,38 @@ public class BillingService : IBillingService
             Details = new { invoice.InvoiceNumber, recorded.Amount, recorded.PaymentReference, recorded.Method }
         }, ct);
 
+        if (_eventService != null)
+        {
+            try
+            {
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = "SubscriptionInvoicePayment",
+                    TenantId = invoice.TenantId,
+                    OrganizationId = invoice.OrganizationId,
+                    InitiatedByUserId = _userContext.UserId != Guid.Empty ? _userContext.UserId : null,
+                    TransactionReference = recorded.PaymentReference,
+                    TransactionCategory = "PlatformBilling",
+                    Title = $"Payment Recorded: {invoice.InvoiceNumber}",
+                    Description = $"Payment of {recorded.Amount:N2} {recorded.Currency} ({recorded.Method}) recorded for invoice {invoice.InvoiceNumber}.",
+                    Amount = recorded.Amount,
+                    Currency = recorded.Currency,
+                    Status = "Completed",
+                    ActionUrl = "/billing",
+                    Metadata = new
+                    {
+                        PaymentId = recorded.Id,
+                        InvoiceId = invoice.Id,
+                        InvoiceNumber = invoice.InvoiceNumber,
+                        Amount = recorded.Amount,
+                        Method = recorded.Method,
+                        PaymentReference = recorded.PaymentReference
+                    }
+                }, ct);
+            }
+            catch { /* fail-safe */ }
+        }
+
         return recorded;
     }
 
@@ -408,6 +446,38 @@ public class BillingService : IBillingService
             EntityId = recorded.Id,
             Details = new { invoice.InvoiceNumber, recorded.Amount, recorded.ReceiptNumber, recorded.RecordedByEmail }
         }, ct);
+
+        if (_eventService != null)
+        {
+            try
+            {
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = "SubscriptionInvoicePayment",
+                    TenantId = invoice.TenantId,
+                    OrganizationId = invoice.OrganizationId,
+                    InitiatedByUserId = _userContext.UserId != Guid.Empty ? _userContext.UserId : null,
+                    TransactionReference = recorded.ReceiptNumber,
+                    TransactionCategory = "PlatformBilling",
+                    Title = $"Cash Payment Recorded: {invoice.InvoiceNumber}",
+                    Description = $"Cash payment of {recorded.Amount:N2} {recorded.Currency} (Receipt: {recorded.ReceiptNumber}) recorded for invoice {invoice.InvoiceNumber}.",
+                    Amount = recorded.Amount,
+                    Currency = recorded.Currency,
+                    Status = "Completed",
+                    ActionUrl = "/billing",
+                    Metadata = new
+                    {
+                        PaymentId = recorded.Id,
+                        InvoiceId = invoice.Id,
+                        InvoiceNumber = invoice.InvoiceNumber,
+                        Amount = recorded.Amount,
+                        Method = recorded.Method,
+                        ReceiptNumber = recorded.ReceiptNumber
+                    }
+                }, ct);
+            }
+            catch { /* fail-safe */ }
+        }
 
         return recorded;
     }
@@ -625,6 +695,39 @@ public class BillingService : IBillingService
             Details = new { invoice.InvoiceNumber, recorded.Amount, recorded.ProviderPaymentId, recorded.ProviderOrderId }
         }, ct);
 
+        if (_eventService != null)
+        {
+            try
+            {
+                await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                {
+                    EventType = "SubscriptionInvoicePayment",
+                    TenantId = invoice.TenantId,
+                    OrganizationId = invoice.OrganizationId,
+                    InitiatedByUserId = _userContext.UserId != Guid.Empty ? _userContext.UserId : null,
+                    TransactionReference = recorded.PaymentReference,
+                    TransactionCategory = "PlatformBilling",
+                    Title = $"Online Payment Captured: {invoice.InvoiceNumber}",
+                    Description = $"Online Razorpay payment of {recorded.Amount:N2} {recorded.Currency} captured for invoice {invoice.InvoiceNumber} (Order: {recorded.ProviderOrderId}).",
+                    Amount = recorded.Amount,
+                    Currency = recorded.Currency,
+                    Status = "Completed",
+                    ActionUrl = "/billing",
+                    Metadata = new
+                    {
+                        PaymentId = recorded.Id,
+                        InvoiceId = invoice.Id,
+                        InvoiceNumber = invoice.InvoiceNumber,
+                        Amount = recorded.Amount,
+                        Method = recorded.Method,
+                        ProviderPaymentId = recorded.ProviderPaymentId,
+                        ProviderOrderId = recorded.ProviderOrderId
+                    }
+                }, ct);
+            }
+            catch { /* fail-safe */ }
+        }
+
         return new RazorpayVerificationResult
         {
             Success = true,
@@ -646,9 +749,22 @@ public class BillingService : IBillingService
         if (!root.TryGetProperty("event", out var eventProp)) return false;
 
         var eventName = eventProp.GetString();
+        var eventId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+
+        // Idempotency check: has this webhook event ID already been recorded?
+        if (!string.IsNullOrWhiteSpace(eventId) && await _billingRepository.HasWebhookEventBeenProcessedAsync(eventId, ct))
+        {
+            _logger.LogInformation("Razorpay webhook event {EventId} already processed idempotently.", eventId);
+            return true;
+        }
+
         if (eventName != "payment.captured" && eventName != "order.paid")
         {
             _logger.LogInformation("Ignoring unhandled Razorpay webhook event: {Event}", eventName);
+            if (!string.IsNullOrWhiteSpace(eventId))
+            {
+                await _billingRepository.RecordWebhookEventAsync(eventId, eventName ?? "unknown", null, null, null, null, "Ignored", requestBody, null, ct);
+            }
             return true;
         }
 
@@ -668,6 +784,10 @@ public class BillingService : IBillingService
             if (existing != null)
             {
                 _logger.LogInformation("Razorpay payment {PaymentId} already recorded idempotently.", paymentId);
+                if (!string.IsNullOrWhiteSpace(eventId))
+                {
+                    await _billingRepository.RecordWebhookEventAsync(eventId, eventName, existing.InvoiceId, paymentId, amountPaise, currency, "DuplicatePaymentIgnored", requestBody, null, ct);
+                }
                 return true;
             }
 
@@ -678,6 +798,11 @@ public class BillingService : IBillingService
                     Guid.TryParse(invIdProp.GetString(), out var parsedId))
                 {
                     invoiceId = parsedId;
+                }
+                else if (notes.TryGetProperty("invoiceId", out var invIdProp2) && 
+                    Guid.TryParse(invIdProp2.GetString(), out var parsedId2))
+                {
+                    invoiceId = parsedId2;
                 }
             }
 
@@ -710,6 +835,42 @@ public class BillingService : IBillingService
 
                     await _billingRepository.RecordPaymentAsync(newPayment, ct);
                     _logger.LogInformation("Webhook recorded payment {PaymentId} against invoice {InvoiceNumber}", paymentId, invoice.InvoiceNumber);
+
+                    if (_eventService != null)
+                    {
+                        try
+                        {
+                            await _eventService.PublishEventAsync(new PublishBusinessEventRequest
+                            {
+                                EventType = "SubscriptionInvoicePayment",
+                                TenantId = invoice.TenantId,
+                                OrganizationId = invoice.OrganizationId,
+                                TransactionReference = paymentId,
+                                TransactionCategory = "PlatformBilling",
+                                Title = $"Webhook Payment Captured: {invoice.InvoiceNumber}",
+                                Description = $"Razorpay webhook captured payment of {newPayment.Amount:N2} {newPayment.Currency} for invoice {invoice.InvoiceNumber}.",
+                                Amount = newPayment.Amount,
+                                Currency = newPayment.Currency,
+                                Status = "Completed",
+                                ActionUrl = "/billing",
+                                Metadata = new
+                                {
+                                    PaymentId = newPayment.Id,
+                                    InvoiceId = invoice.Id,
+                                    InvoiceNumber = invoice.InvoiceNumber,
+                                    Amount = newPayment.Amount,
+                                    PaymentReference = paymentId,
+                                    WebhookEvent = eventName
+                                }
+                            }, ct);
+                        }
+                        catch { /* fail-safe */ }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(eventId))
+                    {
+                        await _billingRepository.RecordWebhookEventAsync(eventId, eventName, invoice.Id, paymentId, amountPaise, currency, "Processed", requestBody, null, ct);
+                    }
                 }
             }
         }
@@ -925,6 +1086,145 @@ public class BillingService : IBillingService
             {
                 _logger.LogError(ex, "Failed to automatically generate invoice for organization {OrgId}", orgSetting.OrganizationId);
                 result.Errors.Add($"Org {orgSetting.OrganizationId}: {ex.Message}");
+            }
+        }
+
+        return result;
+    }
+
+    public async Task<TuitionBillingRunResult> ExecuteMonthlyTuitionBillingRunAsync(Guid tenantId, DateTimeOffset asOfDate, Guid? branchId = null, CancellationToken ct = default)
+    {
+        var result = new TuitionBillingRunResult();
+        var periodKey = asOfDate.ToString("yyyy-MM");
+        var firstDayOfMonth = new DateTime(asOfDate.Year, asOfDate.Month, 1);
+        var lastDayOfMonth = new DateTime(asOfDate.Year, asOfDate.Month, DateTime.DaysInMonth(asOfDate.Year, asOfDate.Month));
+        var daysInMonth = DateTime.DaysInMonth(asOfDate.Year, asOfDate.Month);
+
+        var contracts = await _billingRepository.GetActiveFamilyContractsAsync(tenantId, branchId, ct);
+        result.ProcessedContracts = contracts.Count;
+
+        var existingInvoices = await _billingRepository.GetAllInvoicesAsync(tenantId, null, null, ct);
+
+        foreach (var contract in contracts)
+        {
+            try
+            {
+                if (!contract.AutoInvoice || !string.Equals(contract.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (contract.StartDate > lastDayOfMonth)
+                {
+                    continue; // Has not started yet
+                }
+                if (contract.EndDate.HasValue && contract.EndDate.Value < firstDayOfMonth)
+                {
+                    continue; // Already ended
+                }
+
+                var contractTag = $"Contract:{contract.Id}|Period:{periodKey}";
+                var alreadyExists = existingInvoices.Any(i => 
+                    i.Status != InvoiceStatus.Void && 
+                    ((i.Notes != null && i.Notes.Contains(contractTag)) ||
+                     (i.Description != null && i.Description.Contains($"Tuition Billing - {periodKey}") && i.BillingContactEmail == contract.ParentEmail)));
+
+                if (alreadyExists)
+                {
+                    result.SkippedExisting++;
+                    continue;
+                }
+
+                var effectiveStartDate = contract.StartDate > firstDayOfMonth ? contract.StartDate.Date : firstDayOfMonth;
+                var effectiveEndDate = (contract.EndDate.HasValue && contract.EndDate.Value < lastDayOfMonth) ? contract.EndDate.Value.Date : lastDayOfMonth;
+                var activeDays = Math.Max(1, (effectiveEndDate - effectiveStartDate).Days + 1);
+
+                decimal tuitionAmount;
+                string lineDesc;
+                if (activeDays < daysInMonth)
+                {
+                    tuitionAmount = Math.Round(contract.EffectiveRate * activeDays / daysInMonth, 2);
+                    lineDesc = $"Monthly Tuition ({periodKey}) - Prorated {activeDays}/{daysInMonth} days";
+                }
+                else
+                {
+                    tuitionAmount = contract.EffectiveRate;
+                    lineDesc = $"Monthly Tuition ({periodKey}) - {contract.ScheduleType}";
+                }
+
+                if (tuitionAmount <= 0) continue;
+
+                var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+                var invoiceNum = $"INV-TUIT-{asOfDate:yyMM}-{new Random().Next(1000, 9999)}";
+
+                var invoice = new Invoice
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    OrganizationId = orgId,
+                    InvoiceNumber = invoiceNum,
+                    Currency = "INR",
+                    IssueDate = asOfDate,
+                    DueDate = asOfDate.AddDays(7),
+                    Status = InvoiceStatus.Unpaid,
+                    Subtotal = tuitionAmount,
+                    TotalAmount = tuitionAmount,
+                    AmountPaid = 0,
+                    BillingContactEmail = contract.ParentEmail,
+                    Description = $"Tuition Billing - {periodKey} for {contract.ParentName}",
+                    Notes = $"Tuition Billing | {contractTag} | Child:{contract.ChildId}. Schedule: {contract.ScheduleType}.",
+                    PaymentInstructions = "Please remit tuition payment online via the Parent Portal or at the daycare front desk.",
+                    CreatedBy = "Automated Tuition Billing Engine",
+                    PublishedAt = asOfDate,
+                    PublishedBy = "Automated Tuition Billing Engine",
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    LineItems = new List<InvoiceLineItem>
+                    {
+                        new InvoiceLineItem
+                        {
+                            Id = Guid.NewGuid(),
+                            LineNumber = 1,
+                            Description = lineDesc,
+                            Quantity = 1,
+                            UnitPrice = tuitionAmount,
+                            Category = "Tuition",
+                            CreatedAt = DateTimeOffset.UtcNow
+                        }
+                    }
+                };
+
+                await _billingRepository.CreateInvoiceAsync(invoice, ct);
+                result.InvoicesGenerated++;
+                result.TotalAmountBilled += tuitionAmount;
+
+                if (_emailService != null && !string.IsNullOrWhiteSpace(contract.ParentEmail))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _emailService.SendEmailAsync(
+                                toAddress: contract.ParentEmail,
+                                subject: $"New Monthly Tuition Invoice ({invoiceNum}) \u2014 EnjoyEveryday",
+                                htmlBody: $"<p>Dear {contract.ParentName},</p><p>Your monthly tuition invoice for <strong>{periodKey}</strong> ({invoiceNum}) has been generated for amount <strong>\u20b9{tuitionAmount:N2}</strong>.</p><p>You can view and securely pay this invoice online via your <a href=\"https://localhost:7005/invoices\">EnjoyEveryday Parent Portal</a>.</p><p>Thank you,<br/>EnjoyEveryday Daycare Management</p>",
+                                notificationType: "TuitionBilling",
+                                tenantId: tenantId,
+                                metadata: new { InvoiceNumber = invoiceNum, Amount = tuitionAmount, Period = periodKey },
+                                ct: CancellationToken.None);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to send tuition invoice email to {Email}", contract.ParentEmail);
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Errors++;
+                result.ErrorDetails.Add($"Contract {contract.Id} ({contract.ParentName}): {ex.Message}");
+                _logger.LogError(ex, "Error processing tuition billing for contract {ContractId}", contract.Id);
             }
         }
 

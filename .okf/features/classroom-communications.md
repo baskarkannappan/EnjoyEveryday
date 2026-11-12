@@ -17,12 +17,24 @@ tags:
 
 ## Architectural Components
 
-* **Service**: `IClassroomCommunicationService`, `IDaycareAnnouncementService` (`EnjoyEveryday.Application.Services`)
-* **Entities**:
+* **Service**: `IClassroomCommunicationService`, `IDaycareAnnouncementService` (`EnjoyEveryday.Application.Services`), `IEmailNotificationService` / `AzureCommunicationEmailService` (`EnjoyEveryday.Infrastructure.Services.Communication`)
+* **Entities & Tables**:
   - `TeacherHandover`: Captures morning-to-afternoon shifts (room supplies, health alerts, behavioral notes).
   - `ClassroomMessage`: Real-time announcements between staff members in a branch.
   - `DaycareAnnouncement`: Org and branch announcements published by administrators, synchronized to parent portals and educator streams with priority urgency badges.
   - `IncidentReport`: Formal safety incidents with parent acknowledgment gates and supervisor approvals.
+  - `email_notification_logs`: Multi-tenant audit trail of all outbound Azure Communication Services (ACS) emails (invitations, consent reminders, tuition notices, parent welcomes).
+
+## Outbound Email Dispatch Architecture (Azure Communication Services)
+* **Provider**: Azure Communication Services (`Azure.Communication.Email` v1.1.0).
+* **Configuration**: `AzureCommunicationServices:ConnectionString` and `AzureCommunicationServices:SenderAddress` in `appsettings.json`.
+* **Templates**: Scandinavian sage design system (`#52745e` brand sage, `#31523c` deep accent, `#f8f9f5` cards).
+* **Workflows Supported**:
+  - Safety & Trust: Digital consent signing invitations and reminder dispatches.
+  - Admissions & Families: Parent welcome onboarding notices.
+  - Staffing: Educator welcome invitations.
+  - Billing & Commercial: Published tuition invoice notifications.
+* **Audit Logging**: Every dispatch logs recipient, subject, notification type, status (`Queued`, `Failed`), delivery metadata, and error traces into `email_notification_logs`.
 
 ## UI Endpoints
 * **Cockpit Handover Modal**: Accessed from `TeacherWorkspace.razor` via the "+ Handover" action button.

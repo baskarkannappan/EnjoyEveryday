@@ -30,8 +30,7 @@ public static class AuthEndpoints
 
             if (string.IsNullOrWhiteSpace(clientId) || clientId == "mock-client-id")
             {
-                var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
-                if (env.IsDevelopment())
+                if (IsDevLoginPermitted(context))
                 {
                     return Results.Redirect($"/auth/dev-login?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
                 }
@@ -51,9 +50,10 @@ public static class AuthEndpoints
 
         group.MapGet("/dev-login", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
         {
-            var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
-            if (!env.IsDevelopment())
+            if (!IsDevLoginPermitted(context))
             {
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Security");
+                logger.LogWarning("Unauthorized access attempt to /auth/dev-login from {Ip} on host {Host}", context.Connection.RemoteIpAddress, context.Request.Host);
                 return Results.Redirect("/login");
             }
 
@@ -270,5 +270,31 @@ public static class AuthEndpoints
     {
         public string? claim_type { get; set; }
         public string? claim_value { get; set; }
+    }
+
+    private static bool IsDevLoginPermitted(HttpContext context)
+    {
+        var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+        if (!env.IsDevelopment()) return false;
+
+        var config = context.RequestServices.GetRequiredService<IConfiguration>();
+        var allowConfig = config.GetValue<bool?>("Authentication:AllowDevLogin")
+                       ?? config.GetValue<bool?>("AllowDevLogin")
+                       ?? true;
+        if (!allowConfig) return false;
+
+        var host = context.Request.Host.Host;
+        bool isLocalHost = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(host, "[::1]", StringComparison.OrdinalIgnoreCase);
+        if (!isLocalHost) return false;
+
+        var remoteIp = context.Connection.RemoteIpAddress;
+        if (remoteIp != null && !System.Net.IPAddress.IsLoopback(remoteIp))
+        {
+            return false;
+        }
+
+        return true;
     }
 }

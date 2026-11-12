@@ -26,8 +26,16 @@ Hosted in `src/EnjoyEveryday.Parent.Web` (port `7005`). Designed specifically fo
 * **Today's Overview (`/`, `/today`)**: Live updates on daily care (naps, diaper changes, meals, bottle ounces) recorded by teachers in the Daycare app, plus verified attendance badges.
 * **Child Journey (`/journey`)**: Developmental milestones, curiosity pillars, educator observations, and child voice moments.
 * **Memories (`/memories`)**: Visual chronological photo and moment gallery with media consent gating.
-* **Classroom Messages (`/messages`)**: Direct, secure messaging with verified classroom educators with quiet hours enforcement and quick replies. Backed by stored procedures `sp_get_parent_messages` and `sp_send_parent_message`.
-* **Family Profile (`/family`)**: Connected guardians, emergency contacts, authorized pickups, and invoice summaries.
+* **Classroom Messages (`/messages`)**: Direct, secure messaging with verified classroom educators with quiet hours enforcement (`IsQuietHours` mutes push sounds after 8:00 PM and before 7:00 AM) and quick replies. Backed by stored procedures `sp_get_parent_messages`, `sp_send_parent_message`, and SignalR real-time notification broadcasting.
+* **Family Profile (`/family`, `/profile`, `/settings`)**: Connected guardians, emergency contacts, authorized pickups (synced to educator checkout gates), and self-service language and communication preferences.
+* **Native Consent Signing (`/consent/sign/{Token}`, `/consent/document/{DocumentId}`)**:
+  - Embedded electronic signature pad with drawn or typed signatures, legal consent declarations, and automatic PDF audit copy generation.
+  - Documents transition from `SentToParent` → `Opened` → `Signed` with cryptographic verification.
+* **Tuition Billing & Razorpay Online Payments**:
+  - Modal: `src/EnjoyEveryday.Parent.Web/Components/Shared/InvoicesListModal.razor`.
+  - Service: `ParentService.CreateInvoicePaymentOrderAsync` and `VerifyAndApplyPaymentAsync`.
+  - JS Interop: `wwwroot/js/razorpayCheckout.js` launches standard Razorpay checkout modal for UPI, debit/credit cards, and net banking.
+  - Verification: Enforces HMAC-SHA256 signature verification via `IRazorpayGateway` before recording payment in `payments` and marking `invoices` balance. Supports simulation mode for local development.
 
 ## Mobile Layout Standards
 * Bottom navigation bar (`ParentMobileNav.razor`) provides quick access to Today, Journey, Memories, Messages, and Family.

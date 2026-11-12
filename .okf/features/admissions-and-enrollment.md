@@ -70,4 +70,21 @@ Before a student can be onboarded, enrolled, or assigned to a branch/classroom, 
   - `EnrollmentPipelineService.FinalizeEnrollmentAndBillingAsync`: Revalidates readiness before calling `EnsureChildEnrolledAsync`.
   - `ClassroomsController.cs`: Exposes `GET /api/branches/{branchId}/classrooms/readiness` and `GET /api/branches/{branchId}/classrooms/{id}/readiness`.
 
+## Admissions to Guardian Linking & Guardian Management
+
+### 1. Automated Parent Guardian Association
+When an enrollment application is confirmed via `EnrollmentPipelineService.FinalizeEnrollmentAndBillingAsync`:
+1. Extracts parent/guardian details (first name, last name, email, phone, relationship) captured in the enrollment application.
+2. Invokes `_childRepository.SyncParentGuardianAsync` which executes PostgreSQL procedure `sp_sync_parent_guardian`.
+3. Creates or links the corresponding `persons` record, `child_guardians` record, and `family_relationships` link with `status = 'Verified'` and pickup authorization.
+4. Triggers `SendParentWelcomeAsync` via `IEmailNotificationService` with portal access instructions and contact information.
+
+### 2. Daycare Staff Guardian Management UI
+Staff and Administrators manage child guardians directly from `ChildrenDirectoryView.razor`:
+* **Component**: `src/EnjoyEveryday.UI.Shared/Components/Children/ChildGuardiansModal.razor`.
+* **Capabilities**:
+  - Lists all connected guardians with primary status, relationship, email, phone, pickup authorization, and verified portal access badge.
+  - Links new guardians to the child with pickup permissions and emergency contact flags.
+  - Revokes portal access atomically via `sp_revoke_child_guardian(tenantId, childId, userId, revokedBy)` without destroying historical audit data.
+
 

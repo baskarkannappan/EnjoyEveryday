@@ -522,6 +522,16 @@ public class BillingRepository : IBillingRepository
         }).ToList();
     }
 
+    public async Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid tenantId, Guid? branchId = null, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var rows = await conn.QueryFunctionAsync<FamilyBillingContract>(
+            "fn_get_active_family_contracts",
+            new { p_tenant_id = tenantId, p_branch_id = branchId },
+            cancellationToken: ct);
+        return rows.ToList();
+    }
+
     private static async Task<List<InvoiceLineItem>> GetLineItemsForInvoiceInternalAsync(IDbConnection conn, Guid invoiceId)
     {
         return (await conn.QueryFunctionAsync<InvoiceLineItem>(
@@ -622,6 +632,38 @@ public class BillingRepository : IBillingRepository
         public string? Notes { get; set; }
         public string? UpdatedBy { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    public async Task<bool> HasWebhookEventBeenProcessedAsync(string eventId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(eventId)) return false;
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        const string sql = "SELECT COUNT(1) FROM public.razorpay_webhook_events WHERE event_id = @EventId;";
+        var count = await Dapper.SqlMapper.ExecuteScalarAsync<int>(conn, new Dapper.CommandDefinition(sql, new { EventId = eventId.Trim() }, cancellationToken: ct));
+        return count > 0;
+    }
+
+    public async Task RecordWebhookEventAsync(string eventId, string eventType, Guid? invoiceId, string? paymentId, long? amountPaise, string? currency, string status, string? payloadJson, string? errorMessage = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(eventId)) return;
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        const string sql = @"
+            INSERT INTO public.razorpay_webhook_events (id, event_id, event_type, invoice_id, payment_id, amount_in_paise, currency, status, payload, received_at, error_message)
+            VALUES (gen_random_uuid(), @EventId, @EventType, @InvoiceId, @PaymentId, @AmountPaise, @Currency, @Status, @Payload::jsonb, NOW(), @ErrorMessage)
+            ON CONFLICT (event_id) DO UPDATE 
+            SET status = EXCLUDED.status, error_message = EXCLUDED.error_message;";
+        await Dapper.SqlMapper.ExecuteAsync(conn, new Dapper.CommandDefinition(sql, new
+        {
+            EventId = eventId.Trim(),
+            EventType = eventType.Trim(),
+            InvoiceId = invoiceId,
+            PaymentId = paymentId,
+            AmountPaise = amountPaise,
+            Currency = currency ?? "INR",
+            Status = status,
+            Payload = string.IsNullOrWhiteSpace(payloadJson) ? "{}" : payloadJson,
+            ErrorMessage = errorMessage
+        }, cancellationToken: ct));
     }
 
     private static DateTimeOffset ToUtc(DateTimeOffset dto) => dto.ToUniversalTime();
