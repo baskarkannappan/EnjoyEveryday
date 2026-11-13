@@ -199,4 +199,53 @@ public class EnrollmentPipelineRepository : IEnrollmentPipelineRepository
 
         return (fallback?.BranchId, fallback?.OrganizationId);
     }
+
+    public async Task FinalizeEnrolledChildProfileAsync(
+        Guid childId,
+        Guid tenantId,
+        Guid classroomId,
+        string firstName,
+        string lastName,
+        DateTime dateOfBirth,
+        string draftData,
+        int profileCompletionPercentage,
+        string? emergencyName = null,
+        string? emergencyPhone = null,
+        string? emergencyEmail = null,
+        string? medicalNotes = null,
+        string? allergies = null,
+        string? dietaryRestrictions = null,
+        CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteProcedureAsync(
+            "sp_finalize_enrolled_child_profile",
+            new
+            {
+                p_child_id = childId,
+                p_tenant_id = tenantId,
+                p_classroom_id = classroomId,
+                p_first_name = firstName,
+                p_last_name = lastName,
+                p_date_of_birth = DateTime.SpecifyKind(dateOfBirth.Date, DateTimeKind.Unspecified),
+                p_draft_data = draftData,
+                p_profile_completion_percentage = profileCompletionPercentage,
+                p_emergency_name = emergencyName,
+                p_emergency_phone = emergencyPhone,
+                p_emergency_email = emergencyEmail,
+                p_medical_notes = medicalNotes,
+                p_allergies = allergies,
+                p_dietary_restrictions = dietaryRestrictions
+            },
+            cancellationToken: ct);
+    }
+
+    public async Task<EnrollmentApplicationRecord?> GetApplicationByChildIdAsync(Guid tenantId, Guid childId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        return await conn.QuerySingleFunctionAsync<EnrollmentApplicationRecord>(
+            "fn_get_enrollment_application_by_child_id",
+            new { p_tenant_id = tenantId, p_child_id = childId },
+            cancellationToken: ct);
+    }
 }

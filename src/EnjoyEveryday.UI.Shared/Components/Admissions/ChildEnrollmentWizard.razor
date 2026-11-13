@@ -12,6 +12,7 @@
 @inject ISecurePickupService SecurePickupService
 @inject IClassroomReadinessService ClassroomReadinessService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
+@inject IEnrollmentPipelineService PipelineService
 @using EnjoyEveryday.Shared.Tenancy
 @using EnjoyEveryday.Shared.Authorization
 @inject IUserContext UserContext
@@ -126,8 +127,18 @@
             }
             else if (currentStep == 4)
             {
-                <h3>Emergency Contacts</h3>
-                <p style="font-size: 13px; color: #7c877f; margin-bottom: 20px;">Please provide at least one emergency contact other than the primary guardian.</p>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                    <div>
+                        <h3 style="margin: 0 0 4px 0;">Emergency Contacts</h3>
+                        <p style="font-size: 13px; color: #7c877f; margin: 0;">Please provide at least one emergency contact.</p>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(parentName))
+                    {
+                        <button type="button" class="btn secondary" style="font-size: 11.5px; padding: 4px 10px; border-radius: 4px; border-color: var(--accent, #557c6c); color: var(--accent-dark, #31523c);" @onclick="CopyParentToEmergencyContact">
+                            📋 Use Parent / Guardian Info
+                        </button>
+                    }
+                </div>
                 <div class="field">
                     <label>Contact Full Name</label>
                     <input type="text" @bind="emergencyName" placeholder="e.g. Robert Smith" />
@@ -363,7 +374,15 @@
                 }
 
                 <div style="background: #f8f9f5; border: 1px solid #e1e6e0; border-radius: 0px; padding: 16px; margin-bottom: 20px;">
-                    <h4 style="margin: 0 0 12px; font-size: 13.5px; font-weight: 750; color: #26332d;">Add Authorized Pickup Contact</h4>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h4 style="margin: 0; font-size: 13.5px; font-weight: 750; color: #26332d;">Add Authorized Pickup Contact</h4>
+                        @if (!string.IsNullOrWhiteSpace(parentName))
+                        {
+                            <button type="button" class="btn secondary" style="font-size: 11.5px; padding: 3px 10px; border-radius: 4px; border-color: var(--accent, #557c6c); color: var(--accent-dark, #31523c);" @onclick="CopyParentToPickupContact">
+                                📋 Use Parent / Guardian Info
+                            </button>
+                        }
+                    </div>
                     <div class="field">
                         <label>Pickup Person Full Name *</label>
                         <input type="text" @bind="pickupName" placeholder="e.g. Grandma Helen or John Doe" />
@@ -614,10 +633,80 @@
                     catch { }
                 }
 
+                // Carry over and pre-populate onboarding details if not already in draft_data
+                try
+                {
+                    // 1. Fallback to linked guardians
+                    var guardians = (await ChildService.GetChildGuardiansAsync(_draftChild.Id)).ToList();
+                    var primaryGuardian = guardians.FirstOrDefault(g => g.IsPrimary) ?? guardians.FirstOrDefault();
+                    if (primaryGuardian != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(parentName)) parentName = primaryGuardian.FullName;
+                        if (string.IsNullOrWhiteSpace(parentEmail)) parentEmail = primaryGuardian.Email;
+                        if (string.IsNullOrWhiteSpace(parentPhone)) parentPhone = primaryGuardian.Phone;
+                        if (string.IsNullOrWhiteSpace(parentRelationship)) parentRelationship = primaryGuardian.Relationship;
+
+                        if (string.IsNullOrWhiteSpace(emergencyName))
+                        {
+                            emergencyName = primaryGuardian.FullName;
+                            emergencyRelationship = primaryGuardian.Relationship;
+                            emergencyPhone = primaryGuardian.Phone;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(pickupName))
+                        {
+                            pickupName = primaryGuardian.FullName;
+                            pickupRelationship = primaryGuardian.Relationship;
+                            pickupPhone = primaryGuardian.Phone;
+                            pickupIsPrimary = true;
+                        }
+                    }
+
+                    // 2. Fallback to Admissions Inquiry Pipeline record
+                    var app = await PipelineService.GetApplicationByChildIdAsync(_draftChild.Id);
+                    if (app != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(parentName)) parentName = app.ParentGuardianName;
+                        if (string.IsNullOrWhiteSpace(parentEmail)) parentEmail = app.ParentEmail;
+                        if (string.IsNullOrWhiteSpace(parentPhone)) parentPhone = app.ParentPhone;
+
+                        if (string.IsNullOrWhiteSpace(emergencyName))
+                        {
+                            emergencyName = app.ParentGuardianName;
+                            emergencyRelationship = "Parent";
+                            emergencyPhone = app.ParentPhone;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(pickupName))
+                        {
+                            pickupName = app.ParentGuardianName;
+                            pickupRelationship = "Parent";
+                            pickupPhone = app.ParentPhone;
+                            pickupIsPrimary = true;
+                        }
+
+                        if (app.DesiredStartDate.HasValue && (enrollmentStartDate == null || enrollmentStartDate == DateTime.Today.AddDays(7)))
+                        {
+                            enrollmentStartDate = app.DesiredStartDate.Value;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(app.ScheduleType) && (string.IsNullOrWhiteSpace(scheduleType) || scheduleType == "Full Time"))
+                        {
+                            scheduleType = app.ScheduleType;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(allergies) && !string.IsNullOrWhiteSpace(app.InternalNotes))
+                        {
+                            allergies = ExtractAllergies(app.InternalNotes);
+                        }
+                    }
+                }
+                catch { }
+
                 int calculatedStep = (_draftChild.ProfileCompletionPercentage / 10) + 1;
                 if (calculatedStep <= 0) calculatedStep = 1;
                 currentStep = Math.Min(calculatedStep, 10);
-                maxAllowedStep = currentStep;
+                maxAllowedStep = 10; // Allow free navigation across all steps for enrolled/editing child
             }
             await LoadPickupsAsync();
         }
@@ -1031,6 +1120,39 @@
                 }
             }
         }
+    }
+
+    private void CopyParentToEmergencyContact()
+    {
+        if (!string.IsNullOrWhiteSpace(parentName)) emergencyName = parentName;
+        if (!string.IsNullOrWhiteSpace(parentRelationship)) emergencyRelationship = parentRelationship;
+        if (!string.IsNullOrWhiteSpace(parentPhone)) emergencyPhone = parentPhone;
+    }
+
+    private void CopyParentToPickupContact()
+    {
+        if (!string.IsNullOrWhiteSpace(parentName)) pickupName = parentName;
+        if (!string.IsNullOrWhiteSpace(parentRelationship)) pickupRelationship = parentRelationship;
+        if (!string.IsNullOrWhiteSpace(parentPhone)) pickupPhone = parentPhone;
+        pickupIsPrimary = true;
+    }
+
+    private static string ExtractAllergies(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return string.Empty;
+        var lower = notes.ToLowerInvariant();
+        var knownAllergens = new[] { "dairy", "peanut", "peanuts", "nut", "nuts", "egg", "eggs", "gluten", "milk", "wheat", "soy", "fish", "shellfish", "sesame", "strawberries", "latex", "bee" };
+        var matched = new List<string>();
+        foreach (var allergen in knownAllergens)
+        {
+            if (lower.Contains(allergen))
+            {
+                matched.Add(char.ToUpperInvariant(allergen[0]) + allergen.Substring(1));
+            }
+        }
+        if (matched.Any()) return string.Join(", ", matched.Distinct());
+        if (lower.Contains("allerg") || lower.Contains("asthma")) return notes.Trim();
+        return string.Empty;
     }
     }
 }

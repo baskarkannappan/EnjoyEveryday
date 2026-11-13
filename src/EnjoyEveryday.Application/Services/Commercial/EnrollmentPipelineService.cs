@@ -121,6 +121,7 @@ public interface IEnrollmentPipelineService
     Task<Guid> FinalizeEnrollmentAndBillingAsync(FinalizeEnrollmentContractRequest request, CancellationToken ct = default);
     Task<List<ClassroomVacancyStats>> GetClassroomVacanciesAsync(Guid? branchId = null, CancellationToken ct = default);
     Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid? branchId = null, CancellationToken ct = default);
+    Task<EnrollmentPipelineApplicationDto?> GetApplicationByChildIdAsync(Guid childId, CancellationToken ct = default);
 }
 
 public class EnrollmentPipelineService : IEnrollmentPipelineService
@@ -240,7 +241,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             ParentPhone = request.ParentPhone,
             TargetClassroomId = request.TargetClassroomId,
             DesiredStartDate = request.DesiredStartDate,
-            ScheduleType = request.ScheduleType,
+            ScheduleType = request.ScheduleType ?? "FullTime",
             PipelineStage = request.PipelineStage,
             TourDate = request.TourDate,
             TuitionMonthlyRate = request.TuitionMonthlyRate,
@@ -370,8 +371,67 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
 
         Guid childId = app.ChildId ?? Guid.NewGuid();
 
-        // 2. Create or ensure child record in children table
-        await _repository.EnsureChildEnrolledAsync(childId, tenantId, request.ClassroomId, app.ChildFirstName, app.ChildLastName, app.DateOfBirth, ct);
+        // 2. Build comprehensive onboarding draft state carrying forward all inquiry & enrollment details
+        var extractedAllergies = ExtractAllergies(app.InternalNotes);
+        var extractedDiet = ExtractDietaryRestrictions(app.InternalNotes);
+
+        var draftState = new
+        {
+            childFirstName = app.ChildFirstName,
+            childLastName = app.ChildLastName,
+            childDob = app.DateOfBirth.ToString("yyyy-MM-dd"),
+            gender = app.Gender ?? "Unspecified",
+            parentName = app.ParentGuardianName,
+            parentRelationship = "Parent",
+            parentEmail = app.ParentEmail,
+            parentPhone = app.ParentPhone,
+            parentPhotoPreview = "",
+            addressLine1 = "",
+            addressCity = "",
+            addressProvince = "",
+            addressPostalCode = "",
+            emergencyName = app.ParentGuardianName,
+            emergencyPhone = app.ParentPhone,
+            emergencyRelationship = "Parent",
+            physicianName = "",
+            physicianPhone = "",
+            allergies = extractedAllergies,
+            medications = "",
+            dietaryRestrictions = extractedDiet,
+            napRoutine = "",
+            toiletTraining = "Not Started",
+            enrollmentStartDate = request.StartDate,
+            scheduleType = request.ScheduleType ?? app.ScheduleType ?? "FullTime",
+            selectedBranchId = branchId?.ToString() ?? "",
+            selectedClassroomId = request.ClassroomId.ToString(),
+            pickupName = app.ParentGuardianName,
+            pickupRelationship = "Parent",
+            pickupPhone = app.ParentPhone,
+            pickupCode = "",
+            consentPhoto = true,
+            consentMedical = true,
+            consentMarketing = false
+        };
+
+        var draftJson = System.Text.Json.JsonSerializer.Serialize(draftState);
+
+        // 2a. Atomically create or ensure child record with rich draft data, emergency contacts, and medical profile
+        await _repository.FinalizeEnrolledChildProfileAsync(
+            childId: childId,
+            tenantId: tenantId,
+            classroomId: request.ClassroomId,
+            firstName: app.ChildFirstName,
+            lastName: app.ChildLastName,
+            dateOfBirth: app.DateOfBirth,
+            draftData: draftJson,
+            profileCompletionPercentage: 90,
+            emergencyName: app.ParentGuardianName,
+            emergencyPhone: app.ParentPhone,
+            emergencyEmail: app.ParentEmail,
+            medicalNotes: app.InternalNotes,
+            allergies: extractedAllergies,
+            dietaryRestrictions: extractedDiet,
+            ct: ct);
 
         // 2b. Establish parent-guardian and family relationship records
         if (_childRepository != null && !string.IsNullOrWhiteSpace(app.ParentEmail))
@@ -437,7 +497,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
             ChildId = childId,
             ParentName = app.ParentGuardianName ?? "Parent Guardian",
             ParentEmail = app.ParentEmail ?? string.Empty,
-            ScheduleType = request.ScheduleType,
+            ScheduleType = request.ScheduleType ?? "FullTime",
             BillingCycle = request.BillingCycle,
             BaseRate = request.BaseMonthlyRate,
             DiscountPercent = request.SiblingDiscountPercent,
@@ -510,6 +570,46 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
     public async Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid? branchId = null, CancellationToken ct = default)
     {
         return await _repository.GetActiveFamilyContractsAsync(_tenantContext.TenantId, branchId, ct);
+    }
+
+    public async Task<EnrollmentPipelineApplicationDto?> GetApplicationByChildIdAsync(Guid childId, CancellationToken ct = default)
+    {
+        var record = await _repository.GetApplicationByChildIdAsync(_tenantContext.TenantId, childId, ct);
+        return record == null ? null : MapToDto(record);
+    }
+
+    private static string ExtractAllergies(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return string.Empty;
+        var lower = notes.ToLowerInvariant();
+        var knownAllergens = new[] { "dairy", "peanut", "peanuts", "nut", "nuts", "egg", "eggs", "gluten", "milk", "wheat", "soy", "fish", "shellfish", "sesame", "strawberries", "latex", "bee" };
+        var matched = new List<string>();
+        foreach (var allergen in knownAllergens)
+        {
+            if (lower.Contains(allergen))
+            {
+                matched.Add(char.ToUpperInvariant(allergen[0]) + allergen.Substring(1));
+            }
+        }
+        if (matched.Any()) return string.Join(", ", matched.Distinct());
+        if (lower.Contains("allerg") || lower.Contains("asthma")) return notes.Trim();
+        return string.Empty;
+    }
+
+    private static string ExtractDietaryRestrictions(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return string.Empty;
+        var lower = notes.ToLowerInvariant();
+        var knownDiets = new[] { "vegetarian", "vegan", "halal", "kosher", "dairy-free", "gluten-free", "egg-free", "nut-free" };
+        var matched = new List<string>();
+        foreach (var diet in knownDiets)
+        {
+            if (lower.Contains(diet))
+            {
+                matched.Add(char.ToUpperInvariant(diet[0]) + diet.Substring(1));
+            }
+        }
+        return matched.Any() ? string.Join(", ", matched.Distinct()) : string.Empty;
     }
 
     private static EnrollmentPipelineApplicationDto MapToDto(EnrollmentApplicationRecord a) => new()

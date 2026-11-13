@@ -87,4 +87,22 @@ Staff and Administrators manage child guardians directly from `ChildrenDirectory
   - Links new guardians to the child with pickup permissions and emergency contact flags.
   - Revokes portal access atomically via `sp_revoke_child_guardian(tenantId, childId, userId, revokedBy)` without destroying historical audit data.
 
+## 3. End-to-End Onboarding Data Retention & Automatic Pre-population
+
+To eliminate redundant data entry when onboarding and managing children:
+1. **Admissions Inquiry Data Ingestion**:
+   - `NewFamilyInquiryModal.razor` captures child identity, DOB, gender, parent/guardian contact, schedule preference, branch/classroom, tuition rates, and special requirements/internal notes (e.g., allergies, dietary restrictions).
+2. **Atomic Onboarding Data Persistence**:
+   - When enrollment is finalized via `EnrollmentPipelineService.FinalizeEnrollmentAndBillingAsync`, the system executes `sp_finalize_enrolled_child_profile`:
+     - Compiles a complete `draft_data` JSON payload matching the `ChildEnrollmentWizard` contract.
+     - Sets `enrollment_status = 'Enrolled'`, `is_active = TRUE`, and `profile_completion_percentage = 90`.
+     - Automatically creates an `emergency_contacts` record for the primary guardian.
+     - Parses `internal_notes` for allergy and dietary keywords (e.g. Dairy, Peanuts, Gluten, Halal, Vegetarian) and automatically creates `child_medical_profiles`, `child_allergies`, and `child_dietary_profiles` records so alerts display immediately in educator daily care feeds and classroom rosters.
+3. **Child Profile & Wizard Auto-Fill**:
+   - When viewing or editing the child in `ChildEnrollmentWizard.razor` (`/children/edit/{Id}`):
+     - Automatically pre-populates any empty fields from linked guardians (`fn_get_child_guardians_for_admin`) and inquiry applications (`fn_get_enrollment_application_by_child_id`).
+     - Allows free navigation (`maxAllowedStep = 10`) across all 10 wizard steps without requiring the user to click step-by-step.
+     - Provides one-click action buttons (`📋 Use Parent / Guardian Info`) in Emergency Contacts (Step 4) and Authorized Pickups (Step 8) to instantly reuse guardian details without re-typing.
+
+
 

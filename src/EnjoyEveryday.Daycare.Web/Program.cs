@@ -8,6 +8,7 @@ using EnjoyEveryday.Daycare.Web.Endpoints;
 using EnjoyEveryday.UI.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
 // Enforce INR currency and formatting application-wide
 var inrCulture = new System.Globalization.CultureInfo("en-IN");

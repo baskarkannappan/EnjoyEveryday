@@ -56,4 +56,21 @@ public interface IEnrollmentPipelineRepository
     Task<List<ClassroomVacancyRecord>> GetClassroomVacanciesAsync(Guid tenantId, Guid? branchId, CancellationToken ct = default);
     Task<List<FamilyBillingContract>> GetActiveFamilyContractsAsync(Guid tenantId, Guid? branchId, CancellationToken ct = default);
     Task<(Guid? BranchId, Guid? OrganizationId)> GetClassroomScopeAsync(Guid tenantId, Guid classroomId, CancellationToken ct = default);
+    Task FinalizeEnrolledChildProfileAsync(
+        Guid childId,
+        Guid tenantId,
+        Guid classroomId,
+        string firstName,
+        string lastName,
+        DateTime dateOfBirth,
+        string draftData,
+        int profileCompletionPercentage,
+        string? emergencyName = null,
+        string? emergencyPhone = null,
+        string? emergencyEmail = null,
+        string? medicalNotes = null,
+        string? allergies = null,
+        string? dietaryRestrictions = null,
+        CancellationToken ct = default);
+    Task<EnrollmentApplicationRecord?> GetApplicationByChildIdAsync(Guid tenantId, Guid childId, CancellationToken ct = default);
 }

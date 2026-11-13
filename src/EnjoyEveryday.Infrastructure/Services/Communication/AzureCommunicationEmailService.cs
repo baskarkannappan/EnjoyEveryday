@@ -50,7 +50,19 @@ public class AzureCommunicationEmailService : IEmailNotificationService
         }
 
         var connectionString = _configuration["AzureCommunicationServices:ConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            connectionString = Environment.GetEnvironmentVariable("AzureCommunicationServices__ConnectionString")
+                ?? Environment.GetEnvironmentVariable("AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING");
+        }
+
         var senderAddress = _configuration["AzureCommunicationServices:SenderAddress"];
+        if (string.IsNullOrWhiteSpace(senderAddress))
+        {
+            senderAddress = Environment.GetEnvironmentVariable("AzureCommunicationServices__SenderAddress")
+                ?? Environment.GetEnvironmentVariable("AZURE_COMMUNICATION_SERVICES_SENDER_ADDRESS")
+                ?? "DoNotReply@e86634f3-653b-48cc-a7f6-37cc501c0604.azurecomm.net";
+        }
 
         if (string.IsNullOrWhiteSpace(connectionString) || string.IsNullOrWhiteSpace(senderAddress))
         {
