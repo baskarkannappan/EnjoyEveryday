@@ -13,6 +13,7 @@ namespace EnjoyEveryday.Infrastructure.Repositories;
 public class StaffRosterRepository : IStaffRosterRepository
 {
     private readonly IDbConnectionFactory _connectionFactory;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (DateTime CachedAt, List<RatioRuleRecord> Rules)> _rulesCache = new();
 
     public StaffRosterRepository(IDbConnectionFactory connectionFactory)
     {
@@ -36,12 +37,19 @@ public class StaffRosterRepository : IStaffRosterRepository
 
     public async Task<List<RatioRuleRecord>> GetStatutoryRatioRulesAsync(Guid tenantId, CancellationToken ct = default)
     {
+        if (_rulesCache.TryGetValue(tenantId, out var cached) && DateTime.UtcNow - cached.CachedAt < TimeSpan.FromMinutes(15))
+        {
+            return cached.Rules;
+        }
+
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         var results = await conn.QueryFunctionAsync<RatioRuleRecord>(
             "public.fn_get_statutory_ratio_rules",
             new { TenantId = tenantId },
             cancellationToken: ct);
-        return results.ToList();
+        var list = results.ToList();
+        _rulesCache[tenantId] = (DateTime.UtcNow, list);
+        return list;
     }
 
     public async Task<List<RosterClassroomRecord>> GetBranchClassroomsAsync(Guid branchId, CancellationToken ct = default)

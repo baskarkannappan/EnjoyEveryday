@@ -132,35 +132,37 @@ public class StaffRosterService : IStaffRosterService
     {
         var tenantId = _tenantContext.TenantId;
 
-        // 1. Fetch branch
-        var branch = await _rosterRepository.GetBranchBriefAsync(branchId, ct);
+        // Fetch all roster components concurrently via Task.WhenAll
+        var branchTask = _rosterRepository.GetBranchBriefAsync(branchId, ct);
+        var rulesTask = _rosterRepository.GetStatutoryRatioRulesAsync(tenantId, ct);
+        var classroomsTask = _rosterRepository.GetBranchClassroomsAsync(branchId, ct);
+        var childAttTask = _rosterRepository.GetChildAttendanceCountsAsync(tenantId, branchId, date, ct);
+        var teacherAttTask = _rosterRepository.GetTeacherAttendanceAsync(tenantId, branchId, date, ct);
+        var allTeachersTask = _rosterRepository.GetBranchTeachersAsync(tenantId, branchId, ct);
+        var leavesTask = _rosterRepository.GetActiveStaffLeavesAsync(tenantId, date, ct);
+
+        await Task.WhenAll(branchTask, rulesTask, classroomsTask, childAttTask, teacherAttTask, allTeachersTask, leavesTask);
+
+        var branch = await branchTask;
         string branchName = branch?.Name ?? "Main Branch";
 
-        // 2. Fetch statutory ratio rules
-        var rawRules = await _rosterRepository.GetStatutoryRatioRulesAsync(tenantId, ct);
+        var rawRules = await rulesTask;
         var ratioDict = rawRules.ToDictionary(r => r.AgeGroup, r => r.MaxRatio, StringComparer.OrdinalIgnoreCase);
 
-        // 3. Fetch classrooms for branch
-        var classrooms = await _rosterRepository.GetBranchClassroomsAsync(branchId, ct);
+        var classrooms = await classroomsTask;
 
-        // 4. Fetch children attendance for today
-        var childAttendance = await _rosterRepository.GetChildAttendanceCountsAsync(tenantId, branchId, date, ct);
+        var childAttendance = await childAttTask;
         var childCounts = childAttendance.ToDictionary(r => r.ClassroomId, r => r.PresentCount);
 
-        // 5. Fetch teacher attendance & clock-in
-        var teacherAttRows = await _rosterRepository.GetTeacherAttendanceAsync(tenantId, branchId, date, ct);
-
-        // Group teachers present by classroom
+        var teacherAttRows = await teacherAttTask;
         var teachersByRoom = teacherAttRows
             .Where(r => r.ClassroomId != null)
             .GroupBy(r => r.ClassroomId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        // 6. Fetch all teachers for branch
-        var allTeachers = await _rosterRepository.GetBranchTeachersAsync(tenantId, branchId, ct);
+        var allTeachers = await allTeachersTask;
 
-        // 7. Fetch active staff leaves covering today
-        var leavesRows = await _rosterRepository.GetActiveStaffLeavesAsync(tenantId, date, ct);
+        var leavesRows = await leavesTask;
         var leaves = leavesRows.Select(l => new StaffLeaveItem
         {
             Id = l.Id,

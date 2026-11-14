@@ -226,9 +226,18 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
             return model;
         }
 
-        // 3. Classrooms & Occupancy Query
-        var classroomRecords = await _boardRepository.GetClassroomsAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        // Concurrently dispatch independent board queries via Task.WhenAll
+        var classroomsTask = _boardRepository.GetClassroomsAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        var attSummaryTask = _boardRepository.GetChildAttendanceSummaryAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        var staffSummaryTask = _boardRepository.GetStaffSummaryAsync(tenantId, orgId.Value, date, ct);
+        var schedulesTask = _boardRepository.GetExperienceSchedulesAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        var eventsTask = _boardRepository.GetEventsAsync(tenantId, date, ct);
+        var careRecordsTask = _boardRepository.GetTeacherChildrenCareStatusAsync(tenantId, orgId.Value, date, date.Date, date.Date.AddDays(1).AddTicks(-1), filterBranchId, filterClassroomId, ct);
 
+        await Task.WhenAll(classroomsTask, attSummaryTask, staffSummaryTask, schedulesTask, eventsTask, careRecordsTask);
+
+        // 3. Classrooms & Occupancy
+        var classroomRecords = await classroomsTask;
         var classroomRows = classroomRecords.Select(cl => new ClassroomBoardItem
         {
             ClassroomId = cl.ClassroomId,
@@ -260,8 +269,8 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         model.OvercapacityClassroomsCount = classroomRows.Count(c => c.IsOverCapacity);
         model.UnderstaffedClassroomsCount = classroomRows.Count(c => c.IsUnderstaffed);
 
-        // 4. Children Summary Query
-        var attSummary = await _boardRepository.GetChildAttendanceSummaryAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        // 4. Children Summary
+        var attSummary = await attSummaryTask;
 
         int checkedIn = attSummary.CheckedIn;
         int checkedOut = attSummary.CheckedOut;
@@ -276,15 +285,15 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         model.AbsentChildrenCount = absent;
         model.ExpectedNotArrivedCount = expectedNotArrived;
 
-        // 5. Staff Summary Query
-        var staffSummary = await _boardRepository.GetStaffSummaryAsync(tenantId, orgId.Value, date, ct);
+        // 5. Staff Summary
+        var staffSummary = await staffSummaryTask;
 
         model.ExpectedStaffCount = staffSummary.ExpectedStaff;
         model.PresentStaffCount = staffSummary.PresentStaff;
         model.AbsentStaffCount = staffSummary.AbsentStaff;
 
-        // 6. Experience & Rhythm Schedules Query
-        var scheduleRecords = await _boardRepository.GetExperienceSchedulesAsync(tenantId, orgId.Value, date, filterBranchId, filterClassroomId, ct);
+        // 6. Experience & Rhythm Schedules
+        var scheduleRecords = await schedulesTask;
         var schedules = scheduleRecords.Select(es => new RhythmScheduleItem
         {
             Id = es.Id,
@@ -299,7 +308,7 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
         }).ToList();
 
         // Add today's celebrations/events
-        var eventRecords = await _boardRepository.GetEventsAsync(tenantId, date, ct);
+        var eventRecords = await eventsTask;
         var eventRows = eventRecords.Select(ev => new RhythmScheduleItem
         {
             Id = ev.Id,
@@ -328,8 +337,8 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
             }
         }
 
-        // 7. Missing Daily Care Records Query
-        var careRecords = await _boardRepository.GetTeacherChildrenCareStatusAsync(tenantId, orgId.Value, date, date.Date, date.Date.AddDays(1).AddTicks(-1), filterBranchId, filterClassroomId, ct);
+        // 7. Daily Care Records
+        var careRecords = await careRecordsTask;
         var careList = careRecords.Select(c => new TeacherChildCareItem
         {
             ChildId = c.ChildId,

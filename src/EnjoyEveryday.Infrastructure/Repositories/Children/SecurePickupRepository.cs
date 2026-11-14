@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Data;
@@ -101,70 +102,28 @@ public class SecurePickupRepository : ISecurePickupRepository
         var firstName = names.Length > 0 ? names[0] : "Authorized";
         var lastName = names.Length > 1 ? names[1] : "Contact";
 
-        if (resolvedPersonId == Guid.Empty)
-        {
-            resolvedPersonId = Guid.NewGuid();
-            const string insertPersonSql = """
-                INSERT INTO persons (id, tenant_id, first_name, last_name, relationship, mobile_phone, created_at, updated_at)
-                VALUES (@resolvedPersonId, @tenantId, @firstName, @lastName, @relationship, @phone, NOW(), NOW());
-                """;
-            await Dapper.SqlMapper.ExecuteAsync(conn, new Dapper.CommandDefinition(insertPersonSql, new
-            {
-                resolvedPersonId,
-                tenantId,
-                firstName,
-                lastName,
-                relationship = relationship ?? "Authorized Pickup",
-                phone
-            }, cancellationToken: ct));
-        }
-        else
-        {
-            const string updatePersonSql = """
-                UPDATE persons
-                SET first_name = @firstName, last_name = @lastName, mobile_phone = @phone, relationship = @relationship, updated_at = NOW()
-                WHERE id = @resolvedPersonId AND tenant_id = @tenantId;
-                """;
-            await Dapper.SqlMapper.ExecuteAsync(conn, new Dapper.CommandDefinition(updatePersonSql, new
-            {
-                resolvedPersonId,
-                tenantId,
-                firstName,
-                lastName,
-                phone,
-                relationship = relationship ?? "Authorized Pickup"
-            }, cancellationToken: ct));
-        }
+        var dynamicParams = new Dapper.DynamicParameters();
+        dynamicParams.Add("p_tenant_id", tenantId);
+        dynamicParams.Add("p_child_id", childId);
+        dynamicParams.Add("p_first_name", firstName);
+        dynamicParams.Add("p_last_name", lastName);
+        dynamicParams.Add("p_relationship", relationship ?? "Authorized Pickup");
+        dynamicParams.Add("p_phone", phone);
+        dynamicParams.Add("p_pickup_code", pickupCode);
+        dynamicParams.Add("p_notes", notes);
+        dynamicParams.Add("p_pickup_id", pickupId != Guid.Empty ? pickupId : Guid.NewGuid(), System.Data.DbType.Guid, System.Data.ParameterDirection.InputOutput);
+        dynamicParams.Add("p_person_id", resolvedPersonId != Guid.Empty ? resolvedPersonId : (Guid?)null, System.Data.DbType.Guid, System.Data.ParameterDirection.InputOutput);
 
-        Guid resolvedPickupId = pickupId != Guid.Empty ? pickupId : Guid.NewGuid();
-        const string upsertPickupSql = """
-            INSERT INTO authorized_pickups (id, tenant_id, child_id, person_id, relationship, pickup_code, notes, is_active)
-            VALUES (@resolvedPickupId, @tenantId, @childId, @resolvedPersonId, @relationship, @pickupCode, @notes, true)
-            ON CONFLICT (id) DO UPDATE
-            SET person_id = EXCLUDED.person_id,
-                relationship = EXCLUDED.relationship,
-                pickup_code = EXCLUDED.pickup_code,
-                notes = EXCLUDED.notes,
-                is_active = true;
-            """;
+        await conn.ExecuteAsync(new Dapper.CommandDefinition("CALL sp_save_authorized_pickup_with_person(@p_tenant_id, @p_child_id, @p_first_name, @p_last_name, @p_relationship, @p_phone, @p_pickup_code, @p_notes, @p_pickup_id, @p_person_id)", dynamicParams, cancellationToken: ct));
 
-        await Dapper.SqlMapper.ExecuteAsync(conn, new Dapper.CommandDefinition(upsertPickupSql, new
-        {
-            resolvedPickupId,
-            tenantId,
-            childId,
-            resolvedPersonId,
-            personId = resolvedPersonId,
-            relationship = relationship ?? "Authorized Pickup",
-            pickupCode,
-            notes
-        }, cancellationToken: ct));
+        var returnedPickupId = dynamicParams.Get<Guid>("p_pickup_id");
+        var returnedPersonId = dynamicParams.Get<Guid>("p_person_id");
 
         return new AuthorizedPickupRecord
         {
-            Id = resolvedPickupId,
+            Id = returnedPickupId,
             ChildId = childId,
-            PersonId = resolvedPersonId,
+            PersonId = returnedPersonId,
             FullName = $"{firstName} {lastName}".Trim(),
             Relationship = relationship ?? "Authorized Pickup",
             Phone = phone,
@@ -177,13 +136,10 @@ public class SecurePickupRepository : ISecurePickupRepository
     public async Task<bool> DeleteAuthorizedPickupAsync(Guid tenantId, Guid childId, Guid pickupId, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
-        const string sql = """
-            UPDATE authorized_pickups
-            SET is_active = false
-            WHERE child_id = @childId AND id = @pickupId
-              AND (tenant_id = @tenantId OR @tenantId = '10000000-0000-0000-0000-000000000001' OR @tenantId IS NULL);
-            """;
-        var rows = await Dapper.SqlMapper.ExecuteAsync(conn, new Dapper.CommandDefinition(sql, new { tenantId, childId, pickupId }, cancellationToken: ct));
-        return rows > 0;
+        await conn.ExecuteProcedureAsync(
+            "sp_delete_authorized_pickup",
+            new { p_tenant_id = tenantId, p_child_id = childId, p_pickup_id = pickupId },
+            cancellationToken: ct);
+        return true;
     }
 }

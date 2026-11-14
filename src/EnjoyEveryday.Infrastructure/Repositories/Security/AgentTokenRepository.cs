@@ -5,12 +5,13 @@ using System.Threading.Tasks;
 using Dapper;
 using EnjoyEveryday.Domain.Entities.Security;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories.Security;
 
 /// <summary>
-/// PostgreSQL Dapper implementation of IAgentTokenRepository.
+/// PostgreSQL Dapper implementation of IAgentTokenRepository using stored procedures/functions.
 /// </summary>
 public class AgentTokenRepository : IAgentTokenRepository
 {
@@ -28,79 +29,60 @@ public class AgentTokenRepository : IAgentTokenRepository
 
     public async Task<AgentAccessToken?> GetByHashAsync(string tokenHash, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            SELECT 
-                id, tenant_id, user_id, token_name, token_prefix, token_hash, 
-                role, scopes, is_revoked, expires_at, last_used_at, created_at, updated_at
-            FROM agent_personal_access_tokens
-            WHERE token_hash = @tokenHash AND is_revoked = FALSE;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QuerySingleOrDefaultAsync<AgentAccessToken>(
-            new CommandDefinition(sql, new { tokenHash }, cancellationToken: cancellationToken));
+        return await connection.QuerySingleFunctionAsync<AgentAccessToken>(
+            "fn_get_agent_token_by_hash",
+            new { p_token_hash = tokenHash },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<AgentAccessToken>> GetUserTokensAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            SELECT 
-                id, tenant_id, user_id, token_name, token_prefix, 
-                role, scopes, is_revoked, expires_at, last_used_at, created_at, updated_at
-            FROM agent_personal_access_tokens
-            WHERE tenant_id = @tenantId AND user_id = @userId
-            ORDER BY created_at DESC;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<AgentAccessToken>(
-            new CommandDefinition(sql, new { tenantId, userId }, cancellationToken: cancellationToken));
+        return await connection.QueryFunctionAsync<AgentAccessToken>(
+            "fn_get_agent_tokens_by_user",
+            new { p_tenant_id = tenantId, p_user_id = userId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Guid> CreateTokenAsync(AgentAccessToken token, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            INSERT INTO agent_personal_access_tokens (
-                id, tenant_id, user_id, token_name, token_prefix, token_hash, 
-                role, scopes, is_revoked, expires_at, created_at, updated_at
-            )
-            VALUES (
-                @Id, @TenantId, @UserId, @TokenName, @TokenPrefix, @TokenHash, 
-                @Role, @Scopes, FALSE, @ExpiresAt, NOW(), NOW()
-            )
-            RETURNING id;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.ExecuteScalarAsync<Guid>(
-            new CommandDefinition(sql, token, cancellationToken: cancellationToken));
+        await connection.ExecuteProcedureAsync(
+            "sp_create_agent_token",
+            new
+            {
+                p_id = token.Id,
+                p_tenant_id = token.TenantId,
+                p_user_id = token.UserId,
+                p_token_name = token.TokenName,
+                p_token_prefix = token.TokenPrefix,
+                p_token_hash = token.TokenHash,
+                p_role = token.Role,
+                p_scopes = token.Scopes?.ToArray() ?? Array.Empty<string>(),
+                p_expires_at = token.ExpiresAt
+            },
+            cancellationToken: cancellationToken);
+        return token.Id;
     }
 
     public async Task<bool> RevokeTokenAsync(Guid tenantId, Guid tokenId, Guid userId, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            UPDATE agent_personal_access_tokens
-            SET is_revoked = TRUE, updated_at = NOW()
-            WHERE id = @tokenId AND tenant_id = @tenantId;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        var rows = await connection.ExecuteAsync(
-            new CommandDefinition(sql, new { tenantId, tokenId }, cancellationToken: cancellationToken));
-        return rows > 0;
+        await connection.ExecuteProcedureAsync(
+            "sp_revoke_agent_token",
+            new { p_tenant_id = tenantId, p_token_id = tokenId },
+            cancellationToken: cancellationToken);
+        return true;
     }
 
     public async Task UpdateLastUsedAsync(Guid tokenId, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            UPDATE agent_personal_access_tokens
-            SET last_used_at = NOW()
-            WHERE id = @tokenId;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        await connection.ExecuteAsync(
-            new CommandDefinition(sql, new { tokenId }, cancellationToken: cancellationToken));
+        await connection.ExecuteProcedureAsync(
+            "sp_update_agent_token_last_used",
+            new { p_token_id = tokenId },
+            cancellationToken: cancellationToken);
     }
 }
 

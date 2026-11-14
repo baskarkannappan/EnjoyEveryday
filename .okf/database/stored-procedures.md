@@ -103,5 +103,31 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `fn_get_organization_quota_usage(p_org_id uuid)` | `FUNCTION` | `PlatformAdminRepository.GetOrganizationQuotaUsageAsync`, `PlanQuotaService` | Atomically computes current counts vs maximum quotas for branches, classrooms, and enrolled children for an organization. |
 | `fn_get_platform_organizations_overview()` | `FUNCTION` | `PlatformAdminRepository.GetOrganizationsOverviewAsync` | Retrieves organizations with real-time `account_status`, `suspension_reason`, branch count, and primary admin email. |
 
+## 7. Performance Optimization & Consolidated Hierarchy Routines
+
+| Routine Signature | Routine Type | Calling Repository / Service | Purpose |
+|:---|:---|:---|:---|
+| `fn_get_organization_hierarchy(p_tenant_id uuid, p_org_id uuid, p_requesting_user_id uuid, p_is_org_admin boolean)` | `FUNCTION` (returns `jsonb`) | `OrganizationHierarchyService.GetOrganizationHierarchyAsync` | High-performance single-roundtrip aggregation of organization details, admins, branches, classrooms, educators, and children. Replaces 12–33 sequential queries. |
+| `fn_get_branch_readiness(p_tenant_id uuid, p_branch_id uuid)` | `FUNCTION` (returns `TABLE`) | `ClassroomReadinessRepository.GetBranchReadinessDataAsync` | Consolidated single-roundtrip routine returning branch details, lead teacher count, and per-classroom enrollment/capacity/teacher metrics. |
+| `fn_is_privacy_and_trust_approved(p_tenant_id uuid, p_child_id uuid)` | `FUNCTION` (returns `boolean`) | `ParentRepository.IsPrivacyAndTrustApprovedAsync` | Checks if child has active signed Privacy & Trust consent without hardcoded SQL in C#. |
+| `sp_approve_privacy_and_trust(p_tenant_id uuid, p_child_id uuid, p_approved_by_name text)` | `PROCEDURE` | `ParentRepository.ApprovePrivacyAndTrustAsync` | Upserts approved Privacy & Trust consent record. |
+| `fn_get_privacy_and_trust_approval_date(p_tenant_id uuid, p_child_id uuid)` | `FUNCTION` (returns `timestamptz`) | `ParentRepository.GetPrivacyAndTrustApprovalDateAsync` | Retrieves latest approval timestamp for Privacy & Trust. |
+| `sp_save_authorized_pickup_with_person(p_tenant_id uuid, p_child_id uuid, p_first_name text, p_last_name text, p_relationship text, p_phone text, p_pickup_code text, p_notes text, INOUT p_pickup_id uuid, INOUT p_person_id uuid)` | `PROCEDURE` | `SecurePickupRepository.SaveAuthorizedPickupWithPersonAsync` | Atomically creates/updates person record and upserts authorized pickup in a single transaction. |
+| `sp_delete_authorized_pickup(p_tenant_id uuid, p_child_id uuid, p_pickup_id uuid)` | `PROCEDURE` | `SecurePickupRepository.DeleteAuthorizedPickupAsync` | Safely soft-deletes authorized pickup record (`is_active = false`). |
+| `fn_get_daycare_announcements(p_tenant_id uuid, p_organization_id uuid, p_branch_id uuid, p_active_only boolean, p_limit int)` | `FUNCTION` (returns `TABLE`) | `DaycareAnnouncementRepository.GetAnnouncementsAsync` | Fetches prioritized urgent and regular daycare announcement broadcasts. |
+| `sp_create_daycare_announcement(...)` | `PROCEDURE` | `DaycareAnnouncementRepository.CreateAsync` | Creates a new daycare announcement broadcast. |
+| `sp_set_daycare_announcement_status(p_id uuid, p_tenant_id uuid, p_is_active boolean)` | `PROCEDURE` | `DaycareAnnouncementRepository.DeactivateAsync` / `ReactivateAsync` | Toggles active state of daycare announcement. |
+| `sp_delete_daycare_announcement(p_id uuid, p_tenant_id uuid)` | `PROCEDURE` | `DaycareAnnouncementRepository.DeleteAsync` | Deletes announcement record. |
+| `fn_get_agent_tokens_by_user(p_tenant_id uuid, p_user_id uuid)` | `FUNCTION` (returns `TABLE`) | `AgentTokenRepository.GetUserTokensAsync` | Lists all agent personal access tokens for a user. |
+| `fn_get_agent_token_by_hash(p_token_hash varchar)` | `FUNCTION` (returns `TABLE`) | `AgentTokenRepository.GetByHashAsync` | Authenticates and looks up active token by SHA hash. |
+| `sp_create_agent_token(...)` | `PROCEDURE` | `AgentTokenRepository.CreateTokenAsync` | Registers a new agent personal access token. |
+| `sp_revoke_agent_token(p_tenant_id uuid, p_token_id uuid)` | `PROCEDURE` | `AgentTokenRepository.RevokeTokenAsync` | Revokes agent PAT. |
+| `sp_update_agent_token_last_used(p_token_id uuid)` | `PROCEDURE` | `AgentTokenRepository.UpdateLastUsedAsync` | Updates last-used timestamp on token usage. |
+| `fn_get_agent_webhooks(p_tenant_id uuid)` | `FUNCTION` (returns `TABLE`) | `AgentWebhookRepository.GetTenantSubscriptionsAsync` | Lists webhook subscriptions for a tenant. |
+| `fn_get_active_agent_webhooks_for_event(p_tenant_id uuid, p_event_type varchar)` | `FUNCTION` (returns `TABLE`) | `AgentWebhookRepository.GetActiveSubscriptionsForEventAsync` | Matches active webhooks subscribed to a specific event type. |
+| `sp_create_agent_webhook(...)` | `PROCEDURE` | `AgentWebhookRepository.CreateSubscriptionAsync` | Registers a new webhook subscription. |
+| `sp_delete_agent_webhook(p_tenant_id uuid, p_subscription_id uuid)` | `PROCEDURE` | `AgentWebhookRepository.DeleteSubscriptionAsync` | Deletes a webhook subscription. |
+
+
 
 

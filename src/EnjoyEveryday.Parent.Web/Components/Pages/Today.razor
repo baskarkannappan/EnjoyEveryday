@@ -840,17 +840,19 @@ else
         try
         {
             _loading = true;
-            _summary = await ParentService.GetChildDailySummaryAsync(SessionState.SelectedChild.ChildId, DateTime.Today);
-            _isPrivacyApproved = await ParentService.IsPrivacyAndTrustApprovedAsync(SessionState.SelectedChild.ChildId);
+            var childId = SessionState.SelectedChild.ChildId;
+            var tenantId = SessionState.SelectedChild?.TenantId ?? Guid.Parse("10000000-0000-0000-0000-000000000001");
+            if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
-            try
-            {
-                var tenantId = SessionState.SelectedChild?.TenantId ?? Guid.Parse("10000000-0000-0000-0000-000000000001");
-                if (tenantId == Guid.Empty) tenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
-                var annList = await AnnouncementService.GetAnnouncementsAsync(tenantId, SessionState.SelectedChild?.OrganizationId, SessionState.SelectedChild?.BranchId);
-                _announcements = annList.ToList();
-            }
-            catch { }
+            var summaryTask = ParentService.GetChildDailySummaryAsync(childId, DateTime.Today);
+            var privacyTask = ParentService.IsPrivacyAndTrustApprovedAsync(childId);
+            var annTask = AnnouncementService.GetAnnouncementsAsync(tenantId, SessionState.SelectedChild?.OrganizationId, SessionState.SelectedChild?.BranchId);
+
+            await Task.WhenAll(summaryTask, privacyTask, annTask);
+
+            _summary = await summaryTask;
+            _isPrivacyApproved = await privacyTask;
+            _announcements = (await annTask).ToList();
         }
         catch (Exception ex)
         {

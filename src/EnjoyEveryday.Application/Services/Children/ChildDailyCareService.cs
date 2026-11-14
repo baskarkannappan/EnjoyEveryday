@@ -455,13 +455,20 @@ public class ChildDailyCareService : IChildDailyCareService
         DateOnly date,
         CancellationToken ct = default)
     {
-        var branchClassrooms = (await _classroomRepository.GetByBranchIdAsync(_tenantContext.TenantId, branchId, ct)).ToList();
-        var branchClassroomIds = branchClassrooms.Select(c => c.Id).ToHashSet();
-
-        var allChildren = await _childRepository.GetAllAsync(_tenantContext.TenantId, ct);
-        var children = allChildren
-            .Where(c => c.ClassroomId.HasValue && branchClassroomIds.Contains(c.ClassroomId.Value) && (!classroomId.HasValue || c.ClassroomId == classroomId.Value))
-            .ToList();
+        List<Child> children;
+        if (classroomId.HasValue)
+        {
+            children = (await _childRepository.GetByClassroomIdAsync(_tenantContext.TenantId, classroomId.Value, ct)).ToList();
+        }
+        else
+        {
+            var branchClassrooms = (await _classroomRepository.GetByBranchIdAsync(_tenantContext.TenantId, branchId, ct)).ToList();
+            var branchClassroomIds = branchClassrooms.Select(c => c.Id).ToHashSet();
+            var allChildren = await _childRepository.GetAllAsync(_tenantContext.TenantId, ct);
+            children = allChildren
+                .Where(c => c.ClassroomId.HasValue && branchClassroomIds.Contains(c.ClassroomId.Value))
+                .ToList();
+        }
 
         var attendancesList = await _attendanceRepository.GetChildAttendanceByDateAsync(
             _tenantContext.TenantId,
@@ -833,18 +840,25 @@ public class ChildDailyCareService : IChildDailyCareService
 
     public async Task<ClassroomDailyCareFeedDto> GetClassroomDailyCareFeedAsync(Guid branchId, Guid? classroomId, DateOnly date, CancellationToken ct = default)
     {
-        var overview = (await GetClassroomOverviewAsync(branchId, classroomId, date, ct)).ToList();
-        var lowSupplies = (await GetLowSuppliesAsync(branchId, ct)).ToList();
-        var pendingHandovers = (await GetPendingHandoversAsync(branchId, ct)).ToList();
-        List<TeacherHandover> classroomHandovers;
-        if (classroomId.HasValue)
-        {
-            classroomHandovers = (await GetClassroomHandoversAsync(classroomId.Value, date, ct)).ToList();
-        }
-        else
-        {
-            classroomHandovers = pendingHandovers.ToList();
-        }
+        var overviewTask = GetClassroomOverviewAsync(branchId, classroomId, date, ct);
+        var lowSuppliesTask = GetLowSuppliesAsync(branchId, ct);
+        var pendingHandoversTask = GetPendingHandoversAsync(branchId, ct);
+        var classroomHandoversTask = classroomId.HasValue
+            ? GetClassroomHandoversAsync(classroomId.Value, date, ct)
+            : null;
+
+        await Task.WhenAll(
+            overviewTask,
+            lowSuppliesTask,
+            pendingHandoversTask,
+            classroomHandoversTask ?? Task.FromResult<IEnumerable<TeacherHandover>>(Array.Empty<TeacherHandover>()));
+
+        var overview = (await overviewTask).ToList();
+        var lowSupplies = (await lowSuppliesTask).ToList();
+        var pendingHandovers = (await pendingHandoversTask).ToList();
+        var classroomHandovers = classroomHandoversTask != null
+            ? (await classroomHandoversTask).ToList()
+            : pendingHandovers;
 
         var overviewDtos = overview.Select(c => new ClassroomChildCareStatusDto
         {

@@ -1,16 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using EnjoyEveryday.Domain.Entities.Security;
 using EnjoyEveryday.Domain.Repositories;
+using EnjoyEveryday.Infrastructure.Data;
 using EnjoyEveryday.Shared.Data;
 
 namespace EnjoyEveryday.Infrastructure.Repositories.Security;
 
 /// <summary>
-/// PostgreSQL Dapper implementation of IAgentWebhookRepository.
+/// PostgreSQL Dapper implementation of IAgentWebhookRepository using stored procedures/functions.
 /// </summary>
 public class AgentWebhookRepository : IAgentWebhookRepository
 {
@@ -24,72 +26,52 @@ public class AgentWebhookRepository : IAgentWebhookRepository
     public async Task<IEnumerable<AgentWebhookSubscription>> GetActiveSubscriptionsForEventAsync(
         Guid tenantId, string eventType, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            SELECT 
-                id, tenant_id, user_id, name, webhook_url, secret_key, 
-                subscribed_events, is_active, last_triggered_at, failure_count, 
-                created_at, updated_at
-            FROM agent_webhook_subscriptions
-            WHERE tenant_id = @tenantId 
-              AND is_active = TRUE
-              AND (@eventType = ANY(subscribed_events) OR '*' = ANY(subscribed_events));
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<AgentWebhookSubscription>(
-            new CommandDefinition(sql, new { tenantId, eventType }, cancellationToken: cancellationToken));
+        return await connection.QueryFunctionAsync<AgentWebhookSubscription>(
+            "fn_get_active_agent_webhooks_for_event",
+            new { p_tenant_id = tenantId, p_event_type = eventType },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<IEnumerable<AgentWebhookSubscription>> GetTenantSubscriptionsAsync(
         Guid tenantId, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            SELECT 
-                id, tenant_id, user_id, name, webhook_url, secret_key, 
-                subscribed_events, is_active, last_triggered_at, failure_count, 
-                created_at, updated_at
-            FROM agent_webhook_subscriptions
-            WHERE tenant_id = @tenantId
-            ORDER BY created_at DESC;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.QueryAsync<AgentWebhookSubscription>(
-            new CommandDefinition(sql, new { tenantId }, cancellationToken: cancellationToken));
+        return await connection.QueryFunctionAsync<AgentWebhookSubscription>(
+            "fn_get_agent_webhooks",
+            new { p_tenant_id = tenantId },
+            cancellationToken: cancellationToken);
     }
 
     public async Task<Guid> CreateSubscriptionAsync(
         AgentWebhookSubscription subscription, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            INSERT INTO agent_webhook_subscriptions (
-                id, tenant_id, user_id, name, webhook_url, secret_key, 
-                subscribed_events, is_active, failure_count, created_at, updated_at
-            )
-            VALUES (
-                @Id, @TenantId, @UserId, @Name, @WebhookUrl, @SecretKey, 
-                @SubscribedEvents, TRUE, 0, NOW(), NOW()
-            )
-            RETURNING id;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        return await connection.ExecuteScalarAsync<Guid>(
-            new CommandDefinition(sql, subscription, cancellationToken: cancellationToken));
+        await connection.ExecuteProcedureAsync(
+            "sp_create_agent_webhook",
+            new
+            {
+                p_id = subscription.Id,
+                p_tenant_id = subscription.TenantId,
+                p_user_id = subscription.UserId,
+                p_name = subscription.Name,
+                p_webhook_url = subscription.WebhookUrl,
+                p_secret_key = subscription.SecretKey,
+                p_subscribed_events = subscription.SubscribedEvents?.ToArray() ?? Array.Empty<string>()
+            },
+            cancellationToken: cancellationToken);
+        return subscription.Id;
     }
 
     public async Task<bool> DeleteSubscriptionAsync(
         Guid tenantId, Guid subscriptionId, CancellationToken cancellationToken = default)
     {
-        const string sql = """
-            DELETE FROM agent_webhook_subscriptions
-            WHERE id = @subscriptionId AND tenant_id = @tenantId;
-            """;
-
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-        var rows = await connection.ExecuteAsync(
-            new CommandDefinition(sql, new { tenantId, subscriptionId }, cancellationToken: cancellationToken));
-        return rows > 0;
+        await connection.ExecuteProcedureAsync(
+            "sp_delete_agent_webhook",
+            new { p_tenant_id = tenantId, p_subscription_id = subscriptionId },
+            cancellationToken: cancellationToken);
+        return true;
     }
 
     public async Task RecordDeliveryResultAsync(
@@ -99,7 +81,7 @@ public class AgentWebhookRepository : IAgentWebhookRepository
             UPDATE agent_webhook_subscriptions
             SET last_triggered_at = NOW(),
                 failure_count = CASE WHEN @success THEN 0 ELSE failure_count + 1 END,
-                is_active = CASE WHEN @success THEN TRUE WHEN failure_count >= 10 THEN FALSE ELSE TRUE END,
+                is_active = CASE WHEN @success THEN TRUE ELSE (failure_count + 1 < 10) END,
                 updated_at = NOW()
             WHERE id = @subscriptionId;
             """;
