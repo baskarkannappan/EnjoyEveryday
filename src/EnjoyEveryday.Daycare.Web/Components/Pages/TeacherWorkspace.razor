@@ -26,6 +26,7 @@
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
 @inject Microsoft.Extensions.Logging.ILogger<TeacherWorkspace> Logger
+@inject IJSRuntime JS
 
 @implements IDisposable
 
@@ -387,6 +388,10 @@
                     <p>Execute attendance, diaper changes, meals, rest sessions, and moments with 1 tap.</p>
                 </div>
                 <div class="cockpit-batch-bar">
+                    @if (_showLiveSyncFlash)
+                    {
+                        <span class="live-sync-flash">🔄 Co-Teacher Live Sync</span>
+                    }
                     <button class="batch-btn primary-batch" @onclick="MarkAllScheduledPresentAsync" disabled="@_isDaycareClosed" style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Mark all expected children present")">
                         <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
                         <span>Check-In All</span>
@@ -395,9 +400,25 @@
                         <FluentIcon Value="@(new Icons.Regular.Size16.Food())" Color="Color.Custom" CustomColor="#52745e" />
                         <span>Group Snack</span>
                     </button>
+                    <button class="batch-btn" @onclick="RecordWholeTableLunchAsync" title="Record lunch (75% Most) for all checked-in children at once">
+                        <span>🍽️</span>
+                        <span>Table Lunch</span>
+                    </button>
+                    <button class="batch-btn" @onclick="() => _showPottyChecklistModal = true" title="Open rapid 1-screen diaper &amp; potty line checklist">
+                        <span>🧷</span>
+                        <span>Potty Line</span>
+                    </button>
                     <button class="batch-btn" @onclick="StartGroupNapAsync" title="Start rest time for all present awake children">
                         <FluentIcon Value="@(new Icons.Regular.Size16.Bed())" Color="Color.Custom" CustomColor="#3730a3" />
                         <span>Group Rest</span>
+                    </button>
+                    <button class="batch-btn" @onclick="OpenTimerModal" title="Open Gentle Classroom Transition Timer &amp; Chime">
+                        <span>⏳</span>
+                        <span>Timer</span>
+                    </button>
+                    <button class="batch-btn" @onclick="ManualCoTeacherSyncAsync" title="Refresh live status from co-teachers">
+                        <span>🔄</span>
+                        <span>Sync</span>
                     </button>
                 </div>
             </div>
@@ -460,7 +481,11 @@
                                     </div>
                                 </div>
 
-                                <div>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <button type="button" class="btn-pickup-cheat" @onclick="() => OpenPickupCheatSheet(child)" title="Open 15-second pickup cheat-sheet for talking to parents">
+                                        <span>📋</span>
+                                        <span>Cheat-Sheet</span>
+                                    </button>
                                     @if (isSleeping)
                                     {
                                         <span class="child-badge badge-resting"><span class="pulse-dot"></span> Resting</span>
@@ -657,14 +682,14 @@
                     }
                 </div>
 
-                <!-- 3. Capture a Child Moment -->
+                <!-- 3. Voice or Text Child Moment -->
                 <div class="action-card" role="button" tabindex="0" @onclick="OpenGeneralMomentModalAsync">
                     <div class="action-card-icon">
-                        <FluentIcon Value="@(new Icons.Regular.Size28.Camera())" Color="Color.Custom" CustomColor="#31523c" />
+                        <FluentIcon Value="@(new Icons.Regular.Size28.Mic())" Color="Color.Custom" CustomColor="#31523c" />
                     </div>
                     <div class="action-card-text">
-                        <div class="action-title">Capture a Moment</div>
-                        <div class="action-subtitle">Record an observation</div>
+                        <div class="action-title">Voice Observation</div>
+                        <div class="action-subtitle">Hands-free or text moment</div>
                     </div>
                 </div>
 
@@ -719,20 +744,49 @@
                             <FluentIcon Value="@(new Icons.Regular.Size24.PaintBrush())" Color="Color.Custom" CustomColor="#31523c" />
                         </div>
                         <div class="activity-info">
-                            <h3 class="activity-title">@NextPlannedExperience.Title</h3>
+                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+                                <span style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent-dark, #31523c); background: var(--accent-light, #e6eee9); padding: 2px 7px; border-radius: 4px;">✨ Planned Experience</span>
+                                <span style="font-size: 11.5px; font-weight: 600; color: var(--muted, #6c7870);">@(string.IsNullOrEmpty(NextPlannedExperience.TimeDisplay) ? "Today" : NextPlannedExperience.TimeDisplay)</span>
+                            </div>
+                            <h3 class="activity-title" style="margin-bottom: 3px;">@NextPlannedExperience.Title</h3>
                             <div class="activity-meta">
-                                <span>@(string.IsNullOrEmpty(NextPlannedExperience.TimeDisplay) ? "Today" : NextPlannedExperience.TimeDisplay)</span>
                                 @if (!string.IsNullOrEmpty(NextPlannedExperience.PreparationNotes))
                                 {
-                                    <span class="meta-dot">•</span>
-                                    <span>@NextPlannedExperience.PreparationNotes</span>
+                                    <span>💡 @NextPlannedExperience.PreparationNotes</span>
+                                }
+                                else
+                                {
+                                    <span>Materials &amp; pedagogical steps ready for your classroom group.</span>
                                 }
                             </div>
+                            @{
+                                var plannedSafetyAlerts = _classroomChildren.Where(c => c.IsCheckedIn && (!string.IsNullOrWhiteSpace(c.ImportantCareAlert) || !string.IsNullOrWhiteSpace(c.DietaryOrAllergyNote))).ToList();
+                            }
+                            @if (plannedSafetyAlerts.Any())
+                            {
+                                <div class="safety-shield-banner shield-alert" title="Safety Shield Alert for Present Children">
+                                    <span>🛡️⚠️</span>
+                                    <span><strong>Safety Shield Alert:</strong> @(string.Join(", ", plannedSafetyAlerts.Select(a => $"{a.ChildName} ({(!string.IsNullOrWhiteSpace(a.ImportantCareAlert) ? a.ImportantCareAlert : a.DietaryOrAllergyNote)})"))) present today. Suggested adaptation: Ensure allergen-free alternative materials.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="safety-shield-banner shield-safe" title="Material Safety Shield Verified">
+                                    <span>🛡️🟢</span>
+                                    <span><strong>Material Safety Shield:</strong> All Safe — No active allergies for the @(_classroomChildren.Count(c => c.IsCheckedIn)) children checked in today.</span>
+                                </div>
+                            }
                         </div>
                     </div>
-                    <div class="activity-right">
-                        <button class="activity-open-btn" @onclick="() => StartSession(NextPlannedExperience.Id)">
-                            Open &rarr;
+                    <div class="activity-right" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn primary btn-sm" @onclick="() => StartSession(NextPlannedExperience.Id)">
+                            ▶ Start Session
+                        </button>
+                        <a href="@($"/experiences/{NextPlannedExperience.Id}/story")" class="btn secondary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
+                            📖 Storybook
+                        </a>
+                        <button class="btn secondary btn-sm" @onclick="OpenGeneralMomentModalAsync" title="Record voice or text observation moment">
+                            🎙️ Voice / Text Moment
                         </button>
                     </div>
                 </div>
@@ -746,15 +800,40 @@
                         </div>
                         <div class="activity-info">
                             <div class="live-tag"><span class="pulse-dot"></span> In Progress Now</div>
-                            <h3 class="activity-title">@ActiveRunningExperience.Title</h3>
+                            <h3 class="activity-title" style="margin-bottom: 3px;">@ActiveRunningExperience.Title</h3>
                             <div class="activity-meta">
                                 <span>@(string.IsNullOrEmpty(ActiveRunningExperience.TimeDisplay) ? "Started" : ActiveRunningExperience.TimeDisplay)</span>
+                                <span class="meta-dot">•</span>
+                                <span>Children active in classroom exploration</span>
                             </div>
+                            @{
+                                var activeSafetyAlerts = _classroomChildren.Where(c => c.IsCheckedIn && (!string.IsNullOrWhiteSpace(c.ImportantCareAlert) || !string.IsNullOrWhiteSpace(c.DietaryOrAllergyNote))).ToList();
+                            }
+                            @if (activeSafetyAlerts.Any())
+                            {
+                                <div class="safety-shield-banner shield-alert" title="Safety Shield Alert for Present Children">
+                                    <span>🛡️⚠️</span>
+                                    <span><strong>Safety Shield Alert:</strong> @(string.Join(", ", activeSafetyAlerts.Select(a => $"{a.ChildName} ({(!string.IsNullOrWhiteSpace(a.ImportantCareAlert) ? a.ImportantCareAlert : a.DietaryOrAllergyNote)})"))) present today. Suggested adaptation: Ensure allergen-free alternative materials.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="safety-shield-banner shield-safe" title="Material Safety Shield Verified">
+                                    <span>🛡️🟢</span>
+                                    <span><strong>Material Safety Shield:</strong> All Safe — No active allergies for the @(_classroomChildren.Count(c => c.IsCheckedIn)) children checked in today.</span>
+                                </div>
+                            }
                         </div>
                     </div>
-                    <div class="activity-right">
-                        <button class="activity-open-btn" @onclick="() => OpenActiveSession(ActiveRunningExperience.Id)">
-                            Resume &rarr;
+                    <div class="activity-right" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn primary btn-sm" @onclick="() => OpenActiveSession(ActiveRunningExperience.Id)">
+                            ▶ Resume Session
+                        </button>
+                        <a href="@($"/experiences/{ActiveRunningExperience.Id}/story")" class="btn secondary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
+                            📖 Storybook
+                        </a>
+                        <button class="btn secondary btn-sm" @onclick="OpenGeneralMomentModalAsync" title="Record voice or text observation moment">
+                            🎙️ Voice / Text Moment
                         </button>
                     </div>
                 </div>
@@ -965,6 +1044,189 @@
                        OnClose="() => _showSecurePickupModal = false" />
 }
 
+@* 1. 15-SECOND PICKUP CHEAT SHEET MODAL *@
+@if (_activeCheatSheetChild != null)
+{
+    <div class="cockpit-modal-backdrop" @onclick="() => _activeCheatSheetChild = null">
+        <div class="cockpit-modal" @onclick:stopPropagation="true" style="max-width: 520px;">
+            <div class="cockpit-modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--text, #26332d); display: flex; align-items: center; gap: 8px;">
+                        <span>📋</span>
+                        <span>Pickup Cheat-Sheet — @_activeCheatSheetChild.ChildName</span>
+                    </h3>
+                    <p style="margin: 2px 0 0; font-size: 12px; color: var(--muted, #6c7870);">
+                        Instant 15-second talking points for parent door conversation
+                    </p>
+                </div>
+                <button class="btn-xs secondary" @onclick="() => _activeCheatSheetChild = null">✕</button>
+            </div>
+            <div class="cockpit-modal-body">
+                <div class="cheat-sheet-card">
+                    <div class="cheat-bullet-item">
+                        <span class="cheat-icon">😴</span>
+                        <div>
+                            <strong>Rest &amp; Nap:</strong>
+                            <div>@GetChildNapSummary(_activeCheatSheetChild)</div>
+                        </div>
+                    </div>
+                    <div class="cheat-bullet-item">
+                        <span class="cheat-icon">🥣</span>
+                        <div>
+                            <strong>Meals &amp; Nutrition:</strong>
+                            <div>@GetChildMealSummary(_activeCheatSheetChild)</div>
+                        </div>
+                    </div>
+                    <div class="cheat-bullet-item">
+                        <span class="cheat-icon">🎨</span>
+                        <div>
+                            <strong>Today's Experience:</strong>
+                            <div>@GetChildExperienceSummary(_activeCheatSheetChild)</div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_activeCheatSheetChild.ImportantCareAlert) || !string.IsNullOrWhiteSpace(_activeCheatSheetChild.DietaryOrAllergyNote))
+                    {
+                        <div class="cheat-bullet-item" style="color: #8c5717;">
+                            <span class="cheat-icon">⚠️</span>
+                            <div>
+                                <strong>Safety / Allergy Alert:</strong>
+                                <div>@(!string.IsNullOrWhiteSpace(_activeCheatSheetChild.ImportantCareAlert) ? _activeCheatSheetChild.ImportantCareAlert : _activeCheatSheetChild.DietaryOrAllergyNote)</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="cheat-quote-box">
+                    <strong>💬 Suggested Parent Greeting:</strong>
+                    <div>"@GetSuggestedParentGreeting(_activeCheatSheetChild)"</div>
+                </div>
+            </div>
+            <div class="cockpit-modal-footer">
+                <button class="btn secondary sm" @onclick="() => _activeCheatSheetChild = null">Close</button>
+                <button class="btn primary sm" @onclick="() => CheckOutFromCheatSheet(_activeCheatSheetChild.ChildId)">🚪 Check Out Child</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* 4. POST-NAP POTTY & DIAPER LINE CHECKLIST MODAL *@
+@if (_showPottyChecklistModal)
+{
+    <div class="cockpit-modal-backdrop" @onclick="() => _showPottyChecklistModal = false">
+        <div class="cockpit-modal" @onclick:stopPropagation="true" style="max-width: 620px;">
+            <div class="cockpit-modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--text, #26332d); display: flex; align-items: center; gap: 8px;">
+                        <span>🧷</span>
+                        <span>Post-Nap Potty &amp; Diaper Line Checklist</span>
+                    </h3>
+                    <p style="margin: 2px 0 0; font-size: 12px; color: var(--muted, #6c7870);">
+                        1-tap rapid recording down the line for @(_classroomChildren.Count(c => c.IsCheckedIn)) checked-in children
+                    </p>
+                </div>
+                <button class="btn-xs secondary" @onclick="() => _showPottyChecklistModal = false">✕</button>
+            </div>
+            <div class="cockpit-modal-body" style="max-height: 400px; overflow-y: auto; padding: 0 16px;">
+                <table class="potty-table">
+                    <thead>
+                        <tr>
+                            <th>Child</th>
+                            <th>Current Log</th>
+                            <th>1-Tap Record</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var child in _classroomChildren.Where(c => c.IsCheckedIn))
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@child.ChildName</strong>
+                                    <div style="font-size: 11px; color: var(--muted, #6c7870);">
+                                        @(child.ActiveNapSession != null ? "Resting" : "Awake")
+                                    </div>
+                                </td>
+                                <td>
+                                    <span style="font-size: 11.5px; color: var(--accent-dark, #31523c); font-weight: 600;">
+                                        @(child.LastDiaperEvent != null ? $"{child.LastDiaperEvent.DiaperCondition} ({child.LastDiaperEvent.EventTime.ToLocalTime():h:mm tt})" : "No log yet")
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                        <button type="button" class="potty-quick-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Clean/Dry")'>✨ Dry</button>
+                                        <button type="button" class="potty-quick-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet")'>💧 Wet</button>
+                                        <button type="button" class="potty-quick-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "BM")'>💩 BM</button>
+                                        <button type="button" class="potty-quick-btn" @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Potty Success")'>🚽 Potty</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="cockpit-modal-footer">
+                <button class="btn secondary sm" @onclick="() => _showPottyChecklistModal = false">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* 5. TRANSITION CHIME & VISUAL GENTLE TIMER MODAL *@
+@if (_showTimerModal)
+{
+    <div class="cockpit-modal-backdrop" @onclick="() => _showTimerModal = false">
+        <div class="cockpit-modal timer-modal" @onclick:stopPropagation="true">
+            <div class="cockpit-modal-header">
+                <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--text, #26332d); display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <span>⏳</span>
+                        <span>Gentle Classroom Transition Timer</span>
+                    </h3>
+                    <p style="margin: 2px 0 0; font-size: 12px; color: var(--muted, #6c7870);">Calm audio chime &amp; visual countdown for transitions</p>
+                </div>
+                <button class="btn-xs secondary" @onclick="() => _showTimerModal = false">✕</button>
+            </div>
+            <div class="cockpit-modal-body">
+                <div class="timer-display">
+                    @FormatTimerSeconds(_timerRemainingSeconds)
+                </div>
+                
+                <div class="timer-progress-bar">
+                    <div class="timer-progress-fill" style="width: @(GetTimerProgressPercent())%;"></div>
+                </div>
+
+                @if (_timerRemainingSeconds == 0)
+                {
+                    <div style="background: #e6f4ea; border: 1px solid #b7e1cd; color: #137333; padding: 10px; border-radius: 6px; font-weight: 750; margin-bottom: 12px; font-size: 13px;">
+                        🎵 Transition Time: Sing classroom clean-up song!
+                    </div>
+                }
+
+                <div class="timer-presets">
+                    <button type="button" class="timer-preset-btn @(_timerTotalSeconds == 120 ? "active" : "")" @onclick="() => SetTimerPreset(120)">2 min (Quick Clean)</button>
+                    <button type="button" class="timer-preset-btn @(_timerTotalSeconds == 300 ? "active" : "")" @onclick="() => SetTimerPreset(300)">5 min (Wind Down)</button>
+                    <button type="button" class="timer-preset-btn @(_timerTotalSeconds == 600 ? "active" : "")" @onclick="() => SetTimerPreset(600)">10 min (Circle Prep)</button>
+                </div>
+
+                <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+                    @if (!_isTimerRunning)
+                    {
+                        <button class="btn primary sm" @onclick="StartTransitionTimer">▶ Start Timer</button>
+                    }
+                    else
+                    {
+                        <button class="btn secondary sm" @onclick="PauseTransitionTimer">⏸ Pause</button>
+                    }
+                    <button class="btn secondary sm" @onclick="ResetTransitionTimer">↺ Reset</button>
+                    <button class="btn secondary sm" @onclick="PlayChimeSampleAsync" title="Test the soft Tibetan bell audio chime">🔔 Test Chime</button>
+                </div>
+            </div>
+            <div class="cockpit-modal-footer" style="justify-content: center;">
+                <button class="btn secondary sm" @onclick="() => _showTimerModal = false">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public IReadOnlySet<Guid> AssignedClassroomIds { get; set; } = new HashSet<Guid>();
     [Parameter] public IReadOnlyList<string> AvailableViews { get; set; } = Array.Empty<string>();
@@ -983,6 +1245,24 @@
     private string _rosterFilter = "All";
     private Guid? _activeDiaperChildId;
     private Guid? _activeMealChildId;
+
+    // Feature 1: Pickup Cheat-Sheet
+    private ClassroomChildCareStatusDto? _activeCheatSheetChild;
+
+    // Feature 4: Whole-Table Sync & Potty Line Checklist
+    private bool _showPottyChecklistModal = false;
+
+    // Feature 5: Transition Chime & Visual Gentle Timer
+    private bool _showTimerModal = false;
+    private int _timerTotalSeconds = 300;
+    private int _timerRemainingSeconds = 300;
+    private bool _isTimerRunning = false;
+    private System.Threading.Timer? _transitionCountdownTimer;
+
+    // Feature 6: Co-Teacher Live Sync
+    private bool _showLiveSyncFlash = false;
+    private System.Threading.Timer? _coTeacherSyncTimer;
+    private DateTimeOffset _lastSyncCheckTime = DateTimeOffset.UtcNow;
 
     // Staff Break
     private bool _isOnBreak = false;
@@ -1028,11 +1308,24 @@
                 });
             }
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+
+        _coTeacherSyncTimer = new System.Threading.Timer(async _ =>
+        {
+            if (!_isDaycareClosed && _selectedClassroomId.HasValue)
+            {
+                await InvokeAsync(async () =>
+                {
+                    await PerformBackgroundCoTeacherSyncAsync();
+                });
+            }
+        }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
     }
 
     public void Dispose()
     {
         _autoCloseCheckTimer?.Dispose();
+        _coTeacherSyncTimer?.Dispose();
+        _transitionCountdownTimer?.Dispose();
     }
 
     protected override async Task OnParametersSetAsync()
@@ -1802,5 +2095,253 @@
     {
         var dt = DateTime.Today.Add(ts);
         return dt.ToString("h:mm tt");
+    }
+
+    // =========================================================================
+    // FEATURE 1: 15-SECOND PICKUP CHEAT-SHEET
+    // =========================================================================
+    private void OpenPickupCheatSheet(ClassroomChildCareStatusDto child)
+    {
+        _activeCheatSheetChild = child;
+    }
+
+    private string GetChildNapSummary(ClassroomChildCareStatusDto child)
+    {
+        if (child.ActiveNapSession != null)
+        {
+            return $"Currently resting since {child.ActiveNapSession.StartTime.ToLocalTime():h:mm tt}";
+        }
+        if (child.LastCompletedNapSession != null)
+        {
+            var endStr = child.LastCompletedNapSession.EndTime.HasValue ? child.LastCompletedNapSession.EndTime.Value.ToLocalTime().ToString("h:mm tt") : "woke up";
+            var outcome = !string.IsNullOrWhiteSpace(child.LastCompletedNapSession.Outcome) ? child.LastCompletedNapSession.Outcome : (!string.IsNullOrWhiteSpace(child.LastCompletedNapSession.Notes) ? child.LastCompletedNapSession.Notes : "Rested well");
+            return $"Rested {child.LastCompletedNapSession.StartTime.ToLocalTime():h:mm tt} – {endStr} ({outcome})";
+        }
+        return "Active and awake all day (no scheduled nap)";
+    }
+
+    private string GetChildMealSummary(ClassroomChildCareStatusDto child)
+    {
+        if (child.LastMealEvent != null)
+        {
+            return $"{child.LastMealEvent.MealType ?? "Lunch"}: Ate {child.LastMealEvent.AmountConsumed ?? "well"} ({child.LastMealEvent.EventTime.ToLocalTime():h:mm tt})";
+        }
+        return "Provided classroom snack & water hydration";
+    }
+
+    private string GetChildExperienceSummary(ClassroomChildCareStatusDto child)
+    {
+        var activeExp = ActiveRunningExperience ?? NextPlannedExperience ?? _board.TodayRhythm?.FirstOrDefault();
+        if (activeExp != null)
+        {
+            return $"{activeExp.Title} — {(!string.IsNullOrWhiteSpace(activeExp.ScopeDisplay) ? activeExp.ScopeDisplay : "Creative Exploration")}";
+        }
+        return "Engaged in hands-on classroom exploration, story time, and motor play";
+    }
+
+    private string GetSuggestedParentGreeting(ClassroomChildCareStatusDto child)
+    {
+        var activeExp = ActiveRunningExperience ?? NextPlannedExperience ?? _board.TodayRhythm?.FirstOrDefault();
+        if (activeExp != null)
+        {
+            return $"Ask {child.ChildName} about the \"{activeExp.Title}\" activity we explored together today!";
+        }
+        return $"{child.ChildName} had a fantastic day playing and discovering with friends!";
+    }
+
+    private void CheckOutFromCheatSheet(Guid childId)
+    {
+        _activeCheatSheetChild = null;
+        CheckOutChildAsync(childId);
+    }
+
+    // =========================================================================
+    // FEATURE 4: GROUP CARE QUICK-TICKERS (WHOLE-TABLE SYNC)
+    // =========================================================================
+    private async Task RecordWholeTableLunchAsync()
+    {
+        if (_activeClassroom == null) return;
+        var checkedIn = _classroomChildren.Where(c => c.IsCheckedIn).ToList();
+        if (!checkedIn.Any())
+        {
+            await NotificationService.ShowWarningAsync("No children currently checked in to record whole-table lunch.");
+            return;
+        }
+
+        try
+        {
+            foreach (var child in checkedIn)
+            {
+                await DailyCareService.RecordCareEventAsync(new ChildCareEvent
+                {
+                    ChildId = child.ChildId,
+                    ClassroomId = _activeClassroom.Id,
+                    BranchId = _activeClassroom.BranchId,
+                    EventType = CareEventTypes.Meal,
+                    MealType = "Lunch",
+                    AmountConsumed = "Most (75%)",
+                    EventTime = DateTime.UtcNow,
+                    ParentVisible = true
+                });
+            }
+
+            await NotificationService.ShowSuccessAsync($"Recorded lunch (75% Most) for all {checkedIn.Count} seated children.");
+            await RefreshBoardAsync();
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    // =========================================================================
+    // FEATURE 5: TRANSITION CHIME & VISUAL GENTLE TIMER
+    // =========================================================================
+    private void OpenTimerModal()
+    {
+        _showTimerModal = true;
+    }
+
+    private void SetTimerPreset(int seconds)
+    {
+        _timerTotalSeconds = seconds;
+        _timerRemainingSeconds = seconds;
+        _isTimerRunning = false;
+        _transitionCountdownTimer?.Dispose();
+    }
+
+    private void StartTransitionTimer()
+    {
+        if (_timerRemainingSeconds <= 0)
+        {
+            _timerRemainingSeconds = _timerTotalSeconds;
+        }
+
+        _isTimerRunning = true;
+        _transitionCountdownTimer?.Dispose();
+        _transitionCountdownTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                if (!_isTimerRunning) return;
+
+                if (_timerRemainingSeconds > 0)
+                {
+                    _timerRemainingSeconds--;
+                    StateHasChanged();
+                }
+
+                if (_timerRemainingSeconds == 0)
+                {
+                    _isTimerRunning = false;
+                    _transitionCountdownTimer?.Dispose();
+                    StateHasChanged();
+                    try
+                    {
+                        await JS.InvokeVoidAsync("voiceRecognition.playGentleChime");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Could not play gentle chime.");
+                    }
+                }
+            });
+        }, null, 1000, 1000);
+    }
+
+    private void PauseTransitionTimer()
+    {
+        _isTimerRunning = false;
+        _transitionCountdownTimer?.Dispose();
+    }
+
+    private void ResetTransitionTimer()
+    {
+        _isTimerRunning = false;
+        _transitionCountdownTimer?.Dispose();
+        _timerRemainingSeconds = _timerTotalSeconds;
+    }
+
+    private async Task PlayChimeSampleAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("voiceRecognition.playGentleChime");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not play gentle chime.");
+        }
+    }
+
+    private string FormatTimerSeconds(int totalSec)
+    {
+        return $"{totalSec / 60:D2}:{totalSec % 60:D2}";
+    }
+
+    private int GetTimerProgressPercent()
+    {
+        if (_timerTotalSeconds <= 0) return 0;
+        var elapsed = _timerTotalSeconds - _timerRemainingSeconds;
+        return Math.Clamp((int)((elapsed / (double)_timerTotalSeconds) * 100), 0, 100);
+    }
+
+    // =========================================================================
+    // FEATURE 6: REAL-TIME CO-TEACHER LIVE SYNC
+    // =========================================================================
+    private async Task PerformBackgroundCoTeacherSyncAsync()
+    {
+        if (_activeClassroom == null) return;
+        try
+        {
+            var date = DateOnly.FromDateTime(DateTime.Today);
+            var feed = await DailyCareService.GetClassroomDailyCareFeedAsync(_activeClassroom.BranchId, _activeClassroom.Id, date);
+            var updatedFeed = feed.ClassroomOverview ?? new();
+
+            bool hasChanges = updatedFeed.Count != _classroomChildren.Count;
+            if (!hasChanges)
+            {
+                foreach (var child in updatedFeed)
+                {
+                    var existing = _classroomChildren.FirstOrDefault(c => c.ChildId == child.ChildId);
+                    if (existing == null) { hasChanges = true; break; }
+                    if ((child.LastDiaperEvent?.EventTime > _lastSyncCheckTime) ||
+                        (child.LastMealEvent?.EventTime > _lastSyncCheckTime))
+                    {
+                        hasChanges = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hasChanges)
+            {
+                _classroomChildren = updatedFeed;
+                _lastSyncCheckTime = DateTimeOffset.UtcNow;
+                _showLiveSyncFlash = true;
+                StateHasChanged();
+                _ = Task.Delay(3500).ContinueWith(_ => InvokeAsync(() =>
+                {
+                    _showLiveSyncFlash = false;
+                    StateHasChanged();
+                }));
+            }
+        }
+        catch
+        {
+            // Background sync silent on transient errors
+        }
+    }
+
+    private async Task ManualCoTeacherSyncAsync()
+    {
+        await RefreshBoardAsync();
+        _showLiveSyncFlash = true;
+        await NotificationService.ShowSuccessAsync("Classroom roster & care logs synchronized with co-teachers.");
+        _ = Task.Delay(3500).ContinueWith(_ => InvokeAsync(() =>
+        {
+            _showLiveSyncFlash = false;
+            StateHasChanged();
+        }));
     }
 }

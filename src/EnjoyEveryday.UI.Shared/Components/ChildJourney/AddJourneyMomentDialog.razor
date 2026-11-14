@@ -3,6 +3,7 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Domain.Entities.Learning
 @using EnjoyEveryday.Application.Services
+@using Microsoft.JSInterop
 
 @inject IChildJourneyService JourneyService
 @inject ChildService ChildService
@@ -13,6 +14,9 @@
 @inject ClassroomService ClassroomService
 @inject AttendanceService AttendanceService
 @inject TimeProvider TimeProvider
+@inject IJSRuntime JS
+
+@implements IDisposable
 
     @if (!_hideDialog)
     {
@@ -148,8 +152,57 @@
                 </div>
             }
 
-            <div class="form-group">
-                <textarea class="form-textarea" @bind="_observation" rows="3" placeholder="e.g., Maya built a tall tower by herself."></textarea>
+            <!-- HANDS-FREE VOICE-TO-MOMENT OBSERVATION CAPTURE -->
+            <div class="voice-moment-section">
+                <div class="voice-toolbar-row">
+                    <label class="form-label" style="margin: 0;">Observation Notes</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        @if (!_isVoiceRecording)
+                        {
+                            <button type="button" class="btn-voice-record" @onclick="ToggleVoiceRecognitionAsync" title="Record hands-free observation with your microphone">
+                                🎙️ Speak Observation
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn-voice-record recording" @onclick="ToggleVoiceRecognitionAsync" title="Stop listening">
+                                <span class="pulse-mic-dot"></span>
+                                ⏹️ Stop Listening
+                            </button>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_observation) || !string.IsNullOrWhiteSpace(_childVoice))
+                        {
+                            <button type="button" class="btn-clear-obs" @onclick="ClearObservation" title="Clear text">
+                                Clear
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                @if (_isVoiceRecording)
+                {
+                    <div class="voice-status-box listening">
+                        <span class="mic-live-icon">🔴</span>
+                        <span><strong>Listening hands-free...</strong> Speak your observation. Transcribed text will appear below.</span>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(_voiceFallbackMessage))
+                {
+                    <div class="voice-status-box fallback">
+                        <span>ℹ️</span>
+                        <span>@_voiceFallbackMessage</span>
+                    </div>
+                }
+
+                <div class="form-group" style="margin-top: 8px;">
+                    <textarea class="form-textarea" @bind="_observation" @bind:event="oninput" rows="3" placeholder="e.g., Maya built a tall tower with wooden cylinders and balanced the car on top."></textarea>
+                </div>
+
+                <div class="form-group" style="margin-top: -6px;">
+                    <label class="form-label" style="font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--muted, #6c7870); margin-bottom: 3px;">Child's Voice / Spoken Quote (Optional):</label>
+                    <input type="text" class="form-input-quote" @bind="_childVoice" @bind:event="oninput" placeholder='e.g., &ldquo;Look at my high bridge, it reaches the clouds!&rdquo;' />
+                </div>
             </div>
 
             <p class="quick-obs-header">Quick observations:</p>
@@ -257,9 +310,15 @@
     private int _step = 1;
     
     private string _observation = "";
+    private string _childVoice = "";
     private string _photoUrl = "";
     private bool _isSaving = false;
     private bool _isParentVisible = false;
+
+    // Hands-free voice recognition with text fallback
+    private DotNetObjectReference<AddJourneyMomentDialog>? _dotNetRef;
+    private bool _isVoiceRecording = false;
+    private string? _voiceFallbackMessage;
     
     private List<DevelopmentArea>? _allAreas;
     private HashSet<Guid> _selectedAreas = new();
@@ -334,7 +393,10 @@
     {
         _step = 1;
         _observation = "";
+        _childVoice = "";
         _photoUrl = "";
+        _voiceFallbackMessage = null;
+        _isVoiceRecording = false;
         _isParentVisible = true;
         _selectedAreas.Clear();
         _selectedChildIds.Clear();
@@ -513,8 +575,112 @@
 
     private void CloseDialog()
     {
+        if (_isVoiceRecording)
+        {
+            _ = StopVoiceCaptureAsync();
+        }
         _hideDialog = true;
         _photoUrl = "";
+        _voiceFallbackMessage = null;
+    }
+
+    private async Task ToggleVoiceRecognitionAsync()
+    {
+        if (_isVoiceRecording)
+        {
+            await StopVoiceCaptureAsync();
+        }
+        else
+        {
+            await StartVoiceCaptureAsync();
+        }
+    }
+
+    private async Task StartVoiceCaptureAsync()
+    {
+        _voiceFallbackMessage = null;
+        try
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            var success = await JS.InvokeAsync<bool>("voiceRecognition.start", _dotNetRef, "en-US");
+            if (success)
+            {
+                _isVoiceRecording = true;
+            }
+            else
+            {
+                _isVoiceRecording = false;
+                _voiceFallbackMessage = "Speech recognition is not supported in this browser. Fallback active: please type your observation directly below.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _isVoiceRecording = false;
+            _voiceFallbackMessage = $"Voice capture unavailable ({ex.Message}). Fallback active: please type your observation directly below.";
+        }
+    }
+
+    private async Task StopVoiceCaptureAsync()
+    {
+        _isVoiceRecording = false;
+        try
+        {
+            await JS.InvokeVoidAsync("voiceRecognition.stop");
+        }
+        catch { }
+    }
+
+    [JSInvokable]
+    public void OnSpeechStarted()
+    {
+        _isVoiceRecording = true;
+        _voiceFallbackMessage = null;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnSpeechResult(string finalTranscript, string interimTranscript)
+    {
+        if (!string.IsNullOrWhiteSpace(finalTranscript))
+        {
+            if (!string.IsNullOrWhiteSpace(_observation) && !_observation.EndsWith(" "))
+            {
+                _observation += " ";
+            }
+            _observation += finalTranscript.Trim();
+        }
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnSpeechError(string errorMessage)
+    {
+        _isVoiceRecording = false;
+        _voiceFallbackMessage = errorMessage;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnSpeechEnded()
+    {
+        _isVoiceRecording = false;
+        StateHasChanged();
+    }
+
+    private void ClearObservation()
+    {
+        _observation = "";
+        _childVoice = "";
+        _voiceFallbackMessage = null;
+    }
+
+    public void Dispose()
+    {
+        if (_isVoiceRecording)
+        {
+            try { _ = JS.InvokeVoidAsync("voiceRecognition.stop"); } catch { }
+        }
+        _dotNetRef?.Dispose();
     }
 
     private void AppendObservation(string obs)
@@ -604,6 +770,7 @@
                     ExperienceParticipationId = ExperienceParticipationId,
                     JourneyType = "Observation",
                     Observation = _observation,
+                    ChildVoice = !string.IsNullOrWhiteSpace(_childVoice) ? _childVoice : null,
                     ObservationDate = DateTimeOffset.UtcNow,
                     IsParentVisible = _isParentVisible,
                     ParentVisibilityStatus = _isParentVisible ? "Approved" : "Draft"

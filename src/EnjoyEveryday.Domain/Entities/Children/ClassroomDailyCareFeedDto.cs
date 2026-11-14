@@ -30,10 +30,12 @@ public class ClassroomChildCareStatusDto
     public ChildCareEvent? LastDiaperEvent { get; set; }
     public ChildCareEvent? LastMealEvent { get; set; }
     public ChildNapSession? ActiveNapSession { get; set; }
+    public ChildNapSession? LastCompletedNapSession { get; set; }
     public ChildCareEvent? LastComfortMood { get; set; }
     public int TodayEventsCount { get; set; }
     public bool HasLowSupplies { get; set; }
     public string? ImportantCareAlert { get; set; }
+    public string? DietaryOrAllergyNote { get; set; }
 }
 
 public class ChildCarePackageDto

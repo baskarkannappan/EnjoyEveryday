@@ -27,11 +27,27 @@ public class ChildDailySummary
     public List<ChildJourneyEntry> ApprovedMoments { get; set; } = new();
     public List<Event> UpcomingEvents { get; set; } = new();
     public ParentDailyCareReport? DailyCareReport { get; set; }
+    public ExperienceHighlightDto? TodayExperienceHighlight { get; set; }
     public bool HasCareUpdatesToday { get; set; }
     public int PendingConsentCount { get; set; }
     public int UnpaidInvoicesCount { get; set; }
     public int UnreadMessagesCount { get; set; }
     public string AttendanceStatusLabel { get; set; } = "Not checked in today";
+}
+
+public class ExperienceHighlightDto
+{
+    public Guid ExperienceId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string MagicMoment { get; set; } = string.Empty;
+    public string BedtimeConversationStarter { get; set; } = string.Empty;
+    public string TryAtHomeExtension { get; set; } = string.Empty;
+    public List<string> Materials { get; set; } = new();
+    public List<string> DevelopmentalGoals { get; set; } = new();
+    public string? TimeLabel { get; set; }
+    public string? PhotoUrl { get; set; }
+    public bool IsCompleted { get; set; }
 }
 
 public class ParentMediaItem
@@ -241,6 +257,7 @@ public class ParentService : IParentService
         }
 
         // 2. Scheduled Classroom Experiences
+        ExperienceHighlightDto? highlight = null;
         if (child.ClassroomId.HasValue)
         {
             var schedules = await _scheduleRepository.GetByClassroomAndDateRangeAsync(child.ClassroomId.Value, targetDate, targetDate);
@@ -266,6 +283,41 @@ public class ParentService : IParentService
                     Status = sch.Status,
                     IsCompleted = isCompleted
                 });
+
+                if (highlight == null && exp != null)
+                {
+                    ExperienceDna? dna = null;
+                    if (!string.IsNullOrWhiteSpace(exp.DnaPayload))
+                    {
+                        try
+                        {
+                            dna = System.Text.Json.JsonSerializer.Deserialize<ExperienceDna>(exp.DnaPayload, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        }
+                        catch { }
+                    }
+
+                    var ask = dna?.ExecutionGuide?.Ask;
+                    var starter = !string.IsNullOrWhiteSpace(ask) 
+                        ? $"Ask {child.FirstName}: \"{ask}\"" 
+                        : $"Ask {child.FirstName} what they created in '{exp.Title}' today!";
+                    var homeExtension = dna?.ExecutionGuide?.Extensions?.FirstOrDefault() 
+                        ?? (!string.IsNullOrWhiteSpace(dna?.ExecutionGuide?.Try) ? dna!.ExecutionGuide.Try : $"Ask {child.FirstName} to show you their favorite game or exploration from today's {exp.Title}!");
+
+                    highlight = new ExperienceHighlightDto
+                    {
+                        ExperienceId = exp.Id,
+                        Title = exp.Title,
+                        Description = exp.Description,
+                        MagicMoment = dna?.MagicMoment ?? string.Empty,
+                        BedtimeConversationStarter = starter,
+                        TryAtHomeExtension = homeExtension,
+                        Materials = dna?.Materials ?? new List<string>(),
+                        DevelopmentalGoals = dna?.DevelopmentalGoals ?? new List<string>(),
+                        TimeLabel = timeLabel,
+                        IsCompleted = isCompleted,
+                        PhotoUrl = approvedMoments.FirstOrDefault(m => m.Photos?.Any() == true)?.Photos?.FirstOrDefault()
+                    };
+                }
             }
         }
 
@@ -389,6 +441,7 @@ public class ParentService : IParentService
             ApprovedMoments = approvedMoments,
             UpcomingEvents = upcomingEvents,
             DailyCareReport = careReport,
+            TodayExperienceHighlight = highlight,
             HasCareUpdatesToday = hasCareUpdates,
             AttendanceStatusLabel = attendanceStatus,
             UnreadMessagesCount = unreadMessages,

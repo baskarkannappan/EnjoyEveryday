@@ -23,7 +23,7 @@ Hosted in `src/EnjoyEveryday.Parent.Web` (port `7005`). Designed specifically fo
 * **Media Consent Verification**: Before photos or videos are published to a parent's feed, the media service verifies `child_media_consents`. If consent is declined or missing, faces are blurred or media is withheld.
 
 ## Primary Pages & Features
-* **Today's Overview (`/`, `/today`)**: Live updates on daily care (naps, diaper changes, meals, bottle ounces) recorded by teachers in the Daycare app, plus verified attendance badges.
+* **Today's Overview (`/`, `/today`)**: Live updates on daily care (naps, diaper changes, meals, bottle ounces) recorded by teachers in the Daycare app, verified attendance badges, and the **Daily Experience Story Card** showcasing the classroom's developmental activity, inquiry wonder prompts, **Bedtime Conversation Starters**, and **Try-at-Home** family extensions.
 * **Child Journey (`/journey`)**: Developmental milestones, curiosity pillars, educator observations, and child voice moments.
 * **Memories (`/memories`)**: Visual chronological photo and moment gallery with media consent gating.
 * **Classroom Messages (`/messages`)**: Direct, secure messaging with verified classroom educators with quiet hours enforcement (`IsQuietHours` mutes push sounds after 8:00 PM and before 7:00 AM) and quick replies. Backed by stored procedures `sp_get_parent_messages`, `sp_send_parent_message`, and SignalR real-time notification broadcasting.

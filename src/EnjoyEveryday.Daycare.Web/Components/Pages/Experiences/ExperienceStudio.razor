@@ -8,6 +8,8 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 
 @inject ExperienceService ExperienceService
+@inject ClassroomService ClassroomService
+@inject PlannerService PlannerService
 @inject UserService UserService
 @inject NavigationManager NavigationManager
 @inject IAiIdeaService AiIdeaService
@@ -49,6 +51,9 @@
             }
             else
             {
+                <button class="studio-btn studio-btn-secondary" @onclick="OpenDeployModal" style="border-color: var(--accent, #557c6c); color: var(--accent-dark, #31523c); background: var(--accent-light, #e6eee9); font-weight: 700;">
+                    🚀 Schedule to Classrooms
+                </button>
                 <button class="studio-btn studio-btn-primary" @onclick="PlanExperience">
                     Plan Experience
                 </button>
@@ -462,6 +467,67 @@
     CurrentDescription="@_experience?.Description"
     CurrentDnaJson="@(_dna != null ? JsonSerializer.Serialize(_dna) : "{}")"
     OnClose="CloseHistoryDialog" />
+
+@* SCHEDULE TO CLASSROOMS MODAL *@
+@if (_isDeployModalOpen)
+{
+    <div style="position: fixed; inset: 0; z-index: 1050; background: rgba(38, 51, 45, 0.45); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px;" @onclick="() => _isDeployModalOpen = false">
+        <div style="background: var(--surface, #ffffff); border-radius: var(--radius, 18px); max-width: 520px; width: 100%; box-shadow: var(--shadow, 0 16px 40px rgba(40, 55, 47, 0.16)); border: 1px solid var(--border, #e4e7df); overflow: hidden;" @onclick:stopPropagation="true">
+            <div style="padding: 18px 24px; border-bottom: 1px solid var(--border, #e4e7df); display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 36px; height: 36px; background: var(--accent-light, #e6eee9); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--accent-dark, #31523c); font-size: 16px;">
+                        🚀
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: var(--accent-dark, #31523c); text-transform: uppercase;">Curriculum Distribution</div>
+                        <h3 style="font-size: 17px; font-weight: 800; color: var(--text, #26332d); margin: 0;">Schedule to Classrooms</h3>
+                    </div>
+                </div>
+                <button type="button" @onclick="() => _isDeployModalOpen = false" style="background: none; border: none; font-size: 18px; color: var(--muted, #6c7870); cursor: pointer;">✕</button>
+            </div>
+
+            <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;">
+                <p style="font-size: 13px; color: var(--muted, #6c7870); margin: 0;">
+                    Distribute <strong>@_experience.Title</strong> directly into classroom schedules across your organization.
+                </p>
+
+                <!-- 1. Age Tier Selection -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 6px;">Target Age Tier</label>
+                    <select class="studio-input" @bind="_selectedDeployTier" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 6px;">
+                        <option value="All">All Age Groups (Infant, Toddler, Preschool)</option>
+                        <option value="Toddler">Toddlers (18m – 36m)</option>
+                        <option value="Preschool">Preschool &amp; Pre-K (3 – 5 yrs)</option>
+                        <option value="Infant">Infants (0 – 18m)</option>
+                    </select>
+                </div>
+
+                <!-- 2. Target Date -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 6px;">Scheduled Date</label>
+                    <input type="date" class="studio-input" value="@_deployDate.ToString("yyyy-MM-dd")" @onchange="e => { if (DateOnly.TryParse(e.Value?.ToString(), out var d)) _deployDate = d; }" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 6px;" />
+                </div>
+
+                <!-- 3. Time of Day Slot -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text, #26332d); margin-bottom: 6px;">Classroom Rhythm Slot</label>
+                    <select class="studio-input" @bind="_deployTimeOfDay" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 6px;">
+                        <option value="Morning">Morning Exploration (09:30 AM – 10:15 AM)</option>
+                        <option value="Mid-Day">Mid-Day Wonder Circle (01:30 PM – 02:15 PM)</option>
+                        <option value="Afternoon">Afternoon Creative Studio (03:30 PM – 04:15 PM)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="padding: 14px 24px; border-top: 1px solid var(--border, #e4e7df); display: flex; justify-content: flex-end; gap: 10px; background: #fafbfa;">
+                <button type="button" class="studio-btn studio-btn-secondary" @onclick="() => _isDeployModalOpen = false" disabled="@_isDeploying">Cancel</button>
+                <button type="button" class="studio-btn studio-btn-primary" @onclick="DeployToClassroomsAsync" disabled="@_isDeploying">
+                    @(_isDeploying ? "Scheduling..." : "✓ Schedule to Classrooms")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     [Parameter]
@@ -1017,6 +1083,66 @@
             await SaveDraftAsync();
             _pendingImprovement = null;
             _showImprovementCompare = false;
+        }
+    }
+
+    private bool _isDeployModalOpen = false;
+    private string _selectedDeployTier = "All";
+    private DateOnly _deployDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+    private string _deployTimeOfDay = "Morning";
+    private bool _isDeploying = false;
+
+    private void OpenDeployModal()
+    {
+        _selectedDeployTier = "All";
+        _deployDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+        _deployTimeOfDay = "Morning";
+        _isDeployModalOpen = true;
+    }
+
+    private async Task DeployToClassroomsAsync()
+    {
+        _isDeploying = true;
+        try
+        {
+            var orgId = UserContext.OrganizationId ?? Guid.Empty;
+            var classrooms = (await ClassroomService.GetClassroomsByOrganizationAsync(orgId)).ToList();
+            if (!classrooms.Any())
+            {
+                classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
+            }
+
+            var matching = classrooms.Where(c => 
+                _selectedDeployTier == "All" || 
+                (!string.IsNullOrEmpty(c.AgeGroup) && c.AgeGroup.Contains(_selectedDeployTier, StringComparison.OrdinalIgnoreCase))).ToList();
+
+            if (!matching.Any())
+            {
+                await ToastService.ShowWarningToastAsync($"No classrooms found matching age tier '{_selectedDeployTier}'.");
+                return;
+            }
+
+            int count = 0;
+            foreach (var room in matching)
+            {
+                try
+                {
+                    await PlannerService.ScheduleExperienceAsync(_experience.Id, room.Id, _deployDate, _deployTimeOfDay);
+                    count++;
+                }
+                catch { }
+            }
+
+            _isDeployModalOpen = false;
+            await ToastService.ShowSuccessToastAsync($"✓ Successfully scheduled '{_experience.Title}' to {count} classroom(s) for {_deployDate:MMM dd} ({_deployTimeOfDay})!");
+        }
+        catch (Exception ex)
+        {
+            await ToastService.ShowErrorToastAsync($"Scheduling error: {ex.Message}");
+        }
+        finally
+        {
+            _isDeploying = false;
         }
     }
 }
