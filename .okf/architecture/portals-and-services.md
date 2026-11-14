@@ -45,6 +45,12 @@ EnjoyEveryday.slnx
 | **AI Agent** | `http://localhost:8000` | `http://localhost:8083` | FastAPI / Google ADK services | `/docs` |
 | **PostgreSQL 15** | `localhost:5433` | `db:5432` (internal) | Database Server | Database: `enjoyeveryday`, User: `postgres` |
 
+## Browser Tab Title Conventions
+To ensure immediate differentiation when multiple portals and browser tabs are open concurrently:
+* **Daycare Web (7003)**: Prefixed with `Daycare Web — <PageName>` (Fallback in `App.razor`: `<title>Daycare Web</title>`).
+* **Platform Admin (7004)**: Prefixed with `Platform Admin — <PageName>` (Fallback in `App.razor`: `<title>Platform Admin</title>`).
+* **Parent Portal (7005)**: Prefixed with `Parent Portal — <PageName>` (Fallback in `App.razor`: `<title>Parent Portal</title>`).
+
 ## Docker Containerization & Deployment
 * **Docker Compose**: Orchestrates `db`, `api`, `web`, and `ai-agent` on `enjoyeveryday-net`.
 * **Developer Guides**:

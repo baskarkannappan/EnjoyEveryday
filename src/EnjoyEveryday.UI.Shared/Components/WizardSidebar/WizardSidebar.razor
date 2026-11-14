@@ -1,21 +1,57 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
 <div class="wizard-sidebar">
-    <ul>
+    <!-- Mobile Stepper & Progress Tracker (Shown on mobile screens <= 768px) -->
+    <div class="wizard-mobile-stepper">
+        <div class="mobile-step-header">
+            <div class="mobile-step-title-wrap">
+                <span class="mobile-step-badge">Step @CurrentStep of @Steps.Count</span>
+                <span class="mobile-step-name">@(CurrentStep > 0 && CurrentStep <= Steps.Count ? Steps[CurrentStep - 1] : "")</span>
+            </div>
+            <div class="mobile-step-pct">
+                @((int)Math.Round((double)CurrentStep / Math.Max(Steps.Count, 1) * 100))%
+            </div>
+        </div>
+
+        <div class="mobile-progress-track">
+            <div class="mobile-progress-fill" style="width: @((int)Math.Round((double)CurrentStep / Math.Max(Steps.Count, 1) * 100))%;"></div>
+        </div>
+
+        <div class="mobile-chips-scroll">
+            @for (int i = 0; i < Steps.Count; i++)
+            {
+                var stepNumber = i + 1;
+                var isCompleted = CurrentStep > stepNumber;
+                var isActive = CurrentStep == stepNumber;
+                var isClickable = MaxAllowedStep >= stepNumber;
+
+                <button type="button"
+                        class="mobile-step-chip @(isActive ? "active" : isCompleted ? "completed" : "")"
+                        disabled="@(!isClickable)"
+                        @onclick="() => { if (isClickable) OnStepClicked.InvokeAsync(stepNumber); }">
+                    <span class="chip-number">@(isCompleted ? "✓" : stepNumber.ToString())</span>
+                    <span class="chip-label">@Steps[i]</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Desktop Sidebar List (Shown on screens > 768px) -->
+    <ul class="wizard-desktop-list">
         @for (int i = 0; i < Steps.Count; i++)
         {
             var stepNumber = i + 1;
-            var isCompleted = CurrentStep > stepNumber || MaxAllowedStep >= stepNumber;
+            var isCompleted = CurrentStep > stepNumber;
             var isActive = CurrentStep == stepNumber;
             var isClickable = MaxAllowedStep >= stepNumber;
-            
-            <li class="@(isActive ? "active" : isCompleted && CurrentStep > stepNumber ? "completed" : "")" 
-                style="@(isClickable ? "cursor: pointer;" : "cursor: not-allowed; opacity: 0.6;")"
+
+            <li class="@(isActive ? "active" : isCompleted ? "completed" : "")"
+                style="@(isClickable ? "cursor: pointer;" : "cursor: not-allowed; opacity: 0.55;")"
                 @onclick="() => { if (isClickable) OnStepClicked.InvokeAsync(stepNumber); }">
                 <span class="step-icon">
-                    @(CurrentStep > stepNumber ? "✓" : stepNumber.ToString())
+                    @(isCompleted ? "✓" : stepNumber.ToString())
                 </span>
-                @Steps[i]
+                <span class="step-label">@Steps[i]</span>
             </li>
         }
     </ul>

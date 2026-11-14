@@ -34,3 +34,11 @@ When stats show `0/0` or phantom rows:
 ## 3. Database Changes Require No Solution Rebuild
 PostgreSQL schema changes, function updates (`CREATE OR REPLACE FUNCTION`), and row modifications take effect instantly in the live application on port 7003. Do not run `dotnet build` unless Razor or C# files are altered.
 
+## 4. Skip Rebuilds When Visual / Style Inspection is Sufficient
+Pure CSS or markup adjustments (spacing, colors, typography, UI layout tweaks) do not need a `dotnet build` cycle when the application has hot reload running or when inspecting the live DOM. If the user explicitly asks for a UI/CSS fix or visual check, modify the Razor/CSS files directly and omit `dotnet build`.
+
+## 5. Explicit BypassSandbox for MSBuild Compilations
+When compilation checks are mandatory (e.g. C# contract changes, interface updates, model refactoring):
+- **Never run sandboxed MSBuild**: Windows sandboxing blocks `Directory.Build.targets` process kills, resulting in error code 1 with 0 errors.
+- **Always invoke with `BypassSandbox: true`**: Directly execute targeted builds with `--no-restore` (e.g., `dotnet build src/EnjoyEveryday.Daycare.Web/EnjoyEveryday.Daycare.Web.csproj --no-restore`) with `BypassSandbox: true` to avoid the initial 20–30s failure and retry loop.
+

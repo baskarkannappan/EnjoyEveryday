@@ -34,7 +34,11 @@ tags:
   dotnet build src/EnjoyEveryday.Daycare.Web/EnjoyEveryday.Daycare.Web.csproj --no-restore
   ```
 
-## 5. CSS Cascade & Maximum Page Width
+## 5. Unnecessary Rebuilds on Pure CSS / Markup Edits
+* **Problem**: Running `dotnet build` on every CSS tweak, color change, or markup touch wastes 20–30 seconds when live hot-reload or browser DOM inspection is sufficient.
+* **Fix**: Skip `dotnet build` when making pure visual, CSS, or Razor template updates. Only run targeted compilation when modifying C# code, dependencies, or contracts.
+
+## 6. CSS Cascade & Maximum Page Width
 * **Problem**: `ee-foundation.css` enforces `zoom: 0.82` and `max-width: 1720px !important`.
 * **Fix**: For compact views (e.g. `TeacherWorkspace`), explicitly specify `max-width: 960px !important; margin: 0 auto !important;` in page-specific styles.
 

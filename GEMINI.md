@@ -188,18 +188,26 @@ Every agent working in this repository MUST follow these performance and UI rule
      ```
      This completes in ~3 seconds instead of 41+ seconds.
 
-2. **CSS Cascade & Architecture Rules**:
+2. **Skip Rebuilds When Visual / Style Inspection is Sufficient**:
+   - Pure CSS or markup adjustments (such as spacing, colors, typography, or UI layouts) do NOT need a `dotnet build` if the running application already has hot reload or when checking live DOM / visual styles.
+   - When the user requests a UI-only fix or when adjusting styles/templates without modifying C# contracts/interfaces, skip `dotnet build` entirely and let the user test or inspect via browser.
+
+3. **Explicit BypassSandbox for Builds**:
+   - Whenever a compilation check IS required, ALWAYS invoke `run_command` with `BypassSandbox: true` directly.
+   - Standard Windows sandbox execution fails on MSBuild file locks (`Directory.Build.targets` killing locking processes or IPC boundaries), triggering an unnecessary 20–30 second failure before retrying outside the sandbox.
+
+4. **CSS Cascade & Architecture Rules**:
    - `src/EnjoyEveryday.UI.Shared/wwwroot/css/ee-foundation.css` is loaded last and enforces global container sizing (`zoom: 0.82`, `max-width: 1720px !important`).
    - When creating focused pages (such as `TeacherWorkspace` with a 960px max width), **always** specify `max-width: 960px !important; margin: 0 auto !important;` to prevent the global container rule from stretching the layout.
    - For interactive cards with icons and text:
      - Wrap titles and subtitles inside an `.action-card-text` (or `.card-text`) container to prevent browser flex distribution bugs.
      - Use `<div class="action-card" role="button" tabindex="0">` instead of `<button>` for complex card layouts to prevent Chromium `<button>` vertical stretching.
 
-3. **Mobile Layout Standards**:
+5. **Mobile Layout Standards**:
    - **Stats / Metrics**: Always keep 3 stat cards in a single compact 3-column row on mobile (`repeat(3, 1fr)` with 18px numbers and 11px labels) rather than stacking them vertically.
    - **Primary Action Grids**: Use a 2-column grid (`repeat(2, 1fr)`) on mobile with compact padding (`12px`) so all primary actions remain immediately accessible above the fold.
 
-4. **Live DOM Verification**:
+6. **Live DOM Verification**:
    - When diagnosing layout or CSS issues, use the `browser_subagent` tool on `http://localhost:7003` to inspect computed styles and layout bounds directly in the DOM instead of trial-and-error edits.
 
 ---

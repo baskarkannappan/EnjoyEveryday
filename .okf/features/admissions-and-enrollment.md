@@ -104,5 +104,17 @@ To eliminate redundant data entry when onboarding and managing children:
      - Allows free navigation (`maxAllowedStep = 10`) across all 10 wizard steps without requiring the user to click step-by-step.
      - Provides one-click action buttons (`📋 Use Parent / Guardian Info`) in Emergency Contacts (Step 4) and Authorized Pickups (Step 8) to instantly reuse guardian details without re-typing.
 
+## 4. UI Architecture & Responsive Wizard Pattern (`WizardSidebar`)
+* **Components**: `src/EnjoyEveryday.UI.Shared/Components/WizardSidebar/WizardSidebar.razor` & `src/EnjoyEveryday.UI.Shared/Components/Admissions/ChildEnrollmentWizard.razor`.
+* **Desktop UX**:
+  - Soft Scandinavian sage card layout (`--surface: #ffffff`, `--radius: 18px`, `--shadow: 0 8px 30px rgba(40, 55, 47, .06)`).
+  - Vertical sidebar with rounded step pills (`border-radius: 10px`), active badge highlights (`--accent-light: #e6eee9`, `--accent-dark: #31523c`), and checkmarks for completed steps.
+  - Custom styled photo uploader with preview avatar (`border-radius: 12px`), styled trigger buttons, and hidden native inputs.
+* **Mobile & Small Device UX (`<= 768px`)**:
+  - Replaces the 10-item vertical step list (which previously pushed form content ~500px below the fold) with a compact mobile stepper header.
+  - Features an active step badge, current step title, numeric percentage indicator, linear progress track, and a horizontally swipeable chip selector (`.mobile-chips-scroll`).
+  - Stacks action buttons with full-width primary touch targets (`Save & Continue →`) and evenly split secondary actions (`Cancel`, `← Back`, `Delete`).
+
+
 
 

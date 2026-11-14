@@ -57,3 +57,13 @@ Complies with statutory daycare regulatory licensing requirements by maintaining
   - [`ManageTeacherClassroomsModal.razor`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Users/ManageTeacherClassroomsModal.razor): Room assignment manager.
   - Accessible via `UsersByRoleView.razor`, `TeachersDirectoryView.razor`, and `TeacherProfile.razor`.
 
+## Teacher Creation & Edit Wizard Architecture
+* **Routes & Components**:
+  - Page: `src/EnjoyEveryday.Daycare.Web/Components/Pages/Organization/TeacherWizard.razor` (`/teachers/new`, `/teachers/edit/{Id:guid}`).
+  - Shared Wizard: `src/EnjoyEveryday.UI.Shared/Components/TeacherWizard/TeacherCreationWizard.razor`.
+* **Design & Usability System**:
+  - Employs EnjoyEveryday Scandinavian sage design (`--surface: #ffffff`, `--border: #e4e7df`, `--radius: 18px`, `--shadow: 0 8px 30px rgba(40, 55, 47, .06)`).
+  - **Desktop**: Features a sticky sidebar (`WizardSidebar`) with a scrollable 22-step list (`max-height: calc(100vh - 220px)`) that stays in view without stretching viewport bounds.
+  - **Mobile (`<= 768px`)**: Single-column responsive layout replacing the vertical sidebar with a compact mobile stepper header, linear progress track, and swipeable step chips. Actions stack with full-width primary touch targets (`Next →`, `Activate ✓`) and responsive secondary buttons.
+
+
