@@ -1,4 +1,5 @@
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Domain.Repositories;
 
 namespace EnjoyEveryday.Application.Services;
 
@@ -177,4 +178,17 @@ public interface IPlatformAdminService
 
     // AI Parent Communication Gateway
     Task<List<ParentCommunication>> GetRecentParentCommunicationsAsync(int limit = 20, CancellationToken cancellationToken = default);
+
+    // Organization Invitations & Onboarding Workflow
+    Task<PlatformOrganizationInvitationRecord?> SendOrganizationInvitationWorkflowAsync(Guid organizationId, string? customAdminEmail = null, CancellationToken cancellationToken = default);
+    Task<Dictionary<Guid, PlatformOrganizationInvitationRecord>> GetLatestInvitationsMapAsync(CancellationToken cancellationToken = default);
+    Task<PlatformOrganizationInvitationValidationResult?> ValidateInvitationAsync(string token, CancellationToken cancellationToken = default);
+    Task<bool> AcceptInvitationAsync(string token, Guid userId, CancellationToken cancellationToken = default);
+
+    // Plan & Tariff Subscriber Notifications
+    Task<int> NotifySubscribersOfPlanUpdateAsync(Guid planId, string updateTitle, string changesSummaryHtml, CancellationToken cancellationToken = default);
+    Task<int> NotifySubscribersOfTariffUpdateAsync(Guid tariffId, string updateTitle, string changesSummaryHtml, CancellationToken cancellationToken = default);
+
+    // Platform Email Auditing
+    Task<List<EmailNotificationLogDto>> GetEmailAuditLogsAsync(int limit = 50, CancellationToken cancellationToken = default);
 }

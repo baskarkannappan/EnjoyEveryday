@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.Application.Services;
@@ -13,6 +14,8 @@ public class PlatformAdminService : IPlatformAdminService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IPlatformAdminRepository? _platformAdminRepository;
+    private readonly IEmailNotificationService? _emailNotificationService;
+    private readonly IConfiguration? _configuration;
     private readonly ILogger<PlatformAdminService> _logger;
 
     // Synchronized stores for commercial, lifecycle, billing, and audit records
@@ -36,7 +39,9 @@ public class PlatformAdminService : IPlatformAdminService
         ITenantContext tenantContext,
         IUserContext userContext,
         ILogger<PlatformAdminService> logger,
-        IPlatformAdminRepository? platformAdminRepository = null)
+        IPlatformAdminRepository? platformAdminRepository = null,
+        IEmailNotificationService? emailNotificationService = null,
+        IConfiguration? configuration = null)
     {
         _organizationRepository = organizationRepository;
         _branchRepository = branchRepository;
@@ -44,6 +49,8 @@ public class PlatformAdminService : IPlatformAdminService
         _userContext = userContext;
         _logger = logger;
         _platformAdminRepository = platformAdminRepository;
+        _emailNotificationService = emailNotificationService;
+        _configuration = configuration;
     }
 
 
@@ -103,7 +110,9 @@ public class PlatformAdminService : IPlatformAdminService
                                 Name = r.Name,
                                 Location = r.Location ?? "Daycare Center",
                                 BranchCount = r.BranchCount > 0 ? r.BranchCount : 1,
-                                AccountStatus = r.IsActive ? AccountStatus.Active : AccountStatus.Suspended,
+                                AccountStatus = Enum.TryParse<AccountStatus>(r.AccountStatus, true, out var parsedStatus)
+                                    ? parsedStatus
+                                    : (r.IsActive ? AccountStatus.Active : AccountStatus.Suspended),
                                 FinancialStatus = FinancialStatus.Reconciled,
                                 PlanId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
                                 PlanName = "Bloom (Growth)",
@@ -121,6 +130,14 @@ public class PlatformAdminService : IPlatformAdminService
                             if (!string.IsNullOrWhiteSpace(r.Location)) existing.Location = r.Location;
                             if (r.BranchCount > 0) existing.BranchCount = r.BranchCount;
                             if (!string.IsNullOrWhiteSpace(r.AdminEmail)) existing.AdminEmail = r.AdminEmail;
+                            if (Enum.TryParse<AccountStatus>(r.AccountStatus, true, out var parsedExistingStatus))
+                            {
+                                existing.AccountStatus = parsedExistingStatus;
+                            }
+                            else
+                            {
+                                existing.AccountStatus = r.IsActive ? AccountStatus.Active : AccountStatus.Suspended;
+                            }
                         }
                     }
 
@@ -276,6 +293,12 @@ public class PlatformAdminService : IPlatformAdminService
     {
         if (_platformAdminRepository != null)
         {
+            var quota = await _platformAdminRepository.GetOrganizationQuotaUsageAsync(organizationId, cancellationToken);
+            if (quota != null && !quota.CanAddBranch)
+            {
+                throw new PlanQuotaExceededException("Branches", quota.CurrentBranches, quota.MaxBranches, quota.PlanName);
+            }
+
             try
             {
                 var added = await _platformAdminRepository.AddBranchAsync(organizationId, name, location, cancellationToken);
@@ -504,6 +527,9 @@ public class PlatformAdminService : IPlatformAdminService
 
         AddAuditLog("Organization Registered", $"New daycare organization '{name}' provisioned with plan '{plan.Name}' ({monthlyRate:C0}/mo).", "Info", id);
 
+        // Automatically dispatch onboarding invitation email with 1-tap activation token
+        _ = SendOrganizationInvitationWorkflowAsync(id, adminEmail, cancellationToken);
+
         return dto;
     }
 
@@ -562,7 +588,7 @@ public class PlatformAdminService : IPlatformAdminService
         return true;
     }
 
-    public Task<bool> UpdateAccountStatusAsync(Guid organizationId, AccountStatus newStatus, string reason, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateAccountStatusAsync(Guid organizationId, AccountStatus newStatus, string reason, CancellationToken cancellationToken = default)
     {
         if (_organizations.TryGetValue(organizationId, out var org))
         {
@@ -581,10 +607,48 @@ public class PlatformAdminService : IPlatformAdminService
                 _ => "Active"
             };
 
+            if (_platformAdminRepository != null)
+            {
+                try
+                {
+                    await _platformAdminRepository.UpdateOrganizationAccountStatusAsync(organizationId, newStatus.ToString(), reason, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to persist organization status update for org {OrganizationId}", organizationId);
+                }
+            }
+
             AddAuditLog("Account Status Changed", $"Organization '{org.Name}' transitioned from {oldStatus} to {newStatus}. Reason: {reason}", "Info", organizationId);
-            return Task.FromResult(true);
+
+            if (_emailNotificationService != null && !string.IsNullOrWhiteSpace(org.AdminEmail))
+            {
+                var daycareUrl = GetDaycarePortalUrl();
+                _ = _emailNotificationService.SendOrganizationLifecycleUpdateAsync(
+                    org.AdminEmail,
+                    org.Name,
+                    newStatus.ToString(),
+                    reason,
+                    daycareUrl,
+                    org.TenantId,
+                    cancellationToken);
+            }
+
+            return true;
         }
-        return Task.FromResult(false);
+        else if (_platformAdminRepository != null)
+        {
+            try
+            {
+                await _platformAdminRepository.UpdateOrganizationAccountStatusAsync(organizationId, newStatus.ToString(), reason, cancellationToken);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to persist organization status update for org {OrganizationId}", organizationId);
+            }
+        }
+        return false;
     }
 
     public Task<bool> DeactivateOrganizationAsync(Guid organizationId, string reason, CancellationToken cancellationToken = default)
@@ -675,7 +739,7 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(plan);
     }
 
-    public Task<bool> UpdatePlanAsync(
+    public async Task<bool> UpdatePlanAsync(
         Guid planId,
         string name,
         string description,
@@ -688,6 +752,9 @@ public class PlatformAdminService : IPlatformAdminService
     {
         if (_plans.TryGetValue(planId, out var plan))
         {
+            var oldName = plan.Name;
+            var oldPrice = plan.BasePrice;
+
             plan.Name = name;
             plan.Description = description;
             plan.BasePrice = basePrice;
@@ -698,9 +765,57 @@ public class PlatformAdminService : IPlatformAdminService
             plan.UpdatedAt = DateTimeOffset.UtcNow;
 
             AddAuditLog("Plan Updated", $"Subscription plan '{name}' updated (Price: {basePrice:C0}, AI: {includesAi}).", "Info", planId);
-            return Task.FromResult(true);
+
+            // Automatically notify active subscribers of this plan
+            var subscribers = _organizations.Values
+                .Where(o => o.PlanId == planId && (o.AccountStatus == AccountStatus.Active || o.AccountStatus == AccountStatus.Trial))
+                .ToList();
+
+            if (_emailNotificationService != null && subscribers.Count > 0)
+            {
+                var daycareUrl = GetDaycarePortalUrl();
+                var billingUrl = $"{daycareUrl}/billing";
+                var summaryHtml = $@"
+                    <div style='margin-bottom: 8px;'><strong>Updated Plan:</strong> {name}</div>
+                    <div style='margin-bottom: 8px;'><strong>Base Price:</strong> ₹{basePrice:F2}/month</div>
+                    <div style='margin-bottom: 8px;'><strong>Capacity Limits:</strong> Up to {maxChildren} children, {maxClassrooms} classrooms, {maxBranches} branches</div>
+                    <div style='margin-bottom: 8px;'><strong>Experience Studio AI:</strong> {(includesAi ? "Included ✨" : "Standard")}</div>
+                    <div style='margin-top: 10px; font-size: 13px; color: #6c7870;'>{description}</div>";
+
+                int sentCount = 0;
+                foreach (var sub in subscribers)
+                {
+                    if (string.IsNullOrWhiteSpace(sub.AdminEmail)) continue;
+                    try
+                    {
+                        sub.PlanName = name;
+                        await _emailNotificationService.SendPlanOrTariffUpdateNoticeAsync(
+                            sub.AdminEmail,
+                            sub.Name,
+                            name,
+                            $"Subscription Plan Terms Updated: {name}",
+                            summaryHtml,
+                            "Effective next billing cycle",
+                            billingUrl,
+                            sub.TenantId,
+                            cancellationToken);
+                        sentCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to send plan update email to subscriber {Email}", sub.AdminEmail);
+                    }
+                }
+
+                if (sentCount > 0)
+                {
+                    AddAuditLog("Plan Subscribers Notified", $"Dispatched plan update notice to {sentCount} active subscribers of '{name}'.", "Info", planId);
+                }
+            }
+
+            return true;
         }
-        return Task.FromResult(false);
+        return false;
     }
 
     public Task<bool> DeactivatePlanAsync(Guid planId, CancellationToken cancellationToken = default)
@@ -760,7 +875,7 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(tariff);
     }
 
-    public Task<bool> UpdateTariffAsync(
+    public async Task<bool> UpdateTariffAsync(
         Guid tariffId,
         string name,
         BillingFrequency frequency,
@@ -777,9 +892,49 @@ public class PlatformAdminService : IPlatformAdminService
             tariff.UpdatedAt = DateTimeOffset.UtcNow;
 
             AddAuditLog("Tariff Updated", $"Tariff '{name}' updated to {price:C0} ({frequency}).", "Info", tariffId);
-            return Task.FromResult(true);
+
+            var subscribers = _organizations.Values
+                .Where(o => o.TariffId == tariffId && (o.AccountStatus == AccountStatus.Active || o.AccountStatus == AccountStatus.Trial))
+                .ToList();
+
+            if (_emailNotificationService != null && subscribers.Count > 0)
+            {
+                var daycareUrl = GetDaycarePortalUrl();
+                var billingUrl = $"{daycareUrl}/billing";
+                var summaryHtml = $@"
+                    <div style='margin-bottom: 8px;'><strong>Tariff Schedule:</strong> {name}</div>
+                    <div style='margin-bottom: 8px;'><strong>Billing Frequency:</strong> {frequency}</div>
+                    <div style='margin-bottom: 8px;'><strong>Rate:</strong> ₹{price:F2}</div>
+                    {(discountPercentage > 0 ? $"<div style='margin-bottom: 8px;'><strong>Applied Discount:</strong> {discountPercentage}%</div>" : "")}";
+
+                foreach (var sub in subscribers)
+                {
+                    if (string.IsNullOrWhiteSpace(sub.AdminEmail)) continue;
+                    try
+                    {
+                        sub.TariffName = name;
+                        sub.MonthlyRate = price;
+                        await _emailNotificationService.SendPlanOrTariffUpdateNoticeAsync(
+                            sub.AdminEmail,
+                            sub.Name,
+                            sub.PlanName,
+                            $"Billing Schedule Updated: {name}",
+                            summaryHtml,
+                            "Effective next billing cycle",
+                            billingUrl,
+                            sub.TenantId,
+                            cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to send tariff update email to {Email}", sub.AdminEmail);
+                    }
+                }
+            }
+
+            return true;
         }
-        return Task.FromResult(false);
+        return false;
     }
 
     public Task<bool> DeactivateTariffAsync(Guid tariffId, CancellationToken cancellationToken = default)
@@ -795,7 +950,7 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(false);
     }
 
-    public Task<bool> AssignPlanAndTariffToOrganizationAsync(
+    public async Task<bool> AssignPlanAndTariffToOrganizationAsync(
         Guid organizationId,
         Guid planId,
         Guid? tariffId,
@@ -817,10 +972,65 @@ public class PlatformAdminService : IPlatformAdminService
             org.TariffName = tariff?.Name ?? "Standard";
             org.MonthlyRate = tariff != null ? tariff.Price : plan.BasePrice;
 
+            if (_platformAdminRepository != null)
+            {
+                try
+                {
+                    await _platformAdminRepository.UpdateOrganizationPlanQuotaAsync(
+                        organizationId,
+                        plan.Id,
+                        plan.Code,
+                        plan.Name,
+                        plan.MaxBranches,
+                        plan.MaxClassrooms,
+                        plan.MaxChildren,
+                        plan.IncludesAiFeatures,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist organization plan quotas to database for {OrgId}", organizationId);
+                }
+            }
+
             AddAuditLog("Plan/Tariff Changed", $"Organization '{org.Name}' changed from '{oldPlan}' to '{plan.Name}' ({org.TariffName} - {org.MonthlyRate:C0}).", "Info", organizationId);
-            return Task.FromResult(true);
+
+            if (_emailNotificationService != null && !string.IsNullOrWhiteSpace(org.AdminEmail))
+            {
+                try
+                {
+                    var daycareUrl = GetDaycarePortalUrl();
+                    var billingUrl = $"{daycareUrl}/billing";
+                    var summaryHtml = $@"
+                        <div style='margin-bottom: 8px;'><strong>New Plan:</strong> {plan.Name} ({plan.Code})</div>
+                        <div style='margin-bottom: 8px;'><strong>Selected Schedule:</strong> {org.TariffName}</div>
+                        <div style='margin-bottom: 8px;'><strong>Monthly Rate:</strong> ₹{org.MonthlyRate:F2}/month</div>
+                        <div style='margin-bottom: 8px;'><strong>Capacity Limits:</strong> Up to {plan.MaxChildren} children, {plan.MaxClassrooms} classrooms, {plan.MaxBranches} branches</div>
+                        <div style='margin-bottom: 8px;'><strong>Experience Studio AI:</strong> {(plan.IncludesAiFeatures ? "Enabled ✨" : "Standard")}</div>
+                        <div style='margin-top: 10px; font-size: 13px; color: #6c7870;'>{plan.Description}</div>";
+
+                    await _emailNotificationService.SendPlanOrTariffUpdateNoticeAsync(
+                        org.AdminEmail,
+                        org.Name,
+                        plan.Name,
+                        $"Subscription Plan Updated to {plan.Name} ({org.TariffName})",
+                        summaryHtml,
+                        "Effective Immediately",
+                        billingUrl,
+                        org.TenantId,
+                        cancellationToken);
+
+                    AddAuditLog("Plan Update Email Sent", $"Dispatched plan assignment notification email to {org.AdminEmail} for '{org.Name}'.", "Info", organizationId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to dispatch plan update email to {Email}", org.AdminEmail);
+                }
+            }
+
+            return true;
         }
-        return Task.FromResult(false);
+        return false;
     }
 
     #endregion
@@ -883,6 +1093,22 @@ public class PlatformAdminService : IPlatformAdminService
             }
 
             AddAuditLog("Payment Verified", $"Payment {payment.PaymentReference} of {payment.Amount:C0} reconciled and verified.", "Info", paymentId);
+
+            if (_emailNotificationService != null && _organizations.TryGetValue(payment.OrganizationId, out var paymentOrg) && !string.IsNullOrWhiteSpace(paymentOrg.AdminEmail))
+            {
+                var daycareUrl = GetDaycarePortalUrl();
+                _ = _emailNotificationService.SendPaymentReceiptConfirmationAsync(
+                    paymentOrg.AdminEmail,
+                    paymentOrg.Name,
+                    payment.PaymentReference,
+                    payment.Amount,
+                    payment.Currency,
+                    payment.PaymentMethod.ToString(),
+                    $"{daycareUrl.TrimEnd('/')}/billing",
+                    paymentOrg.TenantId,
+                    cancellationToken);
+            }
+
             return Task.FromResult(true);
         }
         return Task.FromResult(false);
@@ -923,6 +1149,22 @@ public class PlatformAdminService : IPlatformAdminService
 
         AddAuditLog("Invoice Issued", $"Invoice {invoice.InvoiceNumber} for {amount:C0} issued to '{orgName}'.", "Info", id);
 
+        if (_emailNotificationService != null && org != null && !string.IsNullOrWhiteSpace(org.AdminEmail))
+        {
+            var daycareUrl = GetDaycarePortalUrl();
+            _ = _emailNotificationService.SendPlatformInvoiceNoticeAsync(
+                org.AdminEmail,
+                orgName,
+                invoice.InvoiceNumber,
+                invoice.TotalAmount,
+                invoice.Currency,
+                invoice.DueDate.DateTime,
+                description,
+                $"{daycareUrl.TrimEnd('/')}/billing",
+                org.TenantId,
+                cancellationToken);
+        }
+
         return Task.FromResult(invoice);
     }
 
@@ -932,7 +1174,239 @@ public class PlatformAdminService : IPlatformAdminService
         return Task.FromResult(list);
     }
 
+    #region Organization Invitations & Onboarding Workflow
+
+    public async Task<PlatformOrganizationInvitationRecord?> SendOrganizationInvitationWorkflowAsync(
+        Guid organizationId, 
+        string? customAdminEmail = null, 
+        CancellationToken cancellationToken = default)
+    {
+        _organizations.TryGetValue(organizationId, out var org);
+        var email = !string.IsNullOrWhiteSpace(customAdminEmail) ? customAdminEmail.Trim() : org?.AdminEmail;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _logger.LogWarning("Cannot send organization invitation: missing email for org {OrgId}", organizationId);
+            return null;
+        }
+
+        var token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N")[..16];
+        PlatformOrganizationInvitationRecord? record = null;
+
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                record = await _platformAdminRepository.CreateOrganizationInvitationAsync(organizationId, email, token, 7, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not persist organization invitation to database; falling back to memory.");
+            }
+        }
+
+        record ??= new PlatformOrganizationInvitationRecord
+        {
+            OrganizationId = organizationId,
+            AdminEmail = email,
+            Token = token,
+            Status = "Pending",
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        var daycareUrl = GetDaycarePortalUrl();
+        var activationUrl = $"{daycareUrl}/auth/activate?token={token}";
+        var orgName = org?.Name ?? "Daycare Organization";
+        var planName = org?.PlanName ?? "Standard Plan";
+
+        if (_emailNotificationService != null)
+        {
+            try
+            {
+                await _emailNotificationService.SendOrgAdminInvitationAsync(
+                    email,
+                    orgName,
+                    orgName,
+                    planName,
+                    activationUrl,
+                    tempPassword: null,
+                    org?.TenantId ?? organizationId,
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to dispatch onboarding invitation email to {Email} for {OrgName}", email, orgName);
+            }
+        }
+
+        AddAuditLog("Admin Invitation Dispatched", $"Sent onboarding activation email to '{email}' for '{orgName}'. Token valid for 7 days.", "Info", organizationId);
+        return record;
+    }
+
+    public async Task<Dictionary<Guid, PlatformOrganizationInvitationRecord>> GetLatestInvitationsMapAsync(CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                var list = await _platformAdminRepository.GetLatestInvitationsAsync(cancellationToken);
+                return list.ToDictionary(k => k.OrganizationId, v => v);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to query latest organization invitations from repository.");
+            }
+        }
+        return new Dictionary<Guid, PlatformOrganizationInvitationRecord>();
+    }
+
+    public async Task<PlatformOrganizationInvitationValidationResult?> ValidateInvitationAsync(string token, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            return await _platformAdminRepository.ValidateInvitationAsync(token, cancellationToken);
+        }
+        return null;
+    }
+
+    public async Task<bool> AcceptInvitationAsync(string token, Guid userId, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            var accepted = await _platformAdminRepository.AcceptInvitationAsync(token, userId, cancellationToken);
+            if (accepted)
+            {
+                AddAuditLog("Invitation Accepted", $"Organization activation invitation token successfully accepted by User {userId}.", "Info");
+            }
+            return accepted;
+        }
+        return false;
+    }
+
     #endregion
+
+    #region Plan & Tariff Subscriber Notifications
+
+    public async Task<int> NotifySubscribersOfPlanUpdateAsync(Guid planId, string updateTitle, string changesSummaryHtml, CancellationToken cancellationToken = default)
+    {
+        _plans.TryGetValue(planId, out var plan);
+        var planName = plan?.Name ?? "Subscription Plan";
+
+        var subscribers = _organizations.Values
+            .Where(o => o.PlanId == planId && (o.AccountStatus == AccountStatus.Active || o.AccountStatus == AccountStatus.Trial))
+            .ToList();
+
+        var daycareUrl = GetDaycarePortalUrl();
+        var billingUrl = $"{daycareUrl}/billing";
+        var count = 0;
+
+        foreach (var sub in subscribers)
+        {
+            if (string.IsNullOrWhiteSpace(sub.AdminEmail)) continue;
+
+            if (_emailNotificationService != null)
+            {
+                try
+                {
+                    await _emailNotificationService.SendPlanOrTariffUpdateNoticeAsync(
+                        sub.AdminEmail,
+                        sub.Name,
+                        planName,
+                        updateTitle,
+                        changesSummaryHtml,
+                        "Next billing cycle",
+                        billingUrl,
+                        sub.TenantId,
+                        cancellationToken);
+                    count++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to notify org {OrgId} of plan update", sub.Id);
+                }
+            }
+        }
+
+        AddAuditLog("Plan Subscribers Notified", $"Dispatched plan update notice '{updateTitle}' to {count} active subscribers of '{planName}'.", "Info", planId);
+        return count;
+    }
+
+    public async Task<int> NotifySubscribersOfTariffUpdateAsync(Guid tariffId, string updateTitle, string changesSummaryHtml, CancellationToken cancellationToken = default)
+    {
+        _tariffs.TryGetValue(tariffId, out var tariff);
+        var tariffName = tariff?.Name ?? "Tariff";
+
+        var subscribers = _organizations.Values
+            .Where(o => o.TariffId == tariffId && (o.AccountStatus == AccountStatus.Active || o.AccountStatus == AccountStatus.Trial))
+            .ToList();
+
+        var daycareUrl = GetDaycarePortalUrl();
+        var billingUrl = $"{daycareUrl}/billing";
+        var count = 0;
+
+        foreach (var sub in subscribers)
+        {
+            if (string.IsNullOrWhiteSpace(sub.AdminEmail)) continue;
+
+            if (_emailNotificationService != null)
+            {
+                try
+                {
+                    await _emailNotificationService.SendPlanOrTariffUpdateNoticeAsync(
+                        sub.AdminEmail,
+                        sub.Name,
+                        tariffName,
+                        updateTitle,
+                        changesSummaryHtml,
+                        "Next billing cycle",
+                        billingUrl,
+                        sub.TenantId,
+                        cancellationToken);
+                    count++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to notify org {OrgId} of tariff update", sub.Id);
+                }
+            }
+        }
+
+        AddAuditLog("Tariff Subscribers Notified", $"Dispatched tariff update notice '{updateTitle}' to {count} active subscribers of '{tariffName}'.", "Info", tariffId);
+        return count;
+    }
+
+    #endregion
+
+    #region Email Auditing
+
+    public async Task<List<EmailNotificationLogDto>> GetEmailAuditLogsAsync(int limit = 50, CancellationToken cancellationToken = default)
+    {
+        if (_emailNotificationService != null)
+        {
+            return await _emailNotificationService.GetRecentEmailLogsAsync(limit, cancellationToken);
+        }
+        return new List<EmailNotificationLogDto>();
+    }
+
+    #endregion
+
+    #endregion
+
+    private string GetDaycarePortalUrl()
+    {
+        var url = _configuration?["DaycareUrl"]
+               ?? _configuration?["Services:DaycareUrl"]
+               ?? _configuration?["DaycarePortalUrl"]
+               ?? _configuration?["Urls:Daycare"]
+               ?? "https://localhost:7003";
+
+        if (url.StartsWith("http://localhost:7003", StringComparison.OrdinalIgnoreCase))
+        {
+            url = "https://localhost:7003" + url["http://localhost:7003".Length..];
+        }
+
+        return url.TrimEnd('/');
+    }
 
     private static void AddAuditLog(string action, string details, string severity, Guid? entityId = null)
     {

@@ -21,6 +21,12 @@ public static class AuthEndpoints
     {
         var group = endpoints.MapGroup("/auth").WithTags("Authentication");
 
+        group.MapGet("/activate", ([FromQuery] string? token, IConfiguration config) =>
+        {
+            var daycareUrl = config["DaycareUrl"] ?? "https://localhost:7003";
+            return Results.Redirect($"{daycareUrl.TrimEnd('/')}/auth/activate?token={Uri.EscapeDataString(token ?? string.Empty)}");
+        });
+
         group.MapGet("/login", (HttpContext context, [FromQuery] string? returnUrl, [FromQuery] string? inviteToken) =>
         {
             var config = context.RequestServices.GetRequiredService<IConfiguration>();

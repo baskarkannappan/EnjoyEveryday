@@ -83,12 +83,15 @@
                     </div>
 
                     <!-- Actions -->
-                    <div style="display: flex; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid #edf1ec;">
-                        <button class="btn secondary" style="flex: 1; font-size: 12.5px;" @onclick="() => OpenEditPlanModal(plan)">
+                    <div style="display: flex; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid #edf1ec; flex-wrap: wrap;">
+                        <button class="btn secondary" style="flex: 1; font-size: 12px; min-width: 80px;" @onclick="() => OpenEditPlanModal(plan)">
                             Edit Plan
                         </button>
-                        <button class="btn secondary" style="flex: 1; font-size: 12.5px;" @onclick="() => OpenTariffsModal(plan)">
-                            Manage Tariffs
+                        <button class="btn secondary" style="flex: 1; font-size: 12px; min-width: 95px;" @onclick="() => OpenTariffsModal(plan)">
+                            Tariffs
+                        </button>
+                        <button class="btn secondary" style="flex: 1; font-size: 12px; min-width: 80px; background: var(--surface-soft); color: var(--accent-dark);" title="Email active subscribers of tariff/plan changes" @onclick="() => OpenNotifyPlanModal(plan)">
+                            ✉️ Notify
                         </button>
                         @if (plan.IsActive)
                         {
@@ -208,6 +211,11 @@
                         Include Google ADK &amp; Parent Communication AI
                     </label>
                 </div>
+
+                <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 8px; padding: 10px 12px; margin-top: 14px; font-size: 12.5px; color: var(--muted, #6c7870); display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">✉️</span>
+                    <span>Saving changes will automatically dispatch update notifications to active subscribed organization administrators.</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn secondary" @onclick="CloseModals">Cancel</button>
@@ -314,6 +322,44 @@
     </div>
 }
 
+<!-- NOTIFY SUBSCRIBERS MODAL -->
+@if (_showNotifyPlanModal && _notifyTargetPlan != null)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">SUBSCRIBER BROADCAST</div>
+                    <h3 class="modal-title">Notify Subscribers of @_notifyTargetPlan.Name</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 13.5px; color: var(--muted); margin: 0 0 16px;">
+                    Dispatch a branded transactional email notification to all active daycare organization administrators currently subscribed to <strong>@_notifyTargetPlan.Name</strong>.
+                </p>
+                <div class="form-group">
+                    <label>Update Title / Headline *</label>
+                    <input class="form-input" @bind="_notifyTitle" placeholder="e.g. Schedule & Tariff Adjustment for 2026" />
+                </div>
+                <div class="form-group">
+                    <label>Summary of Changes / Inclusions *</label>
+                    <textarea class="form-input" rows="4" @bind="_notifySummaryHtml" placeholder="e.g. We are expanding classroom limits and introducing new Experience Studio modules. The new tariff takes effect on your next billing cycle."></textarea>
+                </div>
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--muted);">
+                    ℹ️ Each administrator will receive an email linking directly to their daycare billing and subscription portal.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" @onclick="SubmitNotifyPlanSubscribers" disabled="@(string.IsNullOrWhiteSpace(_notifyTitle) || string.IsNullOrWhiteSpace(_notifySummaryHtml))">
+                    🚀 Send Notification Emails
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<SubscriptionPlan>? _plans;
     private SubscriptionPlan? _selectedPlan;
@@ -323,6 +369,12 @@
     private bool _showCreatePlanModal = false;
     private bool _showEditPlanModal = false;
     private bool _showTariffsModal = false;
+    private bool _showNotifyPlanModal = false;
+
+    // Subscriber notification
+    private SubscriptionPlan? _notifyTargetPlan;
+    private string _notifyTitle = "";
+    private string _notifySummaryHtml = "";
 
     // Create plan form
     private string _newPlanName = "";
@@ -408,12 +460,39 @@
         _showTariffsModal = true;
     }
 
+    private void OpenNotifyPlanModal(SubscriptionPlan plan)
+    {
+        _notifyTargetPlan = plan;
+        _notifyTitle = $"Important Update to Your {plan.Name} Subscription";
+        _notifySummaryHtml = $"Your {plan.Name} subscription has been updated. Base rate: {plan.BasePrice:C0}/month. Branches included: {plan.MaxBranches}. Classrooms: {plan.MaxClassrooms}. Active children: {plan.MaxChildren}.";
+        _showNotifyPlanModal = true;
+    }
+
+    private async Task SubmitNotifyPlanSubscribers()
+    {
+        if (_notifyTargetPlan == null || string.IsNullOrWhiteSpace(_notifyTitle)) return;
+        try
+        {
+            var count = await PlatformService.NotifySubscribersOfPlanUpdateAsync(_notifyTargetPlan.Id, _notifyTitle, _notifySummaryHtml);
+            _notificationMessage = $"Successfully dispatched email update notices to {count} active subscribed organization(s).";
+            _isNotificationError = false;
+            CloseModals();
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to dispatch subscriber update: {ex.Message}";
+            _isNotificationError = true;
+        }
+    }
+
     private void CloseModals()
     {
         _showCreatePlanModal = false;
         _showEditPlanModal = false;
         _showTariffsModal = false;
+        _showNotifyPlanModal = false;
         _selectedPlan = null;
+        _notifyTargetPlan = null;
     }
 
     private async Task SubmitCreatePlan()
@@ -446,7 +525,7 @@
                 _editPlanBranches, _editPlanClassrooms, _editPlanChildren, _editPlanIncludesAi);
             if (ok)
             {
-                _notificationMessage = $"Plan '{_editPlanName}' updated successfully.";
+                _notificationMessage = $"Plan '{_editPlanName}' updated successfully and notification emails dispatched to active subscribers.";
                 _isNotificationError = false;
             }
             CloseModals();

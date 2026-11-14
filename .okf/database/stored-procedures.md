@@ -88,4 +88,20 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `fn_get_users_hierarchy(p_tenant_id uuid)` | `FUNCTION` | `IUserRepository.GetUsersHierarchyAsync` | Returns team members and roles scoped to the tenant, including members joined via organization memberships and branch assignments. |
 | `fn_get_user_assigned_branches(p_user_id uuid, p_organization_id uuid)` | `FUNCTION` | `AuthEndpoints.cs`, `SelectBranch.razor` | Returns active branches assigned to a user within an organization via `user_branch_assignments`, enforcing multi-branch routing and scoping. |
 
+## 6. Organization Onboarding & Platform Administration
+
+| Routine Signature | Routine Type | Calling Repository / Service | Purpose |
+|:---|:---|:---|:---|
+| `fn_create_organization_invitation(p_organization_id uuid, p_admin_email varchar, p_token varchar, p_expires_days int)` | `FUNCTION` | `PlatformAdminRepository.CreateOrganizationInvitationAsync` | Revokes prior pending invitations, inserts new invitation with 7-day expiry token, and returns invitation record. |
+| `fn_get_organization_latest_invitations()` | `FUNCTION` | `PlatformAdminRepository.GetLatestInvitationsAsync` | Returns the latest invitation per organization with token, expiry, status, and acceptance timestamp. |
+| `fn_validate_organization_invitation(p_token varchar)` | `FUNCTION` | `PlatformAdminRepository.ValidateInvitationAsync`, `/auth/activate` | Validates invitation token validity, expiry, and returns organization name, admin email, and tenant context. |
+| `fn_accept_organization_invitation(p_token varchar, p_user_id uuid)` | `FUNCTION` | `PlatformAdminRepository.AcceptInvitationAsync`, `/auth/accept-invite` | Marks invitation Accepted, binds user to `organization_memberships`, and assigns `OrganizationAdmin` role in `user_organization_roles`. |
+| `sp_provision_platform_organization(...)` | `PROCEDURE` | `PlatformAdminRepository.ProvisionOrganizationAsync` | Provisions a new tenant, organization, default branches, initial admin user, and assigns `OrganizationAdmin` role. |
+| `sp_update_platform_organization_details(...)` | `PROCEDURE` | `PlatformAdminRepository.UpdateOrganizationDetailsAsync` | Updates organization name, location, and branch counts. |
+| `sp_update_organization_account_status(p_org_id uuid, p_status varchar, p_reason text)` | `PROCEDURE` | `PlatformAdminRepository.UpdateOrganizationAccountStatusAsync`, `PlatformAdminService.UpdateAccountStatusAsync` | Persists lifecycle state changes (`Active`, `Suspended`, `Deactivated`), setting `organizations.is_active` and `suspension_reason`. Enforces account lock in Daycare portals. |
+| `sp_update_organization_plan_quota(p_org_id uuid, p_plan_id uuid, p_plan_code varchar, p_plan_name varchar, p_max_branches int, p_max_classrooms int, p_max_children int, p_includes_ai boolean)` | `PROCEDURE` | `PlatformAdminRepository.UpdateOrganizationPlanQuotaAsync`, `PlatformAdminService.AssignPlanAndTariffToOrganizationAsync` | Persists subscription plan capacity limits on `organizations` table (`plan_id`, `plan_code`, `plan_name`, `max_branches`, `max_classrooms`, `max_children`, `includes_ai`). |
+| `fn_get_organization_quota_usage(p_org_id uuid)` | `FUNCTION` | `PlatformAdminRepository.GetOrganizationQuotaUsageAsync`, `PlanQuotaService` | Atomically computes current counts vs maximum quotas for branches, classrooms, and enrolled children for an organization. |
+| `fn_get_platform_organizations_overview()` | `FUNCTION` | `PlatformAdminRepository.GetOrganizationsOverviewAsync` | Retrieves organizations with real-time `account_status`, `suspension_reason`, branch count, and primary admin email. |
+
+
 

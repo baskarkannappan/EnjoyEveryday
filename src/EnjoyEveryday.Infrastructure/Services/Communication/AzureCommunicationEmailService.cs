@@ -376,6 +376,195 @@ public class AzureCommunicationEmailService : IEmailNotificationService
         return await SendEmailAsync(recipientEmail, subject, body, "TuitionInvoice", tenantId, new { invoiceNumber, amount, dueDate }, ccAddress: null, ct: ct);
     }
 
+    public async Task<EmailNotificationResult> SendOrgAdminInvitationAsync(
+        string recipientEmail,
+        string recipientName,
+        string organizationName,
+        string planName,
+        string activationUrl,
+        string? tempPassword = null,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Welcome to EnjoyEveryday — Activate Your Daycare Account for {organizationName}";
+
+        var passwordDetails = !string.IsNullOrWhiteSpace(tempPassword)
+            ? $"<div style='margin-bottom: 8px;'><strong>Initial Password:</strong> <code style='background: #eef2ed; padding: 2px 6px; border-radius: 4px; font-weight: 700;'>{tempPassword}</code></div>"
+            : "<div style='margin-bottom: 8px;'><strong>Authentication:</strong> Secure magic link or Google SSO</div>";
+
+        var body = BuildBrandedEmailTemplate(
+            headerEyebrow: "DAYCARE ACCOUNT ACTIVATION",
+            headerTitle: $"Welcome to EnjoyEveryday, {organizationName}!",
+            greeting: $"Dear {recipientName},",
+            introParagraph: $"Your daycare organization, <strong>{organizationName}</strong>, has been successfully provisioned on the EnjoyEveryday platform under the <strong>{planName}</strong> plan.",
+            detailsBox: $@"
+                <div style='margin-bottom: 8px;'><strong>Organization:</strong> {organizationName}</div>
+                <div style='margin-bottom: 8px;'><strong>Subscription Plan:</strong> {planName}</div>
+                <div style='margin-bottom: 8px;'><strong>Administrator Email:</strong> {recipientEmail}</div>
+                {passwordDetails}
+                <div style='font-size: 12px; color: #6c7870; margin-top: 6px;'>Note: This activation link is secure and valid for 7 days.</div>",
+            ctaButtonText: "🚀 Activate Account & Sign In",
+            ctaUrl: activationUrl,
+            footerNote: "Upon signing in, you will be guided to set up your primary branch, classrooms, and educator rosters."
+        );
+
+        return await SendEmailAsync(recipientEmail, subject, body, "OrgAdminInvitation", tenantId, new { organizationName, planName, activationUrl }, ccAddress: null, ct: ct);
+    }
+
+    public async Task<EmailNotificationResult> SendOrganizationLifecycleUpdateAsync(
+        string recipientEmail,
+        string organizationName,
+        string newStatus,
+        string reason,
+        string actionUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Organization Account Status Update: {newStatus} — {organizationName}";
+
+        var body = BuildBrandedEmailTemplate(
+            headerEyebrow: "ACCOUNT STATUS NOTIFICATION",
+            headerTitle: $"Account Status: {newStatus}",
+            greeting: "Dear Daycare Administrator,",
+            introParagraph: $"The operational status for <strong>{organizationName}</strong> has been updated to <strong>{newStatus}</strong> by the platform administration.",
+            detailsBox: $@"
+                <div style='margin-bottom: 8px;'><strong>Organization:</strong> {organizationName}</div>
+                <div style='margin-bottom: 8px;'><strong>Current Status:</strong> <span style='font-weight: 700; color: #31523c;'>{newStatus}</span></div>
+                <div style='margin-bottom: 8px;'><strong>Reason / Operational Note:</strong> {reason}</div>
+                <div><strong>Effective Date:</strong> {DateTime.UtcNow:dd MMMM yyyy}</div>",
+            ctaButtonText: "Access Daycare Workspace",
+            ctaUrl: actionUrl,
+            footerNote: "If you have questions regarding this account status change, please reply to this notice or contact platform support."
+        );
+
+        return await SendEmailAsync(recipientEmail, subject, body, "OrgLifecycleUpdate", tenantId, new { organizationName, newStatus, reason }, ccAddress: null, ct: ct);
+    }
+
+    public async Task<EmailNotificationResult> SendPlanOrTariffUpdateNoticeAsync(
+        string recipientEmail,
+        string organizationName,
+        string planName,
+        string updateTitle,
+        string changesSummaryHtml,
+        string effectiveDateText,
+        string billingPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Subscription & Tariff Update: {planName} — {organizationName}";
+
+        var body = BuildBrandedEmailTemplate(
+            headerEyebrow: "SUBSCRIPTION & COMMERCIAL UPDATE",
+            headerTitle: $"Plan Update: {planName}",
+            greeting: "Dear Daycare Director,",
+            introParagraph: $"We are writing to inform you of an important update to your <strong>{planName}</strong> subscription plan for <strong>{organizationName}</strong>.",
+            detailsBox: $@"
+                <div style='margin-bottom: 8px;'><strong>Update:</strong> {updateTitle}</div>
+                <div style='margin-bottom: 8px;'><strong>Effective Date:</strong> {effectiveDateText}</div>
+                <div style='margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e1e6e0;'>
+                    {changesSummaryHtml}
+                </div>",
+            ctaButtonText: "Review Plan & Invoices",
+            ctaUrl: billingPortalUrl,
+            footerNote: "Your current services and experience modules continue without interruption. You may review your active tier in the billing portal."
+        );
+
+        return await SendEmailAsync(recipientEmail, subject, body, "PlanTariffUpdate", tenantId, new { organizationName, planName, updateTitle }, ccAddress: null, ct: ct);
+    }
+
+    public async Task<EmailNotificationResult> SendPlatformInvoiceNoticeAsync(
+        string recipientEmail,
+        string organizationName,
+        string invoiceNumber,
+        decimal amount,
+        string currency,
+        DateTime dueDate,
+        string invoiceDescription,
+        string invoicePortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Platform Commercial Invoice #{invoiceNumber} for {organizationName}";
+
+        var body = BuildBrandedEmailTemplate(
+            headerEyebrow: "PLATFORM BILLING STATEMENT",
+            headerTitle: $"Invoice #{invoiceNumber}",
+            greeting: "Dear Billing Administrator,",
+            introParagraph: $"A new commercial invoice has been generated for <strong>{organizationName}</strong>.",
+            detailsBox: $@"
+                <div style='margin-bottom: 8px;'><strong>Invoice Number:</strong> #{invoiceNumber}</div>
+                <div style='margin-bottom: 8px;'><strong>Description:</strong> {invoiceDescription}</div>
+                <div style='margin-bottom: 8px;'><strong>Total Due:</strong> <span style='font-size: 18px; font-weight: 800; color: #31523c;'>{currency} {amount:N2}</span></div>
+                <div><strong>Due Date:</strong> {dueDate:dd MMMM yyyy}</div>",
+            ctaButtonText: "💳 View & Pay Invoice",
+            ctaUrl: invoicePortalUrl,
+            footerNote: "Payment receipts will be issued automatically upon transaction verification. For payment inquiries, reply directly to this message."
+        );
+
+        return await SendEmailAsync(recipientEmail, subject, body, "PlatformInvoice", tenantId, new { invoiceNumber, amount, dueDate, organizationName }, ccAddress: null, ct: ct);
+    }
+
+    public async Task<EmailNotificationResult> SendPaymentReceiptConfirmationAsync(
+        string recipientEmail,
+        string organizationName,
+        string paymentReference,
+        decimal amount,
+        string currency,
+        string paymentMethod,
+        string billingPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Payment Verified & Receipt — {paymentReference} for {organizationName}";
+
+        var body = BuildBrandedEmailTemplate(
+            headerEyebrow: "PAYMENT RECEIPT & RECONCILIATION",
+            headerTitle: "Payment Verified Successfully",
+            greeting: "Dear Daycare Administrator,",
+            introParagraph: $"We have verified and recorded your payment of <strong>{currency} {amount:N2}</strong> for <strong>{organizationName}</strong>.",
+            detailsBox: $@"
+                <div style='margin-bottom: 8px;'><strong>Payment Reference:</strong> {paymentReference}</div>
+                <div style='margin-bottom: 8px;'><strong>Amount Credited:</strong> <span style='font-size: 18px; font-weight: 800; color: #31523c;'>{currency} {amount:N2}</span></div>
+                <div style='margin-bottom: 8px;'><strong>Payment Method:</strong> {paymentMethod}</div>
+                <div><strong>Status:</strong> Reconciled to Organization Ledger</div>",
+            ctaButtonText: "View Account Ledger",
+            ctaUrl: billingPortalUrl,
+            footerNote: "Thank you for partnering with EnjoyEveryday to provide thoughtful, experience-based early childhood education."
+        );
+
+        return await SendEmailAsync(recipientEmail, subject, body, "PaymentReceipt", tenantId, new { paymentReference, amount, organizationName }, ccAddress: null, ct: ct);
+    }
+
+    public async Task<List<EmailNotificationLogDto>> GetRecentEmailLogsAsync(int limit = 50, CancellationToken ct = default)
+    {
+        try
+        {
+            using var connection = await _connectionFactory.CreateConnectionAsync(ct);
+            const string sql = @"
+                SELECT 
+                    id, 
+                    tenant_id AS TenantId, 
+                    notification_type AS NotificationType, 
+                    recipient_email AS RecipientEmail, 
+                    cc_recipients AS CcRecipients, 
+                    status AS Status, 
+                    sent_at AS SentAt, 
+                    error_message AS ErrorMessage, 
+                    metadata::text AS Metadata
+                FROM email_notification_logs
+                ORDER BY sent_at DESC
+                LIMIT @Limit;";
+
+            var records = await connection.QueryAsync<EmailNotificationLogDto>(sql, new { Limit = limit });
+            return records.AsList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve recent email notification logs");
+            return new List<EmailNotificationLogDto>();
+        }
+    }
+
     private async Task LogAuditAsync(
         Guid tenantId,
         string notificationType,

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,6 +11,19 @@ public class EmailNotificationResult
     public string MessageId { get; set; } = string.Empty;
     public string? ErrorMessage { get; set; }
     public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class EmailNotificationLogDto
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+    public string NotificationType { get; set; } = string.Empty;
+    public string RecipientEmail { get; set; } = string.Empty;
+    public string? CcRecipients { get; set; }
+    public string Status { get; set; } = "Sent";
+    public DateTime SentAt { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? Metadata { get; set; }
 }
 
 public interface IEmailNotificationService
@@ -26,6 +40,79 @@ public interface IEmailNotificationService
         object? metadata = null,
         string? ccAddress = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends an invitation to a new Daycare Organization Administrator with a 1-tap activation token link.
+    /// </summary>
+    Task<EmailNotificationResult> SendOrgAdminInvitationAsync(
+        string recipientEmail, 
+        string recipientName, 
+        string organizationName, 
+        string planName, 
+        string activationUrl, 
+        string? tempPassword = null, 
+        Guid? tenantId = null, 
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends an account lifecycle status update notification (e.g. Active, Suspended, Reactivated) to an organization administrator.
+    /// </summary>
+    Task<EmailNotificationResult> SendOrganizationLifecycleUpdateAsync(
+        string recipientEmail, 
+        string organizationName, 
+        string newStatus, 
+        string reason, 
+        string actionUrl, 
+        Guid? tenantId = null, 
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends a subscription plan or tariff update notice to subscribers.
+    /// </summary>
+    Task<EmailNotificationResult> SendPlanOrTariffUpdateNoticeAsync(
+        string recipientEmail, 
+        string organizationName, 
+        string planName, 
+        string updateTitle, 
+        string changesSummaryHtml, 
+        string effectiveDateText, 
+        string billingPortalUrl, 
+        Guid? tenantId = null, 
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends a platform invoice notice to an organization with amount, due date, and payment instructions.
+    /// </summary>
+    Task<EmailNotificationResult> SendPlatformInvoiceNoticeAsync(
+        string recipientEmail, 
+        string organizationName, 
+        string invoiceNumber, 
+        decimal amount, 
+        string currency, 
+        DateTime dueDate, 
+        string invoiceDescription, 
+        string invoicePortalUrl, 
+        Guid? tenantId = null, 
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends an official payment receipt confirmation to an organization administrator upon payment verification.
+    /// </summary>
+    Task<EmailNotificationResult> SendPaymentReceiptConfirmationAsync(
+        string recipientEmail, 
+        string organizationName, 
+        string paymentReference, 
+        decimal amount, 
+        string currency, 
+        string paymentMethod, 
+        string billingPortalUrl, 
+        Guid? tenantId = null, 
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves recent transactional email logs for platform administration auditing.
+    /// </summary>
+    Task<List<EmailNotificationLogDto>> GetRecentEmailLogsAsync(int limit = 50, CancellationToken ct = default);
 
     /// <summary>
     /// Sends an electronic consent signature request to a parent or guardian with mandatory Org Admin CC.

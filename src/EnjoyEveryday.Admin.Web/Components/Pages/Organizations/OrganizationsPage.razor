@@ -1,6 +1,7 @@
 @page "/organizations"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
 @using EnjoyEveryday.UI.Shared.Components
 @inject IPlatformAdminService PlatformService
 @inject NavigationManager Navigation
@@ -67,6 +68,7 @@
                             <th style="padding: 12px 14px; text-align: left;">Organization</th>
                             <th style="padding: 12px 14px; text-align: left;">Branches</th>
                             <th style="padding: 12px 14px; text-align: left;">Account Status</th>
+                            <th style="padding: 12px 14px; text-align: left;">Onboarding &amp; Invite</th>
                             <th style="padding: 12px 14px; text-align: left;">Financial Status</th>
                             <th style="padding: 12px 14px; text-align: left;">Plan &amp; Tariff</th>
                             <th style="padding: 12px 14px; text-align: left;">Rate</th>
@@ -92,6 +94,36 @@
                                     <StatusBadge Status="@org.AccountStatus.ToString()" />
                                 </td>
                                 <td style="padding: 14px;">
+                                    @if (_invitationsMap.TryGetValue(org.Id, out var inv))
+                                    {
+                                        if (inv.Status == "Accepted")
+                                        {
+                                            <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); padding: 3px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; border: 1px solid #c9dacf;">
+                                                🟢 Activated
+                                            </span>
+                                        }
+                                        else if (inv.Status == "Pending")
+                                        {
+                                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                                <span style="background: #fdf6ec; color: #8c631b; padding: 2px 7px; border-radius: 6px; font-size: 11.5px; font-weight: 700; border: 1px solid #fde68a;">
+                                                    🟡 Invite Sent
+                                                </span>
+                                                <span style="font-size: 10.5px; color: var(--muted);">Expires in @Math.Max(1, (int)Math.Ceiling((inv.ExpiresAt - DateTimeOffset.UtcNow).TotalDays))d</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span style="background: #edf1ec; color: var(--muted); padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 650;">
+                                                @inv.Status
+                                            </span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span style="color: var(--muted); font-size: 11.5px;">No Invite Sent</span>
+                                    }
+                                </td>
+                                <td style="padding: 14px;">
                                     <StatusBadge Status="@org.FinancialStatus.ToString()" />
                                 </td>
                                 <td style="padding: 14px;">
@@ -103,6 +135,9 @@
                                 </td>
                                 <td style="padding: 14px; text-align: right;">
                                     <div style="display: inline-flex; gap: 6px;">
+                                        <button class="action-btn" title="Resend Onboarding Invitation Email with Magic Link" @onclick="() => ResendInvitationAsync(org)" style="background: var(--surface-soft); color: var(--accent-dark);">
+                                            ✉️ Invite
+                                        </button>
                                         <button class="action-btn" title="Edit Organization" @onclick="() => OpenEditModal(org)">
                                             Edit
                                         </button>
@@ -179,6 +214,16 @@
                         </select>
                     </div>
                 }
+
+                <div style="margin-top: 16px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; font-weight: 650; color: var(--text); margin: 0;">
+                        <input type="checkbox" @bind="_createSendEmail" style="accent-color: var(--accent-dark); width: 16px; height: 16px;" />
+                        <span>✉️ Send welcome email with 1-tap activation link</span>
+                    </label>
+                    <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--muted); line-height: 1.4;">
+                        The primary administrator will receive an email with a secure 7-day magic token to activate their workspace.
+                    </p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn secondary" @onclick="CloseModals">Cancel</button>
@@ -305,6 +350,11 @@
                         }
                     </select>
                 </div>
+
+                <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 8px; padding: 10px 12px; margin-top: 14px; font-size: 12.5px; color: var(--muted, #6c7870); display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">✉️</span>
+                    <span>An official plan update notification email will be dispatched to <strong>@_selectedOrg.AdminEmail</strong> upon applying changes.</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn secondary" @onclick="CloseModals">Cancel</button>
@@ -352,6 +402,7 @@
     private List<SubscriptionPlan> _availablePlans = new();
     private List<Tariff> _availableTariffs = new();
     private List<Tariff> _assignTariffs = new();
+    private Dictionary<Guid, PlatformOrganizationInvitationRecord> _invitationsMap = new();
 
     private string _search = "";
     private string _statusFilter = "All";
@@ -373,6 +424,7 @@
     private int _createBranchCount = 1;
     private Guid _createPlanId;
     private Guid? _createTariffId;
+    private bool _createSendEmail = true;
 
     // Edit inputs
     private string _editName = "";
@@ -404,6 +456,7 @@
         {
             _orgs = await PlatformService.GetOrganizationsOverviewAsync();
             _availablePlans = await PlatformService.GetPlansAsync();
+            _invitationsMap = await PlatformService.GetLatestInvitationsMapAsync();
 
             if (_availablePlans.Count > 0)
             {
@@ -417,6 +470,22 @@
         catch (Exception ex)
         {
             _notificationMessage = $"Failed to load organizations: {ex.Message}";
+            _isNotificationError = true;
+        }
+    }
+
+    private async Task ResendInvitationAsync(PlatformOrganizationDto org)
+    {
+        try
+        {
+            await PlatformService.SendOrganizationInvitationWorkflowAsync(org.Id, org.AdminEmail);
+            _invitationsMap = await PlatformService.GetLatestInvitationsMapAsync();
+            _notificationMessage = $"Welcome onboarding invitation email with 1-tap activation token resent to {org.AdminEmail} for '{org.Name}'.";
+            _isNotificationError = false;
+        }
+        catch (Exception ex)
+        {
+            _notificationMessage = $"Failed to resend invitation: {ex.Message}";
             _isNotificationError = true;
         }
     }
@@ -538,7 +607,7 @@
         try
         {
             var created = await PlatformService.CreateOrganizationWorkflowAsync(_createName, _createLocation, _createPlanId, _createAdminEmail, _createBranchCount, _createTariffId);
-            _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully.";
+            _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully. Welcome onboarding email sent to {_createAdminEmail}.";
             _isNotificationError = false;
             CloseModals();
             await LoadDataAsync();
@@ -600,7 +669,7 @@
             var ok = await PlatformService.AssignPlanAndTariffToOrganizationAsync(_selectedOrg.Id, _assignPlanId, _assignTariffId);
             if (ok)
             {
-                _notificationMessage = $"Plan and tariff updated for '{_selectedOrg.Name}'.";
+                _notificationMessage = $"Plan and tariff updated for '{_selectedOrg.Name}'. Confirmation email dispatched to {_selectedOrg.AdminEmail}.";
                 _isNotificationError = false;
             }
             CloseModals();

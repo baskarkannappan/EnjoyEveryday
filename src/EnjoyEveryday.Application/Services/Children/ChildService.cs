@@ -15,9 +15,15 @@ public class ChildService
     private readonly IResourceAuthorizer _authorizer;
     private readonly IClassroomRepository? _classroomRepository;
     private readonly IClassroomReadinessService? _readinessService;
+    private readonly IPlanQuotaService? _quotaService;
 
-    public ChildService(IChildRepository childRepository, ITenantContext tenantContext, IAuditService auditService, IUserContext userContext)
-        : this(childRepository, tenantContext, auditService, userContext, new NullResourceAuthorizer(), null, null)
+    public ChildService(
+        IChildRepository childRepository, 
+        ITenantContext tenantContext, 
+        IAuditService auditService, 
+        IUserContext userContext,
+        IPlanQuotaService? quotaService = null)
+        : this(childRepository, tenantContext, auditService, userContext, new NullResourceAuthorizer(), null, null, quotaService)
     {
     }
 
@@ -26,8 +32,9 @@ public class ChildService
         ITenantContext tenantContext,
         IAuditService auditService,
         IUserContext userContext,
-        IResourceAuthorizer authorizer)
-        : this(childRepository, tenantContext, auditService, userContext, authorizer, null, null)
+        IResourceAuthorizer authorizer,
+        IPlanQuotaService? quotaService = null)
+        : this(childRepository, tenantContext, auditService, userContext, authorizer, null, null, quotaService)
     {
     }
 
@@ -38,7 +45,8 @@ public class ChildService
         IUserContext userContext,
         IResourceAuthorizer authorizer,
         IClassroomRepository? classroomRepository,
-        IClassroomReadinessService? readinessService)
+        IClassroomReadinessService? readinessService,
+        IPlanQuotaService? quotaService = null)
     {
         _childRepository = childRepository;
         _tenantContext = tenantContext;
@@ -47,6 +55,7 @@ public class ChildService
         _authorizer = authorizer;
         _classroomRepository = classroomRepository;
         _readinessService = readinessService;
+        _quotaService = quotaService;
     }
 
     public async Task<IEnumerable<Child>> GetChildrenAsync(CancellationToken cancellationToken = default)
@@ -83,6 +92,15 @@ public class ChildService
         if (!isOfficialAdmission && _readinessService != null)
         {
             throw new InvalidOperationException("Direct child creation is disabled. All new children must enter through the official Inquiry and Admission pipeline.");
+        }
+
+        if (_quotaService != null)
+        {
+            var orgId = _userContext.OrganizationId ?? Guid.Empty;
+            if (orgId != Guid.Empty)
+            {
+                await _quotaService.ValidateCanAddChildAsync(orgId, cancellationToken);
+            }
         }
 
         var tenantId = _tenantContext.TenantId;

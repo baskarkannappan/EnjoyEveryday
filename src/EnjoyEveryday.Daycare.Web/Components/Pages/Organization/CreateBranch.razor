@@ -7,6 +7,7 @@
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Application.Services.IPlanQuotaService QuotaService
 
 <PageTopbar Breadcrumb="Organization · Add Branch" Title="Add Branch">
     <RightContent>
@@ -38,6 +39,7 @@
     private string Location = "";
     private string ErrorMessage = "";
     private bool IsSubmitting = false;
+    private bool IsQuotaExceeded = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -45,10 +47,33 @@
         {
             return;
         }
+
+        try
+        {
+            var profile = await PageAuth.GetUserProfileAsync();
+            if (profile.OrganizationId != Guid.Empty)
+            {
+                var quota = await QuotaService.GetQuotaUsageAsync(profile.OrganizationId);
+                if (quota != null && !quota.CanAddBranch)
+                {
+                    IsQuotaExceeded = true;
+                    ErrorMessage = $"You are exceeding your quota limit. Your current plan '{quota.PlanName}' allows a maximum of {quota.MaxBranches} branch (currently using {quota.CurrentBranches}/{quota.MaxBranches}). Please upgrade your subscription plan to add more branches.";
+                }
+            }
+        }
+        catch
+        {
+            // Non-blocking quota preview check
+        }
     }
 
     private async Task Create()
     {
+        if (IsQuotaExceeded)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(BranchName))
         {
             ErrorMessage = "Branch name is required.";
@@ -73,6 +98,10 @@
             {
                 ErrorMessage = "Could not find organization context.";
             }
+        }
+        catch (PlanQuotaExceededException pqex)
+        {
+            ErrorMessage = pqex.Message;
         }
         catch (Exception ex)
         {

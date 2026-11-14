@@ -9,12 +9,18 @@ public class BranchService
     private readonly IBranchRepository _branchRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
+    private readonly IPlanQuotaService? _quotaService;
 
-    public BranchService(IBranchRepository branchRepository, ITenantContext tenantContext, IUserContext userContext)
+    public BranchService(
+        IBranchRepository branchRepository, 
+        ITenantContext tenantContext, 
+        IUserContext userContext,
+        IPlanQuotaService? quotaService = null)
     {
         _branchRepository = branchRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
+        _quotaService = quotaService;
     }
 
     public async Task<IEnumerable<Branch>> GetBranchesAsync(Guid organizationId, CancellationToken cancellationToken = default)
@@ -39,6 +45,12 @@ public class BranchService
         if (_userContext.OrganizationId.HasValue && _userContext.OrganizationId != organizationId) 
             throw new UnauthorizedAccessException("Cannot access branches outside of active organization.");
         if (!_userContext.HasPermission("branch.manage")) throw new UnauthorizedAccessException("Requires branch.manage permission.");
+
+        if (_quotaService != null)
+        {
+            await _quotaService.ValidateCanAddBranchAsync(organizationId, cancellationToken);
+        }
+
         var tenantId = _tenantContext.TenantId;
         var branch = new Branch
         {

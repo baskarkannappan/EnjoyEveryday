@@ -9,12 +9,21 @@ public class ClassroomService : IClassroomService
     private readonly IClassroomRepository _classroomRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
+    private readonly IPlanQuotaService? _quotaService;
+    private readonly IBranchRepository? _branchRepository;
 
-    public ClassroomService(IClassroomRepository classroomRepository, ITenantContext tenantContext, IUserContext userContext)
+    public ClassroomService(
+        IClassroomRepository classroomRepository, 
+        ITenantContext tenantContext, 
+        IUserContext userContext,
+        IPlanQuotaService? quotaService = null,
+        IBranchRepository? branchRepository = null)
     {
         _classroomRepository = classroomRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
+        _quotaService = quotaService;
+        _branchRepository = branchRepository;
     }
 
     public async Task<IEnumerable<Classroom>> GetAllClassroomsAsync(CancellationToken cancellationToken = default)
@@ -46,6 +55,22 @@ public class ClassroomService : IClassroomService
     {
         if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
+
+        if (_quotaService != null)
+        {
+            var orgId = _userContext.OrganizationId ?? Guid.Empty;
+            if (orgId == Guid.Empty && _branchRepository != null && branchId != Guid.Empty)
+            {
+                var branch = await _branchRepository.GetByIdAsync(tenantId, branchId, cancellationToken);
+                if (branch != null) orgId = branch.OrganizationId;
+            }
+
+            if (orgId != Guid.Empty)
+            {
+                await _quotaService.ValidateCanAddClassroomAsync(orgId, cancellationToken);
+            }
+        }
+
         var classroom = new Classroom
         {
             Id = Guid.NewGuid(),
@@ -67,6 +92,22 @@ public class ClassroomService : IClassroomService
     {
         if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
+
+        if (_quotaService != null)
+        {
+            var orgId = _userContext.OrganizationId ?? Guid.Empty;
+            if (orgId == Guid.Empty && _branchRepository != null && classroom.BranchId != Guid.Empty)
+            {
+                var branch = await _branchRepository.GetByIdAsync(tenantId, classroom.BranchId, cancellationToken);
+                if (branch != null) orgId = branch.OrganizationId;
+            }
+
+            if (orgId != Guid.Empty)
+            {
+                await _quotaService.ValidateCanAddClassroomAsync(orgId, cancellationToken);
+            }
+        }
+
         classroom.TenantId = tenantId;
         if (classroom.Id == Guid.Empty)
         {

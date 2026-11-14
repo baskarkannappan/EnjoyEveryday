@@ -12,12 +12,21 @@
 @inject NavigationManager NavigationManager
 @inject SystemProvisioningService SystemProvisioning
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Application.Services.IPlanQuotaService QuotaService
 
 <PageHero 
     Eyebrow="ENVIRONMENT" 
     Title="@(Id.HasValue ? "Edit Classroom" : "Add Classroom")" 
     Subtitle="Let's configure the learning environment.">
 </PageHero>
+
+@if (!string.IsNullOrWhiteSpace(_errorMessage))
+{
+    <div style="max-width: 900px; margin: 16px auto 0 auto; padding: 14px 18px; border-radius: 10px; background: #fff5f5; border: 1.5px solid #fed7d7; color: #9b2c2c; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 18px;">⚠️</span>
+        <span>@_errorMessage</span>
+    </div>
+}
 
 <div style="max-width: 900px; margin: 0 auto; padding: 30px 40px;">
     <ClassroomCreationWizard Model="_wizardModel" OnSaveDraft="HandleSaveDraft" OnSubmit="HandleSubmit" AvailableBranches="_branches" />
@@ -33,6 +42,7 @@
     private ClassroomWizardModel _wizardModel = new();
     private List<Branch> _branches = new();
     private Classroom? _existingClassroom;
+    private string _errorMessage = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -57,6 +67,19 @@
             else
             {
                 _branches = allBranches.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+            }
+
+            if (!Id.HasValue)
+            {
+                try
+                {
+                    var quota = await QuotaService.GetQuotaUsageAsync(defaultOrg.Id);
+                    if (quota != null && !quota.CanAddClassroom)
+                    {
+                        _errorMessage = $"You are exceeding your quota limit. Your current plan '{quota.PlanName}' allows a maximum of {quota.MaxClassrooms} classrooms (currently using {quota.CurrentClassrooms}/{quota.MaxClassrooms}). Please upgrade your subscription plan to add more classrooms.";
+                    }
+                }
+                catch { }
             }
         }
 
@@ -121,66 +144,87 @@
 
     private async Task HandleSaveDraft(ClassroomWizardModel model)
     {
-        await SaveClassroom(model, "Draft");
-        if (BranchId.HasValue)
-            NavigationManager.NavigateTo($"/management/branches/{BranchId.Value}");
-        else
-            NavigationManager.NavigateTo("/classrooms");
+        var ok = await SaveClassroom(model, "Draft");
+        if (ok)
+        {
+            if (BranchId.HasValue)
+                NavigationManager.NavigateTo($"/management/branches/{BranchId.Value}");
+            else
+                NavigationManager.NavigateTo("/classrooms");
+        }
     }
 
     private async Task HandleSubmit(ClassroomWizardModel model)
     {
-        await SaveClassroom(model, "Active");
-        if (BranchId.HasValue)
-            NavigationManager.NavigateTo($"/management/branches/{BranchId.Value}");
-        else
-            NavigationManager.NavigateTo("/classrooms");
+        var ok = await SaveClassroom(model, "Active");
+        if (ok)
+        {
+            if (BranchId.HasValue)
+                NavigationManager.NavigateTo($"/management/branches/{BranchId.Value}");
+            else
+                NavigationManager.NavigateTo("/classrooms");
+        }
     }
 
-    private async Task SaveClassroom(ClassroomWizardModel model, string status)
+    private async Task<bool> SaveClassroom(ClassroomWizardModel model, string status)
     {
-        var branchIdToSave = model.BranchId ?? await SystemProvisioning.EnsureDefaultBranchAsync();
-
-        if (_existingClassroom != null)
+        _errorMessage = "";
+        try
         {
-            _existingClassroom.BranchId = branchIdToSave;
-            _existingClassroom.Name = model.Name;
-            _existingClassroom.Code = model.Code;
-            _existingClassroom.Description = model.Description;
-            _existingClassroom.ClassroomType = model.ClassroomType;
-            _existingClassroom.AgeGroup = model.AgeGroup;
-            _existingClassroom.MinAgeMonths = model.MinAgeMonths;
-            _existingClassroom.MaxAgeMonths = model.MaxAgeMonths;
-            _existingClassroom.Capacity = model.Capacity;
-            _existingClassroom.Environment = model.Environment ?? "Indoor";
-            _existingClassroom.PhotoUrl = model.PhotoUrl;
-            _existingClassroom.Status = status;
-            _existingClassroom.DraftData = JsonSerializer.Serialize(model);
-            _existingClassroom.ProfileCompletionPercentage = GetCompletionPercentage(model);
+            var branchIdToSave = model.BranchId ?? await SystemProvisioning.EnsureDefaultBranchAsync();
 
-            await ClassroomService.UpdateClassroomAsync(_existingClassroom);
-        }
-        else
-        {
-            var classroom = new Classroom
+            if (_existingClassroom != null)
             {
-                BranchId = branchIdToSave,
-                Name = model.Name,
-                Code = model.Code,
-                Description = model.Description,
-                ClassroomType = model.ClassroomType,
-                AgeGroup = model.AgeGroup,
-                MinAgeMonths = model.MinAgeMonths,
-                MaxAgeMonths = model.MaxAgeMonths,
-                Capacity = model.Capacity,
-                Environment = model.Environment ?? "Indoor",
-                PhotoUrl = model.PhotoUrl,
-                Status = status,
-                DraftData = JsonSerializer.Serialize(model),
-                ProfileCompletionPercentage = GetCompletionPercentage(model)
-            };
+                _existingClassroom.BranchId = branchIdToSave;
+                _existingClassroom.Name = model.Name;
+                _existingClassroom.Code = model.Code;
+                _existingClassroom.Description = model.Description;
+                _existingClassroom.ClassroomType = model.ClassroomType;
+                _existingClassroom.AgeGroup = model.AgeGroup;
+                _existingClassroom.MinAgeMonths = model.MinAgeMonths;
+                _existingClassroom.MaxAgeMonths = model.MaxAgeMonths;
+                _existingClassroom.Capacity = model.Capacity;
+                _existingClassroom.Environment = model.Environment ?? "Indoor";
+                _existingClassroom.PhotoUrl = model.PhotoUrl;
+                _existingClassroom.Status = status;
+                _existingClassroom.DraftData = JsonSerializer.Serialize(model);
+                _existingClassroom.ProfileCompletionPercentage = GetCompletionPercentage(model);
 
-            await ClassroomService.CreateClassroomAsync(classroom);
+                await ClassroomService.UpdateClassroomAsync(_existingClassroom);
+            }
+            else
+            {
+                var classroom = new Classroom
+                {
+                    BranchId = branchIdToSave,
+                    Name = model.Name,
+                    Code = model.Code,
+                    Description = model.Description,
+                    ClassroomType = model.ClassroomType,
+                    AgeGroup = model.AgeGroup,
+                    MinAgeMonths = model.MinAgeMonths,
+                    MaxAgeMonths = model.MaxAgeMonths,
+                    Capacity = model.Capacity,
+                    Environment = model.Environment ?? "Indoor",
+                    PhotoUrl = model.PhotoUrl,
+                    Status = status,
+                    DraftData = JsonSerializer.Serialize(model),
+                    ProfileCompletionPercentage = GetCompletionPercentage(model)
+                };
+
+                await ClassroomService.CreateClassroomAsync(classroom);
+            }
+            return true;
+        }
+        catch (PlanQuotaExceededException pqex)
+        {
+            _errorMessage = pqex.Message;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save classroom: {ex.Message}";
+            return false;
         }
     }
 

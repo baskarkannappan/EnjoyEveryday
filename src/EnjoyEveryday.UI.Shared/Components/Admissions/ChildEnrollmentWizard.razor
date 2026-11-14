@@ -13,6 +13,7 @@
 @inject IClassroomReadinessService ClassroomReadinessService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject IEnrollmentPipelineService PipelineService
+@inject IPlanQuotaService QuotaService
 @using EnjoyEveryday.Shared.Tenancy
 @using EnjoyEveryday.Shared.Authorization
 @inject IUserContext UserContext
@@ -599,6 +600,19 @@
                 var classrooms = await ClassroomService.GetClassroomsAsync(branch.Id);
                 _classrooms.AddRange(classrooms);
             }
+
+            if (!Id.HasValue)
+            {
+                try
+                {
+                    var quota = await QuotaService.GetQuotaUsageAsync(org.Id);
+                    if (quota != null && !quota.CanAddChild)
+                    {
+                        _stepErrorMessage = $"You are exceeding your quota limit. Your current plan '{quota.PlanName}' allows a maximum of {quota.MaxChildren} children (currently using {quota.CurrentChildren}/{quota.MaxChildren}). Please upgrade your subscription plan to enroll more children.";
+                    }
+                }
+                catch { }
+            }
         }
 
         if (Id.HasValue)
@@ -979,6 +993,11 @@
             _stepErrorMessage = $"Classroom readiness check failed: {ex.Message}";
             await NotificationService.ShowWarningAsync(ex.Message);
         }
+        catch (PlanQuotaExceededException ex)
+        {
+            _stepErrorMessage = ex.Message;
+            await NotificationService.ShowWarningAsync(ex.Message);
+        }
         catch (Exception ex)
         {
             _stepErrorMessage = $"Unable to save progress: {ex.Message}";
@@ -1051,6 +1070,11 @@
             {
                 _stepErrorMessage = $"Classroom readiness check failed: {ex.Message}";
                 currentStep = 7;
+                await NotificationService.ShowWarningAsync(ex.Message);
+            }
+            catch (PlanQuotaExceededException ex)
+            {
+                _stepErrorMessage = ex.Message;
                 await NotificationService.ShowWarningAsync(ex.Message);
             }
             catch (UnauthorizedAccessException ex)

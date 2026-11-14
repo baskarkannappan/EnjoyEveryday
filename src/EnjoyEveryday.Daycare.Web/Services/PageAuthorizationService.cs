@@ -15,6 +15,9 @@ public sealed class UserRoleProfile
 {
     public Guid UserId { get; set; }
     public Guid OrganizationId { get; set; }
+    public string OrganizationName { get; set; } = string.Empty;
+    public bool IsOrganizationSuspended { get; set; }
+    public string? SuspensionReason { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public bool IsAuthenticated { get; set; }
@@ -116,6 +119,29 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         }
         profile.OrganizationId = orgId;
 
+        if (orgId != Guid.Empty)
+        {
+            try
+            {
+                var org = await _orgRepo.GetByIdAsync(orgId, ct);
+                if (org != null)
+                {
+                    profile.OrganizationName = org.Name;
+                    if (string.Equals(org.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase) || !org.IsActive)
+                    {
+                        profile.IsOrganizationSuspended = true;
+                        profile.SuspensionReason = !string.IsNullOrWhiteSpace(org.SuspensionReason)
+                            ? org.SuspensionReason
+                            : "Account suspended by platform administration.";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PageAuth] Error checking organization status: {ex.Message}");
+            }
+        }
+
         if (userId != Guid.Empty && _userRepo != null)
         {
             try
@@ -169,6 +195,12 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         // 0. Platform Admin check
         profile.IsPlatformAdmin = roles.Any(r =>
             r.Equals(RoleTemplates.PlatformAdmin, StringComparison.OrdinalIgnoreCase));
+
+        if (profile.IsPlatformAdmin)
+        {
+            // Platform Superadmins have bypass access across all organizations
+            profile.IsOrganizationSuspended = false;
+        }
 
         // 1. Organization Admin check
         profile.IsOrgAdmin = profile.IsPlatformAdmin || roles.Any(r =>
@@ -232,6 +264,16 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         if (profile.IsPlatformAdmin) return true;
 
         var cleanPath = NormalizePath(relativePath);
+
+        // Frozen check: If organization is suspended, users cannot access operational routes
+        if (profile.IsOrganizationSuspended)
+        {
+            if (cleanPath == "/account-suspended" || cleanPath == "/select-organization" || cleanPath == "/logout" || cleanPath == "/auth/logout")
+            {
+                return true;
+            }
+            return false;
+        }
 
         // Matrix page itself is strictly OrgAdmin exclusive:
         if (cleanPath == "/management/roles" || cleanPath == "/roles")
@@ -349,6 +391,16 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         {
             _navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(_navigation.Uri)}", forceLoad: false);
             return false;
+        }
+
+        if (profile.IsOrganizationSuspended && !profile.IsPlatformAdmin)
+        {
+            var cleanPath = NormalizePath(relativePath);
+            if (cleanPath != "/account-suspended" && cleanPath != "/select-organization" && cleanPath != "/logout" && cleanPath != "/auth/logout")
+            {
+                _navigation.NavigateTo("/account-suspended", forceLoad: false);
+                return false;
+            }
         }
 
         bool routeAllowed = await CanAccessRouteAsync(relativePath, ct);

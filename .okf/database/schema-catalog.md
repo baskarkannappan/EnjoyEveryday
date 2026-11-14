@@ -26,8 +26,9 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `audit_log`: High-security immutability audit trail of administrative actions.
 * `support_access_grants`: Temporary impersonation / support access grants.
 
-## 2. Organization, Facilities & Staff (27 Tables)
+## 2. Organization, Facilities & Staff (28 Tables)
 * `organizations`: Root daycare provider accounts.
+* `organization_invitations`: Time-limited, cryptographically secure magic onboarding tokens for invited organization administrators.
 * `organization_memberships`: Staff and admin associations.
 * `branches`, `branch_floor_maps`, `floor_map_markers`, `branch_operational_goals`: Physical center facilities and floor plans.
 * `classrooms`, `classroom_statutory_ratios`, `classroom_teachers`: Room capacities, statutory licensing ratios, and teacher assignments.

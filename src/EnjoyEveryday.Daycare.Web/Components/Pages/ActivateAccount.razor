@@ -1,0 +1,197 @@
+@page "/auth/activate"
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
+@layout Layout.AuthLayout
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Infrastructure.Data
+@using EnjoyEveryday.Shared.Data
+@using Dapper
+@inject IDbConnectionFactory Db
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Activate Your Daycare Workspace — EnjoyEveryday</PageTitle>
+
+<div class="activation-container" style="min-height: 100vh; background: var(--bg, #f5f5ef); display: flex; align-items: center; justify-content: center; padding: 40px 16px; font-family: var(--ee-font, 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);">
+    <div class="activation-card" style="background: var(--surface, #ffffff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06)); max-width: 580px; width: 100%; overflow: hidden;">
+        
+        <!-- HEADER -->
+        <div style="background: var(--accent-dark, #31523c); padding: 32px 36px; text-align: left;">
+            <div style="color: var(--accent-light, #e6eee9); font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">
+                ENJOYEVERYDAY DAYCARE PLATFORM
+            </div>
+            <h1 style="margin: 8px 0 0; color: #ffffff; font-size: 24px; font-weight: 750; letter-spacing: -0.3px;">
+                Activate Daycare Workspace
+            </h1>
+        </div>
+
+        <!-- BODY -->
+        <div style="padding: 36px;">
+            @if (_isLoading)
+            {
+                <div style="text-align: center; padding: 40px 0;">
+                    <div style="font-size: 32px; margin-bottom: 12px;">🌱</div>
+                    <div style="font-size: 14.5px; color: var(--muted, #6c7870); font-weight: 600;">Validating your activation invitation...</div>
+                </div>
+            }
+            else if (_hasError)
+            {
+                <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 12px; padding: 20px; color: #9b2c2c; margin-bottom: 24px;">
+                    <div style="display: flex; align-items: center; gap: 8px; font-weight: 750; font-size: 15px; margin-bottom: 6px;">
+                        <span>⚠️</span>
+                        <span>Invitation Link Unavailable</span>
+                    </div>
+                    <p style="margin: 0; font-size: 13.5px; line-height: 1.5;">@_errorMessage</p>
+                </div>
+
+                <div style="text-align: center;">
+                    <a href="/login" class="btn secondary" style="display: inline-block; padding: 12px 24px; border: 1px solid var(--border, #e4e7df); background: #ffffff; color: var(--text, #26332d); font-weight: 700; text-decoration: none; border-radius: 8px; font-size: 13.5px;">
+                        ← Go to Standard Login
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div style="font-size: 11px; font-weight: 800; color: var(--accent, #557c6c); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px;">
+                    ORGANIZATION ONBOARDING
+                </div>
+                <h2 style="font-size: 20px; font-weight: 750; color: var(--text, #26332d); margin: 0 0 10px;">
+                    Welcome, @_orgName!
+                </h2>
+                <p style="color: var(--muted, #6c7870); font-size: 14px; line-height: 1.5; margin: 0 0 24px;">
+                    You have been invited to set up and administer the daycare organization workspace for <strong>@_orgName</strong> on EnjoyEveryday.
+                </p>
+
+                <!-- DETAILS BOX -->
+                <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 12px; padding: 20px 22px; margin-bottom: 28px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13.5px;">
+                        <span style="color: var(--muted, #6c7870);">Organization:</span>
+                        <strong style="color: var(--text, #26332d);">@_orgName</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13.5px;">
+                        <span style="color: var(--muted, #6c7870);">Administrator:</span>
+                        <strong style="color: var(--text, #26332d);">@_adminEmail</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13.5px;">
+                        <span style="color: var(--muted, #6c7870);">Role Assignment:</span>
+                        <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 12px;">
+                            👑 Organization Administrator
+                        </span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13.5px;">
+                        <span style="color: var(--muted, #6c7870);">Token Status:</span>
+                        <span style="color: #2e5a45; font-weight: 700;">🟢 Active (Expires in @_expiresDays days)</span>
+                    </div>
+                </div>
+
+                <!-- ACTIONS -->
+                <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                    <a href="@($"/auth/accept-invite?token={Uri.EscapeDataString(_token)}")" 
+                       data-enhance-nav="false"
+                       style="display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent-dark, #31523c); color: #ffffff; text-decoration: none; font-size: 14.5px; font-weight: 700; padding: 14px 24px; border-radius: 9px; box-shadow: 0 4px 14px rgba(49, 82, 60, 0.25); text-align: center;">
+                        🚀 Accept Invitation &amp; Enter Workspace
+                    </a>
+
+                    <a href="@($"/auth/login?inviteToken={Uri.EscapeDataString(_token)}&returnUrl=/")"
+                       data-enhance-nav="false"
+                       style="display: flex; align-items: center; justify-content: center; gap: 8px; background: #ffffff; border: 1px solid var(--border, #e4e7df); color: var(--text, #26332d); text-decoration: none; font-size: 13.5px; font-weight: 650; padding: 12px 24px; border-radius: 9px; text-align: center;">
+                        <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/><path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/></svg>
+                        <span>Sign In with Google SSO</span>
+                    </a>
+                </div>
+
+                <p style="margin: 0; color: var(--muted, #6c7870); font-size: 12px; line-height: 1.5; text-align: center;">
+                    Upon entering, your profile will be assigned to <strong>@_orgName</strong> and you can configure branches, rooms, and educators.
+                </p>
+            }
+        </div>
+
+        <!-- FOOTER -->
+        <div style="background: var(--surface-soft, #f8f9f5); border-top: 1px solid var(--border, #e4e7df); padding: 18px 36px; text-align: center;">
+            <p style="margin: 0; color: var(--muted, #6c7870); font-size: 11.5px;">
+                © @DateTime.UtcNow.Year EnjoyEveryday. Child-centered early education management.
+            </p>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    private string? Token { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Error { get; set; }
+
+    private bool _isLoading = true;
+    private bool _hasError;
+    private string _errorMessage = string.Empty;
+
+    private string _token = string.Empty;
+    private string _orgName = string.Empty;
+    private string _adminEmail = string.Empty;
+    private int _expiresDays = 7;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _token = Token?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(_token))
+        {
+            _hasError = true;
+            _errorMessage = "No activation token was provided in the invitation link. Please check the URL in your email or contact support.";
+            _isLoading = false;
+            return;
+        }
+
+        if (Error == "invalid_token")
+        {
+            _hasError = true;
+            _errorMessage = "The invitation token is invalid or has already expired. Please request a new invitation link from your platform administrator.";
+            _isLoading = false;
+            return;
+        }
+
+        try
+        {
+            using var conn = await Db.CreateConnectionAsync();
+            var result = await conn.QuerySingleOrDefaultAsync<dynamic>(
+                "SELECT * FROM fn_validate_organization_invitation(@p_token)",
+                new { p_token = _token });
+
+            if (result == null || !(bool)result.out_valid)
+            {
+                _hasError = true;
+                var status = result != null ? (string)result.out_status : "NotFound";
+                _errorMessage = status switch
+                {
+                    "Expired" => "This invitation has expired. Please ask your platform administrator to resend the invitation.",
+                    "Accepted" => "This invitation has already been accepted and activated. You can sign in directly with your account.",
+                    "Revoked" => "This invitation has been revoked. A more recent invitation may have been sent to your email.",
+                    _ => "This invitation token was not recognized. Please check your invitation email or contact platform support."
+                };
+            }
+            else
+            {
+                _orgName = (string)result.out_organization_name;
+                _adminEmail = (string)result.out_admin_email;
+                if (result.out_expires_at != null)
+                {
+                    var exp = (DateTime)result.out_expires_at;
+                    _expiresDays = Math.Max(1, (int)Math.Ceiling((exp - DateTime.UtcNow).TotalDays));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _errorMessage = $"An error occurred while validating the invitation: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}
+

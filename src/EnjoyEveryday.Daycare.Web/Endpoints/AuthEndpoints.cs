@@ -145,10 +145,93 @@ public static class AuthEndpoints
                 new Claim("TenantId", effectiveTenantId.ToString())
             };
 
+            if (result.Properties?.Items.TryGetValue("InviteToken", out var inviteToken) == true && !string.IsNullOrWhiteSpace(inviteToken))
+            {
+                await conn.ExecuteAsync(
+                    "SELECT * FROM fn_accept_organization_invitation(@p_token, @p_user_id)",
+                    new { p_token = inviteToken.Trim(), p_user_id = userId });
+            }
+
             await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
 
             var properties = new AuthenticationProperties { IsPersistent = true };
             return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, activeOrgId, returnUrl, properties);
+        });
+
+        group.MapGet("/accept-invite", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string token, [FromQuery] string? returnUrl) =>
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return Results.Redirect("/auth/activate?error=missing_token");
+            }
+
+            using var conn = await db.CreateConnectionAsync();
+            var val = await conn.QuerySingleOrDefaultAsync<dynamic>(
+                "SELECT * FROM fn_validate_organization_invitation(@p_token)",
+                new { p_token = token.Trim() });
+
+            if (val == null || !(bool)val.out_valid)
+            {
+                return Results.Redirect($"/auth/activate?token={Uri.EscapeDataString(token)}&error=invalid_token");
+            }
+
+            Guid orgId = (Guid)val.out_organization_id;
+            Guid tenantId = (Guid)val.out_tenant_id;
+            string adminEmail = (string)val.out_admin_email;
+            string orgName = (string)val.out_organization_name;
+
+            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
+                "fn_sync_external_login",
+                new
+                {
+                    Provider = "Invitation",
+                    ProviderKey = token.Trim(),
+                    Email = adminEmail,
+                    FirstName = "Admin",
+                    LastName = orgName,
+                    DisplayName = $"{adminEmail} ({orgName})",
+                    Portal = "Daycare"
+                });
+
+            Guid userId;
+            if (syncResult != null && syncResult.out_user_id.HasValue)
+            {
+                userId = syncResult.out_user_id.Value;
+            }
+            else
+            {
+                var userRow = await conn.QuerySingleOrDefaultAsync<dynamic>(
+                    "SELECT id FROM users WHERE normalized_email = UPPER(@Email) LIMIT 1",
+                    new { Email = adminEmail });
+                if (userRow != null)
+                {
+                    userId = (Guid)userRow.id;
+                }
+                else
+                {
+                    return Results.Redirect($"/auth/activate?token={Uri.EscapeDataString(token)}&error=user_creation_failed");
+                }
+            }
+
+            // Mark invitation accepted
+            await conn.ExecuteAsync(
+                "SELECT * FROM fn_accept_organization_invitation(@p_token, @p_user_id)",
+                new { p_token = token.Trim(), p_user_id = userId });
+
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                new Claim(ClaimTypes.Name, $"{adminEmail} ({orgName})"),
+                new Claim("DisplayName", $"{adminEmail} ({orgName})"),
+                new Claim(ClaimTypes.Email, adminEmail),
+                new Claim("TenantId", tenantId.ToString()),
+                new Claim(ClaimTypes.Role, "OrganizationAdmin")
+            };
+
+            await BuildAuthClaimsAsync(conn, claims, userId, orgId);
+
+            var properties = new AuthenticationProperties { IsPersistent = true };
+            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, orgId, returnUrl ?? "/management/branch-dashboard", properties);
         });
 
         group.MapPost("/set-organization", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
