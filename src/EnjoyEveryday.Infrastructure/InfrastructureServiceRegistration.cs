@@ -117,6 +117,12 @@ public static class InfrastructureServiceRegistration
                 ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             });
 
+        // Facility Profile (About Us & Contact Us) and Inquiries
+        services.AddScoped<EnjoyEveryday.Application.Services.IFacilityProfileService, EnjoyEveryday.Infrastructure.Services.FacilityProfileService>();
+
+        // QR Code Generator (Pure Managed C# Generator for Payment Invoices & Checkouts)
+        services.AddSingleton<EnjoyEveryday.Application.Services.IQrCodeService, EnjoyEveryday.Infrastructure.Services.Commercial.QrCodeService>();
+
         // Storage (Provider-Independent Object Storage Abstraction + Multi-Provider Adapters)
         services.AddSingleton<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>();
         services.AddSingleton<EnjoyEveryday.Domain.Storage.IObjectStorage>(sp => sp.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.LocalDiskObjectStorage>());

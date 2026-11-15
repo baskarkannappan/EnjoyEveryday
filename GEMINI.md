@@ -169,10 +169,12 @@ Every agent working in this repository MUST strictly follow these AI and cost-co
 
 ---
 
-## 9. Autonomous Execution & Modification Policy
+## 9. Autonomous Execution, Build & Git Policies
 
-- **Full Permission Granted**: The agent has full, standing permission to make necessary code, configuration, database schema, and migration changes.
-- **Do Not Prompt for Permission**: Proactively implement, test, and apply changes directly without asking for permission or confirmation before editing files or running operational database scripts.
+- **Full Permission Granted for Code & DB**: The agent has full, standing permission to make necessary code, configuration, database schema, and migration changes proactively without asking for permission.
+- **CRITICAL - NO AUTOMATIC BUILDS**: Do NOT run `dotnet build` (or any compilation command) unless the user explicitly requests it in their prompt. This prevents unnecessary token usage and build latency.
+- **CRITICAL - NO AUTOMATIC COMMITS OR PUSHES**: Do NOT run `git commit` or `git push` unless the user explicitly instructs you to do so. Keep changes staged or in the working tree until requested.
+- **MANDATORY - ALWAYS UPDATE OKF FILES**: Every agent MUST always update the corresponding `.okf/` document(s) immediately after introducing or modifying any feature, architecture, database table, or flow.
 
 ---
 

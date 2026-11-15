@@ -84,3 +84,12 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `activity_embeddings`: Isolated satellite table storing vector embeddings for curriculum lesson templates and activity matching.
 * `daycare_policy_embeddings`: Isolated satellite table storing chunked vector embeddings for daycare operating policies, regulatory handbooks, and FAQs.
 
+## 10. Facility Profiles & Contact Inquiries (2 Tables)
+* `facility_profiles`: Custom branding, logo, motto, mission story, campus gallery photos, operating hours, emergency lines, and location coordinates for organizations and individual branches. Supports automatic fallback from branch to organization default.
+* `contact_inquiries`: Public and authenticated customer/parent contact submissions with categorization, subject, message, and workflow status tracking (`New`, `InReview`, `Resolved`).
+
+## 11. Regional Pricing & Tariff Layers (2 Tables)
+* `pricing_regions`: Geographic pricing zones and tariff layers (e.g. `REG-TIER1-METRO`, `REG-TIER2-GROWTH`, `REG-SUBURBAN-EMERGING`, `REG-GLOBAL-DEFAULT`) with default currency, matched municipal cities JSONB, matched states JSONB, display order, and default fallback indicator.
+* `region_plan_tariffs`: Regional pricing schedule matrix linking base subscription plans to regional tariff zones with localized rates, frequencies (Monthly, Quarterly, Annual), and prepayment discount percentages.
+
+

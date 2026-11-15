@@ -79,6 +79,40 @@ public class Tariff
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+public class PricingRegion
+{
+    public Guid Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string Currency { get; set; } = "USD";
+    public List<string> MatchedCities { get; set; } = new();
+    public List<string> MatchedStates { get; set; } = new();
+    public bool IsDefault { get; set; }
+    public bool IsActive { get; set; } = true;
+    public int DisplayOrder { get; set; }
+    public List<RegionPlanTariff> Tariffs { get; set; } = new();
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public class RegionPlanTariff
+{
+    public Guid Id { get; set; }
+    public Guid RegionId { get; set; }
+    public Guid PlanId { get; set; }
+    public string PlanCode { get; set; } = string.Empty;
+    public string PlanName { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public BillingFrequency Frequency { get; set; } = BillingFrequency.Monthly;
+    public decimal Price { get; set; }
+    public decimal DiscountPercentage { get; set; }
+    public string Currency { get; set; } = "USD";
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public class OrganizationSubscription
 {
     public Guid Id { get; set; }

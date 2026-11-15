@@ -94,5 +94,34 @@ tags:
   - `ChildEnrollmentWizard.razor`: Pre-validates child quota on wizard launch; blocks progression with informative error banners when maximum child limit is reached.
   - Consistent message pattern: `"You are exceeding your quota limit. Your current plan '{planName}' allows a maximum of {maxAllowed} {resourceType} (currently using {currentCount}/{maxAllowed}). Please upgrade your subscription plan to add more."`
 
+### 7. In-Process QR Code Remittance & Platform Fee Payments
+* **Components & Services**:
+  - `IQrCodeService` / `QrCodeService`: Zero-dependency, pure managed C# QR Code engine generating high-contrast SVG, standard PNG byte streams, and Data URIs in < 1 millisecond.
+  - `MediaEndpoints.cs`: Exposes `/api/media/qrcode?data={content}&format={svg|png}` for lightweight cached HTTP delivery.
+  - `AzureCommunicationEmailService.cs`: Automatically compiles and embeds high-contrast PNG QR codes directly into invoice notice emails (`SendPlatformInvoiceNoticeAsync`).
+  - `InvoiceDetailsModal.razor`: Renders scannable QR Code remittance block on printable PDF invoice statements and live preview modal in Daycare Portal (`OrganizationBillingView.razor`) and Platform Admin (`BillingPage.razor`).
+* **Payload Encoding**:
+  - Automatically formats NPCI UPI payment payloads (`upi://pay?pa=billing@enjoyeveryday&pn=...&am=...&cu=INR&tn=Invoice%20...&tr=...`) for instant settlement via Google Pay, PhonePe, Paytm, or BHIM when currency is INR.
+  - Formats universal mobile checkout URLs for international card payments, Apple Pay, and Google Pay.
+* **Cost & Performance Architecture**:
+  - $0/month cost: 100% in-process execution with zero external 3rd-party QR APIs, zero cloud egress overhead, and full offline resilience.
+
+### 8. Location-Based Regional Pricing Zones & Tariff Layers
+* **Architecture Pattern**: Decoupled **Base Plan + Regional Tariff Overlay**.
+  - **Base Plans (`SubscriptionPlan`)**: Maintain quota allowances (Max Branches, Max Classrooms, Max Children, AI Features) and global standard base rates once across the entire platform.
+  - **Pricing Regions (`pricing_regions`)**: Define geographic pricing layers (e.g. `REG-TIER1-METRO`, `REG-TIER2-GROWTH`, `REG-SUBURBAN-EMERGING`, `REG-GLOBAL-DEFAULT`) with assigned currency (`USD`, `INR`, `EUR`) and JSON arrays of matched municipal cities/states.
+  - **Tariff Layer Pricing Matrix (`region_plan_tariffs`)**: Overlays customized localized rates (e.g., Bloom Plan is $399 in Tier 1 Metros, $299 in Tier 2 Growth Hubs, $199 in Suburban/Regional, and $299 Global Standard).
+* **Database Stored Function & Procedure**:
+  - `fn_resolve_pricing_region(p_location)`: Resolves an organization's freeform location string (e.g., "Austin, TX", "New York, NY", or "Mumbai") against `matched_cities` and `matched_states`, automatically falling back to `is_default = true`.
+  - `sp_assign_organization_regional_plan(p_org_id, p_region_id, p_plan_id, p_tariff_id)`: Atomically updates an organization's assigned region, plan quotas, and tariff schedule in PostgreSQL.
+* **Platform Admin UI & Experience**:
+  - **`PlansPage.razor`**: Includes an interactive **"Regional Tariff Layers"** tab side-by-side with Base Subscription Plans, displaying all active pricing zones, matched cities/states tags, and full localized tariff schedules.
+  - **`OrganizationsPage.razor`**:
+    - **Live Location Matcher**: Real-time detection banner auto-selects the matching pricing zone as soon as the administrator enters or edits the organization location.
+    - **Tariff Zone Override**: Administrators can manually pick or override the assigned region from a dropdown.
+    - **Dynamic Regional Rates**: The plan selection and billing tariff schedules dynamically recalculate and preview localized prices for the selected region.
+    - **Directory Visibility**: Organization directory table displays the 📍 region badge alongside the active plan and schedule.
+
+
 
 

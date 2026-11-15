@@ -15,6 +15,9 @@ public partial class BillingPage : ComponentBase, IDisposable
     private IPlatformAdminService PlatformService { get; set; } = default!;
 
     [Inject]
+    private IEmailNotificationService? EmailNotificationService { get; set; }
+
+    [Inject]
     private IAppNotificationService NotificationService { get; set; } = default!;
 
     [Inject]
@@ -419,7 +422,8 @@ public partial class BillingPage : ComponentBase, IDisposable
             }
 
             await BillingService.PublishInvoiceAsync(inv.Id);
-            ShowToast($"Invoice {inv.InvoiceNumber} published and available to the daycare organization.", isError: false);
+            DispatchInvoicePublishedEmail(inv);
+            ShowToast($"Invoice {inv.InvoiceNumber} published with QR payment code and sent to the daycare organization.", isError: false);
             CloseModals();
             await LoadDataAsync();
         }
@@ -441,13 +445,40 @@ public partial class BillingPage : ComponentBase, IDisposable
             }
 
             var inv = await BillingService.PublishInvoiceAsync(invoiceId);
-            ShowToast($"Invoice {inv.InvoiceNumber} successfully published.", isError: false);
+            DispatchInvoicePublishedEmail(inv);
+            ShowToast($"Invoice {inv.InvoiceNumber} successfully published with QR code sent to daycare.", isError: false);
             await LoadDataAsync();
         }
         catch (Exception ex)
         {
             await HandleErrorAsync(ex, "Failed to publish invoice.");
         }
+    }
+
+    private void DispatchInvoicePublishedEmail(Invoice inv)
+    {
+        if (EmailNotificationService == null) return;
+        try
+        {
+            var org = _organizations.FirstOrDefault(o => o.Id == inv.OrganizationId);
+            var targetEmail = !string.IsNullOrWhiteSpace(inv.BillingContactEmail) ? inv.BillingContactEmail : org?.AdminEmail;
+            if (!string.IsNullOrWhiteSpace(targetEmail))
+            {
+                var orgName = org?.Name ?? "Daycare Organization";
+                var daycareUrl = "https://daycare.enjoyeveryday.com/billing";
+                _ = EmailNotificationService.SendPlatformInvoiceNoticeAsync(
+                    targetEmail,
+                    orgName,
+                    inv.InvoiceNumber,
+                    inv.TotalAmount,
+                    inv.Currency ?? "INR",
+                    inv.DueDate.DateTime,
+                    inv.Description ?? "Monthly Platform Subscription",
+                    daycareUrl,
+                    inv.TenantId);
+            }
+        }
+        catch { }
     }
 
     private void OpenRecordPaymentModal(Invoice inv)

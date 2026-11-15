@@ -57,13 +57,13 @@ Complies with statutory daycare regulatory licensing requirements by maintaining
   - [`ManageTeacherClassroomsModal.razor`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Users/ManageTeacherClassroomsModal.razor): Room assignment manager.
   - Accessible via `UsersByRoleView.razor`, `TeachersDirectoryView.razor`, and `TeacherProfile.razor`.
 
-## Teacher Creation & Edit Wizard Architecture
-* **Routes & Components**:
-  - Page: `src/EnjoyEveryday.Daycare.Web/Components/Pages/Organization/TeacherWizard.razor` (`/teachers/new`, `/teachers/edit/{Id:guid}`).
-  - Shared Wizard: `src/EnjoyEveryday.UI.Shared/Components/TeacherWizard/TeacherCreationWizard.razor`.
-* **Design & Usability System**:
-  - Employs EnjoyEveryday Scandinavian sage design (`--surface: #ffffff`, `--border: #e4e7df`, `--radius: 18px`, `--shadow: 0 8px 30px rgba(40, 55, 47, .06)`).
-  - **Desktop**: Features a sticky sidebar (`WizardSidebar`) with a scrollable 22-step list (`max-height: calc(100vh - 220px)`) that stays in view without stretching viewport bounds.
-  - **Mobile (`<= 768px`)**: Single-column responsive layout replacing the vertical sidebar with a compact mobile stepper header, linear progress track, and swipeable step chips. Actions stack with full-width primary touch targets (`Next →`, `Activate ✓`) and responsive secondary buttons.
+## Organization Hierarchy & Interactive Tree Visualization
+* **Component Location**: [`OrganizationHierarchyView.razor`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Users/OrganizationHierarchyView.razor) and [`OrganizationHierarchyView.razor.css`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Users/OrganizationHierarchyView.razor.css).
+* **Visual Standards & Design System Compliance**:
+  - Strictly follows the EnjoyEveryday warm Scandinavian theme (`--surface: #ffffff`, `--border: #e4e7df`, `--text: #26332d`, `--muted: #6c7870`, `--accent: #557c6c`).
+  - **Headquarters Card (`.org-card`)**: High-contrast white card surface (`--surface: #ffffff`), deep forest text, subtle border lines, light soft background for leadership admin chips (`.org-admins-section`), and crisp stat pills (`.org-stats-bar`). Avoids monolithic dark green fills for maximum legibility.
+  - **Branch Headers (`.branch-card-header`)**: Uses a light Scandinavian gradient (`linear-gradient(180deg, #ffffff 0%, var(--surface-soft, #f8f9f5) 100%)`) with dark slate headings (`#26332d`), soft sage badges, and high-contrast metrics pills (`.branch-quick-stats`) replacing low-contrast dark forest backgrounds.
+  - **Tree Connectors**: Soft sage distributor lines and stems (`#b5c7bc`) providing crisp visual hierarchy against the dotted background grid.
+
 
 

@@ -36,6 +36,9 @@ public class PlatformOrganizationDto
     public DateTimeOffset? NextBillingDate { get; set; }
     public string AdminEmail { get; set; } = string.Empty;
     public string LifecycleStageKey { get; set; } = "Active";
+    public Guid? PricingRegionId { get; set; }
+    public string? PricingRegionCode { get; set; }
+    public string? PricingRegionName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -104,6 +107,7 @@ public interface IPlatformAdminService
         string adminEmail, 
         int branchCount = 1,
         Guid? tariffId = null,
+        Guid? pricingRegionId = null,
         CancellationToken cancellationToken = default);
     Task<bool> UpdateOrganizationAsync(
         Guid id, 
@@ -169,6 +173,14 @@ public interface IPlatformAdminService
         Guid planId, 
         Guid? tariffId, 
         CancellationToken cancellationToken = default);
+
+    // Regional Pricing & Tariff Layers
+    Task<List<PricingRegion>> GetPricingRegionsAsync(CancellationToken cancellationToken = default);
+    Task<PricingRegion?> ResolvePricingRegionByLocationAsync(string location, CancellationToken cancellationToken = default);
+    Task<List<RegionPlanTariff>> GetRegionPlanTariffsAsync(Guid regionId, CancellationToken cancellationToken = default);
+    Task SavePricingRegionAsync(PricingRegion region, CancellationToken cancellationToken = default);
+    Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken cancellationToken = default);
+    Task<bool> AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, CancellationToken cancellationToken = default);
 
     // Commercial & Billing Operations
     Task<List<Invoice>> GetInvoicesAsync(string? status = null, CancellationToken cancellationToken = default);

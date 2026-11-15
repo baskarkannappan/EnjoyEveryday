@@ -20,17 +20,20 @@ public class AzureCommunicationEmailService : IEmailNotificationService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<AzureCommunicationEmailService> _logger;
+    private readonly IQrCodeService _qrCodeService;
 
     public AzureCommunicationEmailService(
         IConfiguration configuration,
         IDbConnectionFactory connectionFactory,
         ITenantContext tenantContext,
-        ILogger<AzureCommunicationEmailService> logger)
+        ILogger<AzureCommunicationEmailService> logger,
+        IQrCodeService? qrCodeService = null)
     {
         _configuration = configuration;
         _connectionFactory = connectionFactory;
         _tenantContext = tenantContext;
         _logger = logger;
+        _qrCodeService = qrCodeService ?? new EnjoyEveryday.Infrastructure.Services.Commercial.QrCodeService();
     }
 
     public async Task<EmailNotificationResult> SendEmailAsync(
@@ -486,6 +489,10 @@ public class AzureCommunicationEmailService : IEmailNotificationService
     {
         var subject = $"Platform Commercial Invoice #{invoiceNumber} for {organizationName}";
 
+        // Generate instant payment QR code data URI
+        var qrPayload = _qrCodeService.BuildInvoicePaymentPayload(invoiceNumber, amount, currency, Guid.Empty, invoicePortalUrl);
+        var qrDataUri = _qrCodeService.GeneratePngDataUri(qrPayload, moduleSize: 5, border: 2);
+
         var body = BuildBrandedEmailTemplate(
             headerEyebrow: "PLATFORM BILLING STATEMENT",
             headerTitle: $"Invoice #{invoiceNumber}",
@@ -495,7 +502,14 @@ public class AzureCommunicationEmailService : IEmailNotificationService
                 <div style='margin-bottom: 8px;'><strong>Invoice Number:</strong> #{invoiceNumber}</div>
                 <div style='margin-bottom: 8px;'><strong>Description:</strong> {invoiceDescription}</div>
                 <div style='margin-bottom: 8px;'><strong>Total Due:</strong> <span style='font-size: 18px; font-weight: 800; color: #31523c;'>{currency} {amount:N2}</span></div>
-                <div><strong>Due Date:</strong> {dueDate:dd MMMM yyyy}</div>",
+                <div style='margin-bottom: 14px;'><strong>Due Date:</strong> {dueDate:dd MMMM yyyy}</div>
+                
+                <!-- Instant Mobile Payment QR Code Block -->
+                <div style='margin-top: 14px; padding: 16px; background: #ffffff; border: 1px dashed #52745e; border-radius: 12px; text-align: center;'>
+                    <div style='font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.5px; color: #52745e; margin-bottom: 8px;'>📱 Scan with Phone to Pay Instantly</div>
+                    <img src='{qrDataUri}' width='150' height='150' alt='Scan to Pay QR Code' style='display: block; margin: 0 auto 8px; border-radius: 8px; border: 1px solid #e4e7df;' />
+                    <div style='font-size: 11.5px; color: #6c7870;'>Scan with your phone camera or banking app to pay {currency} {amount:N2} securely.</div>
+                </div>",
             ctaButtonText: "💳 View & Pay Invoice",
             ctaUrl: invoicePortalUrl,
             footerNote: "Payment receipts will be issued automatically upon transaction verification. For payment inquiries, reply directly to this message."

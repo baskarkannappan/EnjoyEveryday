@@ -34,3 +34,5 @@ This bundle covers feature workflows, components, service interactions, and data
 * **[parent-portal.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/parent-portal.md)**: Parent timeline, daily feed, media consent verification, and push alerts.
 * **[billing-and-commercial.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/billing-and-commercial.md)**: Invoices, fee structures, marketplace kits, and warehouse inventory.
 * **[classroom-communications.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/classroom-communications.md)**: Shift handovers, staff announcements, and incident reports.
+* **[storage-and-media-explorer.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/storage-and-media-explorer.md)**: Platform and Org Admin object storage telemetry, file registry, and branch/classroom volume breakdown.
+* **[facility-profile-and-contact.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/features/facility-profile-and-contact.md)**: Org and Branch Admin customizable About Us & Contact Us profiles (logo, motto, gallery, location, hours) with parent/teacher view and interactive contact inquiries form.

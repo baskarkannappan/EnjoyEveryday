@@ -25,6 +25,10 @@ public class PlatformDbOrganizationRecord
     public DateTime? CreatedAt { get; set; }
     public int BranchCount { get; set; }
     public string? AdminEmail { get; set; }
+    public Guid? PricingRegionId { get; set; }
+    public string? PricingRegionCode { get; set; }
+    public string? PricingRegionName { get; set; }
+    public Guid? TariffId { get; set; }
 }
 
 public class PlatformDbBranchRecord
@@ -97,4 +101,11 @@ public interface IPlatformAdminRepository
     Task UpdateOrganizationAccountStatusAsync(Guid organizationId, string status, string? reason, CancellationToken ct = default);
     Task UpdateOrganizationPlanQuotaAsync(Guid organizationId, Guid planId, string planCode, string planName, int maxBranches, int maxClassrooms, int maxChildren, bool includesAi, CancellationToken ct = default);
     Task<OrganizationQuotaUsage?> GetOrganizationQuotaUsageAsync(Guid organizationId, CancellationToken ct = default);
+
+    Task<List<PricingRegion>> GetPricingRegionsAsync(CancellationToken ct = default);
+    Task<PricingRegion?> ResolvePricingRegionByLocationAsync(string location, CancellationToken ct = default);
+    Task<List<RegionPlanTariff>> GetRegionPlanTariffsAsync(Guid regionId, CancellationToken ct = default);
+    Task SavePricingRegionAsync(PricingRegion region, CancellationToken ct = default);
+    Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken ct = default);
+    Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, CancellationToken ct = default);
 }

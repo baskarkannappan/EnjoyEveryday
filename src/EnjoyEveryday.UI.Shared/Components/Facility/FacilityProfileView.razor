@@ -1,0 +1,1142 @@
+@using System
+@using System.Collections.Generic
+@using System.Threading.Tasks
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Shared.Tenancy
+@inject IFacilityProfileService FacilityProfileService
+@inject IUserContext UserContext
+
+<div class="facility-profile-container">
+    @if (_branches != null && _branches.Count > 0)
+    {
+        <!-- Campus Selector Bar (Allows all organization roles to explore any campus or org overview) -->
+        <div class="facility-campus-bar">
+            <div class="campus-bar-label">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="campus-bar-icon"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                <span>Select Campus:</span>
+            </div>
+            <div class="campus-pills-list">
+                <button type="button" class="campus-pill @(!_activeBranchId.HasValue ? "active" : "")" @onclick="() => SwitchCampus(null)">
+                    <span class="campus-dot"></span>
+                    <span>Organization Overview</span>
+                </button>
+                @foreach (var b in _branches)
+                {
+                    <button type="button" class="campus-pill @(_activeBranchId == b.Id ? "active" : "")" @onclick="() => SwitchCampus(b.Id)">
+                        <span class="campus-dot"></span>
+                        <span>@b.Name</span>
+                    </button>
+                }
+            </div>
+            @if (CanEdit)
+            {
+                <div class="campus-bar-admin-action">
+                    <a href="@($"/organization/profile-customizer{(_activeBranchId.HasValue ? $"/{_activeBranchId.Value}" : "")}")" class="btn-edit-profile-pill">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                        <span>Edit Campus Profile</span>
+                    </a>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading facility information...</p>
+        </div>
+    }
+    else if (_profile == null)
+    {
+        <div class="empty-state-card">
+            <span class="empty-icon">🌿</span>
+            <h3>No Profile Information Published Yet</h3>
+            <p>The administration team is currently setting up this facility's About Us and Contact information.</p>
+        </div>
+    }
+    else
+    {
+        <!-- Hero Banner with Cover Photo & Identity -->
+        <div class="facility-hero @(string.IsNullOrEmpty(_profile.CoverMediaUrl) ? "facility-hero-clean" : "facility-hero-cover")" style="@(string.IsNullOrEmpty(_profile.CoverMediaUrl) ? "" : $"background-image: linear-gradient(rgba(20, 30, 25, 0.45), rgba(20, 30, 25, 0.85)), url('{_profile.CoverMediaUrl}'); background-size: cover; background-position: center;")">
+            <div class="hero-overlay-content">
+                <div class="hero-identity-row">
+                    @if (!string.IsNullOrEmpty(_profile.LogoMediaUrl))
+                    {
+                        <div class="facility-logo-wrap">
+                            <img src="@_profile.LogoMediaUrl" alt="@_profile.Title logo" class="facility-logo-img" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="facility-logo-placeholder">
+                            <span>🌱</span>
+                        </div>
+                    }
+
+                    <div class="hero-text-block">
+                        <div class="facility-badge">
+                            @(_profile.IsBranchLevel ? (_profile.BranchName ?? "Campus Facility") : "Organization Headquarters")
+                        </div>
+                        <h1 class="facility-title">@_profile.Title</h1>
+                        @if (!string.IsNullOrEmpty(_profile.Motto))
+                        {
+                            <p class="facility-motto">“@_profile.Motto”</p>
+                        }
+                    </div>
+                </div>
+
+                <!-- Quick Action Bar -->
+                <div class="quick-action-bar">
+                    @if (!string.IsNullOrEmpty(_profile.Phone))
+                    {
+                        <a href="tel:@_profile.Phone" class="action-pill hero-pill" title="Call center directly">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="pill-svg"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                            <span>@_profile.Phone</span>
+                        </a>
+                    }
+                    @if (!string.IsNullOrEmpty(_profile.Email))
+                    {
+                        <a href="mailto:@_profile.Email" class="action-pill hero-pill" title="Email center">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="pill-svg"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+                            <span>@_profile.Email</span>
+                        </a>
+                    }
+                    @if (!string.IsNullOrEmpty(FullAddress))
+                    {
+                        <a href="@GetDirectionsLink()" target="_blank" rel="noopener noreferrer" class="action-pill hero-pill" title="Open Google Maps">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="pill-svg"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                            <span>@_profile.City, @_profile.State</span>
+                        </a>
+                    }
+                    @if (!string.IsNullOrEmpty(_profile.OperatingHours))
+                    {
+                        <div class="action-pill hero-pill" title="Operating Hours">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="pill-svg"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            <span>@_profile.OperatingHours</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- 2-Column Content Layout -->
+        <div class="facility-layout-grid">
+            <!-- Left Column: Story, Values, Gallery -->
+            <div class="facility-main-column">
+                <!-- About Story Section -->
+                <div class="content-card">
+                    <div class="card-header">
+                        <span class="section-icon">📖</span>
+                        <h2>About Our Center</h2>
+                    </div>
+                    <div class="story-body">
+                        @if (!string.IsNullOrWhiteSpace(_profile.AboutStory))
+                        {
+                            <p class="story-text">@_profile.AboutStory</p>
+                        }
+                        else
+                        {
+                            <p class="story-placeholder">Welcome to our daycare family. We are dedicated to nurturing and empowering every young mind.</p>
+                        }
+                    </div>
+
+                    @if (_profile.CoreValues != null && _profile.CoreValues.Count > 0)
+                    {
+                        <div class="values-section">
+                            <h3>Our Pillars &amp; Core Values</h3>
+                            <div class="values-grid">
+                                @foreach (var val in _profile.CoreValues)
+                                {
+                                    <div class="value-item">
+                                        <span class="value-check">✓</span>
+                                        <span>@val</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Campus Photo Gallery -->
+                @if (_profile.GalleryMediaUrls != null && _profile.GalleryMediaUrls.Count > 0)
+                {
+                    <div class="content-card">
+                        <div class="card-header">
+                            <span class="section-icon">🖼️</span>
+                            <h2>Campus &amp; Learning Spaces</h2>
+                        </div>
+                        <div class="gallery-grid">
+                            @foreach (var photoUrl in _profile.GalleryMediaUrls)
+                            {
+                                <div class="gallery-photo-card" @onclick="() => _activeLightboxUrl = photoUrl">
+                                    <img src="@photoUrl" alt="Campus learning space" class="gallery-photo-img" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Right Column: Location Details & Interactive Contact Form -->
+            <div class="facility-sidebar-column">
+                <!-- Location & Direct Info Card -->
+                <div class="content-card contact-info-card">
+                    <div class="card-header">
+                        <span class="section-icon">🧭</span>
+                        <h2>Location &amp; Hours</h2>
+                    </div>
+
+                    <div class="contact-details-list">
+                        @if (!string.IsNullOrEmpty(FullAddress))
+                        {
+                            <div class="detail-row">
+                                <span class="detail-icon">📍</span>
+                                <div>
+                                    <strong>Campus Address</strong>
+                                    <p class="detail-text">@FullAddress</p>
+                                    @if (!string.IsNullOrEmpty(_profile.DirectionsNotes))
+                                    {
+                                        <p class="directions-note">💡 @_profile.DirectionsNotes</p>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_profile.OperatingHours))
+                        {
+                            <div class="detail-row">
+                                <span class="detail-icon">🕒</span>
+                                <div>
+                                    <strong>Hours of Operation</strong>
+                                    <p class="detail-text">@_profile.OperatingHours</p>
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_profile.EmergencyPhone))
+                        {
+                            <div class="detail-row emergency-row">
+                                <span class="detail-icon">🚨</span>
+                                <div>
+                                    <strong>Emergency Line</strong>
+                                    <a href="tel:@_profile.EmergencyPhone" class="emergency-link">@_profile.EmergencyPhone</a>
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_profile.SecondaryPhone))
+                        {
+                            <div class="detail-row">
+                                <span class="detail-icon">📞</span>
+                                <div>
+                                    <strong>Front Desk / Alternate</strong>
+                                    <a href="tel:@_profile.SecondaryPhone" class="phone-link">@_profile.SecondaryPhone</a>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="card-footer-action">
+                        <a href="@GetDirectionsLink()" target="_blank" rel="noopener noreferrer" class="btn secondary btn-full-width">
+                            <span>Open in Google Maps &rarr;</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Interactive Contact Us Form -->
+                <div class="content-card inquiry-form-card" id="contact-form-section">
+                    <div class="card-header">
+                        <span class="section-icon">💬</span>
+                        <h2>Send Us a Message</h2>
+                    </div>
+
+                    @if (_inquirySent)
+                    {
+                        <div class="inquiry-success-banner">
+                            <span class="success-icon">✨</span>
+                            <h4>Inquiry Received!</h4>
+                            <p>Thank you for reaching out. Our administration team has received your message and will respond promptly.</p>
+                            <button type="button" class="btn secondary" @onclick="() => _inquirySent = false">Send Another Message</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <form @onsubmit="HandleSubmitInquiry" class="contact-form">
+                            <div class="form-group">
+                                <label for="senderName">Your Name <span class="req">*</span></label>
+                                <input id="senderName" class="form-input" @bind="_inquiryModel.SenderName" placeholder="e.g. Sarah Jenkins" required />
+                            </div>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="senderEmail">Email Address <span class="req">*</span></label>
+                                    <input id="senderEmail" type="email" class="form-input" @bind="_inquiryModel.SenderEmail" placeholder="sarah@example.com" required />
+                                </div>
+                                <div class="form-group">
+                                    <label for="senderPhone">Phone Number</label>
+                                    <input id="senderPhone" type="tel" class="form-input" @bind="_inquiryModel.SenderPhone" placeholder="(416) 555-0123" />
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="category">Inquiry Topic</label>
+                                <select id="category" class="form-select" @bind="_inquiryModel.Category">
+                                    <option value="General">General Question</option>
+                                    <option value="Tour Request">Schedule a Campus Tour</option>
+                                    <option value="Enrollment">Admissions &amp; Waitlist</option>
+                                    <option value="Absence">Absence / Schedule Notice</option>
+                                    <option value="Feedback">Feedback or Appreciation</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="subject">Subject <span class="req">*</span></label>
+                                <input id="subject" class="form-input" @bind="_inquiryModel.Subject" placeholder="Brief summary of your inquiry" required />
+                            </div>
+
+                            <div class="form-group">
+                                <label for="message">Message <span class="req">*</span></label>
+                                <textarea id="message" rows="4" class="form-textarea" @bind="_inquiryModel.Message" placeholder="How can our daycare educators assist you today?" required></textarea>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(_inquiryError))
+                            {
+                                <div class="form-error-alert">
+                                    ⚠️ @_inquiryError
+                                </div>
+                            }
+
+                            <button type="submit" class="primary btn-submit-inquiry" disabled="@_isSubmittingInquiry">
+                                @if (_isSubmittingInquiry)
+                                {
+                                    <span>Sending...</span>
+                                }
+                                else
+                                {
+                                    <span>✉️ Send Inquiry to Center</span>
+                                }
+                            </button>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Lightbox Modal for Gallery Images -->
+    @if (!string.IsNullOrEmpty(_activeLightboxUrl))
+    {
+        <div class="lightbox-overlay" @onclick="() => _activeLightboxUrl = null">
+            <div class="lightbox-dialog" @onclick:stopPropagation>
+                <button type="button" class="lightbox-close" @onclick="() => _activeLightboxUrl = null">✕</button>
+                <img src="@_activeLightboxUrl" alt="Enlarged campus photo" class="lightbox-img" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Guid OrganizationId { get; set; }
+
+    [Parameter]
+    public Guid? BranchId { get; set; }
+
+    private FacilityProfileDto? _profile;
+    private List<BranchOptionDto> _branches = new();
+    private Guid? _activeBranchId;
+    private bool _isLoading = true;
+    private bool _isSubmittingInquiry = false;
+    private bool _inquirySent = false;
+    private string? _inquiryError;
+    private string? _activeLightboxUrl;
+
+    private CreateContactInquiryRequest _inquiryModel = new();
+
+    private bool CanEdit =>
+        UserContext.Roles.Any(r => r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
+                                  r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+                                  r.Equals("Administrator", StringComparison.OrdinalIgnoreCase)) ||
+        UserContext.HasPermission("FacilityProfile:Manage");
+
+    private string FullAddress => string.Join(", ", new[]
+    {
+        _profile?.StreetAddress,
+        _profile?.City,
+        _profile?.State,
+        _profile?.PostalCode,
+        _profile?.Country
+    }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProfileAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (BranchId != _activeBranchId && BranchId.HasValue)
+        {
+            _activeBranchId = BranchId;
+        }
+        await LoadProfileAsync();
+    }
+
+    private async Task LoadProfileAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var orgId = OrganizationId != Guid.Empty ? OrganizationId : (UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001"));
+            _activeBranchId ??= (BranchId ?? UserContext.BranchId);
+
+            _branches = (await FacilityProfileService.GetPublicBranchesAsync(orgId)).ToList();
+            _profile = await FacilityProfileService.GetProfileAsync(orgId, _activeBranchId);
+
+            _inquiryModel.OrganizationId = orgId;
+            _inquiryModel.BranchId = _activeBranchId;
+
+            if (UserContext.IsAuthenticated)
+            {
+                _inquiryModel.SenderEmail = UserContext.Email;
+                _inquiryModel.SenderUserId = UserContext.UserId;
+            }
+        }
+        catch (Exception ex)
+        {
+            _inquiryError = "Could not load facility details: " + ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SwitchCampus(Guid? branchId)
+    {
+        _activeBranchId = branchId;
+        _inquirySent = false;
+        _inquiryError = null;
+        await LoadProfileAsync();
+    }
+
+    private async Task HandleSubmitInquiry()
+    {
+        if (string.IsNullOrWhiteSpace(_inquiryModel.SenderName) ||
+            string.IsNullOrWhiteSpace(_inquiryModel.SenderEmail) ||
+            string.IsNullOrWhiteSpace(_inquiryModel.Subject) ||
+            string.IsNullOrWhiteSpace(_inquiryModel.Message))
+        {
+            _inquiryError = "Please fill in all required fields.";
+            return;
+        }
+
+        _isSubmittingInquiry = true;
+        _inquiryError = null;
+
+        try
+        {
+            await FacilityProfileService.SubmitInquiryAsync(_inquiryModel);
+            _inquirySent = true;
+            _inquiryModel = new CreateContactInquiryRequest
+            {
+                OrganizationId = _profile?.OrganizationId ?? OrganizationId,
+                BranchId = _profile?.BranchId ?? BranchId,
+                SenderEmail = UserContext.Email,
+                SenderUserId = UserContext.UserId
+            };
+        }
+        catch (Exception ex)
+        {
+            _inquiryError = "Failed to submit inquiry: " + ex.Message;
+        }
+        finally
+        {
+            _isSubmittingInquiry = false;
+        }
+    }
+
+    private string GetDirectionsLink()
+    {
+        if (!string.IsNullOrEmpty(_profile?.MapUrl))
+            return _profile.MapUrl;
+
+        var encoded = Uri.EscapeDataString(FullAddress);
+        return $"https://www.google.com/maps/search/?api=1&query={encoded}";
+    }
+}
+
+<style>
+.facility-profile-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    font-family: var(--ee-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+    color: var(--text, #26332d);
+}
+
+/* Campus Selector Bar */
+.facility-campus-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: var(--radius, 14px);
+    box-shadow: 0 2px 10px rgba(40, 55, 47, 0.04);
+    padding: 10px 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.campus-bar-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 750;
+    color: var(--muted, #6c7870);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.campus-bar-icon {
+    color: var(--accent, #52745e);
+}
+
+.campus-pills-list {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.campus-pill {
+    background: var(--surface-soft, #f8f9f5);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 9999px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 650;
+    color: var(--text, #26332d);
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.campus-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #a0aec0;
+    transition: background 0.15s ease;
+}
+
+.campus-pill:hover {
+    background: var(--accent-light, #e6eee9);
+    border-color: #c9d5cb;
+    color: var(--accent-dark, #31523c);
+}
+
+.campus-pill:hover .campus-dot {
+    background: var(--accent, #557c6c);
+}
+
+.campus-pill.active {
+    background: var(--accent-dark, #31523c);
+    color: #ffffff;
+    border-color: var(--accent-dark, #31523c);
+    box-shadow: 0 2px 8px rgba(49, 82, 60, 0.2);
+}
+
+.campus-pill.active .campus-dot {
+    background: #68d391;
+}
+
+.btn-edit-profile-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--accent-dark, #31523c);
+    background: var(--accent-light, #e6eee9);
+    border: 1px solid #c8dacd;
+    border-radius: 9999px;
+    transition: all 0.15s ease;
+}
+
+.btn-edit-profile-pill:hover {
+    background: #31523c;
+    color: #ffffff;
+    border-color: #31523c;
+}
+
+.loading-state, .empty-state-card {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: var(--radius, 18px);
+    box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    padding: 48px;
+    text-align: center;
+    margin: 32px 0;
+}
+
+.empty-icon {
+    font-size: 40px;
+    display: block;
+    margin-bottom: 12px;
+}
+
+/* Hero Section: Clean Scandinavian Nature-Inspired Card (No Dark Green Block) */
+.facility-hero {
+    border-radius: var(--radius, 18px);
+    box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    overflow: hidden;
+    margin-bottom: 24px;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+/* Default Clean Mode (When no cover photo is uploaded) */
+.facility-hero.facility-hero-clean {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    color: var(--text, #26332d);
+}
+
+.facility-hero.facility-hero-clean .hero-overlay-content {
+    padding: 28px 28px 24px;
+    background: linear-gradient(135deg, #ffffff 0%, #f7f9f6 100%);
+}
+
+.facility-hero.facility-hero-clean .facility-logo-wrap,
+.facility-hero.facility-hero-clean .facility-logo-placeholder {
+    width: 84px;
+    height: 84px;
+    border-radius: 16px;
+    background: var(--surface-soft, #f8f9f5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(40, 55, 47, 0.05);
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid var(--border, #e4e7df);
+}
+
+.facility-hero.facility-hero-clean .facility-logo-placeholder span {
+    font-size: 38px;
+}
+
+.facility-hero.facility-hero-clean .facility-badge {
+    display: inline-block;
+    background: var(--accent-light, #e6eee9);
+    color: var(--accent-dark, #31523c);
+    border: 1px solid #c8dacd;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+}
+
+.facility-hero.facility-hero-clean .facility-title {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.4px;
+    color: var(--text, #26332d) !important;
+}
+
+.facility-hero.facility-hero-clean .facility-motto {
+    font-size: 14.5px;
+    font-style: italic;
+    color: var(--muted, #6c7870) !important;
+    margin: 0;
+    letter-spacing: -0.1px;
+}
+
+.facility-hero.facility-hero-clean .action-pill.hero-pill {
+    background: var(--surface-soft, #f8f9f5);
+    border: 1px solid var(--border, #e4e7df);
+    color: var(--text, #26332d) !important;
+    box-shadow: 0 2px 6px rgba(40, 55, 47, 0.03);
+}
+
+.facility-hero.facility-hero-clean .action-pill.hero-pill:hover {
+    background: var(--accent-light, #e6eee9);
+    border-color: var(--accent, #557c6c);
+    color: var(--accent-dark, #31523c) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(40, 55, 47, 0.08);
+}
+
+.facility-hero.facility-hero-clean .pill-svg {
+    color: var(--accent, #52745e);
+    flex-shrink: 0;
+}
+
+/* Cover Photo Mode (When a real cover photo image has been uploaded) */
+.facility-hero.facility-hero-cover {
+    color: #ffffff;
+    border: 1px solid var(--border, #e4e7df);
+}
+
+.facility-hero.facility-hero-cover .hero-overlay-content {
+    padding: 34px 32px 28px;
+    background: linear-gradient(180deg, rgba(20, 30, 25, 0.4) 0%, rgba(20, 30, 25, 0.85) 100%);
+}
+
+.facility-hero.facility-hero-cover .facility-logo-wrap,
+.facility-hero.facility-hero-cover .facility-logo-placeholder {
+    width: 84px;
+    height: 84px;
+    border-radius: 16px;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.facility-hero.facility-hero-cover .facility-badge {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+    color: #ffffff !important;
+}
+
+.facility-hero.facility-hero-cover .facility-title {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.4px;
+    color: #ffffff !important;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+}
+
+.facility-hero.facility-hero-cover .facility-motto {
+    font-size: 14.5px;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.95) !important;
+    margin: 0;
+    letter-spacing: -0.1px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+.facility-hero.facility-hero-cover .action-pill.hero-pill {
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.facility-hero.facility-hero-cover .action-pill.hero-pill:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.55);
+    color: #ffffff !important;
+    transform: translateY(-1px);
+}
+
+.facility-hero.facility-hero-cover .pill-svg {
+    color: rgba(255, 255, 255, 0.95);
+    flex-shrink: 0;
+}
+
+.hero-identity-row {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-bottom: 22px;
+}
+
+.facility-logo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    padding: 6px;
+}
+
+/* Quick Action Bar */
+.quick-action-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.action-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 18px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+/* Layout Grid */
+.facility-layout-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 24px;
+}
+
+@@media (max-width: 900px) {
+    .facility-layout-grid {
+        grid-template-columns: 1fr;
+    }
+    .hero-identity-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+.content-card {
+    background: var(--surface, #ffffff);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: var(--radius, 18px);
+    box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--border, #e4e7df);
+    padding-bottom: 12px;
+}
+
+.card-header h2 {
+    font-size: 19px;
+    font-weight: 750;
+    margin: 0;
+    color: var(--text, #26332d);
+}
+
+.section-icon {
+    font-size: 22px;
+}
+
+.story-text {
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: #394841;
+    margin: 0 0 20px 0;
+    white-space: pre-line;
+}
+
+.story-placeholder {
+    font-size: 14px;
+    color: var(--muted, #6c7870);
+    font-style: italic;
+}
+
+/* Values Grid */
+.values-section h3 {
+    font-size: 14px;
+    font-weight: 750;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted, #6c7870);
+    margin-bottom: 12px;
+}
+
+.values-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+@@media (max-width: 600px) {
+    .values-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.value-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface-soft, #f8f9f5);
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.value-check {
+    color: var(--accent-dark, #31523c);
+    font-weight: 800;
+}
+
+/* Gallery */
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 12px;
+}
+
+.gallery-photo-card {
+    height: 110px;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border, #e4e7df);
+    transition: transform 0.2s ease;
+}
+
+.gallery-photo-card:hover {
+    transform: scale(1.03);
+}
+
+.gallery-photo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Contact Details List */
+.contact-details-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.detail-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.detail-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.detail-row strong {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--muted, #6c7870);
+    margin-bottom: 2px;
+}
+
+.detail-text {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.directions-note {
+    font-size: 12px;
+    color: var(--accent-dark, #31523c);
+    margin: 4px 0 0 0;
+    background: var(--accent-light, #e6eee9);
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+.emergency-row {
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.emergency-link {
+    color: #c53030;
+    font-weight: 750;
+    font-size: 14px;
+    text-decoration: none;
+}
+
+.phone-link {
+    color: var(--accent-dark, #31523c);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.btn-full-width {
+    width: 100%;
+    text-align: center;
+    display: block;
+    box-sizing: border-box;
+    padding: 10px;
+}
+
+/* Contact Form */
+.contact-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-group label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text, #26332d);
+}
+
+.req {
+    color: #c53030;
+}
+
+.form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-input, .form-select, .form-textarea {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border, #e4e7df);
+    border-radius: 8px;
+    background: var(--surface-soft, #f8f9f5);
+    font-size: 13.5px;
+    color: var(--text, #26332d);
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none;
+    border-color: var(--accent, #557c6c);
+    background: #ffffff;
+}
+
+.btn-submit-inquiry {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    background: #31523c;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.btn-submit-inquiry:hover:not(:disabled) {
+    background: #23412f;
+}
+
+.btn-submit-inquiry:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.inquiry-success-banner {
+    text-align: center;
+    padding: 24px 16px;
+    background: var(--accent-light, #e6eee9);
+    border: 1px solid #c8dacd;
+    border-radius: 12px;
+}
+
+.success-icon {
+    font-size: 32px;
+}
+
+.inquiry-success-banner h4 {
+    margin: 8px 0;
+    color: var(--accent-dark, #31523c);
+    font-weight: 800;
+}
+
+.inquiry-success-banner p {
+    font-size: 13px;
+    color: #394841;
+    margin-bottom: 16px;
+}
+
+.form-error-alert {
+    background: #fff5f5;
+    color: #9b2c2c;
+    border: 1px solid #fed7d7;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+/* Lightbox Modal */
+.lightbox-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+}
+
+.lightbox-dialog {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+}
+
+.lightbox-img {
+    max-width: 100%;
+    max-height: 85vh;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -36px;
+    right: 0;
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-size: 24px;
+    cursor: pointer;
+}
+</style>
+

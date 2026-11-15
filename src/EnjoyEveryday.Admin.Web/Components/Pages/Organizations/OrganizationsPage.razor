@@ -129,6 +129,14 @@
                                 <td style="padding: 14px;">
                                     <div style="font-weight: 700; color: var(--text);">@org.PlanName</div>
                                     <div style="font-size: 11.5px; color: var(--muted);">@org.TariffName</div>
+                                    @if (!string.IsNullOrEmpty(org.PricingRegionName))
+                                    {
+                                        <div style="margin-top: 3px;">
+                                            <span style="background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid #c9dacf;">
+                                                📍 @org.PricingRegionName
+                                            </span>
+                                        </div>
+                                    }
                                 </td>
                                 <td style="padding: 14px; font-weight: 750; color: var(--text);">
                                     @org.MonthlyRate.ToString("C0")/mo
@@ -183,7 +191,26 @@
                 </div>
                 <div class="form-group">
                     <label>City &amp; State / Location *</label>
-                    <input class="form-input" @bind="_createLocation" placeholder="e.g. Minneapolis, MN" />
+                    <input class="form-input" @bind="_createLocation" @bind:after="OnCreateLocationChangedAsync" placeholder="e.g. Austin, TX or New York, NY" />
+                </div>
+                @if (_resolvedCreateRegion != null)
+                {
+                    <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c9dacf; border-radius: 8px; padding: 8px 12px; margin-top: -6px; margin-bottom: 12px; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <span style="font-weight: 750; color: var(--accent-dark, #31523c);">📍 Auto-Detected Tariff Zone:</span>
+                            <span style="margin-left: 4px; color: var(--text); font-weight: 600;">@_resolvedCreateRegion.Name</span>
+                        </div>
+                        <span style="font-size: 11px; color: var(--muted);">Auto-matched from city/state</span>
+                    </div>
+                }
+                <div class="form-group">
+                    <label>Pricing Region / Tariff Zone</label>
+                    <select class="form-input" value="@_createRegionId" @onchange="OnCreateRegionChanged">
+                        @foreach (var r in _pricingRegions)
+                        {
+                            <option value="@r.Id">@r.Name (@r.Code) — @r.Currency @(r.IsDefault ? "★ Default" : "")</option>
+                        }
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>Primary Administrator Email *</label>
@@ -198,11 +225,23 @@
                     <select class="form-input" value="@_createPlanId" @onchange="OnCreatePlanSelectionChanged">
                         @foreach (var plan in _availablePlans)
                         {
-                            <option value="@plan.Id">@plan.Name — @plan.BasePrice.ToString("C0")/mo</option>
+                            <option value="@plan.Id">@plan.Name — @GetRegionalPlanPriceDisplay(plan.Id, _createRegionId)/mo</option>
                         }
                     </select>
                 </div>
-                @if (_availableTariffs.Count > 0)
+                @if (_createRegionalTariffs.Count > 0)
+                {
+                    <div class="form-group">
+                        <label>Regional Tariff Schedule (Frequency &amp; Rate)</label>
+                        <select class="form-input" @bind="_createTariffId">
+                            @foreach (var t in _createRegionalTariffs)
+                            {
+                                <option value="@t.Id">@t.Name — @t.Price.ToString("C0") (@t.Frequency) @(t.DiscountPercentage > 0 ? $"-{t.DiscountPercentage}%" : "")</option>
+                            }
+                        </select>
+                    </div>
+                }
+                else if (_availableTariffs.Count > 0)
                 {
                     <div class="form-group">
                         <label>Billing Tariff Schedule</label>
@@ -333,23 +372,47 @@
                     Updating plan for <strong>@_selectedOrg.Name</strong>. Current: <strong>@_selectedOrg.PlanName (@_selectedOrg.TariffName)</strong>.
                 </p>
                 <div class="form-group">
-                    <label>Select Plan *</label>
-                    <select class="form-input" value="@_assignPlanId" @onchange="OnAssignPlanSelectionChanged">
-                        @foreach (var p in _availablePlans)
+                    <label>Pricing Region / Tariff Zone</label>
+                    <select class="form-input" value="@_assignRegionId" @onchange="OnAssignRegionChanged">
+                        @foreach (var r in _pricingRegions)
                         {
-                            <option value="@p.Id">@p.Name — @p.BasePrice.ToString("C0")/mo</option>
+                            <option value="@r.Id">@r.Name (@r.Code) — @r.Currency @(r.IsDefault ? "★ Default" : "")</option>
                         }
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Select Tariff Schedule</label>
-                    <select class="form-input" @bind="_assignTariffId">
-                        @foreach (var t in _assignTariffs)
+                    <label>Select Plan *</label>
+                    <select class="form-input" value="@_assignPlanId" @onchange="OnAssignPlanSelectionChanged">
+                        @foreach (var p in _availablePlans)
                         {
-                            <option value="@t.Id">@t.Name — @t.Price.ToString("C0") (@t.Frequency)</option>
+                            <option value="@p.Id">@p.Name — @GetRegionalPlanPriceDisplay(p.Id, _assignRegionId)/mo</option>
                         }
                     </select>
                 </div>
+                @if (_assignRegionalTariffs.Count > 0)
+                {
+                    <div class="form-group">
+                        <label>Regional Tariff Schedule</label>
+                        <select class="form-input" @bind="_assignTariffId">
+                            @foreach (var t in _assignRegionalTariffs)
+                            {
+                                <option value="@t.Id">@t.Name — @t.Price.ToString("C0") (@t.Frequency) @(t.DiscountPercentage > 0 ? $"-{t.DiscountPercentage}%" : "")</option>
+                            }
+                        </select>
+                    </div>
+                }
+                else
+                {
+                    <div class="form-group">
+                        <label>Select Tariff Schedule</label>
+                        <select class="form-input" @bind="_assignTariffId">
+                            @foreach (var t in _assignTariffs)
+                            {
+                                <option value="@t.Id">@t.Name — @t.Price.ToString("C0") (@t.Frequency)</option>
+                            }
+                        </select>
+                    </div>
+                }
 
                 <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 8px; padding: 10px 12px; margin-top: 14px; font-size: 12.5px; color: var(--muted, #6c7870); display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 16px;">✉️</span>
@@ -402,6 +465,7 @@
     private List<SubscriptionPlan> _availablePlans = new();
     private List<Tariff> _availableTariffs = new();
     private List<Tariff> _assignTariffs = new();
+    private List<PricingRegion> _pricingRegions = new();
     private Dictionary<Guid, PlatformOrganizationInvitationRecord> _invitationsMap = new();
 
     private string _search = "";
@@ -424,6 +488,9 @@
     private int _createBranchCount = 1;
     private Guid _createPlanId;
     private Guid? _createTariffId;
+    private Guid _createRegionId;
+    private PricingRegion? _resolvedCreateRegion;
+    private List<RegionPlanTariff> _createRegionalTariffs = new();
     private bool _createSendEmail = true;
 
     // Edit inputs
@@ -439,6 +506,8 @@
     // Plan & Tariff inputs
     private Guid _assignPlanId;
     private Guid? _assignTariffId;
+    private Guid _assignRegionId;
+    private List<RegionPlanTariff> _assignRegionalTariffs = new();
 
     // Deactivate input
     private string _deactivateReason = "";
@@ -456,15 +525,24 @@
         {
             _orgs = await PlatformService.GetOrganizationsOverviewAsync();
             _availablePlans = await PlatformService.GetPlansAsync();
+            _pricingRegions = await PlatformService.GetPricingRegionsAsync();
             _invitationsMap = await PlatformService.GetLatestInvitationsMapAsync();
+
+            var defaultRegion = _pricingRegions.FirstOrDefault(r => r.IsDefault) ?? _pricingRegions.FirstOrDefault();
+            if (defaultRegion != null && _createRegionId == Guid.Empty)
+            {
+                _createRegionId = defaultRegion.Id;
+                _resolvedCreateRegion = defaultRegion;
+            }
 
             if (_availablePlans.Count > 0)
             {
                 if (_createPlanId == Guid.Empty)
                 {
                     _createPlanId = _availablePlans[0].Id;
-                    await RefreshAvailableTariffsAsync(_createPlanId);
                 }
+                await RefreshCreateRegionalTariffsAsync();
+                await RefreshAvailableTariffsAsync(_createPlanId);
             }
         }
         catch (Exception ex)
@@ -513,13 +591,92 @@
         }
     }
 
+    private string GetRegionalPlanPriceDisplay(Guid planId, Guid regionId)
+    {
+        var reg = _pricingRegions.FirstOrDefault(r => r.Id == regionId);
+        if (reg != null)
+        {
+            var regTariff = reg.Tariffs.FirstOrDefault(t => t.PlanId == planId && t.Frequency == BillingFrequency.Monthly);
+            if (regTariff != null)
+            {
+                return regTariff.Price.ToString("C0");
+            }
+        }
+        var plan = _availablePlans.FirstOrDefault(p => p.Id == planId);
+        return plan != null ? plan.BasePrice.ToString("C0") : "$0";
+    }
+
+    private async Task OnCreateLocationChangedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_createLocation))
+        {
+            var matched = await PlatformService.ResolvePricingRegionByLocationAsync(_createLocation);
+            if (matched != null)
+            {
+                _resolvedCreateRegion = matched;
+                _createRegionId = matched.Id;
+                await RefreshCreateRegionalTariffsAsync();
+            }
+        }
+    }
+
+    private async Task OnCreateRegionChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var regId))
+        {
+            _createRegionId = regId;
+            _resolvedCreateRegion = _pricingRegions.FirstOrDefault(r => r.Id == regId);
+            await RefreshCreateRegionalTariffsAsync();
+        }
+    }
+
+    private Task RefreshCreateRegionalTariffsAsync()
+    {
+        var reg = _pricingRegions.FirstOrDefault(r => r.Id == _createRegionId);
+        if (reg != null && reg.Tariffs.Count > 0)
+        {
+            _createRegionalTariffs = reg.Tariffs.Where(t => t.PlanId == _createPlanId).ToList();
+            _createTariffId = _createRegionalTariffs.FirstOrDefault()?.Id;
+        }
+        else
+        {
+            _createRegionalTariffs.Clear();
+        }
+        return Task.CompletedTask;
+    }
+
     private async Task OnCreatePlanSelectionChanged(ChangeEventArgs e)
     {
         if (Guid.TryParse(e.Value?.ToString(), out var planId))
         {
             _createPlanId = planId;
+            await RefreshCreateRegionalTariffsAsync();
             await RefreshAvailableTariffsAsync(planId);
         }
+    }
+
+    private async Task OnAssignRegionChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var regId))
+        {
+            _assignRegionId = regId;
+            await RefreshAssignRegionalTariffsAsync();
+        }
+    }
+
+    private Task RefreshAssignRegionalTariffsAsync()
+    {
+        var reg = _pricingRegions.FirstOrDefault(r => r.Id == _assignRegionId);
+        if (reg != null && reg.Tariffs.Count > 0)
+        {
+            _assignRegionalTariffs = reg.Tariffs.Where(t => t.PlanId == _assignPlanId).ToList();
+            _assignTariffId = _assignRegionalTariffs.FirstOrDefault()?.Id;
+        }
+        else
+        {
+            _assignRegionalTariffs.Clear();
+        }
+        return Task.CompletedTask;
     }
 
     private async Task OnAssignPlanSelectionChanged(ChangeEventArgs e)
@@ -527,10 +684,14 @@
         if (Guid.TryParse(e.Value?.ToString(), out var planId))
         {
             _assignPlanId = planId;
+            await RefreshAssignRegionalTariffsAsync();
             try
             {
                 _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(planId);
-                _assignTariffId = _assignTariffs.FirstOrDefault()?.Id;
+                if (_assignTariffId == null)
+                {
+                    _assignTariffId = _assignTariffs.FirstOrDefault()?.Id;
+                }
             }
             catch (Exception ex)
             {
@@ -540,12 +701,19 @@
         }
     }
 
-    private void OpenCreateModal()
+    private async Task OpenCreateModal()
     {
         _createName = "";
         _createLocation = "";
         _createAdminEmail = "";
         _createBranchCount = 1;
+        var defaultRegion = _pricingRegions.FirstOrDefault(r => r.IsDefault) ?? _pricingRegions.FirstOrDefault();
+        if (defaultRegion != null)
+        {
+            _createRegionId = defaultRegion.Id;
+            _resolvedCreateRegion = defaultRegion;
+            await RefreshCreateRegionalTariffsAsync();
+        }
         _showCreateModal = true;
     }
 
@@ -573,8 +741,10 @@
         {
             _selectedOrg = org;
             _assignPlanId = org.PlanId;
+            _assignRegionId = org.PricingRegionId ?? _pricingRegions.FirstOrDefault(r => r.IsDefault)?.Id ?? _pricingRegions.FirstOrDefault()?.Id ?? Guid.Empty;
+            await RefreshAssignRegionalTariffsAsync();
             _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(org.PlanId);
-            _assignTariffId = org.TariffId ?? _assignTariffs.FirstOrDefault()?.Id;
+            _assignTariffId = org.TariffId ?? _assignRegionalTariffs.FirstOrDefault()?.Id ?? _assignTariffs.FirstOrDefault()?.Id;
             _showPlanTariffModal = true;
         }
         catch (Exception ex)
@@ -606,8 +776,15 @@
         if (string.IsNullOrWhiteSpace(_createName) || string.IsNullOrWhiteSpace(_createAdminEmail)) return;
         try
         {
-            var created = await PlatformService.CreateOrganizationWorkflowAsync(_createName, _createLocation, _createPlanId, _createAdminEmail, _createBranchCount, _createTariffId);
-            _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully. Welcome onboarding email sent to {_createAdminEmail}.";
+            var created = await PlatformService.CreateOrganizationWorkflowAsync(
+                _createName, 
+                _createLocation, 
+                _createPlanId, 
+                _createAdminEmail, 
+                _createBranchCount, 
+                _createTariffId,
+                _createRegionId);
+            _notificationMessage = $"Organization '{created.Name}' created and provisioned successfully in {created.PricingRegionName ?? "default region"}. Welcome onboarding email sent to {_createAdminEmail}.";
             _isNotificationError = false;
             CloseModals();
             await LoadDataAsync();
@@ -666,10 +843,14 @@
         if (_selectedOrg == null) return;
         try
         {
-            var ok = await PlatformService.AssignPlanAndTariffToOrganizationAsync(_selectedOrg.Id, _assignPlanId, _assignTariffId);
+            var ok = await PlatformService.AssignRegionalPlanToOrganizationAsync(
+                _selectedOrg.Id, 
+                _assignRegionId, 
+                _assignPlanId, 
+                _assignTariffId);
             if (ok)
             {
-                _notificationMessage = $"Plan and tariff updated for '{_selectedOrg.Name}'. Confirmation email dispatched to {_selectedOrg.AdminEmail}.";
+                _notificationMessage = $"Regional plan and tariff updated for '{_selectedOrg.Name}'. Confirmation email dispatched to {_selectedOrg.AdminEmail}.";
                 _isNotificationError = false;
             }
             CloseModals();

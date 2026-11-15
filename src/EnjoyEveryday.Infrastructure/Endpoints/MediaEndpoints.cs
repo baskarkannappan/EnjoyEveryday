@@ -92,6 +92,30 @@ public static class MediaEndpoints
             }
         });
 
+        // GET /api/media/qrcode?data={content}&format={svg|png}
+        endpoints.MapGet("/api/media/qrcode", (
+            [FromQuery] string? data,
+            [FromQuery] string? format,
+            IQrCodeService qrService,
+            HttpContext context) =>
+        {
+            if (string.IsNullOrWhiteSpace(data))
+            {
+                return Results.BadRequest(new { error = "Query parameter 'data' is required." });
+            }
+
+            context.Response.Headers.Append("Cache-Control", "public, max-age=604800");
+
+            if (string.Equals(format, "svg", StringComparison.OrdinalIgnoreCase))
+            {
+                var svg = qrService.GenerateSvg(data);
+                return Results.Content(svg, "image/svg+xml");
+            }
+
+            var pngBytes = qrService.GeneratePng(data, moduleSize: 6, border: 2);
+            return Results.File(pngBytes, "image/png");
+        });
+
         return endpoints;
     }
 }

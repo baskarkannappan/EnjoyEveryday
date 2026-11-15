@@ -288,4 +288,217 @@ public class PlatformAdminRepository : IPlatformAdminRepository
             "SELECT organization_id, plan_id, plan_code, plan_name, max_branches, current_branches, max_classrooms, current_classrooms, max_children, current_children, includes_ai FROM fn_get_organization_quota_usage(@p_org_id)",
             new { p_org_id = organizationId });
     }
+
+    public async Task<List<PricingRegion>> GetPricingRegionsAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = @"
+            SELECT id, code, name, description, currency, 
+                   matched_cities::text AS MatchedCities, 
+                   matched_states::text AS MatchedStates, 
+                   is_default AS IsDefault, is_active AS IsActive, 
+                   display_order AS DisplayOrder, created_at, updated_at
+            FROM pricing_regions
+            ORDER BY display_order ASC, name ASC";
+
+        var rows = await conn.QueryAsync<PricingRegionDbRecord>(sql);
+        var regions = rows.Select(r => r.ToDomain()).ToList();
+
+        var tariffsSql = @"
+            SELECT id, region_id, plan_id, plan_code, plan_name, name, frequency, 
+                   price, discount_percentage, currency, is_active, created_at, updated_at
+            FROM region_plan_tariffs
+            ORDER BY plan_name ASC, price ASC";
+        var allTariffs = (await conn.QueryAsync<RegionPlanTariffDbRecord>(tariffsSql))
+            .Select(t => t.ToDomain())
+            .ToList();
+
+        foreach (var reg in regions)
+        {
+            reg.Tariffs = allTariffs.Where(t => t.RegionId == reg.Id).ToList();
+        }
+
+        return regions;
+    }
+
+    public async Task<PricingRegion?> ResolvePricingRegionByLocationAsync(string location, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = @"
+            SELECT id, code, name, description, currency, 
+                   matched_cities::text AS MatchedCities, 
+                   matched_states::text AS MatchedStates, 
+                   is_default AS IsDefault, is_active AS IsActive, 
+                   0 AS DisplayOrder, NOW() AS created_at, NOW() AS updated_at
+            FROM fn_resolve_pricing_region(@p_location)";
+
+        var row = await conn.QuerySingleOrDefaultAsync<PricingRegionDbRecord>(sql, new { p_location = location });
+        if (row == null) return null;
+
+        var region = row.ToDomain();
+        region.Tariffs = await GetRegionPlanTariffsAsync(region.Id, ct);
+        return region;
+    }
+
+    public async Task<List<RegionPlanTariff>> GetRegionPlanTariffsAsync(Guid regionId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = @"
+            SELECT id, region_id, plan_id, plan_code, plan_name, name, frequency, 
+                   price, discount_percentage, currency, is_active, created_at, updated_at
+            FROM region_plan_tariffs
+            WHERE region_id = @regionId
+            ORDER BY plan_name ASC, price ASC";
+
+        var rows = await conn.QueryAsync<RegionPlanTariffDbRecord>(sql, new { regionId });
+        return rows.Select(r => r.ToDomain()).ToList();
+    }
+
+    public async Task SavePricingRegionAsync(PricingRegion region, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = @"
+            INSERT INTO pricing_regions (id, code, name, description, currency, matched_cities, matched_states, is_default, is_active, display_order, updated_at)
+            VALUES (@Id, @Code, @Name, @Description, @Currency, @MatchedCities::jsonb, @MatchedStates::jsonb, @IsDefault, @IsActive, @DisplayOrder, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                code = EXCLUDED.code,
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                currency = EXCLUDED.currency,
+                matched_cities = EXCLUDED.matched_cities,
+                matched_states = EXCLUDED.matched_states,
+                is_default = EXCLUDED.is_default,
+                is_active = EXCLUDED.is_active,
+                display_order = EXCLUDED.display_order,
+                updated_at = NOW()";
+
+        await conn.ExecuteAsync(sql, new
+        {
+            region.Id,
+            region.Code,
+            region.Name,
+            region.Description,
+            region.Currency,
+            MatchedCities = System.Text.Json.JsonSerializer.Serialize(region.MatchedCities ?? new()),
+            MatchedStates = System.Text.Json.JsonSerializer.Serialize(region.MatchedStates ?? new()),
+            region.IsDefault,
+            region.IsActive,
+            region.DisplayOrder
+        });
+    }
+
+    public async Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var sql = @"
+            INSERT INTO region_plan_tariffs (id, region_id, plan_id, plan_code, plan_name, name, frequency, price, discount_percentage, currency, is_active, updated_at)
+            VALUES (@Id, @RegionId, @PlanId, @PlanCode, @PlanName, @Name, @Frequency, @Price, @DiscountPercentage, @Currency, @IsActive, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                region_id = EXCLUDED.region_id,
+                plan_id = EXCLUDED.plan_id,
+                plan_code = EXCLUDED.plan_code,
+                plan_name = EXCLUDED.plan_name,
+                name = EXCLUDED.name,
+                frequency = EXCLUDED.frequency,
+                price = EXCLUDED.price,
+                discount_percentage = EXCLUDED.discount_percentage,
+                currency = EXCLUDED.currency,
+                is_active = EXCLUDED.is_active,
+                updated_at = NOW()";
+
+        await conn.ExecuteAsync(sql, new
+        {
+            tariff.Id,
+            tariff.RegionId,
+            tariff.PlanId,
+            tariff.PlanCode,
+            tariff.PlanName,
+            tariff.Name,
+            Frequency = tariff.Frequency.ToString(),
+            tariff.Price,
+            tariff.DiscountPercentage,
+            tariff.Currency,
+            tariff.IsActive
+        });
+    }
+
+    public async Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        await conn.ExecuteAsync(
+            "CALL sp_assign_organization_regional_plan(@p_org_id, @p_region_id, @p_plan_id, @p_tariff_id)",
+            new
+            {
+                p_org_id = organizationId,
+                p_region_id = regionId,
+                p_plan_id = planId,
+                p_tariff_id = tariffId
+            });
+    }
+
+    private sealed class PricingRegionDbRecord
+    {
+        public Guid Id { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string Currency { get; set; } = "USD";
+        public string? MatchedCities { get; set; }
+        public string? MatchedStates { get; set; }
+        public bool IsDefault { get; set; }
+        public bool IsActive { get; set; }
+        public int DisplayOrder { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; }
+
+        public PricingRegion ToDomain() => new()
+        {
+            Id = Id,
+            Code = Code,
+            Name = Name,
+            Description = Description,
+            Currency = Currency,
+            MatchedCities = string.IsNullOrEmpty(MatchedCities) ? new() : System.Text.Json.JsonSerializer.Deserialize<List<string>>(MatchedCities) ?? new(),
+            MatchedStates = string.IsNullOrEmpty(MatchedStates) ? new() : System.Text.Json.JsonSerializer.Deserialize<List<string>>(MatchedStates) ?? new(),
+            IsDefault = IsDefault,
+            IsActive = IsActive,
+            DisplayOrder = DisplayOrder,
+            CreatedAt = CreatedAt,
+            UpdatedAt = UpdatedAt
+        };
+    }
+
+    private sealed class RegionPlanTariffDbRecord
+    {
+        public Guid Id { get; set; }
+        public Guid RegionId { get; set; }
+        public Guid PlanId { get; set; }
+        public string PlanCode { get; set; } = string.Empty;
+        public string PlanName { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Frequency { get; set; } = "Monthly";
+        public decimal Price { get; set; }
+        public decimal DiscountPercentage { get; set; }
+        public string Currency { get; set; } = "USD";
+        public bool IsActive { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; }
+
+        public RegionPlanTariff ToDomain() => new()
+        {
+            Id = Id,
+            RegionId = RegionId,
+            PlanId = PlanId,
+            PlanCode = PlanCode,
+            PlanName = PlanName,
+            Name = Name,
+            Frequency = Enum.TryParse<BillingFrequency>(Frequency, true, out var f) ? f : BillingFrequency.Monthly,
+            Price = Price,
+            DiscountPercentage = DiscountPercentage,
+            Currency = Currency,
+            IsActive = IsActive,
+            CreatedAt = CreatedAt,
+            UpdatedAt = UpdatedAt
+        };
+    }
 }

@@ -1,0 +1,290 @@
+@page "/operations/inquiries"
+@page "/platform/inquiries"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@inject IFacilityProfileService FacilityProfileService
+@inject IPlatformAdminService PlatformService
+@rendermode InteractiveServer
+
+<PageTitle>Platform Admin — Public Inquiries</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="PLATFORM OPERATIONS"
+              Title="Public Contact &amp; Campus Inquiries"
+              Subtitle="Centralized inbox of messages and campus inquiries submitted through daycare public About Us and Contact forms.">
+        <RightContent>
+            <button class="btn secondary" @onclick="LoadInquiriesAsync">🔄 Refresh</button>
+            <a href="/" class="btn secondary">&larr; Dashboard</a>
+        </RightContent>
+    </PageHero>
+
+    <!-- METRICS STRIP -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px;">
+        <div class="stat-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);">
+            <div style="font-size: 11px; font-weight: 750; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px;">Total Inquiries</div>
+            <div style="font-size: 26px; font-weight: 850; color: var(--text); margin-top: 4px;">@_allInquiries.Count</div>
+        </div>
+        <div class="stat-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);">
+            <div style="font-size: 11px; font-weight: 750; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px;">New (Needs Response)</div>
+            <div style="font-size: 26px; font-weight: 850; color: #b7791f; margin-top: 4px;">@_allInquiries.Count(i => i.Status == "New")</div>
+        </div>
+        <div class="stat-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);">
+            <div style="font-size: 11px; font-weight: 750; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px;">In Review</div>
+            <div style="font-size: 26px; font-weight: 850; color: #2b6cb0; margin-top: 4px;">@_allInquiries.Count(i => i.Status == "InReview")</div>
+        </div>
+        <div class="stat-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);">
+            <div style="font-size: 11px; font-weight: 750; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px;">Resolved</div>
+            <div style="font-size: 26px; font-weight: 850; color: #2e7d32; margin-top: 4px;">@_allInquiries.Count(i => i.Status == "Resolved")</div>
+        </div>
+    </div>
+
+    <!-- FILTER ROW -->
+    <div style="display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 18px;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <!-- Status Tabs -->
+            <button type="button" class="tab-chip @(_statusFilter == null ? "active" : "")" @onclick='() => SetStatus(null)'>All</button>
+            <button type="button" class="tab-chip @(_statusFilter == "New" ? "active" : "")" @onclick='() => SetStatus("New")'>New (@_allInquiries.Count(i => i.Status == "New"))</button>
+            <button type="button" class="tab-chip @(_statusFilter == "InReview" ? "active" : "")" @onclick='() => SetStatus("InReview")'>In Review</button>
+            <button type="button" class="tab-chip @(_statusFilter == "Resolved" ? "active" : "")" @onclick='() => SetStatus("Resolved")'>Resolved</button>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <!-- Organization Filter -->
+            <select class="form-select-sm" @bind="_selectedOrgFilter" @bind:after="FilterChanged">
+                <option value="">All Organizations</option>
+                @foreach (var org in _organizations)
+                {
+                    <option value="@org.Id">@org.Name</option>
+                }
+            </select>
+
+            <!-- Topic Filter -->
+            <select class="form-select-sm" @bind="_topicFilter" @bind:after="FilterChanged">
+                <option value="">All Topics</option>
+                <option value="General">General Question</option>
+                <option value="Tour Request">Tour Request</option>
+                <option value="Enrollment">Enrollment</option>
+                <option value="Absence">Absence</option>
+                <option value="Feedback">Feedback</option>
+            </select>
+        </div>
+    </div>
+
+    @if (_isLoading)
+    {
+        <LoadingState Text="Loading platform inquiries..." />
+    }
+    else if (_filteredInquiries.Count == 0)
+    {
+        <div class="empty-state-box" style="text-align: center; padding: 48px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);">
+            <span style="font-size: 36px; display: block; margin-bottom: 10px;">📬</span>
+            <h3 style="margin: 0 0 6px 0; color: var(--text);">No Inquiries Found</h3>
+            <p style="margin: 0; color: var(--muted); font-size: 13.5px;">No customer messages match the selected filters.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);">
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                    <thead>
+                        <tr style="background: var(--surface-soft); font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 800; letter-spacing: 0.8px;">
+                            <th style="padding: 12px 14px; text-align: left;">Received</th>
+                            <th style="padding: 12px 14px; text-align: left;">Organization &amp; Campus</th>
+                            <th style="padding: 12px 14px; text-align: left;">Sender Contact</th>
+                            <th style="padding: 12px 14px; text-align: left;">Topic / Subject</th>
+                            <th style="padding: 12px 14px; text-align: left;">Status</th>
+                            <th style="padding: 12px 14px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var inq in _filteredInquiries)
+                        {
+                            <tr style="border-bottom: 1px solid #edf1ec; font-size: 13px;">
+                                <td style="padding: 14px; color: var(--muted); white-space: nowrap;">
+                                    <div>@inq.CreatedAt.ToString("MMM d, yyyy")</div>
+                                    <small style="font-size: 11px;">@inq.CreatedAt.ToString("h:mm tt")</small>
+                                </td>
+                                <td style="padding: 14px;">
+                                    <strong style="color: var(--text); display: block;">@(inq.OrganizationName ?? "Headquarters")</strong>
+                                    <span style="font-size: 11.5px; color: var(--muted);">@(string.IsNullOrEmpty(inq.BranchName) ? "Organization Default" : $"📍 {inq.BranchName}")</span>
+                                </td>
+                                <td style="padding: 14px;">
+                                    <div style="font-weight: 700; color: var(--text);">@inq.SenderName</div>
+                                    <div style="font-size: 12px;"><a href="mailto:@inq.SenderEmail" style="color: var(--accent);">@inq.SenderEmail</a></div>
+                                    @if (!string.IsNullOrEmpty(inq.SenderPhone))
+                                    {
+                                        <div style="font-size: 11.5px; color: var(--muted);">@inq.SenderPhone</div>
+                                    }
+                                </td>
+                                <td style="padding: 14px; max-width: 320px;">
+                                    <span style="display: inline-block; font-size: 10px; font-weight: 750; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: var(--surface-soft); color: var(--muted); margin-bottom: 4px;">@inq.Category</span>
+                                    <div style="font-weight: 750; color: var(--text); margin-bottom: 4px;">@inq.Subject</div>
+                                    <div style="font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4;">@inq.Message</div>
+                                </td>
+                                <td style="padding: 14px; white-space: nowrap;">
+                                    @if (inq.Status == "New")
+                                    {
+                                        <span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 750; background: #fef3c7; color: #92400e; border: 1px solid #fde68a;">New</span>
+                                    }
+                                    else if (inq.Status == "InReview")
+                                    {
+                                        <span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 750; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">In Review</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 750; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;">Resolved</span>
+                                    }
+                                </td>
+                                <td style="padding: 14px; text-align: right; white-space: nowrap;">
+                                    @if (inq.Status == "New")
+                                    {
+                                        <button class="btn secondary" style="padding: 4px 10px; font-size: 12px; margin-right: 6px;" @onclick='() => UpdateStatus(inq.Id, "InReview")'>In Review</button>
+                                        <button class="primary" style="padding: 4px 10px; font-size: 12px;" @onclick='() => UpdateStatus(inq.Id, "Resolved")'>✓ Resolve</button>
+                                    }
+                                    else if (inq.Status == "InReview")
+                                    {
+                                        <button class="primary" style="padding: 4px 10px; font-size: 12px;" @onclick='() => UpdateStatus(inq.Id, "Resolved")'>✓ Resolve</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn secondary" style="padding: 4px 10px; font-size: 12px;" @onclick='() => UpdateStatus(inq.Id, "InReview")'>Reopen</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<ContactInquiryDto> _allInquiries = new();
+    private List<PlatformOrganizationDto> _organizations = new();
+    private bool _isLoading = true;
+    private string? _statusFilter = null;
+    private string _selectedOrgFilter = string.Empty;
+    private string _topicFilter = string.Empty;
+
+    private List<ContactInquiryDto> _filteredInquiries
+    {
+        get
+        {
+            var list = _allInquiries.AsEnumerable();
+            if (!string.IsNullOrEmpty(_statusFilter))
+            {
+                list = list.Where(i => i.Status.Equals(_statusFilter, StringComparison.OrdinalIgnoreCase));
+            }
+            if (!string.IsNullOrEmpty(_selectedOrgFilter) && Guid.TryParse(_selectedOrgFilter, out var orgId))
+            {
+                list = list.Where(i => i.OrganizationId == orgId);
+            }
+            if (!string.IsNullOrEmpty(_topicFilter))
+            {
+                list = list.Where(i => i.Category.Equals(_topicFilter, StringComparison.OrdinalIgnoreCase));
+            }
+            return list.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrganizationsAsync();
+        await LoadInquiriesAsync();
+    }
+
+    private async Task LoadOrganizationsAsync()
+    {
+        try
+        {
+            var orgs = await PlatformService.GetOrganizationsOverviewAsync();
+            _organizations = orgs;
+        }
+        catch { }
+    }
+
+    private async Task LoadInquiriesAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var result = await FacilityProfileService.GetAllPlatformInquiriesAsync();
+            _allInquiries = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error loading inquiries: " + ex.Message);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SetStatus(string? status)
+    {
+        _statusFilter = status;
+    }
+
+    private void FilterChanged()
+    {
+        StateHasChanged();
+    }
+
+    private async Task UpdateStatus(Guid inquiryId, string newStatus)
+    {
+        try
+        {
+            await FacilityProfileService.UpdateInquiryStatusAsync(new UpdateInquiryStatusRequest
+            {
+                InquiryId = inquiryId,
+                Status = newStatus
+            });
+            await LoadInquiriesAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Failed to update status: " + ex.Message);
+        }
+    }
+}
+
+<style>
+.tab-chip {
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface-soft);
+    color: var(--muted);
+    transition: all 0.15s ease;
+}
+
+.tab-chip:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.tab-chip.active {
+    background: var(--accent-dark);
+    color: #ffffff;
+    border-color: var(--accent-dark);
+}
+
+.form-select-sm {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 650;
+    outline: none;
+    cursor: pointer;
+}
+</style>

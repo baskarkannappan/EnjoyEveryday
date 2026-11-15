@@ -1,5 +1,6 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 @using EnjoyEveryday.Domain.Entities
+@inject EnjoyEveryday.Application.Services.IQrCodeService QrCodeService
 
 @if (IsOpen && Invoice != null)
 {
@@ -119,6 +120,28 @@
                         </div>
                     </div>
 
+                    <!-- Mobile Payment QR Code Remittance Block -->
+                    @if (Invoice.BalanceDue > 0)
+                    {
+                        <div class="invoice-qr-section">
+                            <div class="invoice-qr-box">
+                                <img src="@GetQrCodeDataUri()" alt="Scan to Pay Platform Fee" class="invoice-qr-img" />
+                                <div class="invoice-qr-text">
+                                    <div class="qr-title">📱 Scan to Pay Platform Fee</div>
+                                    <div class="qr-sub">Scan with your smartphone camera, UPI or banking app to pay <strong>@Invoice.Currency @Invoice.BalanceDue.ToString("N2")</strong></div>
+                                    <div class="qr-meta">Direct remittance for Invoice #@Invoice.InvoiceNumber &bull; Reconciled automatically</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else if (Invoice.Status == InvoiceStatus.Paid)
+                    {
+                        <div class="invoice-paid-stamp">
+                            <span class="paid-stamp-icon">✓</span>
+                            <span>INVOICE PAID IN FULL &mdash; THANK YOU</span>
+                        </div>
+                    }
+
                     <!-- Payment Remittance Notice -->
                     @if (!string.IsNullOrWhiteSpace(Invoice.PaymentInstructions))
                     {
@@ -224,5 +247,16 @@
     private async Task HandlePrint()
     {
         await OnPrint.InvokeAsync();
+    }
+
+    private string GetQrCodeDataUri()
+    {
+        if (Invoice == null) return string.Empty;
+        var payload = QrCodeService.BuildInvoicePaymentPayload(
+            Invoice.InvoiceNumber,
+            Invoice.BalanceDue,
+            Invoice.Currency ?? "INR",
+            Invoice.Id);
+        return QrCodeService.GeneratePngDataUri(payload, moduleSize: 5, border: 2);
     }
 }

@@ -114,8 +114,12 @@ public class PlatformAdminService : IPlatformAdminService
                                     ? parsedStatus
                                     : (r.IsActive ? AccountStatus.Active : AccountStatus.Suspended),
                                 FinancialStatus = FinancialStatus.Reconciled,
-                                PlanId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                                PlanName = "Bloom (Growth)",
+                                PlanId = r.PlanId ?? Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                                PlanName = !string.IsNullOrWhiteSpace(r.PlanName) ? r.PlanName : "Bloom (Growth)",
+                                PricingRegionId = r.PricingRegionId,
+                                PricingRegionCode = r.PricingRegionCode,
+                                PricingRegionName = r.PricingRegionName,
+                                TariffId = r.TariffId,
                                 MonthlyRate = 299.00m,
                                 NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
                                 AdminEmail = !string.IsNullOrWhiteSpace(r.AdminEmail) ? r.AdminEmail : $"admin@{r.Name.ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
@@ -130,6 +134,12 @@ public class PlatformAdminService : IPlatformAdminService
                             if (!string.IsNullOrWhiteSpace(r.Location)) existing.Location = r.Location;
                             if (r.BranchCount > 0) existing.BranchCount = r.BranchCount;
                             if (!string.IsNullOrWhiteSpace(r.AdminEmail)) existing.AdminEmail = r.AdminEmail;
+                            if (r.PricingRegionId.HasValue) existing.PricingRegionId = r.PricingRegionId;
+                            if (!string.IsNullOrWhiteSpace(r.PricingRegionCode)) existing.PricingRegionCode = r.PricingRegionCode;
+                            if (!string.IsNullOrWhiteSpace(r.PricingRegionName)) existing.PricingRegionName = r.PricingRegionName;
+                            if (r.PlanId.HasValue) existing.PlanId = r.PlanId.Value;
+                            if (!string.IsNullOrWhiteSpace(r.PlanName)) existing.PlanName = r.PlanName;
+                            if (r.TariffId.HasValue) existing.TariffId = r.TariffId;
                             if (Enum.TryParse<AccountStatus>(r.AccountStatus, true, out var parsedExistingStatus))
                             {
                                 existing.AccountStatus = parsedExistingStatus;
@@ -475,20 +485,48 @@ public class PlatformAdminService : IPlatformAdminService
         string adminEmail,
         int branchCount = 1,
         Guid? tariffId = null,
+        Guid? pricingRegionId = null,
         CancellationToken cancellationToken = default)
     {
         _plans.TryGetValue(planId, out var plan);
         plan ??= _plans.Values.First();
+
+        PricingRegion? region = null;
+        if (pricingRegionId.HasValue && _platformAdminRepository != null)
+        {
+            var allRegions = await _platformAdminRepository.GetPricingRegionsAsync(cancellationToken);
+            region = allRegions.FirstOrDefault(r => r.Id == pricingRegionId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(location) && _platformAdminRepository != null)
+        {
+            region = await _platformAdminRepository.ResolvePricingRegionByLocationAsync(location, cancellationToken);
+        }
 
         Tariff? tariff = null;
         if (tariffId.HasValue)
         {
             _tariffs.TryGetValue(tariffId.Value, out tariff);
         }
-        tariff ??= plan.Tariffs.FirstOrDefault();
+
+        // Check if there is a regional tariff matching this region and plan
+        decimal monthlyRate = plan.BasePrice;
+        string tariffName = "Standard Monthly";
+        if (region != null && region.Tariffs.Count > 0)
+        {
+            var regTariff = region.Tariffs.FirstOrDefault(t => t.PlanId == plan.Id && (tariffId == null || t.Id == tariffId));
+            if (regTariff != null)
+            {
+                monthlyRate = regTariff.Price;
+                tariffName = regTariff.Name;
+            }
+        }
+        else if (tariff != null)
+        {
+            monthlyRate = tariff.Price;
+            tariffName = tariff.Name;
+        }
 
         var id = Guid.NewGuid();
-        var monthlyRate = tariff != null ? tariff.Price : plan.BasePrice;
 
         var dto = new PlatformOrganizationDto
         {
@@ -501,8 +539,11 @@ public class PlatformAdminService : IPlatformAdminService
             FinancialStatus = FinancialStatus.Unbilled,
             PlanId = plan.Id,
             PlanName = plan.Name,
-            TariffId = tariff?.Id,
-            TariffName = tariff?.Name ?? "Standard Monthly",
+            PricingRegionId = region?.Id,
+            PricingRegionCode = region?.Code,
+            PricingRegionName = region?.Name,
+            TariffId = tariffId ?? tariff?.Id,
+            TariffName = tariffName,
             MonthlyRate = monthlyRate,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(30),
             AdminEmail = adminEmail,
@@ -518,6 +559,11 @@ public class PlatformAdminService : IPlatformAdminService
             try
             {
                 await _platformAdminRepository.ProvisionOrganizationAsync(id, name, location, adminEmail, dto.BranchCount, cancellationToken);
+
+                if (region != null)
+                {
+                    await _platformAdminRepository.AssignRegionalPlanToOrganizationAsync(id, region.Id, plan.Id, dto.TariffId, cancellationToken);
+                }
             }
             catch (Exception ex)
             {
@@ -525,7 +571,7 @@ public class PlatformAdminService : IPlatformAdminService
             }
         }
 
-        AddAuditLog("Organization Registered", $"New daycare organization '{name}' provisioned with plan '{plan.Name}' ({monthlyRate:C0}/mo).", "Info", id);
+        AddAuditLog("Organization Registered", $"New daycare organization '{name}' provisioned with plan '{plan.Name}' in region '{region?.Name ?? "Standard"}' ({monthlyRate:C0}/mo).", "Info", id);
 
         // Automatically dispatch onboarding invitation email with 1-tap activation token
         _ = SendOrganizationInvitationWorkflowAsync(id, adminEmail, cancellationToken);
@@ -1035,6 +1081,172 @@ public class PlatformAdminService : IPlatformAdminService
 
     #endregion
 
+    #region Regional Pricing & Tariff Layers
+
+    public async Task<List<PricingRegion>> GetPricingRegionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                return await _platformAdminRepository.GetPricingRegionsAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load pricing regions from database.");
+            }
+        }
+        return new List<PricingRegion>();
+    }
+
+    public async Task<PricingRegion?> ResolvePricingRegionByLocationAsync(string location, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null && !string.IsNullOrWhiteSpace(location))
+        {
+            try
+            {
+                return await _platformAdminRepository.ResolvePricingRegionByLocationAsync(location, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to resolve pricing region for location '{Location}'", location);
+            }
+        }
+        return null;
+    }
+
+    public async Task<List<RegionPlanTariff>> GetRegionPlanTariffsAsync(Guid regionId, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            try
+            {
+                return await _platformAdminRepository.GetRegionPlanTariffsAsync(regionId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load region plan tariffs for {RegionId}", regionId);
+            }
+        }
+        return new List<RegionPlanTariff>();
+    }
+
+    public async Task SavePricingRegionAsync(PricingRegion region, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            await _platformAdminRepository.SavePricingRegionAsync(region, cancellationToken);
+            AddAuditLog("Pricing Region Saved", $"Pricing region '{region.Name}' ({region.Code}) saved with {region.MatchedCities.Count} cities.", "Info");
+        }
+    }
+
+    public async Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            await _platformAdminRepository.SaveRegionPlanTariffAsync(tariff, cancellationToken);
+            AddAuditLog("Region Tariff Saved", $"Tariff '{tariff.Name}' ({tariff.Price:C0}/{tariff.Frequency}) saved for region {tariff.RegionId}.", "Info");
+        }
+    }
+
+    public async Task<bool> AssignRegionalPlanToOrganizationAsync(
+        Guid organizationId,
+        Guid regionId,
+        Guid planId,
+        Guid? tariffId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_organizations.TryGetValue(organizationId, out var org) && _plans.TryGetValue(planId, out var plan))
+        {
+            var oldPlan = org.PlanName;
+            var oldRegion = org.PricingRegionName ?? "Standard";
+
+            PricingRegion? region = null;
+            if (_platformAdminRepository != null)
+            {
+                var regions = await _platformAdminRepository.GetPricingRegionsAsync(cancellationToken);
+                region = regions.FirstOrDefault(r => r.Id == regionId);
+            }
+
+            decimal monthlyRate = plan.BasePrice;
+            string tariffName = "Standard Monthly";
+            if (region != null && region.Tariffs.Count > 0)
+            {
+                var regTariff = region.Tariffs.FirstOrDefault(t => t.PlanId == plan.Id && (tariffId == null || t.Id == tariffId));
+                if (regTariff != null)
+                {
+                    monthlyRate = regTariff.Price;
+                    tariffName = regTariff.Name;
+                }
+            }
+
+            org.PlanId = plan.Id;
+            org.PlanName = plan.Name;
+            org.PricingRegionId = region?.Id;
+            org.PricingRegionCode = region?.Code;
+            org.PricingRegionName = region?.Name;
+            org.TariffId = tariffId;
+            org.TariffName = tariffName;
+            org.MonthlyRate = monthlyRate;
+
+            if (_platformAdminRepository != null)
+            {
+                try
+                {
+                    await _platformAdminRepository.AssignRegionalPlanToOrganizationAsync(
+                        organizationId,
+                        regionId,
+                        plan.Id,
+                        tariffId,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to persist regional plan assignment to database for {OrgId}", organizationId);
+                }
+            }
+
+            AddAuditLog("Regional Plan Assigned", $"Organization '{org.Name}' assigned plan '{plan.Name}' in region '{region?.Name}' ({tariffName} - {monthlyRate:C0}).", "Info", organizationId);
+
+            if (_emailNotificationService != null && !string.IsNullOrWhiteSpace(org.AdminEmail))
+            {
+                try
+                {
+                    var daycareUrl = GetDaycarePortalUrl();
+                    var billingUrl = $"{daycareUrl}/billing";
+                    var summaryHtml = $@"
+                        <div style='margin-bottom: 8px;'><strong>New Plan:</strong> {plan.Name} ({plan.Code})</div>
+                        <div style='margin-bottom: 8px;'><strong>Pricing Region:</strong> {region?.Name ?? "Standard"}</div>
+                        <div style='margin-bottom: 8px;'><strong>Selected Schedule:</strong> {tariffName}</div>
+                        <div style='margin-bottom: 8px;'><strong>Monthly Rate:</strong> ₹{monthlyRate:F2}/month</div>
+                        <div style='margin-bottom: 8px;'><strong>Capacity Limits:</strong> Up to {plan.MaxChildren} children, {plan.MaxClassrooms} classrooms, {plan.MaxBranches} branches</div>
+                        <div style='margin-bottom: 8px;'><strong>Experience Studio AI:</strong> {(plan.IncludesAiFeatures ? "Enabled ✨" : "Standard")}</div>";
+
+                    await _emailNotificationService.SendPlanOrTariffUpdateNoticeAsync(
+                        org.AdminEmail,
+                        org.Name,
+                        plan.Name,
+                        $"Your {plan.Name} Subscription Schedule in {region?.Name ?? "Your Region"}",
+                        summaryHtml,
+                        "Effective Immediately",
+                        billingUrl,
+                        org.TenantId,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to dispatch regional plan update email to {Email}", org.AdminEmail);
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    #endregion
+
     #region Commercial & Billing Operations
 
     public Task<List<Invoice>> GetInvoicesAsync(string? status = null, CancellationToken cancellationToken = default)
@@ -1173,6 +1385,8 @@ public class PlatformAdminService : IPlatformAdminService
         var list = _communications.Values.OrderByDescending(c => c.CreatedAt).Take(limit).ToList();
         return Task.FromResult(list);
     }
+
+    #endregion
 
     #region Organization Invitations & Onboarding Workflow
 
@@ -1387,8 +1601,6 @@ public class PlatformAdminService : IPlatformAdminService
         }
         return new List<EmailNotificationLogDto>();
     }
-
-    #endregion
 
     #endregion
 
