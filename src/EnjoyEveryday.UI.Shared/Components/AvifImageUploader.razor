@@ -1,5 +1,7 @@
 @using Microsoft.JSInterop
+@using EnjoyEveryday.Application.Services
 @inject IJSRuntime JSRuntime
+@inject IMediaService MediaService
 
 <div class="avif-image-uploader" style="@Style">
     @if (string.IsNullOrEmpty(Value))
@@ -87,6 +89,15 @@
     [Parameter]
     public string Style { get; set; } = "";
 
+    [Parameter]
+    public string? EntityType { get; set; } = "General";
+
+    [Parameter]
+    public Guid? EntityId { get; set; }
+
+    [Parameter]
+    public Guid? ChildId { get; set; }
+
     private ElementReference _fileInput;
     private ElementReference _cameraInput;
     private bool _isProcessing = false;
@@ -113,13 +124,47 @@
             
             if (!string.IsNullOrEmpty(result))
             {
-                Value = result;
-                await ValueChanged.InvokeAsync(result);
+                if (result.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Upload Base64 converted image to Blob/Disk storage via IMediaService
+                    var commaIndex = result.IndexOf(',');
+                    var base64Data = commaIndex >= 0 ? result[(commaIndex + 1)..] : result;
+                    var header = commaIndex >= 0 ? result[..commaIndex] : "";
+                    
+                    var mime = "image/avif";
+                    if (header.Contains("image/webp", StringComparison.OrdinalIgnoreCase)) mime = "image/webp";
+                    else if (header.Contains("image/png", StringComparison.OrdinalIgnoreCase)) mime = "image/png";
+                    else if (header.Contains("image/jpeg", StringComparison.OrdinalIgnoreCase)) mime = "image/jpeg";
+
+                    var bytes = Convert.FromBase64String(base64Data);
+
+                    var uploadReq = new UploadMediaVariantRequest
+                    {
+                        EntityType = EntityType ?? "General",
+                        EntityId = EntityId,
+                        ChildId = ChildId,
+                        DisplayBytes = bytes,
+                        DisplayContentType = mime,
+                        ThumbnailBytes = bytes,
+                        ThumbnailContentType = mime
+                    };
+
+                    var asset = await MediaService.UploadMediaVariantsAsync(uploadReq);
+                    var assetUrl = $"/api/media/{asset.Id}/display";
+
+                    Value = assetUrl;
+                    await ValueChanged.InvokeAsync(assetUrl);
+                }
+                else
+                {
+                    Value = result;
+                    await ValueChanged.InvokeAsync(result);
+                }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error converting image: {ex.Message}");
+            Console.WriteLine($"Error converting/uploading image: {ex.Message}");
         }
         finally
         {

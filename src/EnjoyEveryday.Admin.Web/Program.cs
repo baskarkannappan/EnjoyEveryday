@@ -105,6 +105,7 @@ app.MapStaticAssets();
 app.MapAppHealthChecks();
 app.MapAuthEndpoints();
 app.MapBillingEndpoints();
+EnjoyEveryday.Infrastructure.Endpoints.MediaEndpoints.MapMediaEndpoints(app);
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

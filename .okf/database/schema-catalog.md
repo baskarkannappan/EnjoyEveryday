@@ -78,3 +78,9 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 ## 8. Communications, Messaging & Notifications (1 Table)
 * `email_notification_logs`: Multi-tenant audit trail of all outbound Azure Communication Services (ACS) emails (recipient, cc_recipients, subject, type, status, metadata, error trace).
 
+## 9. AI Vector Embeddings & Object Storage (4 Tables)
+* `media_assets`: Unified metadata repository for binary image/media assets offloaded to disk or Azure Blob Storage (display/thumb keys, MIME types, dimensions, and SHA-256 hashes).
+* `child_journey_embeddings`: Isolated satellite table storing semantic vector embeddings (`vector(768)`) for child learning observations, reflections, and milestones.
+* `activity_embeddings`: Isolated satellite table storing vector embeddings for curriculum lesson templates and activity matching.
+* `daycare_policy_embeddings`: Isolated satellite table storing chunked vector embeddings for daycare operating policies, regulatory handbooks, and FAQs.
+

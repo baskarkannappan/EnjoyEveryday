@@ -211,3 +211,4 @@ jobs:
 | **Phase 2: 10–50 Daycares** | Memory utilization > 75% on App Service Plan | Upgrade App Service Plan to **Basic B2** or **Standard S1** (enables 2-instance auto-scaling). | **~$65 / month** |
 | **Phase 3: 50–150 Daycares** | Peak DB CPU > 70% during 8:00 AM check-ins | Upgrade PostgreSQL Flexible Server from B1ms to **B2s** (2 vCPU, 4 GB RAM). | **~$115 / month** |
 | **Phase 4: 150+ Daycares** | > 1,000 concurrent interactive WebSocket circuits | Add **Azure SignalR Service** to offload WebSocket TLS termination and connection state from Web VMs. | **~$220 / month** |
+

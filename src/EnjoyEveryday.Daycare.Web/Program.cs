@@ -115,6 +115,8 @@ if (app.Environment.IsDevelopment())
     try
     {
         await migrationRunner.RunMigrationsAsync(migrationsPath);
+        var imageMigration = scope.ServiceProvider.GetRequiredService<EnjoyEveryday.Infrastructure.Storage.Base64ImageMigrationService>();
+        await imageMigration.MigrateExistingBase64ImagesAsync();
     }
     catch (Exception ex)
     {

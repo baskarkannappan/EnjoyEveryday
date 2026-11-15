@@ -1,5 +1,7 @@
 @using Microsoft.JSInterop
+@using EnjoyEveryday.Application.Services
 @inject IJSRuntime JSRuntime
+@inject IMediaService MediaService
 
 <div class="event-photo-uploader">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
@@ -133,7 +135,34 @@
                 {
                     if (currentList.Count < MaxPhotos && !string.IsNullOrWhiteSpace(img))
                     {
-                        currentList.Add(img);
+                        if (img.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var commaIndex = img.IndexOf(',');
+                            var base64Data = commaIndex >= 0 ? img[(commaIndex + 1)..] : img;
+                            var header = commaIndex >= 0 ? img[..commaIndex] : "";
+                            
+                            var mime = "image/avif";
+                            if (header.Contains("image/webp", StringComparison.OrdinalIgnoreCase)) mime = "image/webp";
+                            else if (header.Contains("image/png", StringComparison.OrdinalIgnoreCase)) mime = "image/png";
+                            else if (header.Contains("image/jpeg", StringComparison.OrdinalIgnoreCase)) mime = "image/jpeg";
+
+                            var bytes = Convert.FromBase64String(base64Data);
+                            var uploadReq = new UploadMediaVariantRequest
+                            {
+                                EntityType = "Event",
+                                DisplayBytes = bytes,
+                                DisplayContentType = mime,
+                                ThumbnailBytes = bytes,
+                                ThumbnailContentType = mime
+                            };
+
+                            var asset = await MediaService.UploadMediaVariantsAsync(uploadReq);
+                            currentList.Add($"/api/media/{asset.Id}/display");
+                        }
+                        else
+                        {
+                            currentList.Add(img);
+                        }
                     }
                 }
 

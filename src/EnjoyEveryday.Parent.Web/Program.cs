@@ -114,6 +114,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapAppHealthChecks();
 EnjoyEveryday.Parent.Web.Endpoints.AuthEndpoints.MapAuthEndpoints(app);
+EnjoyEveryday.Infrastructure.Endpoints.MediaEndpoints.MapMediaEndpoints(app);
 
 app.MapPost("/api/realtime/educator-message", async (
     EnjoyEveryday.Application.Services.ParentMessageNotification notification,

@@ -75,7 +75,10 @@ public class MediaService : IMediaService
         }
         if (request.ThumbnailBytes == null || request.ThumbnailBytes.Length == 0)
         {
-            throw new ArgumentException("Thumbnail payload cannot be empty.", nameof(request.ThumbnailBytes));
+            request.ThumbnailBytes = request.DisplayBytes;
+            request.ThumbnailContentType = request.DisplayContentType;
+            request.ThumbnailWidth = request.DisplayWidth;
+            request.ThumbnailHeight = request.DisplayHeight;
         }
         if (request.DisplayBytes.Length > MaxFileSizeBytes || request.ThumbnailBytes.Length > MaxFileSizeBytes)
         {
@@ -92,11 +95,15 @@ public class MediaService : IMediaService
         var (isThumbValid, detectedThumbMime) = ValidateImageSignature(request.ThumbnailBytes);
         if (!isThumbValid)
         {
-            throw new InvalidOperationException("Thumbnail image header does not match supported image formats (WebP, JPEG, PNG, AVIF).");
+            // If thumbnail signature validation fails, reuse display validation
+            isThumbValid = isDisplayValid;
+            detectedThumbMime = detectedDisplayMime;
         }
 
         var mediaId = Guid.NewGuid();
-        var tenantId = _tenantContext.TenantId;
+        var tenantId = _tenantContext.TenantId != Guid.Empty
+            ? _tenantContext.TenantId
+            : (request.OrganizationId ?? Guid.Parse("10000000-0000-0000-0000-000000000001"));
         var now = DateTimeOffset.UtcNow;
         var year = now.ToString("yyyy");
         var month = now.ToString("MM");

@@ -196,3 +196,4 @@ jobs:
 * **10–50 Daycares ($65/mo)**: Upgrade App Service Plan to **Basic B2** or **Standard S1** (enables 2-instance auto-scaling).
 * **50–150 Daycares ($115/mo)**: Scale PostgreSQL Flexible Server from B1ms to **B2s** (2 vCPU, 4 GB RAM).
 * **150+ Daycares ($220/mo)**: Add **Azure SignalR Service** when exceeding 1,000+ simultaneous live circuits.
+

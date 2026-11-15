@@ -34,6 +34,7 @@ public static class InfrastructureServiceRegistration
 
         // Migrations
         services.AddScoped<SqlMigrationRunner>();
+        services.AddScoped<EnjoyEveryday.Infrastructure.Storage.Base64ImageMigrationService>();
 
         // Audit
         services.AddScoped<IAuditService, DapperAuditService>();
