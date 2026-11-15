@@ -37,7 +37,7 @@ The **Storage & Media Explorer** provides Platform Administrators and Organizati
 | **Shared View** | [StorageExplorerView.razor](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.UI.Shared/Components/Storage/StorageExplorerView.razor) | Dual-tab UI rendering summary metrics, hierarchy rollups, and file directory table. |
 | **Platform Page** | [StorageMetricsPage.razor](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Admin.Web/Components/Pages/PlatformAdmin/StorageMetricsPage.razor) | Route `@page "/platform-admin/storage-explorer"` in Admin Portal. |
 | **Org Admin Page** | [StorageMetricsPage.razor](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Daycare.Web/Components/Pages/Organization/StorageMetricsPage.razor) | Route `@page "/organization/storage-metrics"` in Daycare Portal. |
-| **Service Layer** | [StorageExplorerService.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Infrastructure/Storage/StorageExplorerService.cs) | High-speed Dapper aggregation querying `media_assets` with branch/classroom joins in ~2 ms. |
+| **Service Layer** | [StorageExplorerService.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Infrastructure/Storage/StorageExplorerService.cs) | High-speed Dapper aggregation querying `media_assets` with branch/classroom joins (`classroom_teachers.user_id = m.entity_id`) in ~2 ms. |
 | **Contracts & DTOs** | [StorageExplorerDtos.cs](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/src/EnjoyEveryday.Application/Services/Storage/StorageExplorerDtos.cs) | Data models for summary, hierarchy rollups, and file records. |
 
 ---

@@ -349,7 +349,7 @@
             </div>
             <div class="modal-body">
                 <p style="font-size: 13.5px; color: var(--muted); margin: 0;">
-                    Updating account status for <strong>@_selectedOrg.Name</strong>. Current state: <strong>@_selectedOrg.AccountStatus</strong>.
+                    Updating account status for <strong>@_selectedOrg?.Name</strong>. Current state: <strong>@_selectedOrg?.AccountStatus</strong>.
                 </p>
                 <div class="form-group">
                     <label>Target Account Status *</label>
@@ -390,7 +390,7 @@
             </div>
             <div class="modal-body">
                 <p style="font-size: 13.5px; color: var(--muted); margin: 0;">
-                    Updating plan for <strong>@_selectedOrg.Name</strong>. Current: <strong>@_selectedOrg.PlanName (@_selectedOrg.TariffName)</strong>.
+                    Updating plan for <strong>@_selectedOrg?.Name</strong>. Current: <strong>@_selectedOrg?.PlanName (@_selectedOrg?.TariffName)</strong>.
                 </p>
                 <div class="form-group">
                     <label>Pricing Region / Tariff Zone</label>
@@ -452,9 +452,30 @@
                     </small>
                 </div>
 
+                @if (_orgCurrencyHistory != null && _orgCurrencyHistory.Any())
+                {
+                    <div style="margin-top: 14px; border-top: 1px solid var(--border, #e4e7df); padding-top: 10px;">
+                        <div style="font-size: 11.5px; font-weight: 750; color: var(--muted, #6c7870); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                            Currency Change History
+                        </div>
+                        <div style="max-height: 100px; overflow-y: auto; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 6px; padding: 6px 10px; font-size: 12px;">
+                            @foreach (var h in _orgCurrencyHistory)
+                            {
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid rgba(228, 231, 223, 0.4);">
+                                    <div>
+                                        <span style="font-weight: 700; color: var(--accent-dark, #31523c);">@h.PreviousCurrency &rarr; @h.NewCurrency</span>
+                                        <span style="color: var(--muted, #6c7870); margin-left: 6px; font-size: 11px;">(@h.Reason)</span>
+                                    </div>
+                                    <span style="color: var(--muted, #6c7870); font-size: 11px;">@h.EffectiveFrom.ToString("MMM dd, yyyy")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
                 <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 8px; padding: 10px 12px; margin-top: 14px; font-size: 12.5px; color: var(--muted, #6c7870); display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 16px;">✉️</span>
-                    <span>An official plan update notification email will be dispatched to <strong>@_selectedOrg.AdminEmail</strong> upon applying changes.</span>
+                    <span>An official plan update notification email will be dispatched to <strong>@_selectedOrg?.AdminEmail</strong> upon applying changes.</span>
                 </div>
             </div>
             <div class="modal-footer">
@@ -481,7 +502,7 @@
             </div>
             <div class="modal-body">
                 <p style="font-size: 13.5px; color: var(--text); line-height: 1.4;">
-                    Are you sure you want to suspend <strong>@_selectedOrg.Name</strong>? Daycare teachers and admins will be temporarily locked out from classroom operations until reinstated.
+                    Are you sure you want to suspend <strong>@_selectedOrg?.Name</strong>? Daycare teachers and admins will be temporarily locked out from classroom operations until reinstated.
                 </p>
                 <div class="form-group">
                     <label>Reason for Suspension *</label>
@@ -548,6 +569,7 @@
     private Guid _assignRegionId;
     private string _assignCurrency = "INR";
     private List<RegionPlanTariff> _assignRegionalTariffs = new();
+    private List<OrganizationCurrencyHistory> _orgCurrencyHistory = new();
 
     // Deactivate input
     private string _deactivateReason = "";
@@ -643,7 +665,7 @@
             }
         }
         var plan = _availablePlans.FirstOrDefault(p => p.Id == planId);
-        return plan != null ? plan.BasePrice.ToString("C0") : "$0";
+        return plan != null ? plan.BasePrice.ToString("C0") : "₹0";
     }
 
     private async Task OnCreateLocationChangedAsync()
@@ -786,6 +808,7 @@
             await RefreshAssignRegionalTariffsAsync();
             _assignTariffs = await PlatformService.GetTariffsByPlanIdAsync(org.PlanId);
             _assignTariffId = org.TariffId ?? _assignRegionalTariffs.FirstOrDefault()?.Id ?? _assignTariffs.FirstOrDefault()?.Id;
+            _orgCurrencyHistory = await PlatformService.GetOrganizationCurrencyHistoryAsync(org.Id);
             _showPlanTariffModal = true;
         }
         catch (Exception ex)
@@ -889,7 +912,8 @@
                 _selectedOrg.Id, 
                 _assignRegionId, 
                 _assignPlanId, 
-                _assignTariffId);
+                _assignTariffId,
+                _assignCurrency);
             if (ok)
             {
                 _notificationMessage = $"Regional plan and tariff updated for '{_selectedOrg.Name}'. Confirmation email dispatched to {_selectedOrg.AdminEmail}.";

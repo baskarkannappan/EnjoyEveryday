@@ -20,6 +20,7 @@
 @inject IChildDailyCareService DailyCareService
 @inject AttendanceService AttendanceService
 @inject IEndOfDayService EndOfDayService
+@inject IDailyOperationsService DailyOpsService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
@@ -180,6 +181,72 @@
                 </div>
             }
         </div>
+
+        <!-- ================= SECTION A2: CLASSROOM DAILY OPERATIONS GATE ================= -->
+        @if (_classroomOpsStatus != null)
+        {
+            @if (!_classroomOpsStatus.IsBranchOpen)
+            {
+                <div class="daily-gate-card closed-branch">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="gate-icon">🔒</span>
+                        <div>
+                            <div class="gate-title">Branch Facility is Closed</div>
+                            <div class="gate-desc">The Branch Admin has not opened the facility for operations yet today. Child arrivals, attendance check-in, care logs, and learning activities will unlock once the branch is opened.</div>
+                        </div>
+                    </div>
+                    <span class="closed-status-pill" style="white-space: nowrap;">BRANCH CLOSED</span>
+                </div>
+            }
+            else if (!_classroomOpsStatus.IsOpen && _classroomOpsStatus.ClosedAt == null)
+            {
+                <div class="daily-gate-card ready-room">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="gate-icon">🌅</span>
+                        <div>
+                            <div class="gate-title">Branch is Open • Classroom Ready to Open</div>
+                            <div class="gate-desc">Good morning! Open @(_activeClassroom?.Name ?? "the classroom") to start taking child arrivals, marking attendance, and running today's learning experiences.</div>
+                        </div>
+                    </div>
+                    <button class="btn primary" @onclick="HandleOpenClassroomAsync" style="white-space: nowrap; font-weight: 750;">
+                        🌅 Open Classroom
+                    </button>
+                </div>
+            }
+            else if (_classroomOpsStatus.IsOpen)
+            {
+                <div class="daily-gate-card open-room">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="status-dot-open"></span>
+                        <div>
+                            <div class="gate-title" style="color: var(--accent-dark, #31523c);">
+                                @(_activeClassroom?.Name ?? "Classroom") Open for Today
+                            </div>
+                            <div class="gate-desc">
+                                Opened at @(_classroomOpsStatus.OpenedAt?.ToString("h:mm tt")) by @(_classroomOpsStatus.OpenedByName ?? "Lead Teacher") • Child check-in &amp; learning activities active.
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn secondary sm" @onclick="OpenClassroomCloseModal" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 750; white-space: nowrap;">
+                        <span>🌙</span>
+                        <span>Close Classroom (End of Day)</span>
+                    </button>
+                </div>
+            }
+            else if (!_classroomOpsStatus.IsOpen && _classroomOpsStatus.ClosedAt != null)
+            {
+                <div class="daily-gate-card completed-room">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="gate-icon">🌙</span>
+                        <div>
+                            <div class="gate-title">Classroom Closed for the Day</div>
+                            <div class="gate-desc">Closed at @(_classroomOpsStatus.ClosedAt?.ToString("h:mm tt")) by @(_classroomOpsStatus.ClosedByName ?? "Teacher"). All children departed and sessions concluded.</div>
+                        </div>
+                    </div>
+                    <span class="closed-status-pill" style="background: #edf2f7; color: #4a5568; border-color: #cbd5e0; white-space: nowrap;">ROOM CLOSED</span>
+                </div>
+            }
+        }
 
         <!-- ================= SECTION: DAYCARE PROGRESS TIMELINE ================= -->
         <div class="day-timeline-card" aria-label="Daycare Day Timeline">
@@ -1032,6 +1099,70 @@
     </div>
 }
 
+@* CLOSE CLASSROOM (END OF DAY) MODAL *@
+@if (_showCloseClassroomModal && _activeClassroom != null)
+{
+    var presentCount = _classroomChildren.Count(c => c.IsCheckedIn);
+    <div class="cockpit-modal-backdrop" @onclick="() => _showCloseClassroomModal = false">
+        <div class="cockpit-modal" style="max-width: 480px;" @onclick:stopPropagation="true">
+            <div class="cockpit-modal-header">
+                <div>
+                    <div style="font-size: 11px; font-weight: 750; color: var(--accent, #557c6c); text-transform: uppercase; letter-spacing: 0.8px;">
+                        END OF DAY OPERATION
+                    </div>
+                    <h3 style="margin: 2px 0 0; font-size: 17px; font-weight: 800; color: var(--text, #26332d);">
+                        Close @_activeClassroom.Name
+                    </h3>
+                </div>
+                <button class="cockpit-modal-close" @onclick="() => _showCloseClassroomModal = false">✕</button>
+            </div>
+            <div class="cockpit-modal-body" style="padding: 16px 20px;">
+                <p style="font-size: 13.5px; color: var(--text, #26332d); line-height: 1.45; margin: 0 0 14px;">
+                    Closing the classroom seals all daily attendance marks and concludes running learning sessions for today.
+                </p>
+
+                <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+                    <div style="font-size: 11px; font-weight: 750; color: var(--muted, #6c7870); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                        Automated Actions Upon Closure
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>👥</span>
+                            <span><strong>@presentCount</strong> children currently present will be auto-checked out.</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>🎨</span>
+                            <span>Any open activity sessions will be marked completed.</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>🔒</span>
+                            <span>Care routine logs (meals, diapers, naps) will be locked for the day.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 12.5px; font-weight: 700; color: var(--text, #26332d); display: block; margin-bottom: 4px;">
+                        Departure &amp; Closure Time *
+                    </label>
+                    <input type="time" class="form-input" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 6px; font-size: 13.5px;" @bind="_closeClassroomTime" />
+                    <small style="color: var(--muted, #6c7870); font-size: 11.5px; display: block; margin-top: 4px;">
+                        Timestamp recorded for departures of remaining children and session end.
+                    </small>
+                </div>
+            </div>
+            <div class="cockpit-modal-footer" style="padding: 12px 20px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border, #e4e7df);">
+                <button class="btn secondary sm" @onclick="() => _showCloseClassroomModal = false" disabled="@_isClosingClassroom">
+                    Cancel
+                </button>
+                <button class="btn primary sm" @onclick="HandleConfirmCloseClassroomAsync" disabled="@_isClosingClassroom" style="font-weight: 750;">
+                    @(_isClosingClassroom ? "Closing..." : "✓ Confirm & Close Classroom")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_showSecurePickupModal && _activeClassroom != null)
 {
     <SecurePickupModal IsOpen="_showSecurePickupModal"
@@ -1246,6 +1377,12 @@
     private Guid? _activeDiaperChildId;
     private Guid? _activeMealChildId;
 
+    // Daily Operational Gates State
+    private ClassroomDailyStatusDto? _classroomOpsStatus;
+    private bool _showCloseClassroomModal = false;
+    private TimeOnly _closeClassroomTime = TimeOnly.FromDateTime(DateTime.Now);
+    private bool _isClosingClassroom = false;
+
     // Feature 1: Pickup Cheat-Sheet
     private ClassroomChildCareStatusDto? _activeCheatSheetChild;
 
@@ -1423,6 +1560,15 @@
                 }
 
                 await LoadClassroomLiveFeedAsync();
+
+                try
+                {
+                    _classroomOpsStatus = await DailyOpsService.GetClassroomDailyStatusAsync(_selectedClassroomId.Value);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Could not fetch classroom daily status");
+                }
             }
 
             try
@@ -1735,12 +1881,91 @@
         }
     }
 
+    private bool IsClassroomOperationsLocked => 
+        !DailyOpsService.IsBypassedForTesting() && 
+        (_classroomOpsStatus == null || !_classroomOpsStatus.IsOpen);
+
+    private string GetClassroomLockedMessage()
+    {
+        if (_classroomOpsStatus == null || !_classroomOpsStatus.IsBranchOpen)
+        {
+            return "Branch facility is closed. Waiting for the Branch Admin to open operations.";
+        }
+        if (!_classroomOpsStatus.IsOpen && _classroomOpsStatus.ClosedAt != null)
+        {
+            return "Classroom is closed for the day. Routine care and attendance are sealed.";
+        }
+        return "Classroom has not been opened yet. Please click 'Open Classroom' in the header to start today's session.";
+    }
+
+    private async Task HandleOpenClassroomAsync()
+    {
+        if (!_selectedClassroomId.HasValue) return;
+        try
+        {
+            var res = await DailyOpsService.OpenClassroomDayAsync(_selectedClassroomId.Value);
+            if (res.Success)
+            {
+                await NotificationService.ShowSuccessAsync("Classroom successfully opened! Child arrivals and learning activities are now active.");
+                await RefreshBoardAsync();
+            }
+            else
+            {
+                await NotificationService.ShowWarningAsync(res.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+    }
+
+    private void OpenClassroomCloseModal()
+    {
+        _closeClassroomTime = TimeOnly.FromDateTime(DateTime.Now);
+        _showCloseClassroomModal = true;
+    }
+
+    private async Task HandleConfirmCloseClassroomAsync()
+    {
+        if (!_selectedClassroomId.HasValue) return;
+        _isClosingClassroom = true;
+        try
+        {
+            var checkoutTime = _closeClassroomTime.ToTimeSpan();
+            var res = await DailyOpsService.CloseClassroomDayAsync(_selectedClassroomId.Value, checkoutTime: checkoutTime);
+            if (res.Success)
+            {
+                _showCloseClassroomModal = false;
+                await NotificationService.ShowSuccessAsync(res.Message);
+                await RefreshBoardAsync();
+            }
+            else
+            {
+                await NotificationService.ShowWarningAsync(res.Message);
+            }
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.HandleExceptionAsync(ex);
+        }
+        finally
+        {
+            _isClosingClassroom = false;
+        }
+    }
+
     private async Task CheckInChildAsync(Guid childId)
     {
         if (_activeClassroom == null) return;
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed for the day. New arrivals cannot be checked in after 7:00 PM.");
+            return;
+        }
+        if (IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
             return;
         }
 
@@ -1801,6 +2026,11 @@
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed for the day. Batch check-in cannot be recorded after 7:00 PM.");
+            return;
+        }
+        if (IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
             return;
         }
 

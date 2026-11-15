@@ -183,6 +183,7 @@ public interface IPlatformAdminService
     Task SavePricingRegionAsync(PricingRegion region, CancellationToken cancellationToken = default);
     Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken cancellationToken = default);
     Task<bool> AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, string? currency = null, CancellationToken cancellationToken = default);
+    Task<List<OrganizationCurrencyHistory>> GetOrganizationCurrencyHistoryAsync(Guid organizationId, CancellationToken cancellationToken = default);
 
     // Commercial & Billing Operations
     Task<List<Invoice>> GetInvoicesAsync(string? status = null, CancellationToken cancellationToken = default);

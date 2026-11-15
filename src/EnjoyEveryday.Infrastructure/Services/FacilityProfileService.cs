@@ -56,7 +56,6 @@ public class FacilityProfileService : IFacilityProfileService
                 INNER JOIN organizations o ON p.organization_id = o.id
                 LEFT JOIN branches b ON p.branch_id = b.id
                 WHERE p.tenant_id = @TenantId 
-                  AND p.organization_id = @OrganizationId 
                   AND p.branch_id = @BranchId 
                   AND p.is_active = true
                 LIMIT 1;
@@ -64,12 +63,25 @@ public class FacilityProfileService : IFacilityProfileService
 
             var branchRow = await connection.QueryFirstOrDefaultAsync<FacilityProfileRaw>(
                 branchSql,
-                new { TenantId = tenantId, OrganizationId = organizationId, BranchId = branchId.Value });
+                new { TenantId = tenantId, BranchId = branchId.Value });
 
             if (branchRow != null)
             {
                 return MapRawToDto(branchRow);
             }
+
+            // Fallback: if organizationId was not provided, look up the branch's organization
+            if (organizationId == Guid.Empty)
+            {
+                organizationId = await connection.ExecuteScalarAsync<Guid>(
+                    "SELECT organization_id FROM branches WHERE tenant_id = @TenantId AND id = @BranchId LIMIT 1;",
+                    new { TenantId = tenantId, BranchId = branchId.Value });
+            }
+        }
+
+        if (organizationId == Guid.Empty)
+        {
+            return null;
         }
 
         // 2. Fallback to organization-level profile
@@ -306,22 +318,29 @@ public class FacilityProfileService : IFacilityProfileService
         var tenantId = _tenantContext.TenantId;
         using var connection = await _connectionFactory.CreateConnectionAsync(ct);
 
+        // If user is a branch admin scoped to a specific branch, return their branch directly
+        if (_userContext.BranchId.HasValue && !IsOrgAdmin())
+        {
+            const string branchUserSql = """
+                SELECT id, organization_id AS OrganizationId, name, location 
+                FROM branches 
+                WHERE tenant_id = @TenantId 
+                  AND id = @BranchId 
+                  AND is_active = true;
+            """;
+            return await connection.QueryAsync<BranchOptionDto>(branchUserSql, new { TenantId = tenantId, BranchId = _userContext.BranchId.Value });
+        }
+
         const string sql = """
-            SELECT id, name, location 
+            SELECT id, organization_id AS OrganizationId, name, location 
             FROM branches 
             WHERE tenant_id = @TenantId 
-              AND organization_id = @OrganizationId 
+              AND (@OrganizationId = '00000000-0000-0000-0000-000000000000'::uuid OR organization_id = @OrganizationId) 
               AND is_active = true
             ORDER BY name;
         """;
 
         var branches = await connection.QueryAsync<BranchOptionDto>(sql, new { TenantId = tenantId, OrganizationId = organizationId });
-
-        // If user is a branch admin scoped to a specific branch, restrict to only that branch
-        if (_userContext.BranchId.HasValue && !IsOrgAdmin())
-        {
-            return branches.Where(b => b.Id == _userContext.BranchId.Value);
-        }
 
         return branches;
     }
@@ -332,10 +351,10 @@ public class FacilityProfileService : IFacilityProfileService
         using var connection = await _connectionFactory.CreateConnectionAsync(ct);
 
         const string sql = """
-            SELECT id, name, location 
+            SELECT id, organization_id AS OrganizationId, name, location 
             FROM branches 
             WHERE tenant_id = @TenantId 
-              AND organization_id = @OrganizationId 
+              AND (@OrganizationId = '00000000-0000-0000-0000-000000000000'::uuid OR organization_id = @OrganizationId) 
               AND is_active = true
             ORDER BY name;
         """;

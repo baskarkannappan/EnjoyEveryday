@@ -437,13 +437,27 @@ public class PlatformAdminRepository : IPlatformAdminRepository
             });
     }
 
+    public async Task<List<OrganizationCurrencyHistory>> GetOrganizationCurrencyHistoryAsync(Guid organizationId, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        const string sql = @"
+            SELECT id, organization_id as OrganizationId, previous_currency as PreviousCurrency, 
+                   new_currency as NewCurrency, changed_by as ChangedBy, reason, 
+                   effective_from as EffectiveFrom, created_at as CreatedAt
+            FROM public.organization_currency_history
+            WHERE organization_id = @organizationId
+            ORDER BY created_at DESC;";
+        var results = await conn.QueryAsync<OrganizationCurrencyHistory>(sql, new { organizationId });
+        return results.ToList();
+    }
+
     private sealed class PricingRegionDbRecord
     {
         public Guid Id { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
-        public string Currency { get; set; } = "USD";
+        public string Currency { get; set; } = "INR";
         public string? MatchedCities { get; set; }
         public string? MatchedStates { get; set; }
         public bool IsDefault { get; set; }
@@ -480,7 +494,7 @@ public class PlatformAdminRepository : IPlatformAdminRepository
         public string Frequency { get; set; } = "Monthly";
         public decimal Price { get; set; }
         public decimal DiscountPercentage { get; set; }
-        public string Currency { get; set; } = "USD";
+        public string Currency { get; set; } = "INR";
         public bool IsActive { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }

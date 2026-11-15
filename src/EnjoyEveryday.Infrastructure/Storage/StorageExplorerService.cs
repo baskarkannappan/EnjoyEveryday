@@ -53,7 +53,7 @@ public class StorageExplorerService : IStorageExplorerService
             LEFT JOIN branches child_b ON child_cl.branch_id = child_b.id
             LEFT JOIN events ev ON m.entity_type = 'Event' AND m.entity_id = ev.id
             LEFT JOIN branches ev_b ON ev.branch_id = ev_b.id
-            LEFT JOIN classroom_teachers ct ON m.entity_type = 'Teacher' AND m.entity_id = ct.teacher_id AND ct.is_active = true
+            LEFT JOIN classroom_teachers ct ON m.entity_type = 'Teacher' AND m.entity_id = ct.user_id
             LEFT JOIN classrooms teacher_cl ON ct.classroom_id = teacher_cl.id
             LEFT JOIN branches teacher_b ON teacher_cl.branch_id = teacher_b.id
             WHERE (@TenantId IS NULL OR m.tenant_id = @TenantId)

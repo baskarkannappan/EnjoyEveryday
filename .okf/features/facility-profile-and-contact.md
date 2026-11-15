@@ -134,9 +134,9 @@ In strict accordance with repository UI standards:
 |:---|:---|
 | `FacilityProfileDtos.cs` | DTOs for facility profiles, save requests, inquiries, and branch selector options. |
 | `IFacilityProfileService.cs` | Service contract defining profile retrieval (with fallback), saving, inquiry submission, and cross-tenant platform queries. |
-| `FacilityProfileService.cs` | Dapper implementation respecting multi-tenant and role-scoping constraints. |
-| `FacilityProfileView.razor` | Shared read-only Scandinavian card view with light warm hero surface (`.facility-hero-clean`), high-contrast dark forest slate typography, clean light action pills, story, gallery lightbox, location, and inquiry form. |
-| `FacilityProfileEditorView.razor` | Shared multi-tab editor for Org and Branch Admins (customizer, received inquiries workflow, live parent preview). |
+| `FacilityProfileService.cs` | Dapper implementation respecting multi-tenant and role-scoping constraints. Supports direct branch-level lookup by `@BranchId` without cross-org mismatch failure, with dynamic parent organization resolution. |
+| `FacilityProfileView.razor` | Shared read-only Scandinavian card view with light warm hero surface (`.facility-hero-clean`), high-contrast dark forest slate typography, clean light action pills, story, gallery lightbox, location, and inquiry form. Resolves branch and organization dynamically. |
+| `FacilityProfileEditorView.razor` | Shared multi-tab editor for Org and Branch Admins (customizer, received inquiries workflow, live parent preview). Auto-commits pending tag or gallery photo inputs upon saving. |
 | `FacilityProfileCustomizerPage.razor` | Daycare Web Admin page at `/organization/profile-customizer` and `/organization/inquiries`. |
 | `BranchAboutViewPage.razor` | Daycare Web Teacher page at `/organization/branch-info` for quick campus contact lookup. |
 | `AboutAndContactPage.razor` | Parent Portal page at `/about-and-contact` with direct phone links, directions, and inquiry submission. |

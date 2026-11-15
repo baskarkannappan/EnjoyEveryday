@@ -47,5 +47,7 @@ tags:
     - Parent Messages (`https://localhost:7005/messages`, `Messages.razor`) as top-level broadcast alert pills.
     - Parent Family & Care Profile (`https://localhost:7005/family`, `FamilyProfile.razor`) in the live announcements feed.
 * **On-Demand Loading & Read Tracking**: `ClassroomMessagesView` loads conversation metadata on initialization without auto-selecting the first child. Messages are loaded on-demand only when a teacher explicitly clicks a child conversation. Parent message reads execute `sp_mark_parent_communications_read_by_parent`, instantly resetting unread counters across parent today summaries.
+* **Parent Stories (`/stories`)**: Dedicated educator interface (`ParentStories.razor`) for capturing daily learning moments and photos for families.
+  - Dynamically scopes to the user's active organization and branch via `IUserContext` and `IPageAuthorizationService.GetUserProfileAsync()`, resolving child lists and stories within their authorized scope without multi-tenant cross-org permission faults.
 
 

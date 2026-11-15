@@ -1,17 +1,17 @@
 @namespace EnjoyEveryday.UI.Shared.Components
 
 <article class="experience-card cat-@CategoryKey" @onclick="OnClick">
-    <!-- Top Row: Unified Category Tag & Status -->
+    <!-- Top Row: Category Chip & Rating / Status Badges -->
     <div class="card-top-row">
-        <div class="category-tag @CategoryKey">
-            <span class="cat-icon">@CategoryIcon</span>
-            <span class="cat-name">@CategoryDisplayName</span>
-        </div>
+        <span class="category-chip @CategoryKey">
+            <span class="category-icon">@CategoryIcon</span>
+            <span>@CategoryDisplayName</span>
+        </span>
 
-        <div class="card-top-status-group">
+        <div class="status-wrapper">
             @if (Stars > 0)
             {
-                <span class="rating-display" title="@Stars.ToString("0.0") rating from @ReviewsCount reviews">
+                <span class="status-badge rating" title="@Stars.ToString("0.0") rating from @ReviewsCount reviews">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
                         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                     </svg>
@@ -23,95 +23,99 @@
                 </span>
             }
 
-            <span class="status-indicator @StatusKey">
-                <span class="status-dot"></span>
-                <span>@StatusDisplay</span>
-            </span>
+            @if (!string.IsNullOrWhiteSpace(StatusDisplay))
+            {
+                <span class="status-badge @StatusKey">
+                    @if (StatusKey == "approved" || StatusKey == "published")
+                    {
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    }
+                    else
+                    {
+                        <span class="status-dot"></span>
+                    }
+                    <span>@StatusDisplay.ToUpperInvariant()</span>
+                </span>
+            }
         </div>
     </div>
 
-    <!-- Title & Description -->
-    <div class="card-body-content">
-        <h3 class="card-title" title="@Title">@Title</h3>
-        <p class="card-desc">
+    <!-- Title & Description Section -->
+    <div class="card-main-content">
+        <h3 class="item-title" title="@Title">@Title</h3>
+        <p class="item-desc" title="@Description">
             @(string.IsNullOrWhiteSpace(Description) 
                 ? "Engaging developmental learning experience crafted for early childhood curiosity." 
                 : Description)
         </p>
     </div>
 
-    <!-- Clean Metadata Strip -->
-    <div class="card-meta-strip">
-        @if (!string.IsNullOrWhiteSpace(Ages))
-        {
-            <span class="meta-item" title="Target Age Range">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="7" r="4"></circle>
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                </svg>
-                <span>@(Ages.EndsWith("yrs", StringComparison.OrdinalIgnoreCase) || Ages.EndsWith("years", StringComparison.OrdinalIgnoreCase) ? Ages : $"{Ages} yrs")</span>
-            </span>
-        }
-        @if (!string.IsNullOrWhiteSpace(Duration))
-        {
-            <span class="meta-sep">&bull;</span>
-            <span class="meta-item" title="Activity Duration">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                <span>@Duration</span>
-            </span>
-        }
+    <!-- Metadata Ribbon: Age Group, Duration, Version, Setting, Runs -->
+    <div class="attributes-ribbon">
+        <div class="attr-pill" title="Target Age Range">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="7" r="4"></circle>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            </svg>
+            <span class="attr-val">@FormatAges(Ages)</span>
+        </div>
+
+        <div class="attr-pill" title="Activity Duration">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span class="attr-val">@FormatDuration(Duration)</span>
+        </div>
+
+        <div class="attr-pill" title="Curated Version">
+            <span class="version-label">@(CleanVersion(Version))</span>
+        </div>
+
         @if (!string.IsNullOrWhiteSpace(Setting))
         {
-            <span class="meta-sep">&bull;</span>
-            <span class="meta-item" title="Learning Environment">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <div class="attr-pill" title="Learning Environment">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                 </svg>
-                <span>@Setting</span>
-            </span>
+                <span class="attr-val">@Setting</span>
+            </div>
         }
+
         @if (UsesCount > 0)
         {
-            <span class="meta-sep">&bull;</span>
-            <span class="meta-item meta-uses" title="Classroom Sessions Run">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <div class="attr-pill" title="Classroom Sessions Run">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="23 4 23 10 17 10"></polyline>
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                 </svg>
-                <span>@(UsesCount == 1 ? "1 run" : $"{UsesCount} runs")</span>
-            </span>
+                <span class="attr-val">@(UsesCount == 1 ? "1 run" : $"{UsesCount} runs")</span>
+            </div>
         }
     </div>
 
-    <!-- Footer Row -->
-    <div class="card-footer-row">
-        <div class="author-info">
-            <span class="author-avatar" title="Created by @CreatedBy">@GetInitials(CreatedBy)</span>
-            <div class="author-meta">
-                <span class="author-name">@CreatedBy</span>
-                <span class="author-sub">@(CleanVersion(Version)) @(!string.IsNullOrWhiteSpace(CreatedDate) ? $"· {CreatedDate}" : "")</span>
-            </div>
+    <!-- Footer Row: Attribution & Action Buttons -->
+    <div class="card-footer">
+        <div class="attribution-info">
+            <span class="curator-text" title="Created by @CreatedBy">
+                <span class="curator-dot">🌿</span> @(string.IsNullOrWhiteSpace(CreatedBy) ? "Platform Curriculum" : CreatedBy)
+            </span>
         </div>
 
-        <div class="card-actions-row" @onclick:stopPropagation="true">
+        <div class="action-buttons-group" @onclick:stopPropagation="true">
+            <button type="button" class="btn-action secondary" @onclick="OnClick">
+                Details
+            </button>
             @if (IsPublished)
             {
-                <a href="/api/experiences/@Id/storybook" target="_blank" class="btn-storybook" 
-                   title="Read Published Storybook">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-                    </svg>
-                    <span>Storybook</span>
+                <a href="/api/experiences/@Id/storybook" target="_blank" class="btn-action primary" title="Read Published Storybook">
+                    Storybook
                 </a>
                 @if (OnDownloadStorybook.HasDelegate)
                 {
-                    <button type="button" class="btn-download-icon" 
-                            title="Download Storybook (.html)" 
-                            @onclick="HandleDownloadStorybook">
+                    <button type="button" class="btn-action secondary btn-icon-only" title="Download Storybook (.html)" @onclick="HandleDownloadStorybook">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
@@ -120,10 +124,12 @@
                     </button>
                 }
             }
-            <button type="button" class="btn-view-card" @onclick="OnClick">
-                <span>View</span>
-                <span class="arrow">&rarr;</span>
-            </button>
+            else
+            {
+                <button type="button" class="btn-action primary" @onclick="OnClick">
+                    <span>View &rarr;</span>
+                </button>
+            }
         </div>
     </div>
 </article>
@@ -165,8 +171,12 @@
         {
             var t = (Type ?? "").ToLowerInvariant();
             if (t.Contains("explore")) return "explore";
-            if (t.Contains("create") || t.Contains("art")) return "art";
+            if (t.Contains("art") || t.Contains("create")) return "art";
             if (t.Contains("move")) return "move";
+            if (t.Contains("stem") || t.Contains("logic")) return "stem";
+            if (t.Contains("early")) return "early";
+            if (t.Contains("nature")) return "nature";
+            if (t.Contains("play")) return "early";
 
             var combined = $"{Title} {Description}".ToLowerInvariant();
             if (combined.Contains("art") || combined.Contains("paint") || combined.Contains("texture") || 
@@ -180,10 +190,11 @@
                 combined.Contains("leaves"))
                 return "nature";
 
-            if (combined.Contains("animal") || combined.Contains("toy") || combined.Contains("story") || 
+            if (combined.Contains("early") || combined.Contains("toddler") || combined.Contains("infant") ||
+                combined.Contains("animal") || combined.Contains("toy") || combined.Contains("story") || 
                 combined.Contains("puppet") || combined.Contains("pretend") || combined.Contains("roleplay") || 
                 combined.Contains("adventure") || combined.Contains("sound"))
-                return "play";
+                return "early";
 
             if (combined.Contains("move") || combined.Contains("dance") || combined.Contains("jump") || 
                 combined.Contains("run") || combined.Contains("active") || combined.Contains("yoga") || 
@@ -207,48 +218,50 @@
         get
         {
             if (!string.IsNullOrWhiteSpace(Type) && !string.Equals(Type, "Experience", StringComparison.OrdinalIgnoreCase))
-                return Type;
+                return Type.ToUpperInvariant();
 
             return CategoryKey switch
             {
-                "art" => "Creative Art",
-                "nature" => "Nature & Science",
-                "play" => "Imaginative Play",
-                "move" => "Gross Motor",
-                "explore" => "Exploration",
-                "stem" => "STEM & Logic",
-                _ => "Experience"
+                "art" => "CREATIVE ART",
+                "nature" => "NATURE & SCIENCE",
+                "early" => "EARLY CHILDHOOD",
+                "move" => "GROSS MOTOR",
+                "explore" => "EXPLORATION",
+                "stem" => "STEM & LOGIC",
+                _ => "EARLY CHILDHOOD"
             };
         }
     }
 
-    private RenderFragment CategoryIcon => builder =>
+    private string CategoryIcon => CategoryKey switch
     {
-        switch (CategoryKey)
-        {
-            case "art":
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z""></path><circle cx=""7.5"" cy=""10.5"" r=""1.5"" fill=""currentColor""></circle><circle cx=""12"" cy=""7.5"" r=""1.5"" fill=""currentColor""></circle><circle cx=""16.5"" cy=""10.5"" r=""1.5"" fill=""currentColor""></circle></svg>");
-                break;
-            case "nature":
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z""></path><path d=""M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12""></path></svg>");
-                break;
-            case "play":
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><polygon points=""12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2""></polygon></svg>");
-                break;
-            case "move":
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M13 2L3 14h9l-1 8 10-12h-9l1-8z""></path></svg>");
-                break;
-            case "explore":
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""12"" r=""10""></circle><polygon points=""16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76""></polygon></svg>");
-                break;
-            case "stem":
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""14"" width=""7"" height=""7""></rect><rect x=""3"" y=""14"" width=""7"" height=""7""></rect></svg>");
-                break;
-            default:
-                builder.AddMarkupContent(0, @"<svg width=""12"" height=""12"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2.2"" stroke-linecap=""round"" stroke-linejoin=""round""><polygon points=""12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2""></polygon></svg>");
-                break;
-        }
+        "art" => "🎨",
+        "nature" => "🌿",
+        "early" => "🧸",
+        "move" => "🏃",
+        "explore" => "🔍",
+        "stem" => "🔬",
+        _ => "🧸"
     };
+
+    private static string FormatAges(string? ages)
+    {
+        if (string.IsNullOrWhiteSpace(ages)) return "All Ages";
+        ages = ages.Trim();
+        if (ages.Equals("All Ages", StringComparison.OrdinalIgnoreCase)) return ages;
+        if (ages.EndsWith("yrs", StringComparison.OrdinalIgnoreCase) || ages.EndsWith("years", StringComparison.OrdinalIgnoreCase))
+            return ages;
+        return $"{ages} yrs";
+    }
+
+    private static string FormatDuration(string? duration)
+    {
+        if (string.IsNullOrWhiteSpace(duration)) return "20–30m";
+        duration = duration.Trim();
+        if (duration.EndsWith("m", StringComparison.OrdinalIgnoreCase) || duration.EndsWith("min", StringComparison.OrdinalIgnoreCase))
+            return duration;
+        return $"{duration}m";
+    }
 
     private static string CleanVersion(string ver)
     {
@@ -257,12 +270,6 @@
         if (ver.StartsWith("vv", StringComparison.OrdinalIgnoreCase)) ver = ver.Substring(1);
         if (!ver.StartsWith("v", StringComparison.OrdinalIgnoreCase)) ver = "v" + ver;
         return ver;
-    }
-
-    private static string GetInitials(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return "T";
-        return name.Trim().Substring(0, 1).ToUpperInvariant();
     }
 
     private async Task HandleDownloadStorybook()

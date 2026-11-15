@@ -45,7 +45,9 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `child_legal_profiles`, `child_person_restrictions`: Custody orders and protective injunctions.
 * `child_documents`, `child_transportations`: Registration papers and busing routes.
 
-## 4. Attendance & Care Routines (11 Tables)
+## 4. Attendance & Care Routines (13 Tables)
+* `branch_daily_operations`: Tracks daily morning opening and evening closing lifecycle for branches, including opening/closing actors, timestamps, and closing audit summaries.
+* `classroom_daily_operations`: Tracks daily classroom opening and end-of-day closure by educators, including auto-departed child counts, closed activities count, and operational state.
 * `child_attendance`: Daily arrivals, departures, verification methods, notes, and departure signers.
 * `child_care_events`: Diaper, potty, meal, and bottle events.
 * `child_nap_sessions`: Sleep start, end, quality, and check intervals.

@@ -6,6 +6,8 @@
 @inject OrganizationService OrganizationService
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @rendermode InteractiveServer
 <PageHero 
     Eyebrow="PARENT CONNECTION" 
@@ -85,8 +87,7 @@
     {
         if (string.IsNullOrEmpty(_selectedChildId) || string.IsNullOrEmpty(_newStoryContent)) return;
         var childId = Guid.Parse(_selectedChildId);
-        // Assuming a dummy teacher ID for now, since we don't have auth context in this simplified view
-        var teacherId = Guid.NewGuid(); 
+        var teacherId = UserContext.UserId != Guid.Empty ? UserContext.UserId : Guid.NewGuid(); 
         await JourneyService.CreateStoryAsync(childId, teacherId, null, _newStoryContent);
         await LoadChildData();
         CloseDialog();
@@ -98,27 +99,52 @@
     private List<ChildStory> _stories = new();
     protected override async Task OnInitializedAsync()
     {
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
-        if (org != null)
+        try
         {
-            var branches = await BranchService.GetBranchesAsync(org.Id);
-            var branch = branches.FirstOrDefault();
-            if (branch != null)
+            var profile = await PageAuth.GetUserProfileAsync();
+            var targetOrgId = UserContext.OrganizationId ?? (profile.OrganizationId != Guid.Empty ? profile.OrganizationId : (Guid?)null);
+
+            if (!targetOrgId.HasValue || targetOrgId.Value == Guid.Empty)
             {
-                var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
-                var classroom = classrooms.FirstOrDefault();
-                if (classroom != null)
+                var orgs = await OrganizationService.GetOrganizationsAsync();
+                targetOrgId = orgs.FirstOrDefault()?.Id;
+            }
+
+            if (targetOrgId.HasValue && targetOrgId.Value != Guid.Empty)
+            {
+                var branches = await BranchService.GetBranchesAsync(targetOrgId.Value);
+                var assignedBranch = profile.AssignedBranchIds.FirstOrDefault();
+                var targetBranchId = UserContext.BranchId ?? (assignedBranch != Guid.Empty ? assignedBranch : (Guid?)null);
+                var branch = (targetBranchId.HasValue && targetBranchId.Value != Guid.Empty)
+                    ? branches.FirstOrDefault(b => b.Id == targetBranchId.Value) ?? branches.FirstOrDefault()
+                    : branches.FirstOrDefault();
+
+                if (branch != null)
                 {
-                    _children = (await ChildService.GetChildrenByClassroomAsync(classroom.Id)).ToList();
-                    _activeChild = _children.FirstOrDefault();
-                    if (_activeChild != null)
+                    var classrooms = (await ClassroomService.GetClassroomsAsync(branch.Id)).ToList();
+                    var assignedClassroom = profile.AssignedClassroomIds.FirstOrDefault();
+                    var targetClassroomId = assignedClassroom != Guid.Empty ? assignedClassroom : (Guid?)null;
+                    var classroom = (targetClassroomId.HasValue && targetClassroomId.Value != Guid.Empty)
+                        ? classrooms.FirstOrDefault(c => c.Id == targetClassroomId.Value) ?? classrooms.FirstOrDefault()
+                        : classrooms.FirstOrDefault();
+
+                    if (classroom != null)
                     {
-                        _selectedChildId = _activeChild.Id.ToString();
-                        await LoadChildData();
+                        _children = (await ChildService.GetChildrenByClassroomAsync(classroom.Id)).ToList();
+                        _activeChild = _children.FirstOrDefault();
+                        if (_activeChild != null)
+                        {
+                            _selectedChildId = _activeChild.Id.ToString();
+                            await LoadChildData();
+                        }
                     }
                 }
             }
+        }
+        catch (Exception)
+        {
+            _children = new();
+            _stories = new();
         }
     }
 

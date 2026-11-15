@@ -38,6 +38,11 @@ tags:
 ## Key Workflows
 
 ### 1. Child Check-In, Secure Departure & Action Locking
+* **Daily Operations Gate Workflow (Start & End of Day)**:
+  * **Morning Gate (Branch Admin)**: Each branch must be opened in the morning by the Branch Admin or Director (`sp_open_branch_day`). Until the branch is opened, classrooms cannot be opened and child attendance is locked.
+  * **Classroom Gate (Lead Teacher / Educator)**: Once the branch is opened, the lead teacher or educator opens their classroom (`sp_open_classroom_day`). Only after the classroom is opened can educators mark child attendance, conduct learning activities, or log daily care.
+  * **Classroom End of Day (Teacher)**: When the classroom teacher completes their day (`sp_close_classroom_day`), the system auto-checks out any remaining present children with the specified departure time, completes any remaining active experience sessions, and locks classroom logs.
+  * **Branch End of Day (Branch Admin)**: When all classrooms within the branch have completed end-of-day closure, the Branch Admin can close the branch (`sp_close_branch_day`). The system validates that `0` classrooms remain open before allowing the branch to seal for the day.
 * **Mark Present / Check-In**: Dropdown in `AttendancePeopleTable`, 1-tap card in `TeacherWorkspace.razor`, or bulk action "Mark selected present" / "Check-In All". Sets `status = 'Present'` and `arrival_time`.
 * **Departure / Pickup Verification**: Clicking "Check Out" (or `🚪` in `TeacherWorkspace.razor`) opens `SecurePickupModal.razor`. Requires collector name, relationship, and verification method (PIN, ID Check, Signature).
 * **Departure Status & Action Locking**:

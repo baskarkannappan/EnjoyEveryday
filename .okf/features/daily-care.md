@@ -41,6 +41,10 @@ tags:
 
 ## Teacher Workspace Everyday Productivity Suite (`/classroom`, `/my-classroom`)
 `src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` provides 6 high-speed educator features designed for fast, frictionless daily classroom routines:
+0. **Daily Operational Gate & Classroom Open/Close Workflow**:
+   - **Branch Dependent**: Classroom cannot be opened until Branch Admin marks the branch open for the day.
+   - **Open Classroom Gate**: Lead teacher / Educator opens the room (`sp_open_classroom_day`). Attendance, learning sessions, and care actions remain locked until opened.
+   - **End of Day Auto-Checkout**: Clicking `Close Classroom (End of Day)` (`sp_close_classroom_day`) prompts the educator with a summary modal showing present children and active activities. Upon confirming, it automatically departs all remaining children with the chosen departure time, completes active sessions, and seals classroom logs for the day.
 1. **15-Second "Pickup Cheat-Sheet" (At the Door)**:
    - 1-tap `📋 Cheat-Sheet` button on each child card header opens an instant parent-facing talking card.
    - Summarizes 3 key bullets in under 3 seconds: Nap duration/status, meal/snack intake, active experience highlights, allergy/safety alerts, and a tailored parent greeting prompt (e.g. *"Ask Noah about the ice bridge he made today!"*).

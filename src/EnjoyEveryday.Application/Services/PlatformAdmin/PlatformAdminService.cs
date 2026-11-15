@@ -1258,6 +1258,15 @@ public class PlatformAdminService : IPlatformAdminService
         return false;
     }
 
+    public async Task<List<OrganizationCurrencyHistory>> GetOrganizationCurrencyHistoryAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        if (_platformAdminRepository != null)
+        {
+            return await _platformAdminRepository.GetOrganizationCurrencyHistoryAsync(organizationId, cancellationToken);
+        }
+        return new List<OrganizationCurrencyHistory>();
+    }
+
     #endregion
 
     #region Commercial & Billing Operations

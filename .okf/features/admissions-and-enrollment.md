@@ -70,6 +70,17 @@ Before a student can be onboarded, enrolled, or assigned to a branch/classroom, 
   - `EnrollmentPipelineService.FinalizeEnrollmentAndBillingAsync`: Revalidates readiness before calling `EnsureChildEnrolledAsync`.
   - `ClassroomsController.cs`: Exposes `GET /api/branches/{branchId}/classrooms/readiness` and `GET /api/branches/{branchId}/classrooms/{id}/readiness`.
 
+## Classroom Vacancy & Opening Forecaster
+
+The forecast cards on `/enrollment` display open capacity by classroom:
+- **Stored Function**: `fn_get_classroom_vacancies(p_tenant_id uuid, p_branch_id uuid)`
+- **Filtering Rules**:
+  - `c.is_active = TRUE`: Filters out deleted or deactivated rooms.
+  - `c.name NOT ILIKE '%pool%'`: Excludes virtual waiting/holding rooms.
+  - `c.capacity < 900`: Excludes unbounded system holding rooms (capacity 999).
+- **Enrolled Calculation**: Computes live active child count `SELECT COUNT(*) FROM children ch WHERE ch.classroom_id = c.id AND ch.is_active = TRUE`.
+- **Pending Offers**: Computes count of pipeline applications in `UnderReview` or `OfferSent`.
+
 ## Admissions to Guardian Linking & Guardian Management
 
 ### 1. Automated Parent Guardian Association

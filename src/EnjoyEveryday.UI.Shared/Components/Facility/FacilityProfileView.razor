@@ -388,11 +388,21 @@
         _isLoading = true;
         try
         {
-            var orgId = OrganizationId != Guid.Empty ? OrganizationId : (UserContext.OrganizationId ?? Guid.Parse("20000000-0000-0000-0000-000000000001"));
             _activeBranchId ??= (BranchId ?? UserContext.BranchId);
+            var orgId = OrganizationId != Guid.Empty ? OrganizationId : (UserContext.OrganizationId ?? Guid.Empty);
+
+            _profile = await FacilityProfileService.GetProfileAsync(orgId, _activeBranchId);
+            if (_profile != null && _profile.OrganizationId != Guid.Empty)
+            {
+                orgId = _profile.OrganizationId;
+            }
+            else if (orgId == Guid.Empty)
+            {
+                orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+                _profile ??= await FacilityProfileService.GetProfileAsync(orgId, _activeBranchId);
+            }
 
             _branches = (await FacilityProfileService.GetPublicBranchesAsync(orgId)).ToList();
-            _profile = await FacilityProfileService.GetProfileAsync(orgId, _activeBranchId);
 
             _inquiryModel.OrganizationId = orgId;
             _inquiryModel.BranchId = _activeBranchId;

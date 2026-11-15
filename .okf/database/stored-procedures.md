@@ -46,6 +46,12 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `sp_get_monthly_teacher_attendance(p_tenant_id uuid, p_branch_id uuid, p_year int, p_month int, INOUT cur refcursor)` | `PROCEDURE` | `AttendanceRepository.GetMonthlyTeacherAttendanceAsync` | Retrieves assigned teachers and their daily clock-in/out records for the given branch/month. |
 | `sp_get_branch_location_context(p_tenant_id uuid, p_branch_id uuid, INOUT cur refcursor)` | `PROCEDURE` | `AttendanceRepository.GetBranchLocationContextAsync` | Returns organization, branch, and physical address context for attendance headers. |
 | `sp_get_user_accessible_branches(p_tenant_id uuid, p_user_id uuid, p_is_org_admin boolean, INOUT cur refcursor)` | `PROCEDURE` | `AttendanceRepository.GetUserAccessibleBranchesAsync` | Scopes branch access based on role and explicit branch assignments. |
+| `sp_open_branch_day(p_tenant_id uuid, p_branch_id uuid, p_date date, p_user_id uuid, OUT p_success boolean, OUT p_message text)` | `PROCEDURE` | `DailyOperationsRepository.OpenBranchDayAsync` | Morning Gate: Branch Admin marks branch open for operations. Validates not already open or closed. |
+| `sp_open_classroom_day(p_tenant_id uuid, p_classroom_id uuid, p_date date, p_user_id uuid, OUT p_success boolean, OUT p_message text)` | `PROCEDURE` | `DailyOperationsRepository.OpenClassroomDayAsync` | Classroom Gate: Lead Teacher opens classroom. Requires the parent branch to be Open for the day. |
+| `sp_close_classroom_day(p_tenant_id uuid, p_classroom_id uuid, p_date date, p_user_id uuid, p_checkout_time time, OUT p_children_checked_out int, OUT p_activities_closed int, OUT p_success boolean, OUT p_message text)` | `PROCEDURE` | `DailyOperationsRepository.CloseClassroomDayAsync` | Classroom End-of-Day: Auto-checks out remaining children, auto-completes active sessions, records stats and closes classroom. |
+| `sp_close_branch_day(p_tenant_id uuid, p_branch_id uuid, p_date date, p_user_id uuid, p_checkout_time time, OUT p_open_classrooms_count int, OUT p_teachers_clocked_out int, OUT p_success boolean, OUT p_message text)` | `PROCEDURE` | `DailyOperationsRepository.CloseBranchDayAsync` | Branch End-of-Day: Validates all classrooms in branch are closed (0 open), clocks out staff, and seals branch for the day. |
+| `fn_get_branch_daily_status(p_tenant_id uuid, p_branch_id uuid, p_date date)` | `FUNCTION` | `DailyOperationsRepository.GetBranchDailyStatusAsync` | Returns current operational status (Closed, Open, Completed), open room count, timestamps and actors. |
+| `fn_get_classroom_daily_status(p_tenant_id uuid, p_classroom_id uuid, p_date date)` | `FUNCTION` | `DailyOperationsRepository.GetClassroomDailyStatusAsync` | Returns current classroom status (Closed, Open, Completed), parent branch status, and children/activity counts. |
 
 ## 3. Statutory Ratios & Staff Leaves
 
@@ -72,6 +78,12 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `sp_seed_dev_parent_environment(...)` | `PROCEDURE` | `EnjoyEveryday.Parent.Web` (`/auth/dev-login`) | Transactionally seeds mock parent user, child, family relationship, guardian, and sample moments/milestones. |
 | `sp_sync_parent_relationships(...)` | `PROCEDURE` | `EnjoyEveryday.Parent.Web` (`/auth/callback`) | Automatically links active children to verified parent by matching draft data parent email and creates family profile person records. |
 | `sp_sync_parent_external_login(...)` | `PROCEDURE` | `EnjoyEveryday.Parent.Web` (`/auth/callback`) | Synchronizes Google OAuth login for parents, creates missing user/membership/role records, and outputs user and tenant IDs. |
+
+## 6. Admissions, Pipeline & Storage Operations
+
+| Function / Procedure Signature | Routine Type | Calling Repository / Service | Purpose |
+|:---|:---|:---|:---|
+| `fn_get_classroom_vacancies(p_tenant_id uuid, p_branch_id uuid)` | `FUNCTION` | `EnrollmentService` / `EnrollmentPipeline.razor` | Computes active classroom capacities, current active enrollments, and pending pipeline offers. Filters deactivated classrooms (`is_active = TRUE`), system dummy rooms (`name NOT ILIKE '%pool%'`), and dummy capacities (`capacity < 900`). |
 | `sp_validate_parent_portal_credentials(p_email text, INOUT cur refcursor)` | `PROCEDURE` | `EnjoyEveryday.Parent.Web` (`/auth/login`) | Replaces inline SQL credential check with stored procedure returning user, role, and password hash. |
 | `sp_get_parent_portal_user(p_user_id uuid, INOUT cur refcursor)` | `PROCEDURE` | `EnjoyEveryday.Parent.Web` (`/auth/login`) | Fetches parent user record, family relationships, and active child scopes via refcursor. |
 | `sp_validate_admin_portal_credentials(p_email text, INOUT cur refcursor)` | `PROCEDURE` | `EnjoyEveryday.Admin.Web` (`/auth/login`) | Authenticates platform administrators and verifies system roles. |

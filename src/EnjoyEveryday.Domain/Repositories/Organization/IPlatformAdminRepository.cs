@@ -109,4 +109,5 @@ public interface IPlatformAdminRepository
     Task SavePricingRegionAsync(PricingRegion region, CancellationToken ct = default);
     Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken ct = default);
     Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, string? currency = null, CancellationToken ct = default);
+    Task<List<OrganizationCurrencyHistory>> GetOrganizationCurrencyHistoryAsync(Guid organizationId, CancellationToken ct = default);
 }

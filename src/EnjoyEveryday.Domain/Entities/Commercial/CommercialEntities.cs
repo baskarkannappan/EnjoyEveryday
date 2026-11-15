@@ -85,7 +85,7 @@ public class PricingRegion
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public List<string> MatchedCities { get; set; } = new();
     public List<string> MatchedStates { get; set; } = new();
     public bool IsDefault { get; set; }
@@ -107,7 +107,7 @@ public class RegionPlanTariff
     public BillingFrequency Frequency { get; set; } = BillingFrequency.Monthly;
     public decimal Price { get; set; }
     public decimal DiscountPercentage { get; set; }
-    public string Currency { get; set; } = "USD";
+    public string Currency { get; set; } = "INR";
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

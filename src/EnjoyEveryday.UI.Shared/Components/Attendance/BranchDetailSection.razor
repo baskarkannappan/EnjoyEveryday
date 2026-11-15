@@ -8,6 +8,7 @@
 @inject AttendanceService AttendanceService
 @inject ISystemLookupCatalog LookupCatalog
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject IDailyOperationsService DailyOpsService
 @inject NavigationManager Nav
 
 <section id="detail">
@@ -35,6 +36,68 @@
         TeachersPresentRatio="@Totals[1]" 
         UnmarkedCount="UnmarkedCount" 
         MissingCheckoutCount="MissingCheckoutCount" />
+
+    @if (!IsRoomView && _branchOpsStatus != null)
+    {
+        @if (!_branchOpsStatus.IsOpen && _branchOpsStatus.ClosedAt == null)
+        {
+            <div style="background: var(--surface, #ffffff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); padding: 14px 20px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 26px;">🌅</span>
+                    <div>
+                        <div style="font-size: 15px; font-weight: 750; color: var(--text, #26332d);">Branch Facility is Closed for Today</div>
+                        <div style="font-size: 13px; color: var(--muted, #6c7870); margin-top: 2px;">Open the branch to allow classroom teachers to open their rooms, take attendance, and run learning activities.</div>
+                    </div>
+                </div>
+                @if (CanEditTeacherAttendance)
+                {
+                    <button class="btn primary" @onclick="HandleOpenBranchDay" style="font-weight: 750; white-space: nowrap;">
+                        🌅 Open Branch for Today
+                    </button>
+                }
+            </div>
+        }
+        else if (_branchOpsStatus.IsOpen)
+        {
+            <div style="background: var(--surface, #ffffff); border: 1px solid var(--border, #e4e7df); border-left: 4px solid var(--accent, #557c6c); border-radius: var(--radius, 18px); padding: 14px 20px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #38a169; box-shadow: 0 0 0 3px rgba(56, 161, 105, 0.2);"></span>
+                    <div>
+                        <div style="font-size: 14.5px; font-weight: 750; color: var(--text, #26332d);">
+                            Branch Open for Operations • Opened at @(_branchOpsStatus?.OpenedAt?.ToString("h:mm tt")) by @(_branchOpsStatus?.OpenedByName ?? "Branch Admin")
+                        </div>
+                        <div style="font-size: 12.5px; color: var(--muted, #6c7870); margin-top: 2px;">
+                            Classroom Rhythm: <strong>@(_branchOpsStatus?.OpenClassrooms ?? 0)</strong> open, <strong>@(_branchOpsStatus?.ClosedClassrooms ?? 0)</strong> closed (out of @(_branchOpsStatus?.TotalClassrooms ?? 0) total classrooms).
+                            @if ((_branchOpsStatus?.OpenClassrooms ?? 0) > 0)
+                            {
+                                <span style="color: #c05621; margin-left: 6px; font-weight: 600;">(Teachers must close all open classrooms before branch closure)</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+                @if (CanEditTeacherAttendance)
+                {
+                    <button class="btn secondary" @onclick="HandleCloseBranchDay" style="font-weight: 750; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
+                        <span>🌙</span>
+                        <span>Close Branch (End of Day)</span>
+                    </button>
+                }
+            </div>
+        }
+        else if (!_branchOpsStatus.IsOpen && _branchOpsStatus.ClosedAt != null)
+        {
+            <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-left: 4px solid #718096; border-radius: var(--radius, 18px); padding: 14px 20px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 22px;">🌙</span>
+                    <div>
+                        <div style="font-size: 14px; font-weight: 750; color: var(--text, #26332d);">Branch Closed for the Day</div>
+                        <div style="font-size: 12.5px; color: var(--muted, #6c7870);">Closed at @(_branchOpsStatus?.ClosedAt?.ToString("h:mm tt")) by @(_branchOpsStatus?.ClosedByName ?? "Branch Admin"). Day operations concluded.</div>
+                    </div>
+                </div>
+                <span style="font-size: 12px; font-weight: 700; color: #718096; background: #edf2f7; padding: 4px 10px; border-radius: 6px;">DAY COMPLETED</span>
+            </div>
+        }
+    }
 
     <div class="card">
         <div class="tabs">
@@ -125,7 +188,7 @@
 
 @if (showToast)
 {
-    <div id="toast" style="display:block;">Saved attendance changes to database.</div>
+    <div id="toast" style="display:block;">@_toastMessage</div>
 }
 
 @code {
@@ -138,6 +201,8 @@
     private string statusFilter = "all";
     private string typeFilter = "both";
     private bool showToast = false;
+    private string _toastMessage = "Saved attendance changes to database.";
+    private BranchDailyStatusDto? _branchOpsStatus;
 
     private Guid _branchId;
     private List<AttendanceClassroomTable.ClassRowItem> _classRows = new();
@@ -191,6 +256,8 @@
         if (branch == null) return;
         _branchId = branch.Id;
         if (string.IsNullOrEmpty(BranchName)) BranchName = branch.Name;
+
+        await LoadBranchOpsStatusAsync();
 
         var roster = await AttendanceService.GetBranchAttendanceRosterAsync(_branchId, _filterDate);
         _classRows = roster.Classrooms.Select(c => new AttendanceClassroomTable.ClassRowItem {
@@ -423,4 +490,59 @@
         $"{_personRows.Count(p => p.Type == "children" && (p.Status == "Present" || p.Status == "Late"))} / {_personRows.Count(p => p.Type == "children")}",
         $"{_personRows.Count(p => p.Type == "teachers" && (p.Status == "Present" || p.Status == "Late"))} / {_personRows.Count(p => p.Type == "teachers")}"
     };
+
+    private async Task LoadBranchOpsStatusAsync()
+    {
+        if (_branchId != Guid.Empty)
+        {
+            try
+            {
+                _branchOpsStatus = await DailyOpsService.GetBranchDailyStatusAsync(_branchId, DateOnly.FromDateTime(_filterDate));
+            }
+            catch
+            {
+                // Non-blocking telemetry
+            }
+        }
+    }
+
+    private async Task HandleOpenBranchDay()
+    {
+        if (_branchId == Guid.Empty) return;
+        var res = await DailyOpsService.OpenBranchDayAsync(_branchId, DateOnly.FromDateTime(_filterDate));
+        if (res.Success)
+        {
+            await TriggerToast("Branch facility successfully opened! Classroom teachers can now open their rooms.");
+            await LoadDataAsync();
+        }
+        else
+        {
+            await TriggerToast(res.Message);
+        }
+    }
+
+    private async Task HandleCloseBranchDay()
+    {
+        if (_branchId == Guid.Empty) return;
+        var res = await DailyOpsService.CloseBranchDayAsync(_branchId, DateOnly.FromDateTime(_filterDate));
+        if (res.Success)
+        {
+            await TriggerToast(res.Message);
+            await LoadDataAsync();
+        }
+        else
+        {
+            await TriggerToast(res.Message);
+        }
+    }
+
+    private async Task TriggerToast(string msg)
+    {
+        _toastMessage = msg;
+        showToast = true;
+        StateHasChanged();
+        await Task.Delay(3200);
+        showToast = false;
+        StateHasChanged();
+    }
 }

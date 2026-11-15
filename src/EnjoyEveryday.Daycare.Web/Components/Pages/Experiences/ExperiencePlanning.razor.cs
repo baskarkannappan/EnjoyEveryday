@@ -248,6 +248,13 @@ public partial class ExperiencePlanning : ComponentBase
         await LoadSchedules();
     }
 
+    private async Task GoToToday()
+    {
+        var today = TimeProvider.GetLocalNow().Date;
+        _currentDate = new DateTime(today.Year, today.Month, 1);
+        await LoadSchedules();
+    }
+
     private Dictionary<Guid, HashSet<Guid>> _eventClassroomsMap = new();
 
     private IEnumerable<Event> GetEventsForDateAndScope(DateOnly date)

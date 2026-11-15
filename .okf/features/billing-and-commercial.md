@@ -94,10 +94,14 @@ tags:
   - `ChildEnrollmentWizard.razor`: Pre-validates child quota on wizard launch; blocks progression with informative error banners when maximum child limit is reached.
   - Consistent message pattern: `"You are exceeding your quota limit. Your current plan '{planName}' allows a maximum of {maxAllowed} {resourceType} (currently using {currentCount}/{maxAllowed}). Please upgrade your subscription plan to add more."`
 
-### 7. In-Process QR Code Remittance & Platform Fee Payments
-* **Components & Services**:
-  - `IQrCodeService` / `QrCodeService`: Zero-dependency, pure managed C# QR Code engine generating high-contrast SVG, standard PNG byte streams, and Data URIs in < 1 millisecond.
-  - `MediaEndpoints.cs`: Exposes `/api/media/qrcode?data={content}&format={svg|png}` for lightweight cached HTTP delivery.
+### 8. Multi-Currency Organization Operations & Invoice Lifecycle
+* **Entities**: `organizations.currency`, `tenant_preferences.currency`, `invoices.currency`, `organization_currency_history`.
+* **Currency Architecture**:
+  - Each organization operates in its assigned currency (`INR` default, `AUD`, `USD`, `JPY`, `CAD`, `EUR`, `GBP`, `SGD`).
+  - **New Invoices**: When invoices (manual platform fees, automated recurring subscription invoices, or monthly tuition billing) are generated, the invoice stamps the organization's current active currency into `invoices.currency`.
+  - **Historical Invoices**: Old invoices permanently preserve their original issued currency (`inv.Currency`) and are rendered via `CurrencyService.Format(inv.TotalAmount, inv.Currency)` across all invoice tables, statements, and parent portals, preventing retro-active currency distortion.
+  - **Currency Change History**: Managed via `public.organization_currency_history` and `sp_assign_organization_regional_plan(p_org_id, p_region_id, p_plan_id, p_tariff_id, p_currency)`. Every time an organization switches currency, an audit record is stored with `previous_currency`, `new_currency`, `changed_by`, `reason`, and `effective_from` timestamp, visible directly in the commercial plan modal in `OrganizationsPage.razor`.
+
   - `AzureCommunicationEmailService.cs`: Automatically compiles and embeds high-contrast PNG QR codes directly into invoice notice emails (`SendPlatformInvoiceNoticeAsync`).
   - `InvoiceDetailsModal.razor`: Renders scannable QR Code remittance block on printable PDF invoice statements and live preview modal in Daycare Portal (`OrganizationBillingView.razor`) and Platform Admin (`BillingPage.razor`).
 * **Payload Encoding**:
@@ -122,18 +126,24 @@ tags:
     - **Dynamic Regional Rates**: The plan selection and billing tariff schedules dynamically recalculate and preview localized prices for the selected region.
     - **Directory Visibility**: Organization directory table displays the 📍 region badge alongside the active plan and schedule.
 
-### 9. Organization-Level Currency Configuration & Multi-Currency Hierarchy
-* **Architecture Pattern**: **Org Aggregate Single Source of Truth (`organizations.currency`) with Cascading Inheritance**.
-  - **Default Platform Currency**: Standard default currency across all organizations is **INR** (`₹`).
-  - **Per-Organization Custom Currency**: Organizations can be individually configured with their own currency (e.g. Japanese Yen `JPY` / `¥`, `USD`, `CAD`, `EUR`, `GBP`, `AUD`, `SGD`) via the Platform Admin Plan & Tariff assignment modal or creation workflow.
-  - **Hierarchy Cascading**:
+### 9. Global Base Currency Standardization to INR & Multi-Currency Hierarchy
+* **Architecture Pattern**: **Global Base Currency INR (`₹`) with Historical Invoice Immutability & Audit Trail**.
+  - **Standard Global Base Currency**: Standardized base operating currency across all pricing regions (`pricing_regions`), regional tariff schedules (`region_plan_tariffs`), subscription plans, tenant preferences, and daycare organizations is **INR** (`₹`).
+  - **Single Source of Truth (`organizations.currency`) with Cascading Inheritance**:
     - Centralized in `sp_assign_organization_regional_plan(p_org_id, p_region_id, p_plan_id, p_tariff_id, p_currency)`.
     - Automatically syncs to `tenant_preferences.currency` and is returned in `fn_get_organization_hierarchy`, `fn_get_parent_authorized_children`, `fn_get_all_organizations`, and `fn_get_platform_organizations_overview`.
     - All subsequent child entities (campuses, branches, classrooms, teacher workspaces, parent portal tuition invoices, and receipt vouchers) strictly inherit and format in the organization's specific currency.
+  - **Historical Invoice Currency Immutability**:
+    - Every generated invoice (tuition, subscription, manual draft) is stamped with the active organization currency at invoice creation time.
+    - Historical invoices permanently preserve their issued currency (`inv.Currency`) and format accordingly via `@inv.TotalAmount.ToCurrency(inv.Currency)`, even if the organization later changes its base currency.
+  - **Currency Change Audit Trail (`organization_currency_history`)**:
+    - Every change to an organization's operating currency is atomically recorded in `public.organization_currency_history` with `previous_currency`, `new_currency`, `changed_by`, `reason`, and `effective_from`.
+    - Displayed directly inside the Assign Plan & Tariff modal in `OrganizationsPage.razor`.
   - **Unified Currency Formatter (`ICurrencyService` / `CurrencyService`)**:
     - Located in `src/EnjoyEveryday.UI.Shared/Services/`.
-    - Supports culture-specific zero-decimal rules (e.g., JPY `¥10,000` with 0 decimals, INR `₹12,500` with Indian lakh grouping, USD `$150.00` with 2 decimals).
+    - Supports culture-specific zero-decimal rules (e.g., INR `₹12,500` with Indian lakh grouping, JPY `¥10,000`, USD `$150.00`).
     - Registered as a singleton in `UiSharedServiceRegistration.cs` across all portals.
+
 
 
 

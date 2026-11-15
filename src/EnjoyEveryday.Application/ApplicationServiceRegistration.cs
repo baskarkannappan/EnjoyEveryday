@@ -60,6 +60,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ChildDailyCareService>();
         services.AddScoped<IEndOfDayService, EndOfDayService>();
         services.AddScoped<EndOfDayService>();
+        services.AddScoped<IDailyOperationsService, DailyOperationsService>();
+        services.AddScoped<DailyOperationsService>();
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<MediaService>();
         services.AddScoped<IClassroomCommunicationService, ClassroomCommunicationService>();

@@ -73,7 +73,9 @@ public class BillingService : IBillingService
             TenantId = orgTenantId,
             OrganizationId = org.Id,
             InvoiceNumber = invoiceNumber,
-            Currency = "INR",
+            Currency = !string.IsNullOrWhiteSpace(request.Currency) && request.Currency != "INR"
+                ? request.Currency.ToUpperInvariant()
+                : (!string.IsNullOrWhiteSpace(org.Currency) ? org.Currency.ToUpperInvariant() : "INR"),
             IssueDate = request.IssueDate.ToUniversalTime(),
             DueDate = request.DueDate.ToUniversalTime(),
             Status = InvoiceStatus.Draft,
@@ -545,11 +547,12 @@ public class BillingService : IBillingService
         if (invoice.BalanceDue <= 0 || invoice.Status == InvoiceStatus.Paid)
             throw new InvalidOperationException($"Invoice '{invoice.InvoiceNumber}' has no balance due.");
 
-        // Supported currency enforcement: Entire application currency is INR only
+        // Supported currency enforcement: Ensure valid currency code
         var targetCurrency = !string.IsNullOrWhiteSpace(invoice.Currency) ? invoice.Currency.ToUpperInvariant() : "INR";
-        if (targetCurrency != "INR")
+        var supportedCurrencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "INR", "USD", "AUD", "JPY", "EUR", "GBP", "CAD", "SGD" };
+        if (!supportedCurrencies.Contains(targetCurrency))
         {
-            throw new NotSupportedException($"Currency '{targetCurrency}' is not supported. The application uses INR only.");
+            throw new NotSupportedException($"Currency '{targetCurrency}' is not supported.");
         }
 
         // Authoritative server-side balance
@@ -1019,6 +1022,8 @@ public class BillingService : IBillingService
                 }
 
                 // Generate automatic subscription invoice
+                var org = await _organizationRepository.GetByIdAsync(orgSetting.OrganizationId, ct);
+                var resolvedCurrency = !string.IsNullOrWhiteSpace(org?.Currency) ? org.Currency.ToUpperInvariant() : "INR";
                 var invoiceNumber = await GenerateUniqueInvoiceNumberAsync(ct);
                 var autoInvoice = new Invoice
                 {
@@ -1027,7 +1032,7 @@ public class BillingService : IBillingService
                     OrganizationId = orgSetting.OrganizationId,
                     InvoiceNumber = invoiceNumber,
                     BillingPeriod = periodKey,
-                    Currency = "INR",
+                    Currency = resolvedCurrency,
                     IssueDate = asOfDate,
                     DueDate = asOfDate.AddDays(14),
                     Status = InvoiceStatus.Unpaid,
@@ -1156,6 +1161,8 @@ public class BillingService : IBillingService
 
                 var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
                 var invoiceNum = $"INV-TUIT-{asOfDate:yyMM}-{new Random().Next(1000, 9999)}";
+                var tenantOrg = await _organizationRepository.GetByIdAsync(orgId, ct);
+                var tuitionCurrency = !string.IsNullOrWhiteSpace(tenantOrg?.Currency) ? tenantOrg.Currency.ToUpperInvariant() : "INR";
 
                 var invoice = new Invoice
                 {
@@ -1163,7 +1170,7 @@ public class BillingService : IBillingService
                     TenantId = tenantId,
                     OrganizationId = orgId,
                     InvoiceNumber = invoiceNum,
-                    Currency = "INR",
+                    Currency = tuitionCurrency,
                     IssueDate = asOfDate,
                     DueDate = asOfDate.AddDays(7),
                     Status = InvoiceStatus.Unpaid,
