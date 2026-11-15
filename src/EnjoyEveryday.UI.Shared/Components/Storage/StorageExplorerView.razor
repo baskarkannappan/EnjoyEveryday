@@ -1,0 +1,707 @@
+@using EnjoyEveryday.Application.Services.Storage
+@using EnjoyEveryday.Shared.Auth
+@using EnjoyEveryday.Shared.Tenancy
+@inject IStorageExplorerService StorageExplorerService
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+
+<div class="storage-explorer-container">
+    @if (!_isAuthorized)
+    {
+        <div class="restricted-card">
+            <div class="restricted-icon">🔒</div>
+            <h3>Access Restricted</h3>
+            <p>The Storage &amp; Media Explorer is reserved exclusively for Platform Administrators and Organization Administrators.</p>
+        </div>
+    }
+    else if (_loading)
+    {
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <p>Loading storage telemetry and file metadata...</p>
+        </div>
+    }
+    else if (_model == null)
+    {
+        <div class="empty-card">
+            <p>Could not retrieve storage metrics at this time.</p>
+        </div>
+    }
+    else
+    {
+        <!-- Summary Metrics Strip -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-icon">💾</div>
+                <div class="metric-details">
+                    <span class="metric-val">@_model.Summary.TotalSizeMb MB</span>
+                    <span class="metric-lbl">Total Media Stored</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-icon">📁</div>
+                <div class="metric-details">
+                    <span class="metric-val">@_model.Summary.TotalFiles</span>
+                    <span class="metric-lbl">Total Files Tracked</span>
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-icon">☁️</div>
+                <div class="metric-details">
+                    <span class="metric-val">
+                        <span class="provider-pill @(_model.Summary.ActiveProvider.Contains("Azure") ? "azure" : "local")">
+                            @_model.Summary.ActiveProvider
+                        </span>
+                    </span>
+                    <span class="metric-lbl">Active Storage Provider</span>
+                </div>
+            </div>
+
+            <div class="metric-card location-card">
+                <div class="metric-icon">📍</div>
+                <div class="metric-details">
+                    <span class="metric-val path-text" title="@_model.Summary.StorageLocation">
+                        @TruncatePath(_model.Summary.StorageLocation, 38)
+                    </span>
+                    <span class="metric-lbl">Storage Root Path</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Entity Type Breakdown Bar -->
+        <div class="entity-breakdown-card">
+            <div class="breakdown-title">Footprint by Category:</div>
+            <div class="breakdown-pills">
+                @foreach (var kvp in _model.Summary.EntityCounts)
+                {
+                    var sizeMb = _model.Summary.EntitySizeMb.TryGetValue(kvp.Key, out var mb) ? mb : 0;
+                    <span class="breakdown-pill">
+                        <strong>@kvp.Key:</strong> @kvp.Value files (@sizeMb MB)
+                    </span>
+                }
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <div class="tabs-nav">
+            <button type="button" class="tab-btn @(_activeTab == "hierarchy" ? "active" : "")" @onclick='() => _activeTab = "hierarchy"'>
+                🏛️ Branch &amp; Classroom Breakdown
+            </button>
+            <button type="button" class="tab-btn @(_activeTab == "files" ? "active" : "")" @onclick='() => _activeTab = "files"'>
+                📋 Files &amp; Links Explorer (@_filteredFiles.Count)
+            </button>
+        </div>
+
+        @if (_activeTab == "hierarchy")
+        {
+            <!-- Tab 1: Branch & Classroom Rollup -->
+            <div class="hierarchy-section">
+                @if (_model.Hierarchy == null || _model.Hierarchy.Count == 0)
+                {
+                    <div class="empty-state">No branch or classroom media assets recorded yet.</div>
+                }
+                else
+                {
+                    <div class="branches-grid">
+                        @foreach (var branch in _model.Hierarchy)
+                        {
+                            <div class="branch-card">
+                                <div class="branch-header">
+                                    <div class="branch-title">
+                                        <span class="branch-icon">🏢</span>
+                                        <h4>@branch.BranchName</h4>
+                                    </div>
+                                    <div class="branch-stats">
+                                        <span class="badge-files">@branch.TotalFiles files</span>
+                                        <span class="badge-size">@branch.TotalSizeMb MB</span>
+                                    </div>
+                                </div>
+
+                                <div class="classrooms-list">
+                                    <div class="classrooms-header">Classrooms &amp; Areas:</div>
+                                    @foreach (var cls in branch.Classrooms)
+                                    {
+                                        <div class="classroom-row">
+                                            <div class="classroom-name">
+                                                <span class="cls-icon">🚪</span>
+                                                <span>@cls.ClassroomName</span>
+                                            </div>
+                                            <div class="classroom-badges">
+                                                @foreach (var typeKvp in cls.TypeCounts)
+                                                {
+                                                    <span class="type-mini-pill">@typeKvp.Key: @typeKvp.Value</span>
+                                                }
+                                                <span class="cls-total-size">@cls.TotalSizeMb MB</span>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <!-- Tab 2: File Directory (Links Only - Zero Download) -->
+            <div class="files-explorer-section">
+                <!-- Search & Filters -->
+                <div class="filter-bar">
+                    <input type="text"
+                           class="search-input"
+                           placeholder="Search by file key, branch, or classroom..."
+                           @bind="_searchQuery"
+                           @bind:event="oninput" />
+
+                    <select class="filter-select" @bind="_selectedEntityType">
+                        <option value="">All Categories</option>
+                        <option value="Classroom">Classroom</option>
+                        <option value="Child">Child</option>
+                        <option value="Teacher">Teacher</option>
+                        <option value="Event">Event</option>
+                    </select>
+
+                    <div class="filter-notice">
+                        ℹ️ Clicking an asset opens the link directly in a new tab without downloading the full image payload here.
+                    </div>
+                </div>
+
+                <!-- Files Table -->
+                <div class="table-container">
+                    <table class="storage-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Branch</th>
+                                <th>Classroom</th>
+                                <th>Storage Key / Name</th>
+                                <th>Storage Provider</th>
+                                <th>Size</th>
+                                <th>Uploaded</th>
+                                <th>Asset Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_filteredFiles.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="8" class="text-center empty-cell">No files match your search criteria.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var file in _filteredFiles)
+                                {
+                                    <tr>
+                                        <td>
+                                            <span class="entity-badge @file.EntityType.ToLowerInvariant()">
+                                                @file.EntityType
+                                            </span>
+                                        </td>
+                                        <td><strong>@file.BranchName</strong></td>
+                                        <td>@file.ClassroomName</td>
+                                        <td>
+                                            <div class="key-cell" title="@file.PhysicalOrCloudPath">
+                                                <span class="key-filename">@GetFileName(file.DisplayKey)</span>
+                                                <small class="key-sub">@file.DisplayKey</small>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="provider-pill @(file.StorageProvider.Contains("Azure") ? "azure" : "local")">
+                                                @file.StorageProvider
+                                            </span>
+                                        </td>
+                                        <td>@file.SizeKb KB</td>
+                                        <td>@file.CreatedAt.ToString("MMM dd, yyyy")</td>
+                                        <td>
+                                            <a href="@file.DisplayUrl" target="_blank" rel="noopener noreferrer" class="link-btn">
+                                                🔗 Open Link
+                                            </a>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .storage-explorer-container {
+        padding: 0;
+        margin: 0;
+        font-family: var(--ee-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+    }
+
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+
+    .metric-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        padding: 16px 18px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .metric-icon {
+        font-size: 26px;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--surface-soft, #f8f9f5);
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+    }
+
+    .metric-details {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    .metric-val {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: var(--text, #26332d);
+        line-height: 1.2;
+    }
+
+    .path-text {
+        font-size: 0.82rem;
+        font-family: monospace;
+        word-break: break-all;
+    }
+
+    .metric-lbl {
+        font-size: 0.78rem;
+        color: var(--muted, #6c7870);
+        margin-top: 3px;
+    }
+
+    .provider-pill {
+        display: inline-block;
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 750;
+    }
+
+    .provider-pill.local {
+        background: #eef2eb;
+        color: #31523c;
+        border: 1px solid #c9d8c4;
+    }
+
+    .provider-pill.azure {
+        background: #ebf5fb;
+        color: #1b4f72;
+        border: 1px solid #aed6f1;
+    }
+
+    .entity-breakdown-card {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 12px;
+        padding: 12px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 22px;
+        flex-wrap: wrap;
+    }
+
+    .breakdown-title {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: var(--text, #26332d);
+    }
+
+    .breakdown-pills {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .breakdown-pill {
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        padding: 3px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        color: var(--text, #26332d);
+    }
+
+    .tabs-nav {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 18px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        padding-bottom: 8px;
+    }
+
+    .tab-btn {
+        background: transparent;
+        border: none;
+        padding: 8px 16px;
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.15s ease;
+    }
+
+    .tab-btn:hover {
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--text, #26332d);
+    }
+
+    .tab-btn.active {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #31523c);
+    }
+
+    /* Hierarchy Grid */
+    .branches-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+    }
+
+    .branch-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+        padding: 18px;
+    }
+
+    .branch-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        padding-bottom: 12px;
+        margin-bottom: 12px;
+    }
+
+    .branch-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .branch-title h4 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .branch-stats {
+        display: flex;
+        gap: 6px;
+    }
+
+    .badge-files {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        padding: 2px 7px;
+        border-radius: 5px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text, #26332d);
+    }
+
+    .badge-size {
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #31523c);
+        padding: 2px 7px;
+        border-radius: 5px;
+        font-size: 0.75rem;
+        font-weight: 750;
+    }
+
+    .classrooms-header {
+        font-size: 0.75rem;
+        font-weight: 750;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted, #6c7870);
+        margin-bottom: 8px;
+    }
+
+    .classroom-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 7px 0;
+        border-bottom: 1px dashed #edf0eb;
+        font-size: 0.85rem;
+    }
+
+    .classroom-row:last-child {
+        border-bottom: none;
+    }
+
+    .classroom-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--text, #26332d);
+        font-weight: 600;
+    }
+
+    .classroom-badges {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .type-mini-pill {
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid #e1e6e0;
+        font-size: 0.7rem;
+        padding: 1px 5px;
+        border-radius: 4px;
+        color: var(--muted, #6c7870);
+    }
+
+    .cls-total-size {
+        font-size: 0.78rem;
+        font-weight: 750;
+        color: var(--accent-dark, #31523c);
+    }
+
+    /* File Explorer Tab */
+    .filter-bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+    }
+
+    .search-input {
+        flex: 1;
+        min-width: 220px;
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        font-size: 0.85rem;
+        background: #ffffff;
+    }
+
+    .filter-select {
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        font-size: 0.85rem;
+        background: #ffffff;
+    }
+
+    .filter-notice {
+        font-size: 0.75rem;
+        color: var(--muted, #6c7870);
+        flex-basis: 100%;
+    }
+
+    .table-container {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        overflow-x: auto;
+        box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));
+    }
+
+    .storage-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        text-align: left;
+    }
+
+    .storage-table th {
+        background: var(--surface-soft, #f8f9f5);
+        padding: 12px 14px;
+        font-size: 0.75rem;
+        font-weight: 750;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted, #6c7870);
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+
+    .storage-table td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+    }
+
+    .storage-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .entity-badge {
+        padding: 2px 7px;
+        border-radius: 5px;
+        font-size: 0.72rem;
+        font-weight: 750;
+        text-transform: uppercase;
+    }
+
+    .entity-badge.classroom { background: #e8f4ec; color: #2e693b; }
+    .entity-badge.child { background: #fef5e7; color: #b7791f; }
+    .entity-badge.teacher { background: #ebf5fb; color: #2471a3; }
+    .entity-badge.event { background: #fbf0f8; color: #8e44ad; }
+
+    .key-cell {
+        display: flex;
+        flex-direction: column;
+        max-width: 260px;
+    }
+
+    .key-filename {
+        font-weight: 600;
+        font-family: monospace;
+        font-size: 0.78rem;
+    }
+
+    .key-sub {
+        color: var(--muted, #6c7870);
+        font-size: 0.7rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .link-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--accent-dark, #31523c);
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-decoration: none;
+        transition: all 0.15s ease;
+    }
+
+    .link-btn:hover {
+        background: var(--accent-light, #e6eee9);
+        border-color: var(--accent, #557c6c);
+    }
+
+    .restricted-card, .empty-card, .loading-box {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        padding: 40px;
+        text-align: center;
+    }
+
+    .restricted-icon { font-size: 40px; margin-bottom: 12px; }
+    .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #e6eee9;
+        border-top-color: var(--accent, #557c6c);
+        border-radius: 50%;
+        animation: ee-spin 0.8s linear infinite;
+        margin: 0 auto 12px auto;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public bool IsPlatformAdminView { get; set; } = false;
+
+    private bool _isAuthorized = false;
+    private bool _loading = true;
+    private string _activeTab = "hierarchy";
+    private StorageExplorerModel? _model;
+    private string _searchQuery = "";
+    private string _selectedEntityType = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Guard check: PlatformAdmin, Superadmin, OrgAdmin, or Admin
+        var roles = UserContext.Roles ?? Array.Empty<string>();
+        _isAuthorized = roles.Any(r => 
+            r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Superadmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("DaycareAdmin", StringComparison.OrdinalIgnoreCase));
+
+        if (_isAuthorized)
+        {
+            // For Org Admin, limit to current tenant; for Platform Admin, view whole platform or current tenant
+            var tenantFilter = IsPlatformAdminView ? (Guid?)null : TenantContext.TenantId;
+            _model = await StorageExplorerService.GetStorageExplorerDataAsync(tenantFilter);
+        }
+
+        _loading = false;
+    }
+
+    private List<StorageFileRecordDto> _filteredFiles
+    {
+        get
+        {
+            if (_model == null) return new List<StorageFileRecordDto>();
+
+            var list = _model.Files.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_selectedEntityType))
+            {
+                list = list.Where(f => f.EntityType.Equals(_selectedEntityType, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim().ToLowerInvariant();
+                list = list.Where(f => 
+                    f.DisplayKey.ToLowerInvariant().Contains(q) ||
+                    f.BranchName.ToLowerInvariant().Contains(q) ||
+                    f.ClassroomName.ToLowerInvariant().Contains(q) ||
+                    f.EntityType.ToLowerInvariant().Contains(q));
+            }
+
+            return list.ToList();
+        }
+    }
+
+    private static string GetFileName(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "asset";
+        return Path.GetFileName(path);
+    }
+
+    private static string TruncatePath(string path, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Length <= maxLen) return path;
+        return "..." + path[^maxLen..];
+    }
+}
+

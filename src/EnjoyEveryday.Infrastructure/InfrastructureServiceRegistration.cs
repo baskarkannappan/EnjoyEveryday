@@ -32,9 +32,10 @@ public static class InfrastructureServiceRegistration
         // System Deployment Configuration
         services.AddSingleton<EnjoyEveryday.Application.Services.PlatformAdmin.ISystemConfigurationService, EnjoyEveryday.Infrastructure.Configuration.SystemConfigurationService>();
 
-        // Migrations
+        // Migrations & Storage
         services.AddScoped<SqlMigrationRunner>();
         services.AddScoped<EnjoyEveryday.Infrastructure.Storage.Base64ImageMigrationService>();
+        services.AddScoped<EnjoyEveryday.Application.Services.Storage.IStorageExplorerService, EnjoyEveryday.Infrastructure.Storage.StorageExplorerService>();
 
         // Audit
         services.AddScoped<IAuditService, DapperAuditService>();
