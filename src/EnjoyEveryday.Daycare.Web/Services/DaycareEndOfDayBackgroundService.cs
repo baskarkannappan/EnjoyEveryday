@@ -18,6 +18,7 @@ public class DaycareEndOfDayBackgroundService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DaycareEndOfDayBackgroundService> _logger;
     private readonly TimeProvider _timeProvider;
+    private DateTime? _lastExecutedDate;
 
     public DaycareEndOfDayBackgroundService(
         IServiceProvider serviceProvider,
@@ -38,14 +39,14 @@ public class DaycareEndOfDayBackgroundService : BackgroundService
             try
             {
                 var localNow = _timeProvider.GetLocalNow();
+                var today = localNow.Date;
                 // Operating hours end at 7:00 PM (19:00). Closed between 7:00 PM and 7:00 AM.
                 bool isDaycareClosed = localNow.Hour >= 19 || localNow.Hour < 7;
 
-                if (isDaycareClosed)
+                if (isDaycareClosed && _lastExecutedDate != today)
                 {
                     using var scope = _serviceProvider.CreateScope();
                     var endOfDayService = scope.ServiceProvider.GetRequiredService<IEndOfDayService>();
-                    var today = localNow.Date;
 
                     var summary = await endOfDayService.GetPendingSummaryAsync(date: today, cancellationToken: stoppingToken);
                     if (summary.TotalPendingCount > 0)
@@ -58,6 +59,8 @@ public class DaycareEndOfDayBackgroundService : BackgroundService
 
                         _logger.LogInformation("Background End of Day Auto-Close executed: {Message}", report.Message);
                     }
+
+                    _lastExecutedDate = today;
                 }
             }
             catch (Exception ex)
@@ -65,10 +68,10 @@ public class DaycareEndOfDayBackgroundService : BackgroundService
                 _logger.LogError(ex, "Error checking or executing automatic end of day closure in background service.");
             }
 
-            // Check every 60 seconds
+            // Sleep 15 minutes between checks to avoid wasteful database polling
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
+                await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
             }
             catch (OperationCanceledException)
             {

@@ -408,7 +408,6 @@ else
         RealtimeNotificationCenter.OnEducatorMessageReceived += HandleLiveIncomingEducatorMessage;
         await LoadAnnouncementsAsync();
         await LoadMessagesAsync();
-        _ = StartPollingLoopAsync();
     }
 
     private async void OnChildSelectionChanged()
@@ -428,41 +427,6 @@ else
             _announcements = items.ToList();
         }
         catch { }
-    }
-
-    private async Task StartPollingLoopAsync()
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(_cts.Token))
-            {
-                if (!_isSending && !_loading && SessionState.SelectedChild != null)
-                {
-                    var msgs = (await ParentService.GetChildMessagesAsync(SessionState.SelectedChild.ChildId, take: 50)).ToList();
-                    
-                    var hasChanges = msgs.Count != _messages.Count ||
-                        (msgs.Count > 0 && _messages.Count > 0 && msgs.Last().Id != _messages.Last().Id);
-
-                    if (hasChanges)
-                    {
-                        _messages = msgs;
-                        try
-                        {
-                            await ParentService.MarkMessagesAsReadAsync(SessionState.SelectedChild.ChildId);
-                        }
-                        catch { }
-                        await InvokeAsync(StateHasChanged);
-                        _ = ScrollToBottomAsync();
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Parent Messages] Polling tick error: {ex.Message}");
-        }
     }
 
     private async Task LoadMessagesAsync()

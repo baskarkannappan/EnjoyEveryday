@@ -107,7 +107,6 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadInitialDataAsync();
-        _ = StartBackgroundSyncAsync();
     }
 
     public void ClearSelectedConversation()
@@ -392,44 +391,6 @@
         {
             _messages = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
             StateHasChanged();
-        }
-    }
-
-    private async Task StartBackgroundSyncAsync()
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
-        try
-        {
-            while (await timer.WaitForNextTickAsync(_cts.Token))
-            {
-                if (!_isSending && !_loading && _selectedChildId.HasValue)
-                {
-                    var msgs = (await CommunicationService.GetChildMessagesForEducatorAsync(_selectedChildId.Value)).ToList();
-                    if (msgs.Count != _messages.Count)
-                    {
-                        _messages = msgs;
-
-                        var latest = _messages.LastOrDefault();
-                        if (latest != null)
-                        {
-                            var convo = _allConversations.FirstOrDefault(c => c.ChildId == _selectedChildId.Value);
-                            if (convo != null)
-                            {
-                                convo.LastMessageSnippet = latest.Content;
-                                convo.LastMessageTime = latest.Timestamp;
-                            }
-                        }
-
-                        await InvokeAsync(StateHasChanged);
-                        await ScrollToBottomAsync();
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            Logger.LogDebug(ex, "ClassroomMessages sync tick completed");
         }
     }
 
