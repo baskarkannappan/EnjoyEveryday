@@ -9,6 +9,7 @@ public class Organization
     public bool IsActive { get; set; }
     public string AccountStatus { get; set; } = "Active";
     public string? SuspensionReason { get; set; }
+    public string Currency { get; set; } = "INR";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

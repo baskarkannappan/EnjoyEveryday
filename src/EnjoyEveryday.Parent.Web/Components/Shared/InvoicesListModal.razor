@@ -1,7 +1,10 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Services
 @inject IParentService ParentService
 @inject ParentLocalizationService Localization
+@inject ICurrencyService CurrencyService
+@inject ParentSessionState SessionState
 @inject IJSRuntime JS
 @implements IDisposable
 
@@ -50,14 +53,14 @@
                                     <div class="invoice-date">Due: @inv.DueDate.ToString("d MMM yyyy")</div>
                                 </div>
                                 <div class="invoice-amount-block">
-                                    <div class="amount">₹@inv.TotalAmount.ToString("N0")</div>
+                                    <div class="amount">@CurrencyService.Format(inv.TotalAmount, SessionState.SelectedChild?.Currency)</div>
                                     @if (inv.Status == InvoiceStatus.Paid)
                                     {
                                         <span class="status-badge paid">Paid</span>
                                     }
                                     else if (inv.Status == InvoiceStatus.PartiallyPaid)
                                     {
-                                        <span class="status-badge partial">Bal: ₹@inv.BalanceDue.ToString("N0")</span>
+                                        <span class="status-badge partial">Bal: @CurrencyService.Format(inv.BalanceDue, SessionState.SelectedChild?.Currency)</span>
                                     }
                                     else if (inv.Status == InvoiceStatus.Overdue)
                                     {
@@ -74,7 +77,7 @@
                                                 class="btn-pay-now" 
                                                 @onclick="() => InitiatePaymentAsync(inv)"
                                                 disabled="@_isProcessingPayment">
-                                            @(_isProcessingPayment && _processingInvoiceId == inv.Id ? "Opening..." : $"Pay ₹{inv.BalanceDue:N0}")
+                                            @(_isProcessingPayment && _processingInvoiceId == inv.Id ? "Opening..." : $"Pay {CurrencyService.Format(inv.BalanceDue, SessionState.SelectedChild?.Currency)}")
                                         </button>
                                     }
                                 </div>
@@ -189,7 +192,7 @@
             if (result.Success)
             {
                 _isSuccess = true;
-                _statusMessage = $"Payment of ₹{result.AmountPaid:N0} successfully applied (Ref: {response.PaymentId}).";
+                _statusMessage = $"Payment of {CurrencyService.Format(result.AmountPaid, SessionState.SelectedChild?.Currency)} successfully applied (Ref: {response.PaymentId}).";
                 await LoadInvoicesAsync();
             }
             else
@@ -250,7 +253,7 @@
                 if (result.Success)
                 {
                     _isSuccess = true;
-                    _statusMessage = $"Test simulation payment of ₹{result.AmountPaid:N0} successfully verified and credited!";
+                    _statusMessage = $"Test simulation payment of {CurrencyService.Format(result.AmountPaid, SessionState.SelectedChild?.Currency)} successfully verified and credited!";
                     await LoadInvoicesAsync();
                 }
             }

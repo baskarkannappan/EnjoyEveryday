@@ -27,7 +27,7 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `support_access_grants`: Temporary impersonation / support access grants.
 
 ## 2. Organization, Facilities & Staff (28 Tables)
-* `organizations`: Root daycare provider accounts.
+* `organizations`: Root daycare provider accounts with assigned `region_id`, `plan_id`, `tariff_id`, and `currency VARCHAR(10) NOT NULL DEFAULT 'INR'` (Migration 121). Root of hierarchy currency inheritance.
 * `organization_invitations`: Time-limited, cryptographically secure magic onboarding tokens for invited organization administrators.
 * `organization_memberships`: Staff and admin associations.
 * `branches`, `branch_floor_maps`, `floor_map_markers`, `branch_operational_goals`: Physical center facilities and floor plans.

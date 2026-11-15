@@ -422,17 +422,18 @@ public class PlatformAdminRepository : IPlatformAdminRepository
         });
     }
 
-    public async Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, CancellationToken ct = default)
+    public async Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, string? currency = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateConnectionAsync(ct);
         await conn.ExecuteAsync(
-            "CALL sp_assign_organization_regional_plan(@p_org_id, @p_region_id, @p_plan_id, @p_tariff_id)",
+            "CALL sp_assign_organization_regional_plan(@p_org_id, @p_region_id, @p_plan_id, @p_tariff_id, @p_currency)",
             new
             {
                 p_org_id = organizationId,
                 p_region_id = regionId,
                 p_plan_id = planId,
-                p_tariff_id = tariffId
+                p_tariff_id = tariffId,
+                p_currency = currency
             });
     }
 

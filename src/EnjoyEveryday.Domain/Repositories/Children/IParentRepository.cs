@@ -15,6 +15,7 @@ public class ParentAuthorizedChild
     public string? BranchName { get; set; }
     public Guid? OrganizationId { get; set; }
     public string? OrganizationName { get; set; }
+    public string Currency { get; set; } = "INR";
     public string? PhotoUrl { get; set; }
     public string Relationship { get; set; } = string.Empty;
     public bool IsPrimary { get; set; }

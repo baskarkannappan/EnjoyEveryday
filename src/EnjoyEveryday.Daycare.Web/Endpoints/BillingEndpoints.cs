@@ -214,7 +214,15 @@ public static class BillingEndpoints
         sb.AppendLine("  </div>");
         sb.AppendLine("</div>");
 
-        var currencySymbol = "₹";
+        var cur = invoice?.Currency ?? "INR";
+        var currencySymbol = cur.ToUpperInvariant() switch
+        {
+            "JPY" => "¥",
+            "USD" or "CAD" or "AUD" or "SGD" => "$",
+            "EUR" => "€",
+            "GBP" => "£",
+            _ => "₹"
+        };
         sb.AppendLine("<div class=\"amount-banner\">");
         sb.AppendLine("  <div>");
         sb.AppendLine("    <div class=\"amount-label\">Amount Received</div>");

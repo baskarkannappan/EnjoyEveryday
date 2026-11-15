@@ -29,6 +29,7 @@ public class PlatformDbOrganizationRecord
     public string? PricingRegionCode { get; set; }
     public string? PricingRegionName { get; set; }
     public Guid? TariffId { get; set; }
+    public string Currency { get; set; } = "INR";
 }
 
 public class PlatformDbBranchRecord
@@ -107,5 +108,5 @@ public interface IPlatformAdminRepository
     Task<List<RegionPlanTariff>> GetRegionPlanTariffsAsync(Guid regionId, CancellationToken ct = default);
     Task SavePricingRegionAsync(PricingRegion region, CancellationToken ct = default);
     Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken ct = default);
-    Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, CancellationToken ct = default);
+    Task AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, string? currency = null, CancellationToken ct = default);
 }

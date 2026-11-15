@@ -122,6 +122,20 @@ tags:
     - **Dynamic Regional Rates**: The plan selection and billing tariff schedules dynamically recalculate and preview localized prices for the selected region.
     - **Directory Visibility**: Organization directory table displays the 📍 region badge alongside the active plan and schedule.
 
+### 9. Organization-Level Currency Configuration & Multi-Currency Hierarchy
+* **Architecture Pattern**: **Org Aggregate Single Source of Truth (`organizations.currency`) with Cascading Inheritance**.
+  - **Default Platform Currency**: Standard default currency across all organizations is **INR** (`₹`).
+  - **Per-Organization Custom Currency**: Organizations can be individually configured with their own currency (e.g. Japanese Yen `JPY` / `¥`, `USD`, `CAD`, `EUR`, `GBP`, `AUD`, `SGD`) via the Platform Admin Plan & Tariff assignment modal or creation workflow.
+  - **Hierarchy Cascading**:
+    - Centralized in `sp_assign_organization_regional_plan(p_org_id, p_region_id, p_plan_id, p_tariff_id, p_currency)`.
+    - Automatically syncs to `tenant_preferences.currency` and is returned in `fn_get_organization_hierarchy`, `fn_get_parent_authorized_children`, `fn_get_all_organizations`, and `fn_get_platform_organizations_overview`.
+    - All subsequent child entities (campuses, branches, classrooms, teacher workspaces, parent portal tuition invoices, and receipt vouchers) strictly inherit and format in the organization's specific currency.
+  - **Unified Currency Formatter (`ICurrencyService` / `CurrencyService`)**:
+    - Located in `src/EnjoyEveryday.UI.Shared/Services/`.
+    - Supports culture-specific zero-decimal rules (e.g., JPY `¥10,000` with 0 decimals, INR `₹12,500` with Indian lakh grouping, USD `$150.00` with 2 decimals).
+    - Registered as a singleton in `UiSharedServiceRegistration.cs` across all portals.
+
+
 
 
 

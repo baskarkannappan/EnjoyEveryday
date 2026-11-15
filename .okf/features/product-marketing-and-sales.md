@@ -44,3 +44,4 @@ All assets are built using EnjoyEveryday's Scandinavian design system tokens (`-
 * **`marketing/social-media-campaign/`**:
   * `social-post-cards.html`: Interactive Creative Studio with aspect ratio toggles (1:1 Feed, 4:5 Portrait, 9:16 Story/Reel) and animated Reel video simulator.
   * `meta-posts-copy.md`: Organic Instagram/Facebook captions, 30-second Reel script with voiceover, Story poll prompts, and Meta Ads Manager audience targeting setup.
+

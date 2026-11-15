@@ -122,6 +122,7 @@ public class PlatformAdminService : IPlatformAdminService
                                 TariffId = r.TariffId,
                                 MonthlyRate = 299.00m,
                                 NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
+                                Currency = !string.IsNullOrWhiteSpace(r.Currency) ? r.Currency : "INR",
                                 AdminEmail = !string.IsNullOrWhiteSpace(r.AdminEmail) ? r.AdminEmail : $"admin@{r.Name.ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
                                 LifecycleStageKey = "Active",
                                 CreatedAt = r.CreatedAt != null ? (DateTimeOffset)r.CreatedAt.Value : DateTimeOffset.UtcNow.AddMonths(-1)
@@ -140,6 +141,7 @@ public class PlatformAdminService : IPlatformAdminService
                             if (r.PlanId.HasValue) existing.PlanId = r.PlanId.Value;
                             if (!string.IsNullOrWhiteSpace(r.PlanName)) existing.PlanName = r.PlanName;
                             if (r.TariffId.HasValue) existing.TariffId = r.TariffId;
+                            if (!string.IsNullOrWhiteSpace(r.Currency)) existing.Currency = r.Currency;
                             if (Enum.TryParse<AccountStatus>(r.AccountStatus, true, out var parsedExistingStatus))
                             {
                                 existing.AccountStatus = parsedExistingStatus;
@@ -486,10 +488,12 @@ public class PlatformAdminService : IPlatformAdminService
         int branchCount = 1,
         Guid? tariffId = null,
         Guid? pricingRegionId = null,
+        string currency = "INR",
         CancellationToken cancellationToken = default)
     {
         _plans.TryGetValue(planId, out var plan);
         plan ??= _plans.Values.First();
+        var resolvedCurrency = !string.IsNullOrWhiteSpace(currency) ? currency.ToUpperInvariant() : "INR";
 
         PricingRegion? region = null;
         if (pricingRegionId.HasValue && _platformAdminRepository != null)
@@ -546,6 +550,7 @@ public class PlatformAdminService : IPlatformAdminService
             TariffName = tariffName,
             MonthlyRate = monthlyRate,
             NextBillingDate = DateTimeOffset.UtcNow.AddDays(30),
+            Currency = resolvedCurrency,
             AdminEmail = adminEmail,
             LifecycleStageKey = "Onboarding",
             CreatedAt = DateTimeOffset.UtcNow
@@ -562,7 +567,7 @@ public class PlatformAdminService : IPlatformAdminService
 
                 if (region != null)
                 {
-                    await _platformAdminRepository.AssignRegionalPlanToOrganizationAsync(id, region.Id, plan.Id, dto.TariffId, cancellationToken);
+                    await _platformAdminRepository.AssignRegionalPlanToOrganizationAsync(id, region.Id, plan.Id, dto.TariffId, resolvedCurrency, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -1154,6 +1159,7 @@ public class PlatformAdminService : IPlatformAdminService
         Guid regionId,
         Guid planId,
         Guid? tariffId,
+        string? currency = null,
         CancellationToken cancellationToken = default)
     {
         if (_organizations.TryGetValue(organizationId, out var org) && _plans.TryGetValue(planId, out var plan))
@@ -1170,6 +1176,7 @@ public class PlatformAdminService : IPlatformAdminService
 
             decimal monthlyRate = plan.BasePrice;
             string tariffName = "Standard Monthly";
+            string resolvedCurrency = !string.IsNullOrWhiteSpace(currency) ? currency.ToUpperInvariant() : (!string.IsNullOrWhiteSpace(org.Currency) ? org.Currency : "INR");
             if (region != null && region.Tariffs.Count > 0)
             {
                 var regTariff = region.Tariffs.FirstOrDefault(t => t.PlanId == plan.Id && (tariffId == null || t.Id == tariffId));
@@ -1177,6 +1184,10 @@ public class PlatformAdminService : IPlatformAdminService
                 {
                     monthlyRate = regTariff.Price;
                     tariffName = regTariff.Name;
+                    if (string.IsNullOrWhiteSpace(currency) && !string.IsNullOrWhiteSpace(regTariff.Currency))
+                    {
+                        resolvedCurrency = regTariff.Currency;
+                    }
                 }
             }
 
@@ -1188,6 +1199,7 @@ public class PlatformAdminService : IPlatformAdminService
             org.TariffId = tariffId;
             org.TariffName = tariffName;
             org.MonthlyRate = monthlyRate;
+            org.Currency = resolvedCurrency;
 
             if (_platformAdminRepository != null)
             {
@@ -1198,6 +1210,7 @@ public class PlatformAdminService : IPlatformAdminService
                         regionId,
                         plan.Id,
                         tariffId,
+                        resolvedCurrency,
                         cancellationToken);
                 }
                 catch (Exception ex)
@@ -1206,7 +1219,7 @@ public class PlatformAdminService : IPlatformAdminService
                 }
             }
 
-            AddAuditLog("Regional Plan Assigned", $"Organization '{org.Name}' assigned plan '{plan.Name}' in region '{region?.Name}' ({tariffName} - {monthlyRate:C0}).", "Info", organizationId);
+            AddAuditLog("Regional Plan Assigned", $"Organization '{org.Name}' assigned plan '{plan.Name}' in region '{region?.Name}' ({tariffName} - {resolvedCurrency} {monthlyRate:N0}).", "Info", organizationId);
 
             if (_emailNotificationService != null && !string.IsNullOrWhiteSpace(org.AdminEmail))
             {

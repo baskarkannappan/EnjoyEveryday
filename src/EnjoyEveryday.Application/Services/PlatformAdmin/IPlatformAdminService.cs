@@ -39,6 +39,7 @@ public class PlatformOrganizationDto
     public Guid? PricingRegionId { get; set; }
     public string? PricingRegionCode { get; set; }
     public string? PricingRegionName { get; set; }
+    public string Currency { get; set; } = "INR";
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -108,6 +109,7 @@ public interface IPlatformAdminService
         int branchCount = 1,
         Guid? tariffId = null,
         Guid? pricingRegionId = null,
+        string currency = "INR",
         CancellationToken cancellationToken = default);
     Task<bool> UpdateOrganizationAsync(
         Guid id, 
@@ -180,7 +182,7 @@ public interface IPlatformAdminService
     Task<List<RegionPlanTariff>> GetRegionPlanTariffsAsync(Guid regionId, CancellationToken cancellationToken = default);
     Task SavePricingRegionAsync(PricingRegion region, CancellationToken cancellationToken = default);
     Task SaveRegionPlanTariffAsync(RegionPlanTariff tariff, CancellationToken cancellationToken = default);
-    Task<bool> AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, CancellationToken cancellationToken = default);
+    Task<bool> AssignRegionalPlanToOrganizationAsync(Guid organizationId, Guid regionId, Guid planId, Guid? tariffId, string? currency = null, CancellationToken cancellationToken = default);
 
     // Commercial & Billing Operations
     Task<List<Invoice>> GetInvoicesAsync(string? status = null, CancellationToken cancellationToken = default);
