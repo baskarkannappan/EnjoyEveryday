@@ -26,6 +26,7 @@ public static class BranchRoutePolicy
 
         // 1. Public / Account routes (always accessible)
         if (path is "/profile" or "/select-branch" or "/select-organization" or "/support"
+            or "/version" or "/release-notes"
             or "/about-us" or "/about-and-contact" or "/contact-us"
             or "/login" or "/auth/activate" or "/auth/logout" or "/logout"
             or "/access-denied" or "/account-suspended" or "/not-found" or "/error")
