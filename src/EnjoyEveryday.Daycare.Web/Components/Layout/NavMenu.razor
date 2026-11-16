@@ -1622,29 +1622,34 @@
         }
     }
 
-    // Expandable Group State (Independent collapse/expand; collapsed by default!)
+    // Expandable Group State (Accordion: only one group expanded at a time; collapsed by default)
     private readonly HashSet<string> _openGroups = new(StringComparer.OrdinalIgnoreCase);
 
     private bool IsGroupOpen(string groupKey) => _openGroups.Contains(groupKey);
 
     private void ToggleGroup(string groupKey)
     {
-        if (!_openGroups.Add(groupKey))
+        var wasOpen = _openGroups.Contains(groupKey);
+        _openGroups.Clear();
+        _openSubmenus.Clear();
+        if (!wasOpen)
         {
-            _openGroups.Remove(groupKey);
+            _openGroups.Add(groupKey);
         }
     }
 
-    // Expandable Submenu State (independent expand/collapse)
+    // Expandable Submenu State (Accordion: only one submenu expanded at a time)
     private readonly HashSet<string> _openSubmenus = new(StringComparer.OrdinalIgnoreCase);
 
     private bool IsSubmenuOpen(string submenuKey) => _openSubmenus.Contains(submenuKey);
 
     private void ToggleSubmenu(string submenuKey)
     {
-        if (!_openSubmenus.Add(submenuKey))
+        var wasOpen = _openSubmenus.Contains(submenuKey);
+        _openSubmenus.Clear();
+        if (!wasOpen)
         {
-            _openSubmenus.Remove(submenuKey);
+            _openSubmenus.Add(submenuKey);
         }
     }
 
@@ -1926,6 +1931,9 @@
 
     private void AutoExpandCurrentRoute()
     {
+        _openGroups.Clear();
+        _openSubmenus.Clear();
+
         var relativePath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(relativePath))
         {
