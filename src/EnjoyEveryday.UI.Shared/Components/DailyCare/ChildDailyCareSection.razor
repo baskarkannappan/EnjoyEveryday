@@ -86,6 +86,27 @@
         </div>
     </div>
 
+    @if (_isBranchClosed)
+    {
+        <div class="alert-banner warning" style="background: #fff5f5; border: 1px solid #fed7d7; margin-bottom: 18px; display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 0px; color: #9b2c2c;">
+            <span style="font-size: 22px;">🔒</span>
+            <div>
+                <strong style="font-size: 14px;">Branch Facility is Closed</strong>
+                <p style="margin: 3px 0 0; font-size: 12.5px; color: #742a2a;">The Branch facility is closed for daily operations. Daily care routines, diaper changes, meal logs, rest sessions, and handovers are locked until the branch is opened.</p>
+            </div>
+        </div>
+    }
+    else if (_isClassroomClosed)
+    {
+        <div class="alert-banner warning" style="background: #fff5f5; border: 1px solid #fed7d7; margin-bottom: 18px; display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 0px; color: #9b2c2c;">
+            <span style="font-size: 22px;">🔒</span>
+            <div>
+                <strong style="font-size: 14px;">Classroom is Closed</strong>
+                <p style="margin: 3px 0 0; font-size: 12.5px; color: #742a2a;">This classroom is closed for daily operations. Open the classroom to record daily care events.</p>
+            </div>
+        </div>
+    }
+
     @if (_pendingHandovers.Any())
     {
         <div class="alert-banner warning handover-banner" style="background: #fffcf2; border: 1px solid #f6e05e; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-radius: 0px;">
@@ -335,14 +356,14 @@
 
                 @if (!_isBulkMode)
                 {
-                    <button class="btn primary submit-btn" @onclick="SubmitQuickCareEntry" disabled="@(_isSubmitting || _selectedChildId == Guid.Empty || _selectedChildStatus?.IsCheckedIn != true)">
-                        @(_isSubmitting ? "Saving Entry..." : (_selectedChildStatus?.IsCheckedIn != true ? "Child Not Checked In (Locked)" : "Record care entry"))
+                    <button class="btn primary submit-btn" @onclick="SubmitQuickCareEntry" disabled="@(_isSubmitting || _selectedChildId == Guid.Empty || _selectedChildStatus?.IsCheckedIn != true || _isBranchClosed || _isClassroomClosed)">
+                        @(_isSubmitting ? "Saving Entry..." : (_isBranchClosed ? "Locked (Branch Closed)" : (_isClassroomClosed ? "Locked (Classroom Closed)" : (_selectedChildStatus?.IsCheckedIn != true ? "Child Not Checked In (Locked)" : "Record care entry"))))
                     </button>
                 }
                 else
                 {
-                    <button class="btn primary submit-btn" @onclick="SubmitBulkCareEntry" disabled="@(_isSubmitting || _selectedChildIds.Count == 0)">
-                        @(_isSubmitting ? "Recording for group..." : $"Record '{_selectedActivity}' for {_selectedChildIds.Count} children")
+                    <button class="btn primary submit-btn" @onclick="SubmitBulkCareEntry" disabled="@(_isSubmitting || _selectedChildIds.Count == 0 || _isBranchClosed || _isClassroomClosed)">
+                        @(_isSubmitting ? "Recording for group..." : (_isBranchClosed ? "Locked (Branch Closed)" : (_isClassroomClosed ? "Locked (Classroom Closed)" : $"Record '{_selectedActivity}' for {_selectedChildIds.Count} children")))
                     </button>
                 }
             </div>
@@ -357,7 +378,7 @@
                             <strong>🌙 Active Rest in Progress</strong>
                             <span>Started at @_selectedChildStatus.ActiveNapSession.StartTime.ToLocalTime().ToString("h:mm tt")</span>
                         </div>
-                        <button class="btn success sm" @onclick="WakeActiveChild">
+                        <button class="btn success sm" @onclick="WakeActiveChild" disabled="@(_isBranchClosed || _isClassroomClosed)">
                             ☀️ Wake Child &amp; Log Duration
                         </button>
                     </div>
@@ -365,7 +386,7 @@
                 else if (_selectedChildId != Guid.Empty)
                 {
                     <div class="start-nap-box">
-                        <button class="btn secondary sm" @onclick="StartNapForChild" disabled="@(_selectedChildStatus?.IsCheckedIn != true)">
+                        <button class="btn secondary sm" @onclick="StartNapForChild" disabled="@(_selectedChildStatus?.IsCheckedIn != true || _isBranchClosed || _isClassroomClosed)">
                             🌙 Start Rest Session for @(_selectedChildStatus?.ChildName ?? "Child")
                         </button>
                     </div>
@@ -374,10 +395,10 @@
             else
             {
                 <div class="bulk-nap-controls">
-                    <button class="btn secondary sm" @onclick="StartBulkNap" disabled="@(_selectedChildIds.Count == 0)">
+                    <button class="btn secondary sm" @onclick="StartBulkNap" disabled="@(_selectedChildIds.Count == 0 || _isBranchClosed || _isClassroomClosed)">
                         🌙 Start Rest for All Selected (@_selectedChildIds.Count)
                     </button>
-                    <button class="btn success sm" @onclick="WakeBulkChildren" disabled="@(_selectedChildIds.Count == 0)">
+                    <button class="btn success sm" @onclick="WakeBulkChildren" disabled="@(_selectedChildIds.Count == 0 || _isBranchClosed || _isClassroomClosed)">
                         ☀️ Wake All Selected &amp; Log Duration
                     </button>
                 </div>
@@ -695,8 +716,8 @@
 
                         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
                             <button type="button" class="btn secondary" @onclick="() => _showHandoverModal = false">Cancel</button>
-                            <button type="button" class="btn primary" disabled="@_isSubmittingHandover" @onclick="SubmitHandover">
-                                @(_isSubmittingHandover ? "Submitting..." : "Submit Shift Handover")
+                            <button type="button" class="btn primary" disabled="@(_isSubmittingHandover || _isBranchClosed || _isClassroomClosed)" @onclick="SubmitHandover">
+                                @(_isSubmittingHandover ? "Submitting..." : (_isBranchClosed ? "Locked (Branch Closed)" : "Submit Shift Handover"))
                             </button>
                         </div>
                     </div>

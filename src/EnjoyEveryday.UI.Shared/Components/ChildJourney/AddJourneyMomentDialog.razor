@@ -13,6 +13,7 @@
 @inject BranchService BranchService
 @inject ClassroomService ClassroomService
 @inject AttendanceService AttendanceService
+@inject IDailyOperationsService DailyOpsService
 @inject TimeProvider TimeProvider
 @inject IJSRuntime JS
 
@@ -23,6 +24,12 @@
         <div class="modal-backdrop show" @onclick="CloseDialog">
             <div class="modal" @onclick:stopPropagation="true">
                 <button class="modal-close" @onclick="CloseDialog" aria-label="Close dialog">✕</button>
+        @if (_isBranchClosed || _isClassroomClosed)
+        {
+            <div class="moment-not-checkedin-banner" style="background: #fff5f5; border-color: #fed7d7; color: #9b2c2c; margin-bottom: 14px;">
+                <span>🔒 <strong>@(_isBranchClosed ? "Branch Closed:" : "Classroom Closed:")</strong> @_closedReason</span>
+            </div>
+        }
         @if (_step == 1)
         {
             <h3 class="dialog-title">What did you notice?@(!string.IsNullOrEmpty(ChildName) ? $" — {ChildName}" : "")</h3>
@@ -260,12 +267,12 @@
             
             @if (_step == 1)
             {
-                <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || (ChildId != null && !_isSingleChildCheckedIn) || (ChildId == null && !_selectedChildIds.Any()))">Next</button>
+                <button class="primary" @onclick="GoToNextStep" disabled="@(string.IsNullOrWhiteSpace(_observation) || _isBranchClosed || _isClassroomClosed || (ChildId != null && !_isSingleChildCheckedIn) || (ChildId == null && !_selectedChildIds.Any()))">Next</button>
             }
             else
             {
                 <button class="secondary" @onclick="() => _step = 1">Back</button>
-                <button class="primary" @onclick="SaveJourneyMoment" disabled="@_isSaving">@(_isSaving ? "Saving..." : "Save Moment")</button>
+                <button class="primary" @onclick="SaveJourneyMoment" disabled="@(_isSaving || _isBranchClosed || _isClassroomClosed)">@(_isSaving ? "Saving..." : (_isBranchClosed ? "Locked (Branch Closed)" : "Save Moment"))</button>
             }
         </div>
             </div>
@@ -336,6 +343,45 @@
     private List<Classroom>? _allClassrooms;
     private Guid? _selectedBranchId;
     private Guid? _selectedDropdownClassroomId;
+    private bool _isBranchClosed = false;
+    private bool _isClassroomClosed = false;
+    private string? _closedReason;
+
+    private async Task CheckDailyOpsStatusAsync(Guid? classroomId)
+    {
+        _isBranchClosed = false;
+        _isClassroomClosed = false;
+        _closedReason = null;
+
+        var targetClassroomId = classroomId ?? ClassroomId ?? _selectedDropdownClassroomId;
+        if (targetClassroomId.HasValue && targetClassroomId.Value != Guid.Empty)
+        {
+            try
+            {
+                var room = await ClassroomService.GetClassroomByIdAsync(targetClassroomId.Value);
+                if (room != null && room.BranchId != Guid.Empty)
+                {
+                    var branchStatus = await DailyOpsService.GetBranchDailyStatusAsync(room.BranchId, DateOnly.FromDateTime(DateTime.Today));
+                    if (branchStatus != null && !branchStatus.IsOpen && !DailyOpsService.IsBypassedForTesting())
+                    {
+                        _isBranchClosed = true;
+                        _closedReason = "Branch facility is closed for daily operations today. All learning moments and observations are locked until the branch is opened.";
+                    }
+
+                    var roomStatus = await DailyOpsService.GetClassroomDailyStatusAsync(room.Id, DateOnly.FromDateTime(DateTime.Today));
+                    if (roomStatus != null && !roomStatus.IsOpen && !DailyOpsService.IsBypassedForTesting())
+                    {
+                        _isClassroomClosed = true;
+                        _closedReason = "Classroom is closed for daily operations. Open the classroom before recording learning observations.";
+                    }
+                }
+            }
+            catch
+            {
+                // Non-blocking telemetry
+            }
+        }
+    }
 
     private async Task OnBranchChanged(ChangeEventArgs e)
     {
@@ -365,6 +411,7 @@
             var presentIds = await AttendanceService.GetPresentChildIdsForClassroomAsync(classId, todayDate);
             _presentChildIds = presentIds.ToHashSet();
             await LoadPlannedExperiencesForClassroomAsync(classId);
+            await CheckDailyOpsStatusAsync(classId);
         }
         else
         {
@@ -407,6 +454,7 @@
         _allAreas ??= (await JourneyService.GetDevelopmentAreasAsync()).ToList();
         
         var effectiveClassroomId = ClassroomId ?? _selectedDropdownClassroomId;
+        await CheckDailyOpsStatusAsync(effectiveClassroomId);
 
         // 1. Resolve planned experiences for the classroom (not all experiences from catalog!)
         if (PlannedExperiences != null && PlannedExperiences.Any())
@@ -722,6 +770,12 @@
 
     private async Task SaveJourneyMoment()
     {
+        if (_isBranchClosed || _isClassroomClosed)
+        {
+            _hideDialog = true;
+            return;
+        }
+
         _isSaving = true;
         try
         {

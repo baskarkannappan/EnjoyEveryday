@@ -16,19 +16,22 @@ public class ClassroomReadinessService : IClassroomReadinessService
     private readonly ITenantContext _tenantContext;
     private readonly IResourceAuthorizer _authorizer;
     private readonly IAccessScopeRepository _scopeRepo;
+    private readonly IDailyOperationsService? _dailyOpsService;
 
     public ClassroomReadinessService(
         IClassroomReadinessRepository readinessRepository,
         IUserContext userContext,
         ITenantContext tenantContext,
         IResourceAuthorizer authorizer,
-        IAccessScopeRepository scopeRepo)
+        IAccessScopeRepository scopeRepo,
+        IDailyOperationsService? dailyOpsService = null)
     {
         _readinessRepository = readinessRepository ?? throw new ArgumentNullException(nameof(readinessRepository));
         _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _authorizer = authorizer ?? throw new ArgumentNullException(nameof(authorizer));
         _scopeRepo = scopeRepo ?? throw new ArgumentNullException(nameof(scopeRepo));
+        _dailyOpsService = dailyOpsService;
     }
 
     public async Task<ClassroomReadinessCheckResult> ValidateBranchReadinessAsync(Guid tenantId, Guid branchId, CancellationToken ct = default)
@@ -36,7 +39,20 @@ public class ClassroomReadinessService : IClassroomReadinessService
         await EnforceBranchAccessAsync(tenantId, branchId, ct);
         var branchData = await _readinessRepository.GetBranchReadinessDataAsync(tenantId, branchId, ct);
 
-        return EvaluateInternal(branchId, branchData, null);
+        var result = EvaluateInternal(branchId, branchData, null);
+
+        if (_dailyOpsService != null && !_dailyOpsService.IsBypassedForTesting())
+        {
+            var branchDaily = await _dailyOpsService.GetBranchDailyStatusAsync(branchId, DateOnly.FromDateTime(DateTime.Today), ct);
+            if (branchDaily != null && !branchDaily.IsOpen)
+            {
+                result.IsReady = false;
+                result.Status = "Branch Closed";
+                result.MissingRequirements.Insert(0, "Branch facility is currently closed for operations. The Branch Admin must open the facility before classroom readiness and onboarding can proceed.");
+            }
+        }
+
+        return result;
     }
 
     public async Task<ClassroomReadinessCheckResult> ValidateClassroomReadinessAsync(Guid tenantId, Guid branchId, Guid classroomId, CancellationToken ct = default)
@@ -44,7 +60,20 @@ public class ClassroomReadinessService : IClassroomReadinessService
         await EnforceBranchAccessAsync(tenantId, branchId, ct);
         var branchData = await _readinessRepository.GetBranchReadinessDataAsync(tenantId, branchId, ct);
 
-        return EvaluateInternal(branchId, branchData, classroomId);
+        var result = EvaluateInternal(branchId, branchData, classroomId);
+
+        if (_dailyOpsService != null && !_dailyOpsService.IsBypassedForTesting())
+        {
+            var branchDaily = await _dailyOpsService.GetBranchDailyStatusAsync(branchId, DateOnly.FromDateTime(DateTime.Today), ct);
+            if (branchDaily != null && !branchDaily.IsOpen)
+            {
+                result.IsReady = false;
+                result.Status = "Branch Closed";
+                result.MissingRequirements.Insert(0, "Branch facility is currently closed for operations. Classrooms cannot be prepared or operated until the Branch Admin opens the facility.");
+            }
+        }
+
+        return result;
     }
 
     public async Task<Dictionary<Guid, ClassroomReadinessCheckResult>> GetBranchClassroomsReadinessAsync(Guid tenantId, Guid branchId, CancellationToken ct = default)

@@ -152,19 +152,22 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
     private readonly IUserContext _userContext;
     private readonly IAccessScopeRepository _accessScopeRepo;
     private readonly TimeProvider _timeProvider;
+    private readonly IDailyOperationsService? _dailyOpsService;
 
     public DaycareOperationsBoardService(
         IDaycareOperationsBoardRepository boardRepository,
         ITenantContext tenantContext,
         IUserContext userContext,
         IAccessScopeRepository accessScopeRepo,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IDailyOperationsService? dailyOpsService = null)
     {
         _boardRepository = boardRepository ?? throw new ArgumentNullException(nameof(boardRepository));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
         _accessScopeRepo = accessScopeRepo ?? throw new ArgumentNullException(nameof(accessScopeRepo));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _dailyOpsService = dailyOpsService;
     }
 
     public async Task<OperationsBoardModel> GetOperationsBoardAsync(OperationsBoardFilter filter, CancellationToken ct = default)
@@ -407,6 +410,12 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
     {
         var tenantId = _tenantContext.TenantId;
         var checkDate = date?.Date ?? _timeProvider.GetLocalNow().Date;
+
+        if (_dailyOpsService != null && branchId.HasValue && branchId.Value != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId.Value, DateOnly.FromDateTime(checkDate), "classroom readiness checklist", ct);
+        }
+
         var orgId = _userContext.OrganizationId;
         if (!orgId.HasValue || orgId == Guid.Empty)
         {

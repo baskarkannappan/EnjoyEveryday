@@ -9,8 +9,8 @@ public record ReadinessActionItem(string Title, string Message, string ActionUrl
 
 public record ClassroomReadinessCheckResult
 {
-    public bool IsReady { get; init; }
-    public string Status { get; init; } = "Setup Required"; // Ready, Setup Required, Full, Inactive
+    public bool IsReady { get; set; }
+    public string Status { get; set; } = "Setup Required"; // Ready, Setup Required, Full, Inactive
 
     // Branch level checks
     public Guid BranchId { get; init; }

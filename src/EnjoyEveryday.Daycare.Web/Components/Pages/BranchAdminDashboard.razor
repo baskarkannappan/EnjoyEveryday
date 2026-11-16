@@ -1057,6 +1057,12 @@
 
     private async Task ToggleChecklistItem(ReadinessChecklistItem item)
     {
+        if (!DailyOpsService.IsBypassedForTesting() && (_branchOpsStatus == null || !_branchOpsStatus.IsOpen))
+        {
+            await NotificationService.ShowWarningAsync("Branch facility is closed. Readiness checklist items cannot be updated while the branch is closed. Please open the branch for operations first.");
+            return;
+        }
+
         item.IsCompleted = !item.IsCompleted;
         try
         {
@@ -1149,6 +1155,12 @@
 
     private async Task StartSession(Guid scheduleId)
     {
+        if (!DailyOpsService.IsBypassedForTesting() && (_branchOpsStatus == null || !_branchOpsStatus.IsOpen))
+        {
+            await NotificationService.ShowWarningAsync("Cannot start activity: Branch facility is currently closed for daily operations. Please open the branch first.");
+            return;
+        }
+
         if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
         {
             await NotificationService.ShowWarningAsync(closedReason);
@@ -1169,6 +1181,12 @@
 
     private async Task CloseSession(Guid scheduleId)
     {
+        if (!DailyOpsService.IsBypassedForTesting() && (_branchOpsStatus == null || !_branchOpsStatus.IsOpen))
+        {
+            await NotificationService.ShowWarningAsync("Cannot close activity: Branch facility is currently closed for daily operations.");
+            return;
+        }
+
         if (ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out var closedReason))
         {
             await NotificationService.ShowWarningAsync(closedReason);

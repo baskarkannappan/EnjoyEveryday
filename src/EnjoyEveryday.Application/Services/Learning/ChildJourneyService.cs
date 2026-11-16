@@ -32,17 +32,23 @@ public class ChildJourneyService : IChildJourneyService
     private readonly ITenantContext _tenantContext;
     private readonly IAuditService _auditService;
     private readonly IUserContext? _userContext;
+    private readonly IDailyOperationsService? _dailyOpsService;
+    private readonly IClassroomRepository? _classroomRepository;
 
     public ChildJourneyService(
         IChildJourneyRepository repository, 
         ITenantContext tenantContext, 
         IAuditService auditService,
-        IUserContext? userContext = null)
+        IUserContext? userContext = null,
+        IDailyOperationsService? dailyOpsService = null,
+        IClassroomRepository? classroomRepository = null)
     {
         _repository = repository;
         _tenantContext = tenantContext;
         _auditService = auditService;
         _userContext = userContext;
+        _dailyOpsService = dailyOpsService;
+        _classroomRepository = classroomRepository;
     }
 
     public async Task<ChildJourneyEntry?> GetJourneyEntryAsync(Guid id, CancellationToken cancellationToken = default)
@@ -59,6 +65,16 @@ public class ChildJourneyService : IChildJourneyService
     {
         entry.TenantId = _tenantContext.TenantId;
         if (entry.Id == Guid.Empty) entry.Id = Guid.NewGuid();
+
+        if (_dailyOpsService != null && entry.ClassroomId.HasValue && entry.ClassroomId.Value != Guid.Empty && _classroomRepository != null)
+        {
+            var cls = await _classroomRepository.GetByIdAsync(_tenantContext.TenantId, entry.ClassroomId.Value, cancellationToken);
+            if (cls != null && cls.BranchId != Guid.Empty)
+            {
+                await _dailyOpsService.ValidateBranchOperationsAllowedAsync(cls.BranchId, DateOnly.FromDateTime(DateTime.Today), "child journey observation", cancellationToken);
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(cls.Id, DateOnly.FromDateTime(DateTime.Today), "child journey observation", cancellationToken);
+            }
+        }
         
         // Resolve valid teacher ID to satisfy foreign key constraint on teachers table
         entry.TeacherId = await _repository.ResolveTeacherIdAsync(entry.TenantId, entry.TeacherId, entry.ClassroomId, cancellationToken);

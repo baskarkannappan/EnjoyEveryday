@@ -108,6 +108,8 @@ public class ChildDailyCareService : IChildDailyCareService
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
     private readonly IAuditService _auditService;
+    private readonly IDailyOperationsService? _dailyOpsService;
+    private readonly IBranchOperationalStatusService? _branchOperationalStatusService;
 
     public ChildDailyCareService(
         IChildDailyCareRepository repository,
@@ -117,7 +119,9 @@ public class ChildDailyCareService : IChildDailyCareService
         IAttendanceRepository attendanceRepository,
         ITenantContext tenantContext,
         IUserContext userContext,
-        IAuditService auditService)
+        IAuditService auditService,
+        IDailyOperationsService? dailyOpsService = null,
+        IBranchOperationalStatusService? branchOperationalStatusService = null)
     {
         _repository = repository;
         _childRepository = childRepository;
@@ -127,6 +131,8 @@ public class ChildDailyCareService : IChildDailyCareService
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
+        _dailyOpsService = dailyOpsService;
+        _branchOperationalStatusService = branchOperationalStatusService;
     }
 
     private async Task<(Guid BranchId, Guid OrganizationId)> ResolveChildScopeAsync(Child child, CancellationToken ct)
@@ -159,6 +165,21 @@ public class ChildDailyCareService : IChildDailyCareService
             throw new InvalidOperationException("Child not found or access denied.");
 
         var (branchId, orgId) = await ResolveChildScopeAsync(child, ct);
+
+        if (_branchOperationalStatusService != null && branchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, branchId, "care log", DateTimeOffset.UtcNow, ct);
+        }
+
+        if (_dailyOpsService != null && branchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId, DateOnly.FromDateTime(DateTime.Today), $"{ev.EventType} care log", ct);
+            var room = ev.ClassroomId ?? child.ClassroomId;
+            if (room.HasValue && room.Value != Guid.Empty)
+            {
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(room.Value, DateOnly.FromDateTime(DateTime.Today), $"{ev.EventType} care log", ct);
+            }
+        }
 
         ev.TenantId = _tenantContext.TenantId;
         ev.OrganizationId = orgId;
@@ -203,6 +224,20 @@ public class ChildDailyCareService : IChildDailyCareService
             if (child == null) continue;
 
             var (branchId, orgId) = await ResolveChildScopeAsync(child, ct);
+
+            if (_branchOperationalStatusService != null && branchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, branchId, "care log", DateTimeOffset.UtcNow, ct);
+        }
+
+        if (_dailyOpsService != null && branchId != Guid.Empty)
+            {
+                await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId, DateOnly.FromDateTime(DateTime.Today), $"{eventType} care log", ct);
+                if (child.ClassroomId.HasValue && child.ClassroomId.Value != Guid.Empty)
+                {
+                    await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(child.ClassroomId.Value, DateOnly.FromDateTime(DateTime.Today), $"{eventType} care log", ct);
+                }
+            }
 
             var ev = new ChildCareEvent
             {
@@ -340,6 +375,21 @@ public class ChildDailyCareService : IChildDailyCareService
 
         var (branchId, orgId) = await ResolveChildScopeAsync(child, ct);
 
+        if (_branchOperationalStatusService != null && branchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, branchId, "care log", DateTimeOffset.UtcNow, ct);
+        }
+
+        if (_dailyOpsService != null && branchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId, DateOnly.FromDateTime(DateTime.Today), "nap routine", ct);
+            var room = classroomId ?? child.ClassroomId;
+            if (room.HasValue && room.Value != Guid.Empty)
+            {
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(room.Value, DateOnly.FromDateTime(DateTime.Today), "nap routine", ct);
+            }
+        }
+
         var session = new ChildNapSession
         {
             Id = Guid.NewGuid(),
@@ -395,6 +445,15 @@ public class ChildDailyCareService : IChildDailyCareService
         var activeSession = await _repository.GetActiveNapSessionAsync(_tenantContext.TenantId, childId, ct);
         if (activeSession == null)
             return null;
+
+        if (_dailyOpsService != null && activeSession.BranchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(activeSession.BranchId, DateOnly.FromDateTime(DateTime.Today), "wake-up routine", ct);
+            if (activeSession.ClassroomId.HasValue && activeSession.ClassroomId.Value != Guid.Empty)
+            {
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(activeSession.ClassroomId.Value, DateOnly.FromDateTime(DateTime.Today), "wake-up routine", ct);
+            }
+        }
 
         var endTime = DateTime.UtcNow;
         var duration = (int)Math.Max(1, (endTime - activeSession.StartTime).TotalMinutes);
@@ -792,6 +851,12 @@ public class ChildDailyCareService : IChildDailyCareService
         if (branch != null)
         {
             handover.OrganizationId = branch.OrganizationId;
+        }
+
+        if (_dailyOpsService != null && cls.BranchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(cls.BranchId, DateOnly.FromDateTime(DateTime.Today), "teacher handover", ct);
+            await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(cls.Id, DateOnly.FromDateTime(DateTime.Today), "teacher handover", ct);
         }
 
         var id = await _repository.CreateHandoverAsync(handover, ct);

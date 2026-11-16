@@ -14,6 +14,7 @@
 @inject PlannerService PlannerService
 @inject ExecutionService ExecutionService
 @inject IEndOfDayService EndOfDayService
+@inject IDailyOperationsService DailyOpsService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject NavigationManager Navigation
@@ -748,6 +749,19 @@
 
     private async Task StartActivity(TodayActivityItemDto act)
     {
+        if (act.ClassroomId != Guid.Empty && !DailyOpsService.IsBypassedForTesting())
+        {
+            var roomOps = await DailyOpsService.GetClassroomDailyStatusAsync(act.ClassroomId, _selectedDate);
+            if (roomOps != null && (!roomOps.IsBranchOpen || !roomOps.IsOpen))
+            {
+                var msg = !roomOps.IsBranchOpen
+                    ? "Cannot start activity: Branch facility is closed for daily operations. The Branch Admin must open the facility first."
+                    : "Cannot start activity: Classroom is currently closed. Please open the classroom first.";
+                await NotificationService.ShowWarningAsync(msg);
+                return;
+            }
+        }
+
         if (ExecutionService.IsDaycareClosedForActivity(_selectedDate, out var closedReason))
         {
             await NotificationService.ShowWarningAsync(closedReason);
@@ -774,6 +788,19 @@
 
     private async Task EndActivity(TodayActivityItemDto act)
     {
+        if (act.ClassroomId != Guid.Empty && !DailyOpsService.IsBypassedForTesting())
+        {
+            var roomOps = await DailyOpsService.GetClassroomDailyStatusAsync(act.ClassroomId, _selectedDate);
+            if (roomOps != null && (!roomOps.IsBranchOpen || !roomOps.IsOpen))
+            {
+                var msg = !roomOps.IsBranchOpen
+                    ? "Cannot complete activity: Branch facility is closed for daily operations."
+                    : "Cannot complete activity: Classroom is currently closed.";
+                await NotificationService.ShowWarningAsync(msg);
+                return;
+            }
+        }
+
         if (ExecutionService.IsDaycareClosedForActivity(_selectedDate, out var closedReason))
         {
             await NotificationService.ShowWarningAsync(closedReason);

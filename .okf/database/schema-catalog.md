@@ -30,7 +30,7 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `organizations`: Root daycare provider accounts with assigned `region_id`, `plan_id`, `tariff_id`, and `currency VARCHAR(10) NOT NULL DEFAULT 'INR'` (Migration 121). Root of hierarchy currency inheritance.
 * `organization_invitations`: Time-limited, cryptographically secure magic onboarding tokens for invited organization administrators.
 * `organization_memberships`: Staff and admin associations.
-* `branches`, `branch_floor_maps`, `floor_map_markers`, `branch_operational_goals`: Physical center facilities and floor plans.
+* `branches`, `branch_closures`, `branch_floor_maps`, `floor_map_markers`, `branch_operational_goals`: Physical center facilities, operational closure/reopen history (`operational_status`, `active_closure_id`), and floor plans.
 * `classrooms`, `classroom_statutory_ratios`, `classroom_teachers`: Room capacities, statutory licensing ratios, and teacher assignments.
 * `teachers`, `teacher_attendance`: Primary teacher profile and clock-in/out records.
 * `daycare_announcements`: Official organization and branch announcements broadcast to families and educators with urgency tagging and `is_active` soft-deactivation toggle.

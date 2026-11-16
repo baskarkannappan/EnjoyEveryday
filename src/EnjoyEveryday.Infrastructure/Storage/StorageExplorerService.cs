@@ -56,7 +56,7 @@ public class StorageExplorerService : IStorageExplorerService
             LEFT JOIN classroom_teachers ct ON m.entity_type = 'Teacher' AND m.entity_id = ct.user_id
             LEFT JOIN classrooms teacher_cl ON ct.classroom_id = teacher_cl.id
             LEFT JOIN branches teacher_b ON teacher_cl.branch_id = teacher_b.id
-            WHERE (@TenantId IS NULL OR m.tenant_id = @TenantId)
+            WHERE (@TenantId IS NULL OR m.tenant_id = @TenantId OR m.organization_id = @TenantId)
             ORDER BY m.created_at DESC;
             """;
 

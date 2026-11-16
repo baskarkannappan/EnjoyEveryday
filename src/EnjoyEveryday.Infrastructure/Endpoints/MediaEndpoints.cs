@@ -33,20 +33,40 @@ public static class MediaEndpoints
                 return Results.NotFound();
             }
 
-            // Enforce tenant boundary when tenant context is resolved
-            if (tenantContext.IsResolved && asset.TenantId != tenantContext.TenantId)
+            // Enforce tenant boundary: PlatformAdmin / Superadmin have platform-wide access
+            var roles = userContext.Roles ?? Array.Empty<string>();
+            var isPlatformAdmin = roles.Any(r =>
+                r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Superadmin", StringComparison.OrdinalIgnoreCase));
+
+            if (!isPlatformAdmin)
             {
-                return Results.NotFound();
+                var effectiveTenantId = tenantContext.TenantId != Guid.Empty
+                    ? tenantContext.TenantId
+                    : (userContext.OrganizationId ?? Guid.Empty);
+
+                bool isSameOrg = effectiveTenantId != Guid.Empty && 
+                    (asset.TenantId == effectiveTenantId || (asset.OrganizationId.HasValue && asset.OrganizationId.Value == effectiveTenantId));
+
+                // Public marketing assets (facility profile logo & campus photo gallery) can be viewed publicly
+                bool isPublicMarketingAsset = string.Equals(asset.EntityType, "FacilityProfile", StringComparison.OrdinalIgnoreCase) ||
+                                             string.Equals(asset.EntityType, "FacilityGallery", StringComparison.OrdinalIgnoreCase);
+
+                if (!isSameOrg && !isPublicMarketingAsset)
+                {
+                    // Block access to items of other organizations
+                    return Results.NotFound();
+                }
             }
 
             // Enforce child photo consent if requested by Parent role
-            if (asset.ChildId.HasValue && userContext.Roles != null && userContext.Roles.Contains("Parent"))
+            if (asset.ChildId.HasValue && roles.Contains("Parent", StringComparer.OrdinalIgnoreCase))
             {
                 var consentDoc = await consentService.GetDocumentByIdAsync(asset.ChildId.Value, context.RequestAborted);
                 // If consent is required but revoked, deny access
             }
 
-            var result = await mediaService.GetMediaStreamAsync(id, variant, context.RequestAborted);
+            var result = await mediaService.GetMediaStreamAsync(asset, variant, context.RequestAborted);
             if (result == null || result.Value.Content == null)
             {
                 return Results.NotFound();

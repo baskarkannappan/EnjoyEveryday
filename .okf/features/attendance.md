@@ -43,6 +43,17 @@ tags:
   * **Classroom Gate (Lead Teacher / Educator)**: Once the branch is opened, the lead teacher or educator opens their classroom (`sp_open_classroom_day`). Only after the classroom is opened can educators mark child attendance, conduct learning activities, or log daily care.
   * **Classroom End of Day (Teacher)**: When the classroom teacher completes their day (`sp_close_classroom_day`), the system auto-checks out any remaining present children with the specified departure time, completes any remaining active experience sessions, and locks classroom logs.
   * **Branch End of Day (Branch Admin)**: When all classrooms within the branch have completed end-of-day closure, the Branch Admin can close the branch (`sp_close_branch_day`). The system validates that `0` classrooms remain open before allowing the branch to seal for the day.
+* **Higher-Level Constraint: Strict Branch Closed Lockdown**:
+  * **Zero Operational Activity When Closed**: When the branch facility is closed, the system strictly blocks ALL operational actions across the entire facility:
+    1. **No teacher attendance**: Staff clock-ins, duty assignments, and staff break recordings (`ToggleStaffBreak`) are blocked.
+    2. **No activity**: Activity sessions, runs, and completions in `ExecutionService` and `TodayActivities` are blocked.
+    3. **No classroom readiness**: Classroom readiness evaluations, opening rooms, and readiness logs in `ClassroomReadinessService` and `DaycareOperationsBoardService` are blocked.
+    4. **No student attendance**: Child arrivals, check-ins, re-admits, and departures in `AttendanceService` and `SecurePickupService` are blocked.
+    5. **No log activity**: Diaper changes, meals, naps, and moment captures in `ChildDailyCareService` are blocked.
+    6. **No daycare operation**: Morning daycare rhythm, batch actions, and daily operations board updates are locked.
+    7. **No classroom operation**: Cockpit action bar (`Check-In All`, `Group Snack`, `Table Lunch`, `Potty Line`, `Group Rest`, `Timer`) and individual child cards are locked.
+  * **Service Enforcement**: `IDailyOperationsService.ValidateBranchOperationsAllowedAsync` and `ValidateClassroomOperationsAllowedAsync` cross-check the daily status from PostgreSQL stored functions `fn_get_branch_daily_status` and `fn_get_classroom_daily_status`. Attempted operations throw descriptive `InvalidOperationException` errors.
+  * **UI Locking**: `TeacherWorkspace.razor`, `BranchDetailSection.razor`, `StaffRosterView.razor`, and `TodayActivities.razor` render prominent locked banners with disabled buttons (`opacity: 0.5`, `cursor: not-allowed`) and informative warning toasts.
 * **Mark Present / Check-In**: Dropdown in `AttendancePeopleTable`, 1-tap card in `TeacherWorkspace.razor`, or bulk action "Mark selected present" / "Check-In All". Sets `status = 'Present'` and `arrival_time`.
 * **Departure / Pickup Verification**: Clicking "Check Out" (or `🚪` in `TeacherWorkspace.razor`) opens `SecurePickupModal.razor`. Requires collector name, relationship, and verification method (PIN, ID Check, Signature).
 * **Departure Status & Action Locking**:

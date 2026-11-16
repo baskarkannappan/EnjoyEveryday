@@ -28,6 +28,7 @@ public class PlannerService
     private readonly IAccessScopeRepository? _accessScopeRepository;
     private readonly IEndOfDayService? _endOfDayService;
     private readonly Microsoft.Extensions.Logging.ILogger<PlannerService>? _logger;
+    private readonly IBranchOperationalStatusService? _branchOperationalStatusService;
 
     public PlannerService(IExperienceScheduleRepository scheduleRepository, IUserContext userContext)
         : this(scheduleRepository, null, null, null, userContext, null)
@@ -57,7 +58,8 @@ public class PlannerService
         ITeacherRepository? teacherRepository,
         IAccessScopeRepository? accessScopeRepository,
         Microsoft.Extensions.Logging.ILogger<PlannerService>? logger = null,
-        IEndOfDayService? endOfDayService = null)
+        IEndOfDayService? endOfDayService = null,
+        IBranchOperationalStatusService? branchOperationalStatusService = null)
     {
         _scheduleRepository = scheduleRepository;
         _experienceRepository = experienceRepository;
@@ -71,6 +73,7 @@ public class PlannerService
         _accessScopeRepository = accessScopeRepository;
         _logger = logger;
         _endOfDayService = endOfDayService;
+        _branchOperationalStatusService = branchOperationalStatusService;
     }
 
     public async Task<IEnumerable<ExperienceSchedule>> GetMonthlyScheduleAsync(Guid classroomId, int year, int month)
@@ -321,7 +324,17 @@ public class PlannerService
             throw new ArgumentException("End time must be after start time.");
         }
 
+        if (_branchOperationalStatusService != null && _tenantContext != null && classroomId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, classroomId, "schedule experience", new DateTimeOffset(scheduledDate.ToDateTime(TimeOnly.MinValue)));
+        }
+
         // Conflict Validation
+        if (_branchOperationalStatusService != null && _tenantContext != null && classroomId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, classroomId, "schedule experience", new DateTimeOffset(scheduledDate.ToDateTime(TimeOnly.MinValue)));
+        }
+
         await ValidateScheduleConflictsAsync(classroomId, scheduledDate, timeOfDay, primaryTeacherId, startTime, endTime, excludeScheduleId: null);
 
         var schedule = new ExperienceSchedule
@@ -346,6 +359,11 @@ public class PlannerService
         if (schedule.PlannedStartTime.HasValue && schedule.PlannedEndTime.HasValue && schedule.PlannedEndTime <= schedule.PlannedStartTime)
         {
             throw new ArgumentException("End time must be after start time.");
+        }
+
+        if (_branchOperationalStatusService != null && _tenantContext != null && schedule.ClassroomId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, schedule.ClassroomId, "update experience schedule", new DateTimeOffset(schedule.ScheduledDate.ToDateTime(TimeOnly.MinValue)));
         }
 
         await ValidateScheduleConflictsAsync(

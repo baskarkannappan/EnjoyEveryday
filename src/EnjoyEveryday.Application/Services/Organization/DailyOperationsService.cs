@@ -167,16 +167,63 @@ public class DailyOperationsService : IDailyOperationsService
         return result;
     }
 
+    public async Task<bool> IsBranchOpenAsync(Guid branchId, DateOnly? date = null, CancellationToken ct = default)
+    {
+        if (IsBypassedForTesting()) return true;
+        var status = await GetBranchDailyStatusAsync(branchId, date, ct);
+        return status?.IsOpen == true;
+    }
+
+    public async Task<bool> IsClassroomOpenAsync(Guid classroomId, DateOnly? date = null, CancellationToken ct = default)
+    {
+        if (IsBypassedForTesting()) return true;
+        var status = await GetClassroomDailyStatusAsync(classroomId, date, ct);
+        return status != null && status.IsBranchOpen && status.IsOpen;
+    }
+
+    public async Task<bool> CanPerformBranchOperationsAsync(Guid branchId, DateOnly? date = null, CancellationToken ct = default)
+    {
+        return await IsBranchOpenAsync(branchId, date, ct);
+    }
+
     public async Task<bool> CanPerformClassroomOperationsAsync(Guid classroomId, DateOnly? date = null, CancellationToken ct = default)
     {
-        if (IsBypassedForTesting())
+        return await IsClassroomOpenAsync(classroomId, date, ct);
+    }
+
+    public async Task ValidateBranchOperationsAllowedAsync(Guid branchId, DateOnly? date = null, string operationName = "operation", CancellationToken ct = default)
+    {
+        if (IsBypassedForTesting()) return;
+
+        var targetDate = ResolveDate(date);
+        var status = await GetBranchDailyStatusAsync(branchId, targetDate, ct);
+        if (status == null || !status.IsOpen)
         {
-            return true;
+            var state = status?.Status ?? "Closed";
+            throw new InvalidOperationException($"Cannot perform {operationName}: Branch facility is currently {state} for {targetDate:yyyy-MM-dd}. The Branch Admin must open the facility for operations first.");
+        }
+    }
+
+    public async Task ValidateClassroomOperationsAllowedAsync(Guid classroomId, DateOnly? date = null, string operationName = "operation", CancellationToken ct = default)
+    {
+        if (IsBypassedForTesting()) return;
+
+        var targetDate = ResolveDate(date);
+        var status = await GetClassroomDailyStatusAsync(classroomId, targetDate, ct);
+        if (status == null)
+        {
+            throw new InvalidOperationException($"Cannot perform {operationName}: Classroom daily operational status could not be resolved.");
         }
 
-        var status = await GetClassroomDailyStatusAsync(classroomId, date, ct);
-        if (status == null) return false;
+        if (!status.IsBranchOpen)
+        {
+            throw new InvalidOperationException($"Cannot perform {operationName}: Parent branch facility is currently closed for {targetDate:yyyy-MM-dd}. The Branch Admin must open the facility for operations first.");
+        }
 
-        return status.IsOpen;
+        if (!status.IsOpen)
+        {
+            var state = status.Status ?? "Closed";
+            throw new InvalidOperationException($"Cannot perform {operationName}: Classroom is currently {state} for {targetDate:yyyy-MM-dd}. The classroom must be opened for daily operations first.");
+        }
     }
 }

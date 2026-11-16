@@ -15,6 +15,8 @@ public class ExecutionService
     private readonly IAuditService _auditService;
     private readonly IUserContext _userContext;
     private readonly IEndOfDayService? _endOfDayService;
+    private readonly IDailyOperationsService? _dailyOpsService;
+    private readonly IBranchOperationalStatusService? _branchOperationalStatusService;
 
     public ExecutionService(
         IExperienceScheduleRepository scheduleRepository,
@@ -24,7 +26,7 @@ public class ExecutionService
         ITenantContext tenantContext,
         IAuditService auditService,
         IUserContext userContext)
-        : this(scheduleRepository, feedbackRepository, sessionRepository, teacherRepository, tenantContext, auditService, userContext, null)
+        : this(scheduleRepository, feedbackRepository, sessionRepository, teacherRepository, tenantContext, auditService, userContext, null, null)
     {
     }
 
@@ -36,7 +38,9 @@ public class ExecutionService
         ITenantContext tenantContext,
         IAuditService auditService,
         IUserContext userContext,
-        IEndOfDayService? endOfDayService)
+        IEndOfDayService? endOfDayService,
+        IDailyOperationsService? dailyOpsService = null,
+        IBranchOperationalStatusService? branchOperationalStatusService = null)
     {
         _scheduleRepository = scheduleRepository;
         _feedbackRepository = feedbackRepository;
@@ -46,6 +50,8 @@ public class ExecutionService
         _auditService = auditService;
         _userContext = userContext;
         _endOfDayService = endOfDayService;
+        _dailyOpsService = dailyOpsService;
+        _branchOperationalStatusService = branchOperationalStatusService;
     }
 
     public bool IsDaycareClosedForActivity(DateOnly? scheduleDate, out string reason)
@@ -72,6 +78,16 @@ public class ExecutionService
 
         if (IsDaycareClosedForActivity(schedule.ScheduledDate, out var closedReason))
             throw new InvalidOperationException($"Cannot start activity when daycare is closed: {closedReason}");
+
+        if (_branchOperationalStatusService != null && schedule.ClassroomId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(tenantId, schedule.ClassroomId, "start experience", new DateTimeOffset(schedule.ScheduledDate.ToDateTime(TimeOnly.MinValue)), cancellationToken);
+        }
+
+        if (_dailyOpsService != null && schedule.ClassroomId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(schedule.ClassroomId, schedule.ScheduledDate, "activity session");
+        }
 
         if (schedule.Status == "Started" || schedule.Status == "Active" || schedule.Status == "Completed")
             throw new InvalidOperationException($"Cannot start schedule in {schedule.Status} status.");
@@ -149,6 +165,11 @@ public class ExecutionService
 
         if (IsDaycareClosedForActivity(schedule.ScheduledDate, out var closedReason))
             throw new InvalidOperationException($"Cannot end or complete activity when daycare is closed: {closedReason}");
+
+        if (_branchOperationalStatusService != null && schedule.ClassroomId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(tenantId, schedule.ClassroomId, "complete experience", new DateTimeOffset(schedule.ScheduledDate.ToDateTime(TimeOnly.MinValue)), cancellationToken);
+        }
 
         if (schedule.Status == "Completed")
         {

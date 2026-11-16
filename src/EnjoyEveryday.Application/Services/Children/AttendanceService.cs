@@ -21,12 +21,14 @@ public class AttendanceService
     private readonly IUserContext? _userContext;
     private readonly ITenantPreferencesService? _tenantPreferencesService;
     private readonly IEndOfDayService? _endOfDayService;
+    private readonly IDailyOperationsService? _dailyOpsService;
+    private readonly IBranchOperationalStatusService? _branchOperationalStatusService;
 
     public AttendanceService(
         IAttendanceRepository attendanceRepository,
         IClassroomRepository classroomRepository,
         ITenantContext tenantContext)
-        : this(attendanceRepository, classroomRepository, tenantContext, null, null, null, null, null, null)
+        : this(attendanceRepository, classroomRepository, tenantContext, null, null, null, null, null, null, null)
     {
     }
 
@@ -38,7 +40,7 @@ public class AttendanceService
         ITeacherRepository? teacherRepository,
         IBranchRepository? branchRepository,
         IUserContext? userContext)
-        : this(attendanceRepository, classroomRepository, tenantContext, childRepository, teacherRepository, branchRepository, userContext, null, null)
+        : this(attendanceRepository, classroomRepository, tenantContext, childRepository, teacherRepository, branchRepository, userContext, null, null, null)
     {
     }
 
@@ -51,7 +53,9 @@ public class AttendanceService
         IBranchRepository? branchRepository,
         IUserContext? userContext,
         ITenantPreferencesService? tenantPreferencesService,
-        IEndOfDayService? endOfDayService = null)
+        IEndOfDayService? endOfDayService = null,
+        IDailyOperationsService? dailyOpsService = null,
+        IBranchOperationalStatusService? branchOperationalStatusService = null)
     {
         _attendanceRepository = attendanceRepository;
         _classroomRepository = classroomRepository;
@@ -62,6 +66,8 @@ public class AttendanceService
         _userContext = userContext;
         _tenantPreferencesService = tenantPreferencesService;
         _endOfDayService = endOfDayService;
+        _dailyOpsService = dailyOpsService;
+        _branchOperationalStatusService = branchOperationalStatusService;
     }
 
     public bool IsDaycareClosedForAttendance(DateTime date, Guid? branchId, out string reason)
@@ -94,6 +100,20 @@ public class AttendanceService
             throw new InvalidOperationException($"Cannot record child attendance when daycare is closed: {closedReason}");
         }
 
+        if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate));
+        }
+
+        if (_dailyOpsService != null && attendance.BranchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(attendance.BranchId, DateOnly.FromDateTime(attendance.AttendanceDate), "child attendance");
+            if (attendance.ClassroomId != Guid.Empty)
+            {
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(attendance.ClassroomId, DateOnly.FromDateTime(attendance.AttendanceDate), "child attendance");
+            }
+        }
+
         attendance.TenantId = _tenantContext.TenantId;
         if (attendance.Id == Guid.Empty) attendance.Id = Guid.NewGuid();
         await _attendanceRepository.RecordChildAttendanceAsync(attendance);
@@ -104,6 +124,21 @@ public class AttendanceService
         if (IsDaycareClosedForAttendance(attendance.AttendanceDate, attendance.BranchId, out var closedReason))
         {
             throw new InvalidOperationException($"Cannot record staff/teacher attendance when daycare is closed: {closedReason}");
+        }
+
+        if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate));
+        }
+
+        if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate));
+        }
+
+        if (_dailyOpsService != null && attendance.BranchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(attendance.BranchId, DateOnly.FromDateTime(attendance.AttendanceDate), "teacher attendance");
         }
 
         attendance.TenantId = _tenantContext.TenantId;
@@ -292,6 +327,16 @@ public class AttendanceService
         if (IsDaycareClosedForAttendance(request.Date, request.BranchId, out var closedReason))
         {
             throw new InvalidOperationException($"Cannot perform attendance when daycare is closed: {closedReason}");
+        }
+
+        if (_branchOperationalStatusService != null && request.BranchId != Guid.Empty)
+        {
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, request.BranchId, "bulk attendance", new DateTimeOffset(request.Date), ct);
+        }
+
+        if (_dailyOpsService != null && request.BranchId != Guid.Empty)
+        {
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(request.BranchId, DateOnly.FromDateTime(request.Date), "attendance", ct);
         }
 
         var tenantId = _tenantContext.TenantId;

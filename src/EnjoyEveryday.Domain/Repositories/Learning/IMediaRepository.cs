@@ -9,5 +9,6 @@ public interface IMediaRepository
 {
     Task<MediaAsset> CreateAsync(MediaAsset asset, CancellationToken ct = default);
     Task<MediaAsset?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<MediaAsset?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default);
 }

@@ -23,9 +23,10 @@ The **Storage & Media Explorer** provides Platform Administrators and Organizati
 ## 1. Access Control & Authorization
 
 * **Permitted Roles**: `PlatformAdmin`, `Superadmin`, `OrgAdmin`, `Admin`, `DaycareAdmin`.
-* **Tenant Scoping**:
-  * **Platform Admin**: Scopes across all organizations or filters globally via `/platform-admin/storage-explorer`.
-  * **Organization Admin**: Strictly scoped to current `TenantContext.TenantId` via `/organization/storage-metrics`.
+* **Tenant Scoping & Multi-Tenant Isolation**:
+  * **Platform Admin**: Scopes across all organizations or filters globally via `/platform-admin/storage-explorer`. Can view and display media assets across all tenants.
+  * **Organization Admin**: Strictly scoped to current `TenantContext.TenantId` or `UserContext.OrganizationId` via `/organization/storage-metrics`. Cannot access or see media assets from other organizations, but has full access to inspect and open assets belonging to their own organization.
+  * **Media Endpoint Security (`/api/media/{id}/display`)**: Queries the media asset by primary key UUID directly (`IMediaRepository.GetByIdAsync`) and verifies tenant authorization: Platform Admins can access any asset, public facility branding assets are open, while private assets require tenant or organization identity match (`asset.TenantId == effectiveTenantId || asset.OrganizationId == effectiveTenantId`). Other orgs receive `404 Not Found`.
 * **Unauthorized Access**: Renders a dedicated access restriction card when loaded by staff or parents.
 
 ---

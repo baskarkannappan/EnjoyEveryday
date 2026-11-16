@@ -17,6 +17,7 @@ public partial class ChildDailyCareSection : ComponentBase
     [Inject] private ClassroomService ClassroomService { get; set; } = default!;
     [Inject] private BranchService BranchService { get; set; } = default!;
     [Inject] private OrganizationService OrganizationService { get; set; } = default!;
+    [Inject] private IDailyOperationsService DailyOpsService { get; set; } = default!;
     [Inject] private ITenantContext TenantContext { get; set; } = default!;
     [Inject] private IUserContext UserContext { get; set; } = default!;
     [Inject] private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
@@ -30,6 +31,8 @@ public partial class ChildDailyCareSection : ComponentBase
     private Guid _selectedBranchId = Guid.Empty;
     private Guid? _selectedClassroomId;
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private bool _isBranchClosed = false;
+    private bool _isClassroomClosed = false;
 
     private List<ClassroomChildCareStatusDto> _classroomOverview = new();
     private Guid _selectedChildId = Guid.Empty;
@@ -154,6 +157,26 @@ public partial class ChildDailyCareSection : ComponentBase
 
         try
         {
+            var branchStatus = await DailyOpsService.GetBranchDailyStatusAsync(_selectedBranchId, _selectedDate);
+            _isBranchClosed = branchStatus != null && !branchStatus.IsOpen && !DailyOpsService.IsBypassedForTesting();
+
+            if (_selectedClassroomId.HasValue && _selectedClassroomId.Value != Guid.Empty)
+            {
+                var roomStatus = await DailyOpsService.GetClassroomDailyStatusAsync(_selectedClassroomId.Value, _selectedDate);
+                _isClassroomClosed = roomStatus != null && !roomStatus.IsOpen && !DailyOpsService.IsBypassedForTesting();
+            }
+            else
+            {
+                _isClassroomClosed = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogWarning(ex, "Error checking operational status in daily care feed");
+        }
+
+        try
+        {
             var feed = await DailyCareService.GetClassroomDailyCareFeedAsync(
                 _selectedBranchId,
                 _selectedClassroomId,
@@ -266,6 +289,16 @@ public partial class ChildDailyCareSection : ComponentBase
     private async Task SubmitQuickCareEntry()
     {
         if (_selectedChildId == Guid.Empty) return;
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot record care event: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot record care event: Classroom is closed for daily operations.";
+            return;
+        }
         if (_selectedChildStatus == null || !_selectedChildStatus.IsCheckedIn)
         {
             _statusMessage = $"Cannot record care event: {_selectedChildStatus?.ChildName ?? "Child"} is not checked in.";
@@ -326,6 +359,16 @@ public partial class ChildDailyCareSection : ComponentBase
     private async Task StartNapForChild()
     {
         if (_selectedChildId == Guid.Empty) return;
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot start rest session: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot start rest session: Classroom is closed for daily operations.";
+            return;
+        }
         if (_selectedChildStatus == null || !_selectedChildStatus.IsCheckedIn)
         {
             _statusMessage = $"Cannot start rest session: {_selectedChildStatus?.ChildName ?? "Child"} is not checked in.";
@@ -340,6 +383,16 @@ public partial class ChildDailyCareSection : ComponentBase
     private async Task WakeActiveChild()
     {
         if (_selectedChildId == Guid.Empty) return;
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot record wake-up: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot record wake-up: Classroom is closed for daily operations.";
+            return;
+        }
         var ended = await DailyCareService.WakeChildAsync(_selectedChildId, "WokeNaturally", "Woke naturally refreshed.");
         _statusMessage = $"Wake-up recorded. Duration: {ended?.DurationMinutes} minutes.";
         await RefreshClassroomData();
@@ -402,6 +455,17 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task SubmitBulkCareEntry()
     {
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot record bulk care: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot record bulk care: Classroom is closed for daily operations.";
+            return;
+        }
+
         var validCheckedInIds = _selectedChildIds
             .Where(id => _classroomOverview.Any(c => c.ChildId == id && c.IsCheckedIn))
             .ToList();
@@ -437,6 +501,17 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task StartBulkNap()
     {
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot start bulk rest: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot start bulk rest: Classroom is closed for daily operations.";
+            return;
+        }
+
         var validCheckedInIds = _selectedChildIds
             .Where(id => _classroomOverview.Any(c => c.ChildId == id && c.IsCheckedIn && c.ActiveNapSession == null))
             .ToList();
@@ -466,6 +541,17 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task WakeBulkChildren()
     {
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot wake children: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot wake children: Classroom is closed for daily operations.";
+            return;
+        }
+
         if (_selectedChildIds.Count == 0 || _isSubmitting) return;
 
         _isSubmitting = true;
@@ -492,6 +578,16 @@ public partial class ChildDailyCareSection : ComponentBase
     private async Task SubmitHandover()
     {
         if (!_selectedClassroomId.HasValue || _isSubmittingHandover) return;
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot record handover: Branch facility is closed for daily operations.";
+            return;
+        }
+        if (_isClassroomClosed)
+        {
+            _statusMessage = "Cannot record handover: Classroom is closed for daily operations.";
+            return;
+        }
 
         _isSubmittingHandover = true;
         try
@@ -532,6 +628,11 @@ public partial class ChildDailyCareSection : ComponentBase
 
     private async Task AcknowledgeHandover(Guid handoverId)
     {
+        if (_isBranchClosed)
+        {
+            _statusMessage = "Cannot acknowledge handover: Branch facility is closed for daily operations.";
+            return;
+        }
         try
         {
             await DailyCareService.AcknowledgeHandoverAsync(handoverId, "Shift handover acknowledged.");

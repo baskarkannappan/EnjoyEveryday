@@ -10,6 +10,8 @@
 @inject OrganizationService OrganizationService
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject IBranchOperationalStatusService BranchOperationalStatusService
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 
 @* <PageTopbar Breadcrumb="@($"Organization · {(OrgMetrics?.TotalBranches ?? 0)} branches")" Title="@(OrgMetrics?.OrganizationName ?? "Loading...")">
@@ -94,19 +96,33 @@
             {
                 @foreach (var branch in FilteredBranches)
                 {
-                    <OrgBranchCard 
-                        Icon="🌿" 
-                        Name="@branch.BranchName" 
-                        Location="@branch.Location" 
-                        StatusClass="@(branch.AttentionStatus.Contains("support") ? "attention" : branch.AttentionStatus.Contains("Quiet") ? "quiet" : "good")" 
-                        StatusText="@branch.AttentionStatus"
-                        Children="@branch.Children" 
-                        Classrooms="@branch.Classrooms" 
-                        Experiences="@branch.Experiences" 
-                        RhythmPercent="@branch.ExperienceRhythm" 
-                        Note="@branch.RecentInsight"
-                        TeacherInitials="@(new List<string> { "P", "M", "A" })" 
-                        OnViewClick="@(() => GoToBranchDetail(branch.BranchId))" />
+                    var opStatus = _branchStatuses.GetValueOrDefault(branch.BranchId);
+                    var isClosed = opStatus != null && !opStatus.IsOperational;
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <OrgBranchCard 
+                            Icon="@(isClosed ? "🔒" : "🌿")" 
+                            Name="@branch.BranchName" 
+                            Location="@branch.Location" 
+                            StatusClass="@(isClosed ? "attention" : branch.AttentionStatus.Contains("support") ? "attention" : branch.AttentionStatus.Contains("Quiet") ? "quiet" : "good")" 
+                            StatusText="@(isClosed ? $"{opStatus!.OperationalStatus} — {opStatus.ActiveClosure?.Reason}" : branch.AttentionStatus)"
+                            Children="@branch.Children" 
+                            Classrooms="@branch.Classrooms" 
+                            Experiences="@branch.Experiences" 
+                            RhythmPercent="@branch.ExperienceRhythm" 
+                            Note="@(isClosed ? $"Closed: {opStatus?.ActiveClosure?.Description ?? "Operations locked"}" : branch.RecentInsight)"
+                            TeacherInitials="@(new List<string> { "P", "M", "A" })" 
+                            OnViewClick="@(() => GoToBranchDetail(branch.BranchId))" />
+                        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                            @if (isClosed)
+                            {
+                                <button class="secondary" style="font-size: 12px; padding: 6px 12px;" @onclick="() => OpenReopenModal(branch, opStatus!)">Reopen Branch</button>
+                            }
+                            else
+                            {
+                                <button class="secondary" style="font-size: 12px; padding: 6px 12px; color: #9b2c2c; border-color: #fed7d7;" @onclick="() => OpenCloseModal(branch)">Close / Suspend Branch</button>
+                            }
+                        </div>
+                    </div>
                 }
             }
         }
@@ -128,6 +144,70 @@
     </div>
 
 </section>
+
+@if (_showCloseModal && _targetBranch != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: var(--surface, #fff); border: 1px solid var(--border, #e1e6e0); border-radius: var(--radius, 18px); padding: 24px; max-width: 520px; width: 100%; box-shadow: var(--shadow);">
+            <h3 style="margin: 0 0 8px 0; color: var(--text, #26332d);">Close / Suspend @_targetBranch.BranchName</h3>
+            <p style="font-size: 13px; color: var(--muted, #6c7870); margin: 0 0 16px 0;">
+                Closing this branch will make all @_targetBranch.Classrooms classroom(s) unavailable for operational activities until reopened.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; display: block; margin-bottom: 4px;">Closure Type</label>
+                    <select @bind="_closeStatus" style="width: 100%; padding: 8px; border: 1px solid var(--border, #e1e6e0);">
+                        <option value="TemporarilySuspended">Temporarily Suspended</option>
+                        <option value="Closed">Closed</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; display: block; margin-bottom: 4px;">Reason</label>
+                    <select @bind="_closeReason" style="width: 100%; padding: 8px; border: 1px solid var(--border, #e1e6e0);">
+                        <option value="Maintenance">Maintenance</option>
+                        <option value="PublicHoliday">Public Holiday</option>
+                        <option value="Weather">Weather Conditions</option>
+                        <option value="Emergency">Emergency Closure</option>
+                        <option value="HealthAndSafety">Health and Safety</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; display: block; margin-bottom: 4px;">Description (Optional)</label>
+                    <textarea @bind="_closeDescription" rows="2" style="width: 100%; padding: 8px; border: 1px solid var(--border, #e1e6e0);"></textarea>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_modalError))
+            {
+                <p style="color: #9b2c2c; font-size: 12px; margin-top: 8px;">@_modalError</p>
+            }
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                <button class="secondary" @onclick="() => _showCloseModal = false" disabled="@_isSubmitting">Cancel</button>
+                <button class="primary" style="background: #9b2c2c;" @onclick="ConfirmCloseBranchAsync" disabled="@_isSubmitting">Confirm Closure</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showReopenModal && _targetBranch != null && _targetClosureId.HasValue)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: var(--surface, #fff); border: 1px solid var(--border, #e1e6e0); border-radius: var(--radius, 18px); padding: 24px; max-width: 480px; width: 100%; box-shadow: var(--shadow);">
+            <h3 style="margin: 0 0 8px 0; color: var(--text, #26332d);">Reopen @_targetBranch.BranchName</h3>
+            <p style="font-size: 13px; color: var(--muted, #6c7870); margin: 0 0 16px 0;">
+                Reopening will restore operational availability for @_targetBranch.Classrooms classroom(s), subject to each classroom's individual status.
+            </p>
+            @if (!string.IsNullOrEmpty(_modalError))
+            {
+                <p style="color: #9b2c2c; font-size: 12px; margin-top: 8px;">@_modalError</p>
+            }
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                <button class="secondary" @onclick="() => _showReopenModal = false" disabled="@_isSubmitting">Cancel</button>
+                <button class="primary" @onclick="ConfirmReopenBranchAsync" disabled="@_isSubmitting">Confirm Reopen</button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private OrganizationMetrics? OrgMetrics;
@@ -152,6 +232,17 @@
     };
 
     private bool _isOrgAdmin = false;
+    private Guid _organizationId;
+    private Dictionary<Guid, BranchOperationalStatusDto> _branchStatuses = new();
+    private bool _showCloseModal;
+    private bool _showReopenModal;
+    private BranchMetrics? _targetBranch;
+    private Guid? _targetClosureId;
+    private string _closeStatus = "TemporarilySuspended";
+    private string _closeReason = "Maintenance";
+    private string? _closeDescription;
+    private string? _modalError;
+    private bool _isSubmitting;
 
     protected override async Task OnInitializedAsync()
     {
@@ -171,6 +262,7 @@
 
         if (org != null)
         {
+            _organizationId = org.Id;
             OrgMetrics = await DashboardService.GetOrganizationMetricsAsync(org.Id);
             var allBranches = (await DashboardService.GetBranchMetricsAsync(org.Id)).ToList();
             if (_isOrgAdmin)
@@ -181,6 +273,8 @@
             {
                 Branches = allBranches.Where(b => profile.AssignedBranchIds.Contains(b.BranchId)).ToList();
             }
+
+            await LoadBranchStatusesAsync();
         }
     }
 
@@ -197,5 +291,94 @@
     private void GoToBranchDetail(Guid branchId)
     {
         NavigationManager.NavigateTo($"/management/branches/{branchId}");
+    }
+
+    private async Task LoadBranchStatusesAsync()
+    {
+        if (Branches == null) return;
+        var dict = new Dictionary<Guid, BranchOperationalStatusDto>();
+        foreach (var b in Branches)
+        {
+            dict[b.BranchId] = await BranchOperationalStatusService.GetBranchStatusAsync(TenantContext.TenantId, b.BranchId);
+        }
+        _branchStatuses = dict;
+    }
+
+    private void OpenCloseModal(BranchMetrics branch)
+    {
+        _targetBranch = branch;
+        _closeStatus = "TemporarilySuspended";
+        _closeReason = "Maintenance";
+        _closeDescription = null;
+        _modalError = null;
+        _showCloseModal = true;
+    }
+
+    private void OpenReopenModal(BranchMetrics branch, BranchOperationalStatusDto status)
+    {
+        _targetBranch = branch;
+        _targetClosureId = status.ActiveClosure?.Id;
+        _modalError = null;
+        _showReopenModal = true;
+    }
+
+    private async Task ConfirmCloseBranchAsync()
+    {
+        if (_targetBranch == null) return;
+        try
+        {
+            _isSubmitting = true;
+            _modalError = null;
+            await BranchOperationalStatusService.CloseBranchAsync(new CloseBranchRequest
+            {
+                TenantId = TenantContext.TenantId,
+                OrganizationId = _organizationId,
+                BranchId = _targetBranch.BranchId,
+                Status = _closeStatus,
+                Reason = _closeReason,
+                Description = _closeDescription,
+                EffectiveStartAt = DateTimeOffset.UtcNow,
+                InitiatedBy = UserContext.UserId,
+                InitiatedByRole = _isOrgAdmin ? "OrganizationAdmin" : "BranchAdmin"
+            });
+            _showCloseModal = false;
+            await LoadBranchStatusesAsync();
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task ConfirmReopenBranchAsync()
+    {
+        if (_targetBranch == null || !_targetClosureId.HasValue) return;
+        try
+        {
+            _isSubmitting = true;
+            _modalError = null;
+            await BranchOperationalStatusService.ReopenBranchAsync(new ReopenBranchRequest
+            {
+                TenantId = TenantContext.TenantId,
+                BranchId = _targetBranch.BranchId,
+                ClosureId = _targetClosureId.Value,
+                ReopenedBy = UserContext.UserId,
+                ReopenedAt = DateTimeOffset.UtcNow
+            });
+            _showReopenModal = false;
+            await LoadBranchStatusesAsync();
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
     }
 }

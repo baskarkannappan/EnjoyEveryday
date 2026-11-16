@@ -646,19 +646,33 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Guard check: PlatformAdmin, Superadmin, OrgAdmin, or Admin
+        // Guard check: PlatformAdmin, Superadmin, OrganizationAdmin, OrganizationOwner, OrgAdmin, Admin, DaycareAdmin
         var roles = UserContext.Roles ?? Array.Empty<string>();
         _isAuthorized = roles.Any(r => 
             r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
             r.Equals("Superadmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationOwner", StringComparison.OrdinalIgnoreCase) ||
             r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
             r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
             r.Equals("DaycareAdmin", StringComparison.OrdinalIgnoreCase));
 
         if (_isAuthorized)
         {
-            // For Org Admin, limit to current tenant; for Platform Admin, view whole platform or current tenant
-            var tenantFilter = IsPlatformAdminView ? (Guid?)null : TenantContext.TenantId;
+            var isPlatformAdmin = roles.Any(r => 
+                r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+                r.Equals("Superadmin", StringComparison.OrdinalIgnoreCase));
+
+            // For Org Admin: ALWAYS strictly restrict to their organization's tenant ID
+            // For Platform Admin in PlatformAdminView, view whole platform (null)
+            Guid? tenantFilter = null;
+            if (!isPlatformAdmin || !IsPlatformAdminView)
+            {
+                tenantFilter = TenantContext.TenantId != Guid.Empty 
+                    ? TenantContext.TenantId 
+                    : UserContext.OrganizationId;
+            }
+
             _model = await StorageExplorerService.GetStorageExplorerDataAsync(tenantFilter);
         }
 

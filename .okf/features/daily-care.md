@@ -41,12 +41,22 @@ tags:
 
 ## Teacher Workspace Everyday Productivity Suite (`/classroom`, `/my-classroom`)
 `src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` provides 6 high-speed educator features designed for fast, frictionless daily classroom routines:
-0. **Daily Operational Gate & Classroom Open/Close Workflow**:
-   - **Branch Dependent**: Classroom cannot be opened until Branch Admin marks the branch open for the day.
+0. **Daily Operational Gate, Branch Lockdown & Classroom Open/Close Workflow**:
+   - **Strict Higher-Level Branch Closed Lockdown**: When a branch is closed, all classroom operations are completely blocked:
+     - No teacher attendance or staff breaks (`ToggleStaffBreak`).
+     - No activities or learning sessions (`StartExperienceAsync`).
+     - No classroom readiness setup or inspections.
+     - No student arrivals, check-in (`CheckInChildAsync`, `MarkAllScheduledPresentAsync`), or departures (`CheckOutChildAsync`).
+     - No daily care logs (diaper changes, meals, naps, moments).
+     - No classroom operations or batch cockpit tools (`Check-In All`, `Group Snack`, `Table Lunch`, `Potty Line`, `Group Rest`, `Timer`).
+     - Action buttons and child quick-actions are disabled with locked tooltips and trigger informative warning toasts.
+     - Enforced comprehensively across both `/classroom` cockpit and `/daily-care` page (`ChildDailyCareSection`), preventing quick care, bulk routines, sleep rest, and shift handovers when the branch or classroom is closed.
+     - Backend business services (`ChildDailyCareService.RecordBatchCareEventsAsync`, `WakeChildAsync`, `SubmitHandoverAsync`, and `ChildJourneyService.CreateJourneyEntryAsync`) strictly validate `ValidateBranchOperationsAllowedAsync` and `ValidateClassroomOperationsAllowedAsync`.
+   - **Branch Dependent**: Classroom cannot be opened until Branch Admin marks the branch open for the day (`sp_open_branch_day`).
    - **Open Classroom Gate**: Lead teacher / Educator opens the room (`sp_open_classroom_day`). Attendance, learning sessions, and care actions remain locked until opened.
    - **End of Day Auto-Checkout**: Clicking `Close Classroom (End of Day)` (`sp_close_classroom_day`) prompts the educator with a summary modal showing present children and active activities. Upon confirming, it automatically departs all remaining children with the chosen departure time, completes active sessions, and seals classroom logs for the day.
 1. **15-Second "Pickup Cheat-Sheet" (At the Door)**:
-   - 1-tap `📋 Cheat-Sheet` button on each child card header opens an instant parent-facing talking card.
+   - 1-tap `📋 Cheat-Sheet` button is placed neatly in `.child-card-footer` alongside the `🚪 Check Out` button. This keeps the child card header clean and spacious for child full name, arrival timestamp, and status badge (`● Present`), preventing label breaks or cramped cards.
    - Summarizes 3 key bullets in under 3 seconds: Nap duration/status, meal/snack intake, active experience highlights, allergy/safety alerts, and a tailored parent greeting prompt (e.g. *"Ask Noah about the ice bridge he made today!"*).
    - Allows immediate checkout directly from the cheat-sheet modal (`🚪 Check Out Child`).
 2. **Hands-Free "Voice-to-Moment" Observation Capture with Text Fallback**:

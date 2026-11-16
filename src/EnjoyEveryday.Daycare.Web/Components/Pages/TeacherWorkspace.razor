@@ -107,7 +107,11 @@
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <button class="staff-break-pill @(_isOnBreak ? "break-active" : "")" @onclick="ToggleStaffBreak">
+                    <button class="staff-break-pill @(_isOnBreak ? "break-active" : "")" 
+                            @onclick="ToggleStaffBreak" 
+                            disabled="@IsBranchClosed" 
+                            style="@(IsBranchClosed ? "opacity: 0.5; cursor: not-allowed;" : "")" 
+                            title="@(IsBranchClosed ? "Branch facility is closed — staff breaks and attendance cannot be recorded" : "")">
                         <span>☕</span>
                         <span>@(_isOnBreak ? "On Break (Click to Return)" : "Staff Break")</span>
                     </button>
@@ -187,15 +191,17 @@
         {
             @if (!_classroomOpsStatus.IsBranchOpen)
             {
-                <div class="daily-gate-card closed-branch">
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <span class="gate-icon">🔒</span>
+                <div class="daily-gate-card closed-branch" style="background: #fff8f6; border-left: 4px solid #e53e3e; padding: 16px 20px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <span class="gate-icon" style="font-size: 26px;">🔒</span>
                         <div>
-                            <div class="gate-title">Branch Facility is Closed</div>
-                            <div class="gate-desc">The Branch Admin has not opened the facility for operations yet today. Child arrivals, attendance check-in, care logs, and learning activities will unlock once the branch is opened.</div>
+                            <div class="gate-title" style="color: #9b2c2c; font-weight: 750; font-size: 15px;">Branch Facility is Closed</div>
+                            <div class="gate-desc" style="color: #742a2a; font-size: 13px; margin-top: 4px;">
+                                The Branch Admin has not opened the facility for operations yet today. All teacher attendance, classroom readiness, student arrivals, learning activities, and daily care routines are locked until the branch is opened.
+                            </div>
                         </div>
                     </div>
-                    <span class="closed-status-pill" style="white-space: nowrap;">BRANCH CLOSED</span>
+                    <span class="closed-status-pill" style="white-space: nowrap; background: #fed7d7; color: #9b2c2c; border: 1px solid #feb2b2; font-weight: 700; padding: 6px 12px; border-radius: 6px;">BRANCH CLOSED</span>
                 </div>
             }
             else if (!_classroomOpsStatus.IsOpen && _classroomOpsStatus.ClosedAt == null)
@@ -387,57 +393,57 @@
 
                 <div class="coordination-shortcuts-grid">
                     <!-- 1. Classroom Readiness -->
-                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/classrooms")'>
+                    <div class="action-card-btn @(IsBranchClosed ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleClassroomReadinessNavigation" title="@(IsBranchClosed ? "Branch is closed — classroom readiness cannot be performed" : "Environment & room setup")">
                         <div class="action-card-icon icon-box-leaf">
                             <FluentIcon Value="@(new Icons.Regular.Size24.Building())" Color="Color.Custom" CustomColor="#31523c" />
                         </div>
                         <div class="action-card-text">
                             <strong>Classroom Readiness</strong>
-                            <span>Environment &amp; room setup</span>
+                            <span>@(IsBranchClosed ? "Locked (Branch Closed)" : "Environment & room setup")</span>
                         </div>
                     </div>
 
                     <!-- 2. Team Tasks & Handover -->
-                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")'>
+                    <div class="action-card-btn @(IsBranchClosed ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleTeamTasksNavigation" title="@(IsBranchClosed ? "Branch is closed — handover notes cannot be logged" : "Classroom shift handover")">
                         <div class="action-card-icon icon-box-blue">
                             <FluentIcon Value="@(new Icons.Regular.Size24.PeopleTeam())" Color="Color.Custom" CustomColor="#2b6cb0" />
                         </div>
                         <div class="action-card-text">
                             <strong>Team Tasks &amp; Handover</strong>
-                            <span>Classroom shift handover</span>
+                            <span>@(IsBranchClosed ? "Locked (Branch Closed)" : "Classroom shift handover")</span>
                         </div>
                     </div>
 
                     <!-- 3. Review Daily Logs -->
-                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/daily-care")'>
+                    <div class="action-card-btn @(IsBranchClosed ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleReviewLogsNavigation" title="@(IsBranchClosed ? "Branch is closed — care logs cannot be modified" : "Verify teacher care logs")">
                         <div class="action-card-icon icon-box-amber">
                             <FluentIcon Value="@(new Icons.Regular.Size24.ClipboardTask())" Color="Color.Custom" CustomColor="#8c5717" />
                         </div>
                         <div class="action-card-text">
                             <strong>Review Daily Logs</strong>
-                            <span>Verify teacher care logs</span>
+                            <span>@(IsBranchClosed ? "Locked (Branch Closed)" : "Verify teacher care logs")</span>
                         </div>
                     </div>
 
                     <!-- 4. Review Experience Feedback -->
-                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/experiences")'>
+                    <div class="action-card-btn @(IsBranchClosed || IsClassroomOperationsLocked ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleExperienceFeedbackNavigation" title="@(IsBranchClosed ? "Branch is closed — activities locked" : "Curriculum & session notes")">
                         <div class="action-card-icon icon-box-teal">
                             <FluentIcon Value="@(new Icons.Regular.Size24.Sparkle())" Color="Color.Custom" CustomColor="#31523c" />
                         </div>
                         <div class="action-card-text">
                             <strong>Experience Feedback</strong>
-                            <span>Curriculum &amp; session notes</span>
+                            <span>@(IsBranchClosed ? "Locked (Branch Closed)" : "Curriculum & session notes")</span>
                         </div>
                     </div>
 
                     <!-- 5. Request Staff Coverage -->
-                    <div class="action-card-btn" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/roster")'>
+                    <div class="action-card-btn @(IsBranchClosed ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleRequestCoverageNavigation" title="@(IsBranchClosed ? "Branch is closed — staffing requests locked" : "Staffing gaps & coverage")">
                         <div class="action-card-icon icon-box-purple">
                             <FluentIcon Value="@(new Icons.Regular.Size24.PersonCall())" Color="Color.Custom" CustomColor="#553c9a" />
                         </div>
                         <div class="action-card-text">
                             <strong>Request Coverage</strong>
-                            <span>Staffing gaps &amp; coverage</span>
+                            <span>@(IsBranchClosed ? "Locked (Branch Closed)" : "Staffing gaps & coverage")</span>
                         </div>
                     </div>
                 </div>
@@ -459,27 +465,27 @@
                     {
                         <span class="live-sync-flash">🔄 Co-Teacher Live Sync</span>
                     }
-                    <button class="batch-btn primary-batch" @onclick="MarkAllScheduledPresentAsync" disabled="@_isDaycareClosed" style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(_isDaycareClosed ? "Daycare is closed — attendance cannot be performed" : "Mark all expected children present")">
+                    <button class="batch-btn primary-batch" @onclick="MarkAllScheduledPresentAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsBranchClosed ? "Branch is closed — attendance cannot be performed" : IsClassroomOperationsLocked ? "Classroom is closed" : _isDaycareClosed ? "Daycare is closed" : "Mark all expected children present")">
                         <FluentIcon Value="@(new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
                         <span>Check-In All</span>
                     </button>
-                    <button class="batch-btn" @onclick="() => _showGroupSnackModal = true" title="Record group snack for all checked-in children">
+                    <button class="batch-btn" @onclick="OpenGroupSnackModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsBranchClosed ? "Branch is closed — care logs are locked" : "Record group snack for all checked-in children")">
                         <FluentIcon Value="@(new Icons.Regular.Size16.Food())" Color="Color.Custom" CustomColor="#52745e" />
                         <span>Group Snack</span>
                     </button>
-                    <button class="batch-btn" @onclick="RecordWholeTableLunchAsync" title="Record lunch (75% Most) for all checked-in children at once">
+                    <button class="batch-btn" @onclick="RecordWholeTableLunchAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsBranchClosed ? "Branch is closed — care logs are locked" : "Record lunch (75% Most) for all checked-in children at once")">
                         <span>🍽️</span>
                         <span>Table Lunch</span>
                     </button>
-                    <button class="batch-btn" @onclick="() => _showPottyChecklistModal = true" title="Open rapid 1-screen diaper &amp; potty line checklist">
+                    <button class="batch-btn" @onclick="OpenPottyChecklistModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsBranchClosed ? "Branch is closed — care logs are locked" : "Open rapid 1-screen diaper &amp; potty line checklist")">
                         <span>🧷</span>
                         <span>Potty Line</span>
                     </button>
-                    <button class="batch-btn" @onclick="StartGroupNapAsync" title="Start rest time for all present awake children">
+                    <button class="batch-btn" @onclick="StartGroupNapAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="@(IsBranchClosed ? "Branch is closed — nap sessions are locked" : "Start rest time for all present awake children")">
                         <FluentIcon Value="@(new Icons.Regular.Size16.Bed())" Color="Color.Custom" CustomColor="#3730a3" />
                         <span>Group Rest</span>
                     </button>
-                    <button class="batch-btn" @onclick="OpenTimerModal" title="Open Gentle Classroom Transition Timer &amp; Chime">
+                    <button class="batch-btn" @onclick="OpenTimerModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="Open Gentle Classroom Transition Timer &amp; Chime">
                         <span>⏳</span>
                         <span>Timer</span>
                     </button>
@@ -548,11 +554,7 @@
                                     </div>
                                 </div>
 
-                                <div style="display: flex; align-items: center; gap: 6px;">
-                                    <button type="button" class="btn-pickup-cheat" @onclick="() => OpenPickupCheatSheet(child)" title="Open 15-second pickup cheat-sheet for talking to parents">
-                                        <span>📋</span>
-                                        <span>Cheat-Sheet</span>
-                                    </button>
+                                <div class="child-badge-right">
                                     @if (isSleeping)
                                     {
                                         <span class="child-badge badge-resting"><span class="pulse-dot"></span> Resting</span>
@@ -584,7 +586,9 @@
                                     <button type="button" 
                                             class="routine-action-btn @(_activeDiaperChildId == child.ChildId ? "active-action" : "") @(child.LastDiaperEvent == null ? "empty-routine" : "")"
                                             @onclick="() => ToggleDiaperPopover(child.ChildId)"
-                                            title="Tap to update diaper change">
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)"
+                                            style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                            title="@(IsBranchClosed ? "Branch is closed — diaper logs locked" : IsClassroomOperationsLocked ? "Classroom is closed" : "Tap to update diaper change")">
                                         <div class="routine-head">
                                             <span class="routine-icon">🧷</span>
                                             <span class="routine-label">Diaper</span>
@@ -596,7 +600,9 @@
                                     <button type="button" 
                                             class="routine-action-btn @(_activeMealChildId == child.ChildId ? "active-action" : "") @(child.LastMealEvent == null ? "empty-routine" : "")"
                                             @onclick="() => ToggleMealPopover(child.ChildId)"
-                                            title="Tap to record meal or snack">
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)"
+                                            style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                            title="@(IsBranchClosed ? "Branch is closed — meal logs locked" : IsClassroomOperationsLocked ? "Classroom is closed" : "Tap to record meal or snack")">
                                         <div class="routine-head">
                                             <span class="routine-icon">🍎</span>
                                             <span class="routine-label">Meal</span>
@@ -608,7 +614,9 @@
                                     <button type="button" 
                                             class="routine-action-btn @(isSleeping ? "is-resting active-action" : "")"
                                             @onclick="() => ToggleNapAsync(child)"
-                                            title="@(isSleeping ? "Tap to wake up child" : "Tap to start nap timer")">
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)"
+                                            style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                            title="@(IsBranchClosed ? "Branch is closed — nap routine locked" : IsClassroomOperationsLocked ? "Classroom is closed" : isSleeping ? "Tap to wake up child" : "Tap to start nap timer")">
                                         <div class="routine-head">
                                             <span class="routine-icon">@(isSleeping ? "⏰" : "😴")</span>
                                             <span class="routine-label">Rest</span>
@@ -652,25 +660,39 @@
                                     </div>
                                 }
 
-                                <!-- 2. Footer Action Bar (Dedicated Observation & Check Out buttons) -->
+                                <!-- 2. Footer Action Bar (Dedicated Observation, Pickup Briefing & Check Out) -->
                                 <div class="child-card-footer">
                                     <button type="button" 
                                             class="btn-child-moment" 
                                             @onclick="() => OpenQuickMomentModalAsync(child)"
-                                            title="Record photo or learning observation for @child.ChildName">
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)"
+                                            style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                            title="@(IsBranchClosed ? "Branch is closed — moments locked" : IsClassroomOperationsLocked ? "Classroom is closed" : $"Record photo or learning observation for {child.ChildName}")">
                                         <span class="btn-icon">📸</span>
                                         <span>+ Moment</span>
                                     </button>
 
-                                    <button type="button" 
-                                            class="btn-child-checkout" 
-                                            @onclick="() => CheckOutChildAsync(child.ChildId)" 
-                                            disabled="@_isDaycareClosed"
-                                            style="@(_isDaycareClosed ? "opacity: 0.5; cursor: not-allowed;" : "")"
-                                            title="@(_isDaycareClosed ? "Daycare is closed" : "Record departure / Check out")">
-                                        <span class="btn-icon">🚪</span>
-                                        <span>Check Out</span>
-                                    </button>
+                                    <div class="footer-actions-right">
+                                        <button type="button" 
+                                                class="btn-pickup-cheat" 
+                                                @onclick="() => OpenPickupCheatSheet(child)" 
+                                                disabled="@(IsBranchClosed || IsClassroomOperationsLocked)"
+                                                style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                                title="@(IsBranchClosed ? "Branch is closed — pickup briefing locked" : "Open 15-second pickup briefing for talking to parents")">
+                                            <span>📋</span>
+                                            <span>Cheat-Sheet</span>
+                                        </button>
+
+                                        <button type="button" 
+                                                class="btn-child-checkout" 
+                                                @onclick="() => CheckOutChildAsync(child.ChildId)" 
+                                                disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)"
+                                                style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                                title="@(IsBranchClosed ? "Branch is closed — departure locked" : IsClassroomOperationsLocked ? "Classroom is closed" : _isDaycareClosed ? "Daycare is closed" : "Record departure / Check out")">
+                                            <span class="btn-icon">🚪</span>
+                                            <span>Check Out</span>
+                                        </button>
+                                    </div>
                                 </div>
                             }
                             else if (child.AttendanceStatus == "CheckedOut")
@@ -680,7 +702,7 @@
                                         <span>🚪</span>
                                         <span>Checked out • Logs locked</span>
                                     </div>
-                                    @if (!_isDaycareClosed)
+                                    @if (!_isDaycareClosed && !IsBranchClosed && !IsClassroomOperationsLocked)
                                     {
                                         <button class="btn-readmit" @onclick="() => CheckInChildAsync(child.ChildId)" title="Re-admit child if checked out in error">
                                             Re-admit
@@ -695,7 +717,7 @@
                                         <span>🚫</span>
                                         <span>Absent today • Logs locked</span>
                                     </div>
-                                    @if (!_isDaycareClosed)
+                                    @if (!_isDaycareClosed && !IsBranchClosed && !IsClassroomOperationsLocked)
                                     {
                                         <button class="btn-readmit" @onclick="() => CheckInChildAsync(child.ChildId)" title="Check in child if arrived late">
                                             Mark Present
@@ -706,11 +728,13 @@
                             else
                             {
                                 <!-- Unchecked state: Large 1-tap Check-In button -->
-                                <button class="btn-checkin-large @(_isDaycareClosed ? "closed-btn" : "")" 
+                                <button class="btn-checkin-large @(_isDaycareClosed || IsBranchClosed || IsClassroomOperationsLocked ? "closed-btn" : "")" 
                                         @onclick="() => CheckInChildAsync(child.ChildId)" 
-                                        title="@(_isDaycareClosed ? "Daycare is closed for the day (operating hours ended at 7:00 PM)" : "Check in child to enable care and activity logs")">
-                                    <FluentIcon Value="@(_isDaycareClosed ? (Icon)new Icons.Regular.Size16.LockClosed() : (Icon)new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
-                                    <span>@(_isDaycareClosed ? "Closed (After 7 PM)" : "Check-In Now to Log")</span>
+                                        disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)"
+                                        style="@((IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed) ? "opacity: 0.5; cursor: not-allowed;" : "")"
+                                        title="@(IsBranchClosed ? "Branch facility is closed for operations today" : IsClassroomOperationsLocked ? "Classroom is closed" : _isDaycareClosed ? "Daycare is closed for the day (operating hours ended at 7:00 PM)" : "Check in child to enable care and activity logs")">
+                                    <FluentIcon Value="@(_isDaycareClosed || IsBranchClosed || IsClassroomOperationsLocked ? (Icon)new Icons.Regular.Size16.LockClosed() : (Icon)new Icons.Regular.Size16.Checkmark())" Color="Color.Custom" CustomColor="#ffffff" />
+                                    <span>@(IsBranchClosed ? "Locked (Branch Closed)" : IsClassroomOperationsLocked ? "Locked (Room Closed)" : _isDaycareClosed ? "Closed (After 7 PM)" : "Check-In Now to Log")</span>
                                 </button>
                             }
                         </div>
@@ -724,39 +748,39 @@
             <h2 class="section-title">@(IsLeadTeacher ? "Classroom Delivery Shortcuts" : "More Classroom Tools")</h2>
             <div class="actions-grid-3x2">
                 <!-- 1. Take Attendance (Signature Dark Sage Highlight) -->
-                <div class="action-card action-attendance-featured" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/management/attendance")'>
+                <div class="action-card action-attendance-featured @(IsBranchClosed ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleTakeAttendanceNavigation">
                     <div class="action-card-icon">
                         <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Width="26px" Color="Color.Custom" CustomColor="#ffffff" />
                     </div>
                     <div class="action-card-text">
                         <div class="action-title">Take Attendance</div>
-                        <div class="action-subtitle">Mark today's arrivals</div>
+                        <div class="action-subtitle">@(IsBranchClosed ? "Locked (Branch Closed)" : "Mark today's arrivals")</div>
                     </div>
                 </div>
 
                 <!-- 2. Start Activity -->
-                <div class="action-card" role="button" tabindex="0" @onclick='() => Navigation.NavigateTo("/today-activities")'>
+                <div class="action-card @(IsBranchClosed || IsClassroomOperationsLocked ? "disabled-card" : "")" role="button" tabindex="0" @onclick="HandleStartActivityNavigation">
                     <div class="action-card-icon">
                         <FluentIcon Value="@(new Icons.Filled.Size28.Play())" Color="Color.Custom" CustomColor="#31523c" />
                     </div>
                     <div class="action-card-text">
                         <div class="action-title">Start Activity</div>
-                        <div class="action-subtitle">@(ActiveRunningExperience != null ? $"Active: {ActiveRunningExperience.Title}" : "Today's planned experiences")</div>
+                        <div class="action-subtitle">@(IsBranchClosed ? "Locked (Branch Closed)" : IsClassroomOperationsLocked ? "Locked (Room Closed)" : ActiveRunningExperience != null ? $"Active: {ActiveRunningExperience.Title}" : "Today's planned experiences")</div>
                     </div>
-                    @if (ActiveRunningExperience != null)
+                    @if (ActiveRunningExperience != null && !IsBranchClosed && !IsClassroomOperationsLocked)
                     {
                         <span class="live-pill"><span class="pulse-dot"></span> Live</span>
                     }
                 </div>
 
                 <!-- 3. Voice or Text Child Moment -->
-                <div class="action-card" role="button" tabindex="0" @onclick="OpenGeneralMomentModalAsync">
+                <div class="action-card @(IsBranchClosed || IsClassroomOperationsLocked ? "disabled-card" : "")" role="button" tabindex="0" @onclick="OpenGeneralMomentModalAsync">
                     <div class="action-card-icon">
                         <FluentIcon Value="@(new Icons.Regular.Size28.Mic())" Color="Color.Custom" CustomColor="#31523c" />
                     </div>
                     <div class="action-card-text">
                         <div class="action-title">Voice Observation</div>
-                        <div class="action-subtitle">Hands-free or text moment</div>
+                        <div class="action-subtitle">@(IsBranchClosed ? "Locked (Branch Closed)" : "Hands-free or text moment")</div>
                     </div>
                 </div>
 
@@ -1753,6 +1777,12 @@
 
     private async Task StartSession(Guid scheduleId)
     {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed for the day (operating hours ended at 7:00 PM). New activity sessions cannot be started until tomorrow morning.");
@@ -1774,6 +1804,12 @@
 
     private async Task CloseSession(Guid scheduleId)
     {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed. Activities cannot be started or ended while the daycare is closed.");
@@ -1851,6 +1887,12 @@
 
     private void ToggleStaffBreak()
     {
+        if (IsBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch facility is closed. Teacher attendance, duty, and breaks cannot be recorded while the branch is closed.");
+            return;
+        }
+
         _isOnBreak = !_isOnBreak;
         if (_isOnBreak)
         {
@@ -1862,6 +1904,76 @@
             _breakStartTime = null;
             _ = NotificationService.ShowSuccessAsync("Welcome back to your classroom! 🌿");
         }
+    }
+
+    private void HandleClassroomReadinessNavigation()
+    {
+        if (IsBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch facility is closed. Classroom readiness inspections and openings are locked until the Branch Admin opens the branch.");
+            return;
+        }
+        Navigation.NavigateTo("/classrooms");
+    }
+
+    private void HandleTeamTasksNavigation()
+    {
+        if (IsBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch facility is closed. Classroom shift handovers and tasks are locked until the Branch Admin opens the branch.");
+            return;
+        }
+        Navigation.NavigateTo("/daily-care");
+    }
+
+    private void HandleReviewLogsNavigation()
+    {
+        if (IsBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch facility is closed. Daily care logs cannot be modified while the branch is closed.");
+            return;
+        }
+        Navigation.NavigateTo("/daily-care");
+    }
+
+    private void HandleExperienceFeedbackNavigation()
+    {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+        Navigation.NavigateTo("/experiences");
+    }
+
+    private void HandleRequestCoverageNavigation()
+    {
+        if (IsBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch facility is closed. Staff coverage requests are locked until the Branch Admin opens the branch.");
+            return;
+        }
+        Navigation.NavigateTo("/management/roster");
+    }
+
+    private void HandleTakeAttendanceNavigation()
+    {
+        if (IsBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch facility is closed. Attendance desk operations are locked until the Branch Admin opens the branch.");
+            return;
+        }
+        Navigation.NavigateTo("/management/attendance");
+    }
+
+    private void HandleStartActivityNavigation()
+    {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+        Navigation.NavigateTo("/today-activities");
     }
 
     private bool _isDaycareClosed => CheckIfDaycareClosed();
@@ -1881,15 +1993,19 @@
         }
     }
 
+    private bool IsBranchClosed => 
+        !DailyOpsService.IsBypassedForTesting() && 
+        (_classroomOpsStatus == null || !_classroomOpsStatus.IsBranchOpen);
+
     private bool IsClassroomOperationsLocked => 
         !DailyOpsService.IsBypassedForTesting() && 
-        (_classroomOpsStatus == null || !_classroomOpsStatus.IsOpen);
+        (_classroomOpsStatus == null || !_classroomOpsStatus.IsOpen || !_classroomOpsStatus.IsBranchOpen);
 
     private string GetClassroomLockedMessage()
     {
         if (_classroomOpsStatus == null || !_classroomOpsStatus.IsBranchOpen)
         {
-            return "Branch facility is closed. Waiting for the Branch Admin to open operations.";
+            return "Branch facility is closed for operations. No teacher attendance, classroom readiness, student arrivals, learning activities, or care routines may be conducted until the Branch Admin opens the branch.";
         }
         if (!_classroomOpsStatus.IsOpen && _classroomOpsStatus.ClosedAt != null)
         {
@@ -1958,14 +2074,14 @@
     private async Task CheckInChildAsync(Guid childId)
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed for the day. New arrivals cannot be checked in after 7:00 PM.");
-            return;
-        }
-        if (IsClassroomOperationsLocked)
-        {
-            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
             return;
         }
 
@@ -2001,6 +2117,11 @@
     private void CheckOutChildAsync(Guid childId)
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed. Child attendance and departure cannot be performed while the daycare is closed.");
@@ -2023,14 +2144,14 @@
     private async Task MarkAllScheduledPresentAsync()
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         if (_isDaycareClosed)
         {
             _ = NotificationService.ShowWarningAsync("Daycare is closed for the day. Batch check-in cannot be recorded after 7:00 PM.");
-            return;
-        }
-        if (IsClassroomOperationsLocked)
-        {
-            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
             return;
         }
 
@@ -2071,12 +2192,22 @@
 
     private void ToggleDiaperPopover(Guid childId)
     {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         _activeMealChildId = null;
         _activeDiaperChildId = _activeDiaperChildId == childId ? null : childId;
     }
 
     private void ToggleMealPopover(Guid childId)
     {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         _activeDiaperChildId = null;
         _activeMealChildId = _activeMealChildId == childId ? null : childId;
     }
@@ -2084,6 +2215,11 @@
     private async Task QuickRecordDiaperAsync(Guid childId, string condition)
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         var child = _classroomChildren.FirstOrDefault(c => c.ChildId == childId);
         if (child == null || !child.IsCheckedIn)
         {
@@ -2118,6 +2254,11 @@
     private async Task QuickRecordMealAsync(Guid childId, string amount)
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         var child = _classroomChildren.FirstOrDefault(c => c.ChildId == childId);
         if (child == null || !child.IsCheckedIn)
         {
@@ -2153,6 +2294,11 @@
     private async Task ToggleNapAsync(ClassroomChildCareStatusDto child)
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         if (!child.IsCheckedIn)
         {
             await NotificationService.ShowWarningAsync($"{child.ChildName} is {child.AttendanceStatus}. Rest logs can only be recorded for checked-in children.");
@@ -2214,6 +2360,11 @@
     {
         _activeDiaperChildId = null;
         _activeMealChildId = null;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         if (!child.IsCheckedIn)
         {
             await NotificationService.ShowWarningAsync($"{child.ChildName} is {child.AttendanceStatus}. Observations can only be recorded for checked-in children.");
@@ -2239,6 +2390,11 @@
     {
         _activeDiaperChildId = null;
         _activeMealChildId = null;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         if (_momentDialog != null)
         {
             var activities = await GetCurrentClassroomActivitiesAsync();
@@ -2258,9 +2414,44 @@
         await RefreshBoardAsync();
     }
 
+    private void OpenGroupSnackModal()
+    {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+        _showGroupSnackModal = true;
+    }
+
+    private void OpenPottyChecklistModal()
+    {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+        _showPottyChecklistModal = true;
+    }
+
+    private void OpenTimerModal()
+    {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
+        _showTimerModal = true;
+    }
+
     private async Task SaveGroupSnackAsync()
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         var presentIds = _classroomChildren.Where(c => c.IsCheckedIn).Select(c => c.ChildId).ToList();
         if (!presentIds.Any())
         {
@@ -2291,6 +2482,11 @@
     private async Task StartGroupNapAsync()
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         var awakeIds = _classroomChildren.Where(c => c.IsCheckedIn && c.ActiveNapSession == null).Select(c => c.ChildId).ToList();
         if (!awakeIds.Any())
         {
@@ -2341,6 +2537,11 @@
     // =========================================================================
     private void OpenPickupCheatSheet(ClassroomChildCareStatusDto child)
     {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         _activeCheatSheetChild = child;
     }
 
@@ -2390,6 +2591,11 @@
 
     private void CheckOutFromCheatSheet(Guid childId)
     {
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            _ = NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         _activeCheatSheetChild = null;
         CheckOutChildAsync(childId);
     }
@@ -2400,6 +2606,11 @@
     private async Task RecordWholeTableLunchAsync()
     {
         if (_activeClassroom == null) return;
+        if (IsBranchClosed || IsClassroomOperationsLocked)
+        {
+            await NotificationService.ShowWarningAsync(GetClassroomLockedMessage());
+            return;
+        }
         var checkedIn = _classroomChildren.Where(c => c.IsCheckedIn).ToList();
         if (!checkedIn.Any())
         {
@@ -2436,11 +2647,6 @@
     // =========================================================================
     // FEATURE 5: TRANSITION CHIME & VISUAL GENTLE TIMER
     // =========================================================================
-    private void OpenTimerModal()
-    {
-        _showTimerModal = true;
-    }
-
     private void SetTimerPreset(int seconds)
     {
         _timerTotalSeconds = seconds;

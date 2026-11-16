@@ -221,7 +221,18 @@
     private string? _activePickupArrivalTime;
     private bool _isEndOfDayModalOpen = false;
     private string _closedAttendanceReason = "";
-    private bool IsClosedForAttendance => AttendanceService.IsDaycareClosedForAttendance(_filterDate, _branchId == Guid.Empty ? null : _branchId, out _closedAttendanceReason);
+    private bool IsClosedForAttendance
+    {
+        get
+        {
+            if (_branchOpsStatus != null && !_branchOpsStatus.IsOpen && !DailyOpsService.IsBypassedForTesting())
+            {
+                _closedAttendanceReason = "Branch facility is closed for daily operations. The Branch Admin must open the facility before attendance can be marked.";
+                return true;
+            }
+            return AttendanceService.IsDaycareClosedForAttendance(_filterDate, _branchId == Guid.Empty ? null : _branchId, out _closedAttendanceReason);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

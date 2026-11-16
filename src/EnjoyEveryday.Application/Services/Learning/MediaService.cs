@@ -35,6 +35,7 @@ public interface IMediaService
 {
     Task<MediaAsset> UploadMediaVariantsAsync(UploadMediaVariantRequest request, CancellationToken ct = default);
     Task<(Stream Content, string ContentType)?> GetMediaStreamAsync(Guid mediaId, string variant, CancellationToken ct = default);
+    Task<(Stream Content, string ContentType)?> GetMediaStreamAsync(MediaAsset asset, string variant, CancellationToken ct = default);
     Task<MediaAsset?> GetMediaAssetAsync(Guid mediaId, CancellationToken ct = default);
     Task<bool> DeleteMediaAssetAsync(Guid mediaId, CancellationToken ct = default);
 }
@@ -212,11 +213,18 @@ public class MediaService : IMediaService
 
     public async Task<(Stream Content, string ContentType)?> GetMediaStreamAsync(Guid mediaId, string variant, CancellationToken ct = default)
     {
-        var asset = await _repository.GetByIdAsync(_tenantContext.TenantId, mediaId, ct);
+        var asset = await GetMediaAssetAsync(mediaId, ct);
         if (asset == null)
         {
             return null;
         }
+
+        return await GetMediaStreamAsync(asset, variant, ct);
+    }
+
+    public async Task<(Stream Content, string ContentType)?> GetMediaStreamAsync(MediaAsset asset, string variant, CancellationToken ct = default)
+    {
+        if (asset == null) return null;
 
         var isThumbnail = string.Equals(variant, "thumb", StringComparison.OrdinalIgnoreCase) ||
                           string.Equals(variant, "thumbnail", StringComparison.OrdinalIgnoreCase);
@@ -238,7 +246,18 @@ public class MediaService : IMediaService
 
     public async Task<MediaAsset?> GetMediaAssetAsync(Guid mediaId, CancellationToken ct = default)
     {
-        return await _repository.GetByIdAsync(_tenantContext.TenantId, mediaId, ct);
+        MediaAsset? asset = null;
+        if (_tenantContext.IsResolved && _tenantContext.TenantId != Guid.Empty)
+        {
+            asset = await _repository.GetByIdAsync(_tenantContext.TenantId, mediaId, ct);
+        }
+
+        if (asset == null)
+        {
+            asset = await _repository.GetByIdAsync(mediaId, ct);
+        }
+
+        return asset;
     }
 
     public async Task<bool> DeleteMediaAssetAsync(Guid mediaId, CancellationToken ct = default)

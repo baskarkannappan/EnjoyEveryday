@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Data;
@@ -60,6 +61,27 @@ public class MediaRepository : IMediaRepository
             new { p_tenant_id = tenantId, p_id = id },
             cancellationToken: ct);
         return System.Linq.Enumerable.FirstOrDefault(items);
+    }
+
+    public async Task<MediaAsset?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(ct);
+        const string sql = """
+            SELECT 
+                id, tenant_id AS TenantId, organization_id AS OrganizationId, 
+                child_id AS ChildId, entity_type AS EntityType, entity_id AS EntityId,
+                display_container AS DisplayContainer, display_key AS DisplayKey, 
+                display_content_type AS DisplayContentType, display_size_bytes AS DisplaySizeBytes, 
+                display_width AS DisplayWidth, display_height AS DisplayHeight,
+                thumbnail_container AS ThumbnailContainer, thumbnail_key AS ThumbnailKey, 
+                thumbnail_content_type AS ThumbnailContentType, thumbnail_size_bytes AS ThumbnailSizeBytes, 
+                thumbnail_width AS ThumbnailWidth, thumbnail_height AS ThumbnailHeight,
+                content_hash AS ContentHash, created_by AS CreatedBy, 
+                created_at AS CreatedAt, updated_at AS UpdatedAt
+            FROM public.media_assets
+            WHERE id = @Id;
+            """;
+        return await connection.QuerySingleOrDefaultAsync<MediaAsset>(sql, new { Id = id });
     }
 
     public async Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default)

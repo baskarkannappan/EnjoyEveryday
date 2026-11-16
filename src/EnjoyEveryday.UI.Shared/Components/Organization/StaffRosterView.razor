@@ -13,6 +13,7 @@
 @inject IAccessScopeRepository AccessScopeRepo
 @inject ISystemLookupCatalog LookupCatalog
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
+@inject IDailyOperationsService DailyOpsService
 
 <div class="roster-page-container">
     <PageHero Eyebrow="COMPLIANCE &amp; STAFFING"
@@ -55,6 +56,19 @@
         </div>
     }
 
+    @if (_isBranchClosed)
+    {
+        <div style="background: #fff8f6; border-left: 4px solid #e53e3e; padding: 14px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40, 55, 47, .06));">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 24px;">🔒</span>
+                <div>
+                    <strong style="color: #9b2c2c; font-size: 14.5px;">Branch Facility is Closed</strong>
+                    <div style="color: #742a2a; font-size: 13px; margin-top: 2px;">Teacher attendance, duty shifts, and classroom operations are locked until the facility is opened by the Branch Admin.</div>
+                </div>
+            </div>
+            <span style="background: #fed7d7; color: #9b2c2c; font-weight: 700; font-size: 12px; padding: 5px 12px; border-radius: 6px;">FACILITY CLOSED</span>
+        </div>
+    }
     @if (_isLoading)
     {
         <LoadingState Message="Calculating real-time ratio compliance and shift rosters..." />
@@ -442,6 +456,8 @@
             }
         </div>
     }
+
+
 </div>
 
 <!-- Modal: Reassign Activity -->
@@ -712,6 +728,8 @@
         await LoadRosterAsync();
     }
 
+    private bool _isBranchClosed = false;
+
     private async Task LoadRosterAsync()
     {
         if (_selectedBranchId == Guid.Empty) return;
@@ -719,6 +737,9 @@
         _isLoading = true;
         try
         {
+            var branchOps = await DailyOpsService.GetBranchDailyStatusAsync(_selectedBranchId, DateOnly.FromDateTime(_selectedDate));
+            _isBranchClosed = branchOps != null && !branchOps.IsOpen && !DailyOpsService.IsBypassedForTesting();
+
             _overview = await RosterService.GetRosterOverviewAsync(_selectedBranchId, _selectedDate);
             _coverageNeeds = await RosterService.GetActivityCoverageNeedsAsync(_selectedBranchId, _selectedDate, _selectedDate.AddDays(7));
         }
@@ -747,6 +768,12 @@
 
     private async Task DispatchFloat(Guid classroomId)
     {
+        if (_isBranchClosed)
+        {
+            ShowToast("Cannot dispatch float educator: Branch facility is closed for operations.", isError: true);
+            return;
+        }
+
         if (_overview?.AvailableFloatTeachers.Any() == true)
         {
             try
@@ -776,6 +803,12 @@
 
     private async Task SubmitLeave()
     {
+        if (_isBranchClosed)
+        {
+            ShowToast("Cannot log staff leave: Branch facility is closed for operations.", isError: true);
+            return;
+        }
+
         if (_newLeaveTeacherId == Guid.Empty) return;
 
         var leave = new StaffLeave

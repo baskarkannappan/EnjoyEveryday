@@ -17,5 +17,10 @@ public interface IDailyOperationsService
     Task<DailyOperationExecutionResult> CloseBranchDayAsync(Guid branchId, DateOnly? date = null, TimeSpan? checkoutTime = null, CancellationToken ct = default);
 
     Task<bool> CanPerformClassroomOperationsAsync(Guid classroomId, DateOnly? date = null, CancellationToken ct = default);
+    Task<bool> CanPerformBranchOperationsAsync(Guid branchId, DateOnly? date = null, CancellationToken ct = default);
+    Task<bool> IsBranchOpenAsync(Guid branchId, DateOnly? date = null, CancellationToken ct = default);
+    Task<bool> IsClassroomOpenAsync(Guid classroomId, DateOnly? date = null, CancellationToken ct = default);
+    Task ValidateBranchOperationsAllowedAsync(Guid branchId, DateOnly? date = null, string operationName = "operation", CancellationToken ct = default);
+    Task ValidateClassroomOperationsAllowedAsync(Guid classroomId, DateOnly? date = null, string operationName = "operation", CancellationToken ct = default);
     bool IsBypassedForTesting();
 }
