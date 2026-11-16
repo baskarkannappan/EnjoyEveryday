@@ -60,7 +60,7 @@ async def generate_parent_communication(
     context_payload = {
         "childName": child_name,
         "classroomName": req.classroomName,
-        "date": req.date,
+        "reportingPeriod": req.reportingPeriod,
         "recipientName": req.recipientName,
         "attendanceSummary": req.attendanceSummary,
         "completedExperiences": req.completedExperiences[:5],
