@@ -1,0 +1,57 @@
+name: Database CI (PostgreSQL Migrations)
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'database/migrations/**'
+      - 'EnjoyEveryday.DBFullScript/**'
+      - '.github/workflows/database-ci.yml'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'database/migrations/**'
+      - 'EnjoyEveryday.DBFullScript/**'
+      - '.github/workflows/database-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  validate-migrations:
+    name: Validate PostgreSQL Schema Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: enjoyeveryday
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply ordered SQL migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for file in $(ls -1 database/migrations/*.sql | sort); do
+            echo "Applying migration: $file"
+            psql -h localhost -p 5432 -U postgres -d enjoyeveryday -v ON_ERROR_STOP=1 -f "$file"
+          done
+
+      - name: Verify schema table count
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d enjoyeveryday -c "SELECT count(*) AS table_count FROM information_schema.tables WHERE table_schema = 'public';"
+

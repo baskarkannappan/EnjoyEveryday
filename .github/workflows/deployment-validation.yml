@@ -1,0 +1,82 @@
+name: Deployment Validation (Full Stack Integration)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'docker-compose*.yml'
+      - '.dockerignore'
+      - 'src/EnjoyEveryday.AiAgent/Dockerfile'
+      - 'src/EnjoyEveryday.Api/Dockerfile'
+      - 'src/EnjoyEveryday.Daycare.Web/Dockerfile'
+      - '.github/workflows/deployment-validation.yml'
+
+jobs:
+  validate-compose-stack:
+    name: Full Stack Compose & .NET-to-FastAPI Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Start full stack with local build override
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_SERVICE_SECRET: "ci-validation-secret"
+          REQUIRE_SERVICE_AUTH: "true"
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build db ai-service api web
+
+      - name: Wait for services to become healthy
+        run: |
+          for i in $(seq 1 30); do
+            AI_STATUS=$(docker inspect --format '{{.State.Health.Status}}' enjoyeveryday_ai_service 2>/dev/null || echo "starting")
+            DB_STATUS=$(docker inspect --format '{{.State.Health.Status}}' enjoyeveryday_db 2>/dev/null || echo "starting")
+            echo "Attempt $i: db=$DB_STATUS ai-service=$AI_STATUS"
+            if [ "$AI_STATUS" = "healthy" ] && [ "$DB_STATUS" = "healthy" ]; then
+              break
+            fi
+            sleep 5
+          done
+          docker compose ps
+          [ "$(docker inspect --format '{{.State.Health.Status}}' enjoyeveryday_ai_service)" = "healthy" ]
+
+      - name: Verify .NET API -> FastAPI internal communication & auth
+        run: |
+          # 1. Verify FastAPI /health from inside the .NET API container
+          docker compose exec -T api curl -sf http://ai-service:8000/health
+
+          # 2. Verify unauthenticated call is rejected when REQUIRE_SERVICE_AUTH=true
+          STATUS=$(docker compose exec -T api curl -s -o /dev/null -w "%{http_code}" -X POST http://ai-service:8000/api/ideas \
+            -H "Content-Type: application/json" \
+            -H "X-Tenant-Api-Key: DEFAULT_AI_KEY" \
+            -d '{"idea":"Sensory Bin"}')
+          echo "Unauthenticated status: $STATUS"
+          [ "$STATUS" = "401" ]
+
+          # 3. Verify authenticated call succeeds (uses Gemini if key present, or safe deterministic fallback)
+          docker compose exec -T api curl -sf -X POST http://ai-service:8000/api/ideas \
+            -H "Content-Type: application/json" \
+            -H "X-Service-Token: ci-validation-secret" \
+            -H "X-Tenant-Api-Key: DEFAULT_AI_KEY" \
+            -H "X-Tenant-Id: 10000000-0000-0000-0000-000000000001" \
+            -d '{"idea":"Autumn Leaf Sensory Table"}' | head -c 300
+
+      - name: Verify independent ai-service restart preserves DB & other services
+        run: |
+          docker compose exec -T db psql -U postgres -d enjoyeveryday -c "CREATE TABLE IF NOT EXISTS _ci_persistence_check (id INT); INSERT INTO _ci_persistence_check VALUES (42);"
+          docker compose up -d --no-deps --force-recreate ai-service
+          sleep 5
+          ROW=$(docker compose exec -T db psql -U postgres -d enjoyeveryday -tAc "SELECT id FROM _ci_persistence_check LIMIT 1;")
+          echo "Persisted DB value: $ROW"
+          [ "$ROW" = "42" ]
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Tear down validation stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml down -v
+

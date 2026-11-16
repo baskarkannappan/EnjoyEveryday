@@ -1,100 +1,135 @@
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: enjoyeveryday_db
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: enjoyeveryday
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-enjoyeveryday}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-enjoyeveryday}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - enjoyeveryday-net
+
+  ai-service:
+    image: ghcr.io/${GHCR_OWNER:-baskarkannappan}/enjoyeveryday-ai-service:${AI_TAG:-latest}
+    container_name: enjoyeveryday_ai_service
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"
+      DEBUG: ${AI_DEBUG:-false}
+      AI_PROVIDER: ${AI_PROVIDER:-GoogleGemini}
+      AI_MODEL: ${AI_MODEL:-gemini-3.1-flash-lite}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-25}
+      AI_MAX_RETRIES: ${AI_MAX_RETRIES:-2}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REQUIRE_SERVICE_AUTH: ${REQUIRE_SERVICE_AUTH:-false}
+      AI_SERVICE_SECRET: ${AI_SERVICE_SECRET:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      MAX_CONCURRENT_GENERATIONS: ${MAX_CONCURRENT_GENERATIONS:-10}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - enjoyeveryday-net
 
   api:
-    build:
-      context: .
-      dockerfile: src/EnjoyEveryday.Api/Dockerfile
+    image: ghcr.io/${GHCR_OWNER:-baskarkannappan}/enjoyeveryday-api:${API_TAG:-latest}
     container_name: enjoyeveryday_api
-    restart: on-failure
+    restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-enjoyeveryday};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+      AiAgent__BaseUrl: "http://ai-service:8000"
+      AI_SERVICE_BASE_URL: "http://ai-service:8000"
+      AiAgent__TimeoutSeconds: ${AI_DOTNET_TIMEOUT_SECONDS:-45}
+      AiAgent__ServiceSecret: ${AI_SERVICE_SECRET:-}
     ports:
-      - "8082:8080"
+      - "${API_HOST_PORT:-8082}:8080"
     depends_on:
-      - db
-    networks:
-      - enjoyeveryday-net
-
-  ai-agent:
-    build:
-      context: ./src/EnjoyEveryday.AiAgent
-      dockerfile: Dockerfile
-    container_name: enjoyeveryday_ai_agent
-    restart: on-failure
-    environment:
-      PYTHONUNBUFFERED: "1"
-    ports:
-      - "8083:8000"
+      db:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
     networks:
       - enjoyeveryday-net
 
   web:
-    build:
-      context: .
-      dockerfile: src/EnjoyEveryday.Daycare.Web/Dockerfile
+    image: ghcr.io/${GHCR_OWNER:-baskarkannappan}/enjoyeveryday-ui:${UI_TAG:-latest}
     container_name: enjoyeveryday_web
-    restart: on-failure
+    restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
-      AiAgent__BaseUrl: "http://ai-agent:8000"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-enjoyeveryday};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+      AiAgent__BaseUrl: "http://ai-service:8000"
+      AI_SERVICE_BASE_URL: "http://ai-service:8000"
+      AiAgent__TimeoutSeconds: ${AI_DOTNET_TIMEOUT_SECONDS:-45}
+      AiAgent__ServiceSecret: ${AI_SERVICE_SECRET:-}
       Api__BaseUrl: "http://api:8080"
     ports:
-      - "8081:8080"
+      - "${WEB_HOST_PORT:-8081}:8080"
     depends_on:
-      - db
-      - api
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
     networks:
       - enjoyeveryday-net
 
   admin-web:
-    build:
-      context: .
-      dockerfile: src/EnjoyEveryday.Admin.Web/Dockerfile
+    image: ghcr.io/${GHCR_OWNER:-baskarkannappan}/enjoyeveryday-admin-ui:${ADMIN_UI_TAG:-${UI_TAG:-latest}}
     container_name: enjoyeveryday_admin_web
-    restart: on-failure
+    restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-enjoyeveryday};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+      AiAgent__BaseUrl: "http://ai-service:8000"
+      AI_SERVICE_BASE_URL: "http://ai-service:8000"
+      AiAgent__ServiceSecret: ${AI_SERVICE_SECRET:-}
       Api__BaseUrl: "http://api:8080"
     ports:
-      - "8084:8080"
+      - "${ADMIN_HOST_PORT:-8084}:8080"
     depends_on:
-      - db
-      - api
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
     networks:
       - enjoyeveryday-net
 
   parent-web:
-    build:
-      context: .
-      dockerfile: src/EnjoyEveryday.Parent.Web/Dockerfile
+    image: ghcr.io/${GHCR_OWNER:-baskarkannappan}/enjoyeveryday-parent-ui:${PARENT_UI_TAG:-${UI_TAG:-latest}}
     container_name: enjoyeveryday_parent_web
-    restart: on-failure
+    restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=enjoyeveryday;Username=postgres;Password=postgres"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=${POSTGRES_DB:-enjoyeveryday};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+      AiAgent__BaseUrl: "http://ai-service:8000"
+      AI_SERVICE_BASE_URL: "http://ai-service:8000"
+      AiAgent__ServiceSecret: ${AI_SERVICE_SECRET:-}
       Api__BaseUrl: "http://api:8080"
     ports:
-      - "8085:8080"
+      - "${PARENT_HOST_PORT:-8085}:8080"
     depends_on:
-      - db
-      - api
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
     networks:
       - enjoyeveryday-net
 

@@ -70,8 +70,9 @@ public static class ApplicationServiceRegistration
         Action<IServiceProvider, HttpClient> configureAiClient = (sp, client) =>
         {
             var config = sp.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
-            var baseUrl = config["AiAgent:BaseUrl"] 
-                ?? config["Providers:AI:BaseUrl"] 
+            var baseUrl = config["AiAgent:BaseUrl"]
+                ?? config["AI_SERVICE_BASE_URL"]
+                ?? config["Providers:AI:BaseUrl"]
                 ?? "http://127.0.0.1:8000";
 
             var timeoutSeconds = 45;
@@ -82,6 +83,12 @@ public static class ApplicationServiceRegistration
 
             client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+
+            var serviceSecret = config["AiAgent:ServiceSecret"] ?? config["AI_SERVICE_SECRET"];
+            if (!string.IsNullOrWhiteSpace(serviceSecret))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("X-Service-Token", serviceSecret.Trim());
+            }
         };
 
         services.AddScoped<IStorybookGenerationService, StorybookGenerationService>();

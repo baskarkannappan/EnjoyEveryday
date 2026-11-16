@@ -45,4 +45,8 @@ Every AI service endpoint (`/api/ideas`, `/api/improve`, `/api/materials`, `/api
 ## API Key Encryption & Configuration
 * Primary Gemini key is encrypted at rest with AES-256 in `tenants.encrypted_ai_api_key` and decrypted per-tenant.
 * OpenAI fallback key is configured via `OPENAI_API_KEY` in `src/EnjoyEveryday.AiAgent/.env` or passed via `X-OpenAI-Api-Key` request header.
+* **Container & Service-to-Service Security**:
+  * `.dockerignore` excludes all `.env` files so local secrets are never baked into Docker images.
+  * `src/EnjoyEveryday.AiAgent/Dockerfile` runs under a non-root `appuser` (`UID 10001`) with a `/health` `HEALTHCHECK` and internal-only `expose: ["8000"]` in Compose.
+  * `.NET` `HttpClient` registration in `ApplicationServiceRegistration.cs` supports `AiAgent:BaseUrl` / `AI_SERVICE_BASE_URL` and attaches `X-Service-Token` when `AiAgent:ServiceSecret` / `AI_SERVICE_SECRET` is configured.
 

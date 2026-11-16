@@ -52,8 +52,12 @@ To ensure immediate differentiation when multiple portals and browser tabs are o
 * **Parent Portal (7005)**: Prefixed with `Parent Portal — <PageName>` (Fallback in `App.razor`: `<title>Parent Portal</title>`).
 
 ## Docker Containerization & Deployment
-* **Docker Compose**: Orchestrates `db`, `api`, `web`, and `ai-agent` on `enjoyeveryday-net`.
+* **Docker Compose**: Orchestrates `db` (`postgres:16-alpine`), `api` (`enjoyeveryday-api`), `ai-service` (`enjoyeveryday-ai-service`, internal port `8000` only), `web` (`enjoyeveryday-ui`), `admin-web`, and `parent-web` on `enjoyeveryday-net` using immutable GHCR SHA tags (`${AI_TAG}`, `${API_TAG}`, `${UI_TAG}`).
+* **Local Source-Build Override**: `docker-compose.local.yml` enables local `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` in Docker Desktop.
+* **Enterprise Rollout & Rollback**: [`scripts/deploy.ps1`](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/scripts/deploy.ps1) performs single-service updates with healthcheck gating and automatic/manual rollback via `.deploy-history.json`.
+* **CI/CD Workflows**: Path-filtered GitHub Actions in `.github/workflows/` (`ai-service-ci.yml`, `api-ci.yml`, `ui-ci.yml`, `database-ci.yml`, `deployment-validation.yml`, `production-deploy.yml`).
 * **Developer Guides**:
+  * [AI Service Deployment & Comms Guide](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/docs/ai-service-deployment-and-comms.md): FastAPI Docker, GHCR, service auth, and rollback runbook.
   * [Visual Studio Developer Guide](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/docs/developer-guide-visual-studio.md): Running and debugging in VS 2022.
   * [Docker Desktop Deployment Guide](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/docs/docker-desktop-deployment-guide.md): Local containerized multi-tier testing.
 
