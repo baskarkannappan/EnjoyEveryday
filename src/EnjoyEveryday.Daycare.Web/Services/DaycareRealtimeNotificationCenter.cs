@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.Daycare.Web.Services;
 
+public record BranchStatusChangedNotification(Guid OrganizationId, Guid BranchId, string Status, DateTimeOffset ChangedAtUtc);
+
 public class DaycareRealtimeNotificationCenter
 {
     private readonly ILogger<DaycareRealtimeNotificationCenter> _logger;
@@ -16,6 +18,7 @@ public class DaycareRealtimeNotificationCenter
 
     public event Func<ParentMessageNotification, Task>? OnParentMessageReceived;
     public event Func<Guid, Task>? OnMessagesRead;
+    public event Func<BranchStatusChangedNotification, Task>? OnBranchStatusChanged;
 
     public async Task BroadcastParentMessageAsync(ParentMessageNotification notification)
     {
@@ -49,6 +52,26 @@ public class DaycareRealtimeNotificationCenter
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Error executing OnMessagesRead notification handler");
+                }
+            }
+        }
+    }
+
+    public async Task BroadcastBranchStatusChangedAsync(Guid organizationId, Guid branchId, string status)
+    {
+        _logger.LogInformation("Broadcasting branch status change: Org={OrganizationId}, Branch={BranchId}, Status={Status}", organizationId, branchId, status);
+        if (OnBranchStatusChanged != null)
+        {
+            var payload = new BranchStatusChangedNotification(organizationId, branchId, status, DateTimeOffset.UtcNow);
+            foreach (Func<BranchStatusChangedNotification, Task> handler in OnBranchStatusChanged.GetInvocationList())
+            {
+                try
+                {
+                    await handler(payload);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error executing OnBranchStatusChanged notification handler");
                 }
             }
         }

@@ -78,6 +78,7 @@ builder.Services.AddAuthorization();
 // Real-time SignalR and Notifications
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<EnjoyEveryday.Daycare.Web.Services.DaycareRealtimeNotificationCenter>();
+builder.Services.AddSingleton<EnjoyEveryday.Application.Services.IBranchStatusRealtimeNotifier, EnjoyEveryday.Daycare.Web.Services.BranchStatusRealtimeNotifier>();
 
 builder.Services.AddCors(options =>
 {
@@ -101,6 +102,7 @@ builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.StorybookStorageSe
 builder.Services.AddScoped<EnjoyEveryday.Shared.Authorization.IOrganizationPermissionService, EnjoyEveryday.Daycare.Web.Services.OrganizationPermissionService>();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService, EnjoyEveryday.Daycare.Web.Services.PageAuthorizationService>();
 builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService, EnjoyEveryday.Daycare.Web.Services.UserViewPreferenceService>();
+builder.Services.AddScoped<EnjoyEveryday.Daycare.Web.Services.IBranchOperationalUiGuard, EnjoyEveryday.Daycare.Web.Services.BranchOperationalUiGuard>();
 builder.Services.AddHostedService<EnjoyEveryday.Daycare.Web.Services.DaycareEndOfDayBackgroundService>();
 builder.Services.AddHostedService<EnjoyEveryday.Daycare.Web.Services.MonthlyTuitionBillingBackgroundService>();
 

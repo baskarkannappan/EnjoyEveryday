@@ -20,7 +20,7 @@ public class BranchClosureRepository : IBranchClosureRepository
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         return await connection.QuerySingleFunctionAsync<BranchClosure>(
             "public.fn_get_active_branch_closure",
-            new { TenantId = tenantId, BranchId = branchId, AtTime = atTime },
+            new { TenantId = tenantId, BranchId = branchId, AtTime = atTime.ToUniversalTime() },
             cancellationToken: cancellationToken);
     }
 
@@ -56,8 +56,8 @@ public class BranchClosureRepository : IBranchClosureRepository
                 closure.Reason,
                 closure.Description,
                 closure.ParentAnnouncement,
-                closure.EffectiveStartAt,
-                closure.EffectiveEndAt,
+                EffectiveStartAt = closure.EffectiveStartAt.ToUniversalTime(),
+                EffectiveEndAt = closure.EffectiveEndAt?.ToUniversalTime(),
                 closure.CreatedBy,
                 closure.CreatedByRole,
                 closure.AffectedClassroomCount,
@@ -72,7 +72,7 @@ public class BranchClosureRepository : IBranchClosureRepository
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
         await connection.ExecuteProcedureAsync(
             "public.sp_reopen_branch_closure",
-            new { TenantId = tenantId, ClosureId = closureId, ReopenedBy = reopenedBy, ReopenedAt = reopenedAt },
+            new { TenantId = tenantId, ClosureId = closureId, ReopenedBy = reopenedBy, ReopenedAt = reopenedAt.ToUniversalTime() },
             cancellationToken: cancellationToken);
     }
 }

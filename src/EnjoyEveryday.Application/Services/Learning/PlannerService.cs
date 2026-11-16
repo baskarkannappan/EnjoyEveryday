@@ -326,15 +326,10 @@ public class PlannerService
 
         if (_branchOperationalStatusService != null && _tenantContext != null && classroomId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, classroomId, "schedule experience", new DateTimeOffset(scheduledDate.ToDateTime(TimeOnly.MinValue)));
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, classroomId, "schedule experience", new DateTimeOffset(scheduledDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
         }
 
         // Conflict Validation
-        if (_branchOperationalStatusService != null && _tenantContext != null && classroomId != Guid.Empty)
-        {
-            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, classroomId, "schedule experience", new DateTimeOffset(scheduledDate.ToDateTime(TimeOnly.MinValue)));
-        }
-
         await ValidateScheduleConflictsAsync(classroomId, scheduledDate, timeOfDay, primaryTeacherId, startTime, endTime, excludeScheduleId: null);
 
         var schedule = new ExperienceSchedule
@@ -363,7 +358,7 @@ public class PlannerService
 
         if (_branchOperationalStatusService != null && _tenantContext != null && schedule.ClassroomId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, schedule.ClassroomId, "update experience schedule", new DateTimeOffset(schedule.ScheduledDate.ToDateTime(TimeOnly.MinValue)));
+            await _branchOperationalStatusService.EnsureClassroomOperationalAsync(_tenantContext.TenantId, schedule.ClassroomId, "update experience schedule", new DateTimeOffset(schedule.ScheduledDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
         }
 
         await ValidateScheduleConflictsAsync(

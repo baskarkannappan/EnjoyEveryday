@@ -102,7 +102,7 @@ public class AttendanceService
 
         if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate));
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "child attendance", new DateTimeOffset(attendance.AttendanceDate.Date, TimeSpan.Zero));
         }
 
         if (_dailyOpsService != null && attendance.BranchId != Guid.Empty)
@@ -128,12 +128,7 @@ public class AttendanceService
 
         if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate));
-        }
-
-        if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
-        {
-            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate));
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(attendance.AttendanceDate.Date, TimeSpan.Zero));
         }
 
         if (_dailyOpsService != null && attendance.BranchId != Guid.Empty)
@@ -331,7 +326,7 @@ public class AttendanceService
 
         if (_branchOperationalStatusService != null && request.BranchId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, request.BranchId, "bulk attendance", new DateTimeOffset(request.Date), ct);
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, request.BranchId, "bulk attendance", new DateTimeOffset(request.Date.Date, TimeSpan.Zero), ct);
         }
 
         if (_dailyOpsService != null && request.BranchId != Guid.Empty)

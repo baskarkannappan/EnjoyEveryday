@@ -21,6 +21,7 @@
 @inject AttendanceService AttendanceService
 @inject IEndOfDayService EndOfDayService
 @inject IDailyOperationsService DailyOpsService
+@inject IBranchOperationalStatusService BranchOperationalStatusService
 @inject EnjoyEveryday.UI.Shared.Services.IAppNotificationService NotificationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
@@ -186,6 +187,21 @@
             }
         </div>
 
+        @if (IsBranchClosed)
+        {
+            <BranchClosedLockView Title="@(_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational ? $"Branch is {_branchOperationalStatus.OperationalStatus}" : "Branch Facility is Closed")"
+                                  BadgeText="@(_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational ? _branchOperationalStatus.OperationalStatus.ToUpperInvariant() : "BRANCH CLOSED")"
+                                  BranchName="@_branchOperationalStatus?.BranchName"
+                                  ClosureReason="@_branchOperationalStatus?.ActiveClosure?.Reason"
+                                  Message="All teacher attendance, classroom readiness, student arrivals, learning activities, and daily care routines are locked until the Branch Admin opens and activates the branch."
+                                  AdminInstruction="A Branch Administrator must open and activate the branch before any classroom activity can take place."
+                                  ActionLabel="@(AvailableViews.Contains("BranchAdmin") ? "Switch to Branch Admin View" : AvailableViews.Contains("OrgAdmin") ? "Switch to Organization View" : "Go to Branch Dashboard")"
+                                  OnActionClick="@(AvailableViews.Contains("BranchAdmin") ? EventCallback.Factory.Create(this, () => OnChangeView.InvokeAsync("BranchAdmin")) : AvailableViews.Contains("OrgAdmin") ? EventCallback.Factory.Create(this, () => OnChangeView.InvokeAsync("OrgAdmin")) : default)"
+                                  SecondaryLabel="View My Profile"
+                                  SecondaryUrl="/profile" />
+        }
+        else
+        {
         <!-- ================= SECTION A2: CLASSROOM DAILY OPERATIONS GATE ================= -->
         @if (_classroomOpsStatus != null)
         {
@@ -1052,6 +1068,7 @@
                 </a>
             </div>
         </div>
+        }
     }
 </div>
 
@@ -1403,6 +1420,7 @@
 
     // Daily Operational Gates State
     private ClassroomDailyStatusDto? _classroomOpsStatus;
+    private BranchOperationalStatusDto? _branchOperationalStatus;
     private bool _showCloseClassroomModal = false;
     private TimeOnly _closeClassroomTime = TimeOnly.FromDateTime(DateTime.Now);
     private bool _isClosingClassroom = false;
@@ -1592,6 +1610,18 @@
                 catch (Exception ex)
                 {
                     Logger.LogWarning(ex, "Could not fetch classroom daily status");
+                }
+
+                if (_activeClassroom != null)
+                {
+                    try
+                    {
+                        _branchOperationalStatus = await BranchOperationalStatusService.GetBranchStatusAsync(TenantContext.TenantId, _activeClassroom.BranchId);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Could not fetch branch operational status");
+                    }
                 }
             }
 
@@ -1994,15 +2024,21 @@
     }
 
     private bool IsBranchClosed => 
-        !DailyOpsService.IsBypassedForTesting() && 
-        (_classroomOpsStatus == null || !_classroomOpsStatus.IsBranchOpen);
+        (_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational) ||
+        (!DailyOpsService.IsBypassedForTesting() && 
+         (_classroomOpsStatus == null || !_classroomOpsStatus.IsBranchOpen));
 
     private bool IsClassroomOperationsLocked => 
-        !DailyOpsService.IsBypassedForTesting() && 
-        (_classroomOpsStatus == null || !_classroomOpsStatus.IsOpen || !_classroomOpsStatus.IsBranchOpen);
+        (_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational) ||
+        (!DailyOpsService.IsBypassedForTesting() && 
+         (_classroomOpsStatus == null || !_classroomOpsStatus.IsOpen || !_classroomOpsStatus.IsBranchOpen));
 
     private string GetClassroomLockedMessage()
     {
+        if (_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational)
+        {
+            return $"Branch '{_branchOperationalStatus.BranchName}' is currently {_branchOperationalStatus.OperationalStatus.ToLowerInvariant()}. No classroom activities may be conducted until the Branch Admin activates the branch.";
+        }
         if (_classroomOpsStatus == null || !_classroomOpsStatus.IsBranchOpen)
         {
             return "Branch facility is closed for operations. No teacher attendance, classroom readiness, student arrivals, learning activities, or care routines may be conducted until the Branch Admin opens the branch.";

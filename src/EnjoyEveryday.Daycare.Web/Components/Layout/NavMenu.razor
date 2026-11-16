@@ -9,6 +9,7 @@
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @inject EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService ViewPreference
+@inject EnjoyEveryday.Daycare.Web.Services.IBranchOperationalUiGuard BranchUiGuard
 @implements IDisposable
 
 <nav class="custom-nav" style="padding: 10px 8px; height: 100%; display: flex; flex-direction: column;">
@@ -43,6 +44,14 @@
         </div>
     </a>
 
+    @if (IsBranchUiLocked())
+    {
+        <div class="nav-branch-closed-pill" title="Unavailable – Branch Closed">
+            <span>🔒</span>
+            <span>Branch Closed — Operations Locked</span>
+        </div>
+    }
+
     @* ========================================================================= *@
     @* 1. TEACHER (EDUCATOR) MENU (6 Groups - Collapsible)                       *@
     @* ========================================================================= *@
@@ -59,14 +68,18 @@
         @if (IsGroupOpen("t_workspace"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/")) { @LockedNavItem("My Dashboard") } else {
                 <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
                     <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Color="Color.Custom" CustomColor="#31523c" />
                     <span>My Dashboard</span>
                 </NavLink>
+                }
+                @if (IsNavLocked("/today-activities")) { @LockedNavItem("Today's Schedule") } else {
                 <NavLink class="nav-item" href="/today-activities" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#d97706" />
                     <span>Today's Schedule</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/notifications" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Alert())" Color="Color.Custom" CustomColor="#f59e0b" />
                     <span>Notifications</span>
@@ -89,14 +102,18 @@
                     <FluentIcon Value="@(new Icons.Regular.Size20.PersonAvailable())" Color="Color.Custom" CustomColor="#059669" />
                     <span>Classroom Children</span>
                 </NavLink>
+                @if (IsNavLocked("/management/attendance")) { @LockedNavItem("Children's Attendance") } else {
                 <NavLink class="nav-item" href="/management/attendance" Match="NavLinkMatch.All">
                     <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Custom" CustomColor="#1b7a54" />
                     <span>Children's Attendance</span>
                 </NavLink>
+                }
+                @if (IsNavLocked("/events")) { @LockedNavItem("Classroom Schedule & Events") } else {
                 <NavLink class="nav-item" href="/events" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#8b5cf6" />
                     <span>Classroom Schedule &amp; Events</span>
                 </NavLink>
+                }
             </div>
         }
 
@@ -111,18 +128,22 @@
         @if (IsGroupOpen("t_care"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/daily-care")) { @LockedNavItem("Daily Care & Wellbeing") } else {
                 <NavLink class="nav-item" href="/daily-care" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Color="Color.Custom" CustomColor="#e11d48" />
                     <span>Daily Care &amp; Wellbeing</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/daily-care/plans" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#ea580c" />
                     <span>Child Care Plans &amp; Dietaries</span>
                 </NavLink>
+                @if (IsNavLocked("/daily-care/supplies")) { @LockedNavItem("Cubby Supplies & Restock") } else {
                 <NavLink class="nav-item" href="/daily-care/supplies" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Color="Color.Custom" CustomColor="#b45309" />
                     <span>Cubby Supplies &amp; Restock</span>
                 </NavLink>
+                }
             </div>
         }
 
@@ -137,18 +158,22 @@
         @if (IsGroupOpen("t_activities"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/today-activities")) { @LockedNavItem("Assigned Activities") } else {
                 <NavLink class="nav-item" href="/today-activities" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#d97706" />
                     <span>Assigned Activities</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/experiences" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Library())" Color="Color.Custom" CustomColor="#0891b2" />
                     <span>Experience Library &amp; Storybooks</span>
                 </NavLink>
+                @if (IsNavLocked("/harvest")) { @LockedNavItem("Harvest & Reflections") } else {
                 <NavLink class="nav-item" href="/harvest" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#059669" />
                     <span>Harvest &amp; Reflections</span>
                 </NavLink>
+                }
             </div>
         }
 
@@ -163,10 +188,12 @@
         @if (IsGroupOpen("t_dev"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/journey")) { @LockedNavItem("Child Journey") } else {
                 <NavLink class="nav-item" href="/journey" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#16a34a" />
                     <span>Child Journey</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/memories" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Camera())" Color="Color.Custom" CustomColor="#db2777" />
                     <span>Child Memories</span>
@@ -255,14 +282,18 @@
         @if (IsGroupOpen("lt_workspace"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/")) { @LockedNavItem("My Dashboard") } else {
                 <NavLink class="nav-item" href="/" Match="NavLinkMatch.All">
                     <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Color="Color.Custom" CustomColor="#31523c" />
                     <span>My Dashboard</span>
                 </NavLink>
+                }
+                @if (IsNavLocked("/today-activities")) { @LockedNavItem("Today's Schedule") } else {
                 <NavLink class="nav-item" href="/today-activities" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.CalendarMonth())" Color="Color.Custom" CustomColor="#d97706" />
                     <span>Today's Schedule</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/notifications" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Alert())" Color="Color.Custom" CustomColor="#f59e0b" />
                     <span>Notifications</span>
@@ -285,10 +316,12 @@
                     <FluentIcon Value="@(new Icons.Regular.Size20.Building())" Color="Color.Custom" CustomColor="#d97706" />
                     <span>My Classrooms &amp; Readiness</span>
                 </NavLink>
+                @if (IsNavLocked("/daily-care")) { @LockedNavItem("Team Handover & Logs") } else {
                 <NavLink class="nav-item" href="/daily-care" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Color="Color.Custom" CustomColor="#e11d48" />
                     <span>Team Handover &amp; Logs</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/management/roster" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.PersonCall())" Color="Color.Custom" CustomColor="#dc2626" />
                     <span>Request Staff Coverage</span>
@@ -311,22 +344,28 @@
                     <FluentIcon Value="@(new Icons.Regular.Size20.PersonAvailable())" Color="Color.Custom" CustomColor="#059669" />
                     <span>Classroom Children</span>
                 </NavLink>
+                @if (IsNavLocked("/management/attendance")) { @LockedNavItem("Children's Attendance") } else {
                 <NavLink class="nav-item" href="/management/attendance" Match="NavLinkMatch.All">
                     <FluentIcon Value="@(new Icons.Regular.Size20.CheckmarkCircle())" Color="Color.Custom" CustomColor="#1b7a54" />
                     <span>Children's Attendance</span>
                 </NavLink>
+                }
+                @if (IsNavLocked("/daily-care")) { @LockedNavItem("Daily Care & Wellbeing") } else {
                 <NavLink class="nav-item" href="/daily-care" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Color="Color.Custom" CustomColor="#e11d48" />
                     <span>Daily Care &amp; Wellbeing</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/daily-care/plans" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Heart())" Color="Color.Custom" CustomColor="#ea580c" />
                     <span>Child Care Plans &amp; Dietaries</span>
                 </NavLink>
+                @if (IsNavLocked("/daily-care/supplies")) { @LockedNavItem("Cubby Supplies & Restock") } else {
                 <NavLink class="nav-item" href="/daily-care/supplies" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.ClipboardTask())" Color="Color.Custom" CustomColor="#b45309" />
                     <span>Cubby Supplies &amp; Restock</span>
                 </NavLink>
+                }
             </div>
         }
 
@@ -353,18 +392,24 @@
                     <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#9333ea" />
                     <span>Experience Studio</span>
                 </NavLink>
+                @if (IsNavLocked("/planning")) { @LockedNavItem("Experience Planning") } else {
                 <NavLink class="nav-item" href="/planning" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.CalendarLtr())" Color="Color.Custom" CustomColor="#b47836" />
                     <span>Experience Planning</span>
                 </NavLink>
+                }
+                @if (IsNavLocked("/today-activities")) { @LockedNavItem("Classroom Activities (Run)") } else {
                 <NavLink class="nav-item" href="/today-activities" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Color="Color.Custom" CustomColor="#d97706" />
                     <span>Classroom Activities (Run)</span>
                 </NavLink>
+                }
+                @if (IsNavLocked("/harvest")) { @LockedNavItem("Harvest & Reflections") } else {
                 <NavLink class="nav-item" href="/harvest" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Color="Color.Custom" CustomColor="#d97706" />
                     <span>Harvest &amp; Reflections</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/materials-marketplace" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Receipt())" Color="Color.Custom" CustomColor="#c2410c" />
                     <span>Materials &amp; Supply Kits</span>
@@ -383,10 +428,12 @@
         @if (IsGroupOpen("lt_dev"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/journey")) { @LockedNavItem("Child Journey") } else {
                 <NavLink class="nav-item" href="/journey" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#16a34a" />
                     <span>Child Journey</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/memories" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Camera())" Color="Color.Custom" CustomColor="#db2777" />
                     <span>Child Memories</span>
@@ -709,10 +756,12 @@
         @if (IsGroupOpen("ba_dev"))
         {
             <div class="nav-group" @onclick="HandleNavItemClickAsync">
+                @if (IsNavLocked("/journey")) { @LockedNavItem("Child Journey") } else {
                 <NavLink class="nav-item" href="/journey" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.LeafOne())" Color="Color.Custom" CustomColor="#16a34a" />
                     <span>Child Journey</span>
                 </NavLink>
+                }
                 <NavLink class="nav-item" href="/memories" Match="NavLinkMatch.Prefix">
                     <FluentIcon Value="@(new Icons.Regular.Size20.Camera())" Color="Color.Custom" CustomColor="#db2777" />
                     <span>Child Memories</span>
@@ -1609,11 +1658,25 @@
     private string _currentNavView = "Teacher";
     private string _userDisplayName = "";
 
+    private bool IsBranchUiLocked() =>
+        (_currentNavView == "Teacher" || _currentNavView == "LeadTeacher") && BranchUiGuard.CurrentState.IsBranchClosed;
+
+    private bool IsNavLocked(string href) =>
+        (_currentNavView == "Teacher" || _currentNavView == "LeadTeacher") && BranchUiGuard.IsOperationalNavItemLocked(href);
+
+    private RenderFragment LockedNavItem(string label) =>
+        @<span class="nav-item nav-item-locked" title="Unavailable – Branch Closed" aria-disabled="true">
+            <span class="nav-lock-icon" aria-hidden="true">🔒</span>
+            <span>@label</span>
+        </span>;
+
     protected override async Task OnInitializedAsync()
     {
         NavigationManager.LocationChanged += HandleLocationChanged;
         ViewPreference.OnViewChanged += HandlePreferenceViewChanged;
+        BranchUiGuard.OnAvailabilityChanged += HandleBranchAvailabilityChangedAsync;
         await ResolveNavigationScopeAsync();
+        await BranchUiGuard.GetAvailabilityAsync(forceRefresh: true);
         AutoExpandCurrentRoute();
 
         NotificationCenter.OnParentMessageReceived += HandleIncomingMessage;
@@ -1627,6 +1690,19 @@
         {
             Console.WriteLine($"[NavMenu] Error loading unread count: {ex.Message}");
         }
+    }
+
+    private async Task HandleBranchAvailabilityChangedAsync()
+    {
+        if (_isDisposed) return;
+        try
+        {
+            await InvokeAsync(() =>
+            {
+                if (!_isDisposed) StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
     }
 
     private async void HandlePreferenceViewChanged()
@@ -1827,6 +1903,7 @@
         _isDisposed = true;
         NavigationManager.LocationChanged -= HandleLocationChanged;
         ViewPreference.OnViewChanged -= HandlePreferenceViewChanged;
+        BranchUiGuard.OnAvailabilityChanged -= HandleBranchAvailabilityChangedAsync;
         NotificationCenter.OnParentMessageReceived -= HandleIncomingMessage;
         NotificationCenter.OnMessagesRead -= HandleMessagesRead;
     }

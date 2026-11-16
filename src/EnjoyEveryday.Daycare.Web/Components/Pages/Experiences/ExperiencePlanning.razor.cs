@@ -38,6 +38,15 @@ public partial class ExperiencePlanning : ComponentBase
     private IUserContext UserContext { get; set; } = default!;
 
     [Inject]
+    private ITenantContext TenantContext { get; set; } = default!;
+
+    [Inject]
+    private IBranchOperationalStatusService BranchOperationalStatusService { get; set; } = default!;
+
+    [Inject]
+    private IDailyOperationsService DailyOpsService { get; set; } = default!;
+
+    [Inject]
     private NavigationManager NavigationManager { get; set; } = default!;
 
     [Inject]
@@ -167,6 +176,9 @@ public partial class ExperiencePlanning : ComponentBase
     private DateOnly? _wizardDefaultDate;
     private List<Classroom> _allClassrooms = new();
     private List<Branch> _allBranches = new();
+    private bool _isSelectedBranchClosed = false;
+    private bool _isSelectedBranchNotOpenedToday = false;
+    private BranchOperationalStatusDto? _selectedBranchOpStatus;
 
     private Guid _selectedBranchId;
     private Guid SelectedBranchId
@@ -179,6 +191,7 @@ public partial class ExperiencePlanning : ComponentBase
                 _selectedBranchId = value;
                 var cls = _allClassrooms.FirstOrDefault(c => !_allBranches.Any() || c.BranchId == value);
                 SelectedClassroomId = cls?.Id;
+                _ = CheckSelectedBranchStatusAsync();
             }
         }
     }
@@ -215,17 +228,31 @@ public partial class ExperiencePlanning : ComponentBase
         var today = TimeProvider.GetLocalNow().Date;
         _currentDate = new DateTime(today.Year, today.Month, 1);
 
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var org = orgs.FirstOrDefault();
+        var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+        var targetOrgId = UserContext.OrganizationId ?? (profile.OrganizationId != Guid.Empty ? profile.OrganizationId : (Guid?)null);
+        var org = targetOrgId.HasValue
+            ? orgs.FirstOrDefault(o => o.Id == targetOrgId.Value) ?? orgs.FirstOrDefault()
+            : orgs.FirstOrDefault();
         if (org != null)
         {
-            _allBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            var orgBranches = (await BranchService.GetBranchesAsync(org.Id)).ToList();
+            if (!profile.IsOrgAdmin && !profile.IsPlatformAdmin && profile.AssignedBranchIds.Count > 0)
+            {
+                _allBranches = orgBranches.Where(b => profile.AssignedBranchIds.Contains(b.Id)).ToList();
+            }
+            else
+            {
+                _allBranches = orgBranches;
+            }
         }
 
         _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
         
-        // Select first branch and its first classroom by default
-        var defaultBranch = _allBranches.FirstOrDefault();
+        // Select user's assigned branch (or first branch) and its first classroom by default
+        var defaultBranch = (profile.AssignedBranchIds.Count > 0
+                ? _allBranches.FirstOrDefault(b => profile.AssignedBranchIds.Contains(b.Id))
+                : null)
+            ?? _allBranches.FirstOrDefault();
         if (defaultBranch != null)
         {
             _selectedBranchId = defaultBranch.Id;
@@ -233,7 +260,78 @@ public partial class ExperiencePlanning : ComponentBase
             _selectedClassroomId = _classroom?.Id;
         }
 
+        await CheckSelectedBranchStatusAsync();
         await LoadSchedules();
+    }
+
+    private async Task CheckSelectedBranchStatusAsync()
+    {
+        if (_selectedBranchId == Guid.Empty)
+        {
+            _isSelectedBranchClosed = false;
+            _isSelectedBranchNotOpenedToday = false;
+            _selectedBranchOpStatus = null;
+            return;
+        }
+        try
+        {
+            _selectedBranchOpStatus = await BranchOperationalStatusService.GetBranchStatusAsync(TenantContext.TenantId, _selectedBranchId);
+            var dailyStatus = await DailyOpsService.GetBranchDailyStatusAsync(_selectedBranchId);
+            var bypassed = DailyOpsService.IsBypassedForTesting();
+            _isSelectedBranchClosed = _selectedBranchOpStatus != null && !_selectedBranchOpStatus.IsOperational;
+            _isSelectedBranchNotOpenedToday = !bypassed && dailyStatus != null && !dailyStatus.IsOpen;
+            if (_isSelectedBranchClosed)
+            {
+                _isPlanWizardOpen = false;
+                _isWeeklyAssistantOpen = false;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _isSelectedBranchClosed = false;
+            _isSelectedBranchNotOpenedToday = false;
+        }
+    }
+
+    private bool IsDateClosedForBranch(DateOnly date, out string reason)
+    {
+        if (PlannerService.IsDaycareClosedForPlanning(date, out reason))
+        {
+            return true;
+        }
+
+        var today = DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
+        if (_isSelectedBranchClosed)
+        {
+            var closure = _selectedBranchOpStatus?.ActiveClosure;
+            if (closure != null)
+            {
+                var startDate = DateOnly.FromDateTime(closure.EffectiveStartAt.LocalDateTime);
+                var endDate = closure.EffectiveEndAt.HasValue
+                    ? DateOnly.FromDateTime(closure.EffectiveEndAt.Value.LocalDateTime)
+                    : (DateOnly?)null;
+                if (date >= startDate && (!endDate.HasValue || date <= endDate.Value))
+                {
+                    reason = $"Branch is {_selectedBranchOpStatus?.OperationalStatus ?? "Closed"}: {closure.Reason}";
+                    return true;
+                }
+            }
+            else if (date >= today)
+            {
+                reason = $"Branch is {_selectedBranchOpStatus?.OperationalStatus ?? "Closed"}.";
+                return true;
+            }
+        }
+
+        if (_isSelectedBranchNotOpenedToday && date == today)
+        {
+            reason = "Branch facility is closed for today. The Branch Admin must open the facility before planning for today.";
+            return true;
+        }
+
+        reason = string.Empty;
+        return false;
     }
 
     private async Task PreviousMonth()
@@ -351,6 +449,11 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void OpenPlanWizard()
     {
+        if (_isSelectedBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch is currently closed. Experience planning is not allowed until the branch is reopened.");
+            return;
+        }
         _wizardDefaultDate = GetDefaultPlanDate();
         _wizardScheduleId = null;
         _isPlanWizardOpen = true;
@@ -358,6 +461,11 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void OpenPlanWizardForDate(DateOnly date)
     {
+        if (IsDateClosedForBranch(date, out var branchClosedReason))
+        {
+            _ = NotificationService.ShowWarningAsync(branchClosedReason);
+            return;
+        }
         var today = DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
         if (date < today)
         {
@@ -377,6 +485,11 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void EditSchedule(ExperienceSchedule schedule)
     {
+        if (_isSelectedBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch is currently closed. Experience planning and edits are locked until the branch is reopened.");
+            return;
+        }
         var today = DateOnly.FromDateTime(TimeProvider.GetLocalNow().Date);
         if (schedule.ScheduledDate < today)
         {
@@ -392,6 +505,11 @@ public partial class ExperiencePlanning : ComponentBase
 
     private void DraftPlanAroundAiSuggestion()
     {
+        if (_isSelectedBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch is currently closed. Experience planning is not allowed until the branch is reopened.");
+            return;
+        }
         if (SelectedClassroomId.HasValue)
         {
             _isWeeklyAssistantOpen = true;

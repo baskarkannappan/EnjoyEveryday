@@ -15,22 +15,38 @@
 @inject NavigationManager Nav
 @inject IPageAuthorizationService PageAuth
 @inject IUserViewPreferenceService ViewPreference
+@inject IDailyOperationsService DailyOpsService
+@inject IBranchOperationalStatusService BranchOperationalStatusService
 @rendermode InteractiveServer
 
 <div class="content">
-    <AttendanceOverviewView 
-        Branches="Branches"
-        Classrooms="AllClassrooms"
-        Summary="Summary"
-        IsTeacherOnly="_isTeacherOnly"
-        SelectedDate="SelectedDate"
-        SelectedDateChanged="OnDateSelected"
-        SelectedBranchFilter="@SelectedBranchFilter"
-        SelectedBranchFilterChanged="@((v) => SelectedBranchFilter = v)"
-        SelectedTypeFilter="@SelectedTypeFilter"
-        SelectedTypeFilterChanged="@((v) => SelectedTypeFilter = v)"
-        SearchQuery="@SearchQuery"
-        SearchQueryChanged="@((v) => SearchQuery = v)" />
+    @if (_isTeacherOnly && _isTeacherBranchClosed)
+    {
+        <BranchClosedLockView Title="@(_closedBranchOpStatus != null && !_closedBranchOpStatus.IsOperational ? $"Branch is {_closedBranchOpStatus.OperationalStatus}" : "Branch Facility is Closed")"
+                              BadgeText="@(_closedBranchOpStatus != null && !_closedBranchOpStatus.IsOperational ? _closedBranchOpStatus.OperationalStatus.ToUpperInvariant() : "BRANCH CLOSED")"
+                              BranchName="@_closedBranchName"
+                              ClosureReason="@_closedBranchOpStatus?.ActiveClosure?.Reason"
+                              Message="Classroom attendance is disabled while your branch is closed."
+                              AdminInstruction="A Branch Administrator must open and activate the branch before attendance can be recorded."
+                              ActionLabel="Back to My Workspace"
+                              ActionUrl="/" />
+    }
+    else
+    {
+        <AttendanceOverviewView 
+            Branches="Branches"
+            Classrooms="AllClassrooms"
+            Summary="Summary"
+            IsTeacherOnly="_isTeacherOnly"
+            SelectedDate="SelectedDate"
+            SelectedDateChanged="OnDateSelected"
+            SelectedBranchFilter="@SelectedBranchFilter"
+            SelectedBranchFilterChanged="@((v) => SelectedBranchFilter = v)"
+            SelectedTypeFilter="@SelectedTypeFilter"
+            SelectedTypeFilterChanged="@((v) => SelectedTypeFilter = v)"
+            SearchQuery="@SearchQuery"
+            SearchQueryChanged="@((v) => SearchQuery = v)" />
+    }
 </div>
 
 <ToastNotification />
@@ -45,6 +61,9 @@
     private bool _isOrgAdmin = false;
     private bool _isBranchAdmin = false;
     private bool _isTeacherOnly = false;
+    private bool _isTeacherBranchClosed = false;
+    private string? _closedBranchName;
+    private BranchOperationalStatusDto? _closedBranchOpStatus;
     private HashSet<Guid> _assignedClassroomIds = new();
     private HashSet<Guid> _assignedBranchIds = new();
 
@@ -105,6 +124,26 @@
             {
                 AllClassrooms = AllClassrooms.Where(c => _assignedClassroomIds.Contains(c.Id)).ToList();
                 Branches = allBranches.Where(b => AllClassrooms.Any(c => c.BranchId == b.Id)).ToList();
+
+                if (Branches.Any())
+                {
+                    bool allClosed = true;
+                    var bypassed = DailyOpsService.IsBypassedForTesting();
+                    foreach (var b in Branches)
+                    {
+                        var dailyStatus = await DailyOpsService.GetBranchDailyStatusAsync(b.Id, DateOnly.FromDateTime(SelectedDate));
+                        var opStatus = await BranchOperationalStatusService.GetBranchStatusAsync(tenantId, b.Id);
+                        var isOpen = (opStatus == null || opStatus.IsOperational) && (bypassed || dailyStatus == null || dailyStatus.IsOpen);
+                        if (isOpen)
+                        {
+                            allClosed = false;
+                            break;
+                        }
+                        _closedBranchName ??= b.Name;
+                        _closedBranchOpStatus ??= opStatus;
+                    }
+                    _isTeacherBranchClosed = allClosed;
+                }
             }
             else
             {

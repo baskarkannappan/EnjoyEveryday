@@ -8,15 +8,18 @@ public class BranchOperationalStatusService : IBranchOperationalStatusService
     private readonly IBranchRepository _branchRepository;
     private readonly IClassroomRepository _classroomRepository;
     private readonly IBranchClosureRepository _closureRepository;
+    private readonly IBranchStatusRealtimeNotifier? _realtimeNotifier;
 
     public BranchOperationalStatusService(
         IBranchRepository branchRepository,
         IClassroomRepository classroomRepository,
-        IBranchClosureRepository closureRepository)
+        IBranchClosureRepository closureRepository,
+        IBranchStatusRealtimeNotifier? realtimeNotifier = null)
     {
         _branchRepository = branchRepository;
         _classroomRepository = classroomRepository;
         _closureRepository = closureRepository;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<BranchOperationalStatusDto> GetBranchStatusAsync(Guid tenantId, Guid branchId, DateTimeOffset? atTime = null, CancellationToken cancellationToken = default)
@@ -142,12 +145,22 @@ public class BranchOperationalStatusService : IBranchOperationalStatusService
             CancelledSessionCount = 0
         };
 
-        return await _closureRepository.CreateClosureAsync(closure, cancellationToken);
+        var created = await _closureRepository.CreateClosureAsync(closure, cancellationToken);
+        if (_realtimeNotifier != null)
+        {
+            await _realtimeNotifier.NotifyBranchStatusChangedAsync(request.OrganizationId, request.BranchId, closure.Status, cancellationToken);
+        }
+        return created;
     }
 
     public async Task ReopenBranchAsync(ReopenBranchRequest request, CancellationToken cancellationToken = default)
     {
         await _closureRepository.MarkReopenedAsync(request.TenantId, request.ClosureId, request.ReopenedBy, request.ReopenedAt, cancellationToken);
+        if (_realtimeNotifier != null)
+        {
+            var branch = await _branchRepository.GetByIdAsync(request.TenantId, request.BranchId, cancellationToken);
+            await _realtimeNotifier.NotifyBranchStatusChangedAsync(branch?.OrganizationId ?? Guid.Empty, request.BranchId, "Open", cancellationToken);
+        }
     }
 
     public async Task<IEnumerable<BranchClosure>> GetClosureHistoryAsync(Guid tenantId, Guid? organizationId = null, Guid? branchId = null, CancellationToken cancellationToken = default)

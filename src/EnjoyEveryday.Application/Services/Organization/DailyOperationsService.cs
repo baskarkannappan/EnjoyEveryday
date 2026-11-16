@@ -18,6 +18,7 @@ public class DailyOperationsService : IDailyOperationsService
     private readonly IAuditService _auditService;
     private readonly IConfiguration? _configuration;
     private readonly ILogger<DailyOperationsService> _logger;
+    private readonly IBranchStatusRealtimeNotifier? _realtimeNotifier;
 
     public DailyOperationsService(
         IDailyOperationsRepository repository,
@@ -25,7 +26,8 @@ public class DailyOperationsService : IDailyOperationsService
         IUserContext userContext,
         IAuditService auditService,
         ILogger<DailyOperationsService> logger,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        IBranchStatusRealtimeNotifier? realtimeNotifier = null)
     {
         _repository = repository;
         _tenantContext = tenantContext;
@@ -33,6 +35,7 @@ public class DailyOperationsService : IDailyOperationsService
         _auditService = auditService;
         _logger = logger;
         _configuration = configuration;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public bool IsBypassedForTesting()
@@ -91,6 +94,11 @@ public class DailyOperationsService : IDailyOperationsService
                 EntityId = branchId,
                 Details = $"Branch opened for day {targetDate:yyyy-MM-dd} by user {userId}"
             }, ct);
+
+            if (_realtimeNotifier != null)
+            {
+                await _realtimeNotifier.NotifyBranchStatusChangedAsync(_userContext.OrganizationId ?? Guid.Empty, branchId, "Open", ct);
+            }
         }
 
         return result;
@@ -162,6 +170,11 @@ public class DailyOperationsService : IDailyOperationsService
                 EntityId = branchId,
                 Details = $"Branch closed for day {targetDate:yyyy-MM-dd}. Clocked out {result.AffectedTeachersCount} staff members."
             }, ct);
+
+            if (_realtimeNotifier != null)
+            {
+                await _realtimeNotifier.NotifyBranchStatusChangedAsync(_userContext.OrganizationId ?? Guid.Empty, branchId, "Closed", ct);
+            }
         }
 
         return result;

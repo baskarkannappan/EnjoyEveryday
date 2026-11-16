@@ -69,3 +69,14 @@ Redirects navigate to `/access-denied?reason=<token>`:
 * `classroom_mismatch` / `unauthorized_classroom`: Teacher attempted to access a classroom outside their assignment.
 * `organization_suspended`: Organization account is frozen/suspended by platform administration.
 
+### 6. Centralized Branch Closure UI Lockdown (`IBranchOperationalUiGuard` & `BranchRoutePolicy`)
+* **Trigger Condition**: When the active branch is marked `Closed` or `Suspended` (`IBranchOperationalStatusService`) or has not been opened for daily operations (`IDailyOperationsService`).
+* **Centralized Route Classification (`BranchRoutePolicy`)**: Every route in `EnjoyEveryday.Daycare.Web` is classified as `Operational`, `ReadOnly`, `Administrative`, `EmergencySafeguarding`, or `PublicAccount`.
+* **Global Enforcement (`MainLayout.razor` & `NavMenu.razor`)**:
+  - `BranchOperationalUiGuard` resolves the active organization, active branch, and active view, evaluates `EvaluateRouteAsync`, and exposes `OnAvailabilityChanged`.
+  - When an `Operational` route is accessed while the branch is closed (including direct URLs, bookmarks, browser refreshes, and already-open tabs/modals), `MainLayout.razor` replaces `@Body` with `<BranchClosedLockView />` (displaying Organization, Branch, Status, Closure Reason, Reopening Date, and blocked activities).
+  - `NavMenu.razor` locks operational menu items in `Teacher` and `LeadTeacher` views with a lock icon (`🔒`), disabled state (`.nav-item-locked`), and `"Unavailable – Branch Closed"` tooltip.
+  - Real-time status updates are broadcast via `IBranchStatusRealtimeNotifier` (`BranchStatusRealtimeNotifier` → `DaycareRealtimeNotificationCenter.OnBranchStatusChanged`) when `BranchOperationalStatusService` or `DailyOperationsService` changes branch status, plus a 30-second fallback revalidation timer.
+  - Administrative (`Management`, `BranchAdminDashboard`, `OrgAdminDashboard`), Emergency/Safeguarding (`/safety-trust/*`), Read-Only (`/announcements`, `/notifications`, `/memories`, `/attendance/monthly*`), and Public/Account (`/profile`, `/select-branch`, `/select-organization`, `/support`) routes remain accessible per existing RBAC rules.
+
+

@@ -13,9 +13,9 @@
     </RightContent>
 </PageTopbar> *@
 
-<section class="content" style="padding: 32px 36px 70px; max-width: 1550px; margin: auto;">
+<section class="content planning-page-content" style="padding: 32px 36px 70px; max-width: 1550px; margin: auto;">
 
-    <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px;">
+    <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; gap: 12px; flex-wrap: wrap;">
         <div>
             <div style="text-transform: uppercase; letter-spacing: 1.5px; color: #789080; font-size: 10px; font-weight: 800; margin-bottom: 8px;">
                 Plan the rhythm · Leave room for discovery
@@ -28,7 +28,7 @@
                 without turning childhood into a rigid schedule.
             </div> *@
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div class="planning-header-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <select @bind="SelectedBranchId" style="padding: 10px 14px; border-radius: 0px; border: 1px solid var(--line, #e1e6e0); font-weight: 650; color: #47534c; background: white; font-size: 12px; cursor: pointer; height: 38px;">
                 @if (!_allBranches.Any())
                 {
@@ -48,7 +48,7 @@
                     <option value="@cls.Id">@cls.Name</option>
                 }
             </select>
-            <button class="btn" @onclick="() => _isWeeklyAssistantOpen = !_isWeeklyAssistantOpen" style="border: 1px solid #52745e; background: #edf4ee; border-radius: 0px; padding: 10px 14px; font-size: 12px; font-weight: 700; color: #31523c; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <button class="btn" @onclick="() => _isWeeklyAssistantOpen = !_isWeeklyAssistantOpen" disabled="@_isSelectedBranchClosed" style="@(_isSelectedBranchClosed ? "opacity: 0.5; cursor: not-allowed;" : "") border: 1px solid #52745e; background: #edf4ee; border-radius: 0px; padding: 10px 14px; font-size: 12px; font-weight: 700; color: #31523c; display: flex; align-items: center; gap: 6px;">
                 ✦ AI Weekly Assistant
             </button>
             <a href="/marketplace" class="btn" style="border: 1px solid var(--line, #e1e6e0); background: #fff; border-radius: 0px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #47534c; text-decoration: none; display: flex; align-items: center; gap: 6px;">
@@ -57,11 +57,27 @@
             <button class="btn" style="border: 1px solid var(--line, #e1e6e0); background: #fff; border-radius: 0px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #47534c;">
                 Preview plan
             </button>
-            <button class="btn primary" @onclick="OpenPlanWizard" style="background: #456a55; border: 1px solid #456a55; border-radius: 0px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #fff;">
+            <button class="btn primary" @onclick="OpenPlanWizard" disabled="@_isSelectedBranchClosed" style="@(_isSelectedBranchClosed ? "opacity: 0.5; cursor: not-allowed;" : "") background: #456a55; border: 1px solid #456a55; border-radius: 0px; padding: 10px 14px; font-size: 12px; font-weight: 650; color: #fff;">
                 + Plan Experience
             </button>
         </div>
     </div>
+
+    @if (_isSelectedBranchClosed)
+    {
+        <BranchClosedLockView Title="Branch Closed — Experience Planning Locked"
+                              BadgeText="@(_selectedBranchOpStatus != null && !_selectedBranchOpStatus.IsOperational ? _selectedBranchOpStatus.OperationalStatus.ToUpperInvariant() : "BRANCH CLOSED")"
+                              BranchName="@_selectedBranchOpStatus?.BranchName"
+                              Status="@_selectedBranchOpStatus?.OperationalStatus"
+                              ClosureReason="@(_selectedBranchOpStatus?.ActiveClosure?.Reason ?? "The Branch Admin has not opened the facility for operations.")"
+                              ReopeningDate="@_selectedBranchOpStatus?.ActiveClosure?.EffectiveEndAt"
+                              Message="You cannot plan or schedule experiences for classrooms in a closed branch."
+                              AdminInstruction="Select an open branch above, or ask a Branch / Organization Administrator to reopen this branch."
+                              ActionLabel="Go to Branch Management"
+                              ActionUrl="/organization/management" />
+    }
+    else
+    {
 
     @if (_isWeeklyAssistantOpen && SelectedClassroomId.HasValue)
     {
@@ -113,7 +129,7 @@
                     var iterDay = day;
                     var currentDate = new DateOnly(_currentDate.Year, _currentDate.Month, iterDay);
                     var dailySchedules = _schedules.Where(s => s.ScheduledDate == currentDate).OrderBy(s => s.TimeOfDay).ToList();
-                    var isClosedDay = PlannerService.IsDaycareClosedForPlanning(currentDate, out var closedMsg);
+                    var isClosedDay = IsDateClosedForBranch(currentDate, out var closedMsg);
                     var isWeekendOrClosedToday = isClosedDay;
                     <div class="day" style="@(isWeekendOrClosedToday ? "background: #f9faf8;" : "")">
                         <div class="day-header">
@@ -236,6 +252,7 @@
             
         </div>
     </div>
+    }
 
 </section>
 

@@ -18,6 +18,7 @@ public partial class ChildDailyCareSection : ComponentBase
     [Inject] private BranchService BranchService { get; set; } = default!;
     [Inject] private OrganizationService OrganizationService { get; set; } = default!;
     [Inject] private IDailyOperationsService DailyOpsService { get; set; } = default!;
+    [Inject] private IBranchOperationalStatusService BranchOperationalStatusService { get; set; } = default!;
     [Inject] private ITenantContext TenantContext { get; set; } = default!;
     [Inject] private IUserContext UserContext { get; set; } = default!;
     [Inject] private EnjoyEveryday.Domain.Repositories.IAccessScopeRepository AccessScopeRepo { get; set; } = default!;
@@ -33,6 +34,7 @@ public partial class ChildDailyCareSection : ComponentBase
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
     private bool _isBranchClosed = false;
     private bool _isClassroomClosed = false;
+    private BranchOperationalStatusDto? _branchOperationalStatus;
 
     private List<ClassroomChildCareStatusDto> _classroomOverview = new();
     private Guid _selectedChildId = Guid.Empty;
@@ -158,7 +160,9 @@ public partial class ChildDailyCareSection : ComponentBase
         try
         {
             var branchStatus = await DailyOpsService.GetBranchDailyStatusAsync(_selectedBranchId, _selectedDate);
-            _isBranchClosed = branchStatus != null && !branchStatus.IsOpen && !DailyOpsService.IsBypassedForTesting();
+            _branchOperationalStatus = await BranchOperationalStatusService.GetBranchStatusAsync(TenantContext.TenantId, _selectedBranchId);
+            _isBranchClosed = (_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational) ||
+                (!DailyOpsService.IsBypassedForTesting() && branchStatus != null && !branchStatus.IsOpen);
 
             if (_selectedClassroomId.HasValue && _selectedClassroomId.Value != Guid.Empty)
             {

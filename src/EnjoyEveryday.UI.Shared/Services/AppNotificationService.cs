@@ -81,6 +81,13 @@ public class AppNotificationService : IAppNotificationService
             ? actualEx.Message 
             : (defaultMessage ?? "An unexpected error occurred.");
 
+        if (actualEx is EnjoyEveryday.Application.Services.BranchClosedException)
+        {
+            _logger.LogWarning("Blocked operation because branch is closed: {Message}", message);
+            await ShowWarningAsync(message);
+            return;
+        }
+
         _logger.LogError(exception, "Handled application exception: {Message}", message);
 
         if (actualEx is UnauthorizedAccessException)

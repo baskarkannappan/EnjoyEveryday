@@ -8,7 +8,10 @@
 @inject BranchService BranchService
 @inject OrganizationService OrganizationService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject IEndOfDayService EndOfDayService
+@inject IBranchOperationalStatusService BranchOperationalStatusService
+@inject IDailyOperationsService DailyOpsService
 
 @if (IsOpen)
 {
@@ -27,6 +30,14 @@
             {
                 <div style="background: #fff0f0; color: #d32f2f; padding: 8px 12px; border-radius: 0px; margin-bottom: 10px; border: 1px solid #ffcdd2; font-size: 12px; line-height: 1.4;">
                     @_errorMessage
+                </div>
+            }
+
+            @if (!_isReadOnly && _isSelectedBranchClosed)
+            {
+                <div style="background: #fff5f5; color: #9b2c2c; padding: 8px 12px; border-radius: 0px; margin-bottom: 10px; border: 1px solid #fed7d7; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 14px;">🔒</span>
+                    <span><strong>Branch Closed:</strong> @_selectedBranchClosedMessage</span>
                 </div>
             }
 
@@ -177,7 +188,7 @@
                 <button type="button" class="secondary" @onclick="Close" style="padding: 7px 14px; border: 1px solid #e1e6e0; background: white; border-radius: 0px; cursor: pointer; font-weight: 600; color: #47534c; font-size: 12.5px;">Close</button>
                 @if (!_isReadOnly)
                 {
-                    var isClosedForSave = IsDateClosedForPlanning(_date, out _);
+                    var isClosedForSave = _isSelectedBranchClosed || IsDateClosedForPlanning(_date, out _);
                     <button type="button" class="primary" @onclick="Save" disabled="@(_isSaving || isClosedForSave || !string.IsNullOrEmpty(_conflictWarning))" style="padding: 7px 16px; border: none; background: #456a55; color: white; border-radius: 0px; cursor: @(isClosedForSave ? "not-allowed" : "pointer"); opacity: @(isClosedForSave ? "0.5" : "1"); font-weight: 650; font-size: 12.5px;">
                         @(_isSaving ? "Saving..." : (ScheduleId.HasValue ? "Update Plan" : "Confirm Plan"))
                     </button>
@@ -227,6 +238,8 @@
     private string _errorMessage = "";
     private bool _isSaving = false;
     private bool _isReadOnly = false;
+    private bool _isSelectedBranchClosed = false;
+    private string _selectedBranchClosedMessage = "";
 
     private Guid? BranchId
     {
@@ -237,6 +250,7 @@
             {
                 _branchId = value;
                 ClassroomId = null; // Reset classroom when branch changes
+                _ = CheckSelectedBranchStatusAsync();
             }
         }
     }
@@ -269,8 +283,8 @@
         _classrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
         _teachers = (await TeacherService.GetAllTeachersAsync(TenantContext.TenantId)).ToList();
         
-        var orgs = await OrganizationService.GetOrganizationsAsync();
-        var orgId = orgs.FirstOrDefault()?.Id;
+        var orgs = (await OrganizationService.GetOrganizationsAsync()).ToList();
+        var orgId = UserContext.OrganizationId ?? orgs.FirstOrDefault()?.Id;
         if (orgId.HasValue) 
         {
             _branches = (await BranchService.GetBranchesAsync(orgId.Value)).ToList();
@@ -298,6 +312,51 @@
             return $"{DateTime.Today.Add(start.Value):hh:mm tt} - {DateTime.Today.Add(end.Value):hh:mm tt}";
         }
         return "Time not set";
+    }
+
+    private async Task CheckSelectedBranchStatusAsync()
+    {
+        var branchIdToCheck = _branchId;
+        if (!branchIdToCheck.HasValue && _classroomId.HasValue)
+        {
+            branchIdToCheck = _classrooms.FirstOrDefault(c => c.Id == _classroomId.Value)?.BranchId;
+        }
+
+        if (!branchIdToCheck.HasValue || branchIdToCheck.Value == Guid.Empty)
+        {
+            _isSelectedBranchClosed = false;
+            _selectedBranchClosedMessage = "";
+            return;
+        }
+
+        try
+        {
+            var opStatus = await BranchOperationalStatusService.GetBranchStatusAsync(TenantContext.TenantId, branchIdToCheck.Value);
+            var dailyStatus = await DailyOpsService.GetBranchDailyStatusAsync(branchIdToCheck.Value, DateOnly.FromDateTime(_date));
+            var bypassed = DailyOpsService.IsBypassedForTesting();
+
+            if (!opStatus.IsOperational)
+            {
+                _isSelectedBranchClosed = true;
+                _selectedBranchClosedMessage = $"Branch '{opStatus.BranchName}' is currently {opStatus.OperationalStatus.ToLowerInvariant()}. Experience planning is not allowed until the branch is reopened.";
+            }
+            else if (!bypassed && dailyStatus != null && !dailyStatus.IsOpen)
+            {
+                _isSelectedBranchClosed = true;
+                _selectedBranchClosedMessage = "The branch facility is closed for daily operations. Experience planning is locked until the Branch Admin opens the branch.";
+            }
+            else
+            {
+                _isSelectedBranchClosed = false;
+                _selectedBranchClosedMessage = "";
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _isSelectedBranchClosed = false;
+            _selectedBranchClosedMessage = "";
+        }
     }
 
     private bool IsDateClosedForPlanning(DateTime dt, out string reason)
@@ -413,6 +472,7 @@
         _roomSchedules.Clear();
         _conflictWarning = "";
 
+        await CheckSelectedBranchStatusAsync();
         if (!_classroomId.HasValue) return;
 
         try

@@ -2,6 +2,8 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject NavigationManager NavigationManager
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Daycare.Web.Services.IBranchOperationalUiGuard BranchUiGuard
+@inject EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService ViewPreference
 @implements IDisposable
 
 <FluentLayout>
@@ -64,6 +66,24 @@
             {
                 <EnjoyEveryday.Daycare.Web.Components.Pages.AccountSuspended />
             }
+            else if (_branchAvailability?.IsRouteBlocked == true)
+            {
+                <div class="content">
+                    <EnjoyEveryday.UI.Shared.Components.BranchClosedLockView
+                        Title="Branch Closed"
+                        BadgeText="@(_branchAvailability.OperationalStatus.ToUpperInvariant())"
+                        BranchName="@_branchAvailability.BranchName"
+                        OrganizationName="@_branchAvailability.OrganizationName"
+                        Status="@_branchAvailability.OperationalStatus"
+                        ClosureReason="@_branchAvailability.ClosureReason"
+                        ReopeningDate="@_branchAvailability.ReopeningDate"
+                        ActionLabel="@GetBlockedPrimaryActionLabel()"
+                        ActionUrl="@GetBlockedPrimaryActionUrl()"
+                        OnActionClick="@GetBlockedPrimaryActionCallback()"
+                        SecondaryLabel="My Profile"
+                        SecondaryUrl="/profile" />
+                </div>
+            }
             else
             {
                 @Body
@@ -78,11 +98,22 @@
     private FluentLayoutHamburger? _hamburger;
     private bool _isDisposed = false;
     private bool _isSuspended = false;
+    private EnjoyEveryday.Daycare.Web.Services.BranchUiAvailabilityResult? _branchAvailability;
+    private EnjoyEveryday.Daycare.Web.Services.UserRoleProfile? _userProfile;
 
     protected override async Task OnInitializedAsync()
     {
         NavigationManager.LocationChanged += HandleLocationChanged;
+        BranchUiGuard.OnAvailabilityChanged += HandleBranchAvailabilityChangedAsync;
         await CheckSuspensionAsync();
+        await EvaluateBranchLockAsync();
+    }
+
+    private async Task HandleBranchAvailabilityChangedAsync()
+    {
+        if (_isDisposed) return;
+        await EvaluateBranchLockAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -90,7 +121,61 @@
         if (_isDisposed) return;
         await CloseMobileMenuAsync();
         await CheckSuspensionAsync();
+        await EvaluateBranchLockAsync();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task EvaluateBranchLockAsync()
+    {
+        if (_isDisposed || _isSuspended) return;
+        try
+        {
+            _userProfile ??= await PageAuth.GetUserProfileAsync();
+            var relPath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+            _branchAvailability = await BranchUiGuard.EvaluateRouteAsync(relPath);
+        }
+        catch
+        {
+            _branchAvailability = null;
+        }
+    }
+
+    private string GetBlockedPrimaryActionLabel()
+    {
+        if (_userProfile?.AvailableViews.Contains("BranchAdmin", StringComparer.OrdinalIgnoreCase) == true)
+            return "Switch to Branch Admin View";
+        if (_userProfile?.AvailableViews.Contains("OrgAdmin", StringComparer.OrdinalIgnoreCase) == true)
+            return "Switch to Organization View";
+        return "View Announcements";
+    }
+
+    private string? GetBlockedPrimaryActionUrl()
+    {
+        if (_userProfile?.AvailableViews.Contains("BranchAdmin", StringComparer.OrdinalIgnoreCase) == true ||
+            _userProfile?.AvailableViews.Contains("OrgAdmin", StringComparer.OrdinalIgnoreCase) == true)
+            return null;
+        return "/announcements";
+    }
+
+    private EventCallback GetBlockedPrimaryActionCallback()
+    {
+        if (_userProfile?.AvailableViews.Contains("BranchAdmin", StringComparer.OrdinalIgnoreCase) == true)
+        {
+            return EventCallback.Factory.Create(this, () =>
+            {
+                ViewPreference.SetCurrentView("BranchAdmin");
+                NavigationManager.NavigateTo("/branch-dashboard");
+            });
+        }
+        if (_userProfile?.AvailableViews.Contains("OrgAdmin", StringComparer.OrdinalIgnoreCase) == true)
+        {
+            return EventCallback.Factory.Create(this, () =>
+            {
+                ViewPreference.SetCurrentView("OrgAdmin");
+                NavigationManager.NavigateTo("/management");
+            });
+        }
+        return default;
     }
 
     private async Task CheckSuspensionAsync()
@@ -134,5 +219,6 @@
     {
         _isDisposed = true;
         NavigationManager.LocationChanged -= HandleLocationChanged;
+        BranchUiGuard.OnAvailabilityChanged -= HandleBranchAvailabilityChangedAsync;
     }
 }

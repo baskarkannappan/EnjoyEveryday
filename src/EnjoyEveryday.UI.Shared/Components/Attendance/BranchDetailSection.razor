@@ -8,7 +8,9 @@
 @inject AttendanceService AttendanceService
 @inject ISystemLookupCatalog LookupCatalog
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 @inject IDailyOperationsService DailyOpsService
+@inject IBranchOperationalStatusService BranchOperationalStatusService
 @inject NavigationManager Nav
 
 <section id="detail">
@@ -99,6 +101,19 @@
         }
     }
 
+    @if (IsBranchClosedLock)
+    {
+        <BranchClosedLockView Title="@(_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational ? $"Branch is {_branchOperationalStatus.OperationalStatus}" : "Branch Facility is Closed")"
+                              BadgeText="@(_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational ? _branchOperationalStatus.OperationalStatus.ToUpperInvariant() : "BRANCH CLOSED")"
+                              BranchName="@BranchName"
+                              ClosureReason="@_branchOperationalStatus?.ActiveClosure?.Reason"
+                              Message="Attendance marking for children and staff is disabled while this branch is closed."
+                              AdminInstruction="A Branch Administrator must open and activate the branch before classroom attendance can be recorded."
+                              ActionLabel="@(CanEditTeacherAttendance ? "Go to Branch Management" : "Back to My Workspace")"
+                              ActionUrl="@(CanEditTeacherAttendance ? "/organization/management" : "/")" />
+    }
+    else
+    {
     <div class="card">
         <div class="tabs">
             <button class="tab @(currentTab == "classrooms" ? "active" : "")" @onclick='() => SetTab("classrooms")'>Classrooms</button>
@@ -166,6 +181,7 @@
             </div>
         }
     </div>
+    }
 </section>
 
 <SecurePickupModal 
@@ -203,6 +219,11 @@
     private bool showToast = false;
     private string _toastMessage = "Saved attendance changes to database.";
     private BranchDailyStatusDto? _branchOpsStatus;
+    private BranchOperationalStatusDto? _branchOperationalStatus;
+
+    private bool IsBranchClosedLock =>
+        (_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational) ||
+        (!DailyOpsService.IsBypassedForTesting() && _branchOpsStatus != null && !_branchOpsStatus.IsOpen);
 
     private Guid _branchId;
     private List<AttendanceClassroomTable.ClassRowItem> _classRows = new();
@@ -225,6 +246,11 @@
     {
         get
         {
+            if (_branchOperationalStatus != null && !_branchOperationalStatus.IsOperational)
+            {
+                _closedAttendanceReason = $"Branch is currently {_branchOperationalStatus.OperationalStatus.ToLowerInvariant()}. The Branch Admin must activate the branch before attendance can be marked.";
+                return true;
+            }
             if (_branchOpsStatus != null && !_branchOpsStatus.IsOpen && !DailyOpsService.IsBypassedForTesting())
             {
                 _closedAttendanceReason = "Branch facility is closed for daily operations. The Branch Admin must open the facility before attendance can be marked.";
@@ -389,8 +415,20 @@
             Notes = "Manual teacher checkout",
             RecordedByUserId = UserContext.UserId
         };
-        await AttendanceService.MarkTeacherAttendanceAsync(att);
-        await LoadDataAsync();
+        try
+        {
+            await AttendanceService.MarkTeacherAttendanceAsync(att);
+            await LoadDataAsync();
+        }
+        catch (BranchClosedException ex)
+        {
+            await LoadBranchOpsStatusAsync();
+            await TriggerToast(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await TriggerToast(ex.Message);
+        }
         StateHasChanged();
     }
 
@@ -485,8 +523,23 @@
                     Type = p.Type
                 }).ToList()
             };
-            await AttendanceService.BulkMarkAttendanceAsync(req, UserContext.UserId);
-            foreach (var p in dirty) p.IsDirty = false;
+            try
+            {
+                await AttendanceService.BulkMarkAttendanceAsync(req, UserContext.UserId);
+                foreach (var p in dirty) p.IsDirty = false;
+                _toastMessage = "Saved attendance changes to database.";
+            }
+            catch (BranchClosedException ex)
+            {
+                await LoadBranchOpsStatusAsync();
+                await TriggerToast(ex.Message);
+                return;
+            }
+            catch (InvalidOperationException ex)
+            {
+                await TriggerToast(ex.Message);
+                return;
+            }
         }
 
         showToast = true;
@@ -509,6 +562,14 @@
             try
             {
                 _branchOpsStatus = await DailyOpsService.GetBranchDailyStatusAsync(_branchId, DateOnly.FromDateTime(_filterDate));
+            }
+            catch
+            {
+                // Non-blocking telemetry
+            }
+            try
+            {
+                _branchOperationalStatus = await BranchOperationalStatusService.GetBranchStatusAsync(TenantContext.TenantId, _branchId);
             }
             catch
             {
