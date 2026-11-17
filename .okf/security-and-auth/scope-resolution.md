@@ -81,6 +81,30 @@ Task<ClassroomScopeRecord?> GetClassroomScopeAsync(Guid tenantId, Guid classroom
    - **Lead Teacher & Teacher**: Automatically scoped to their assigned branch and classroom rooms. In `OrganizationHierarchyService`, educators with `LeadTeacher` role or `is_primary = true` are displayed under `⭐ Lead Educator`. All operational views (Dashboard, Attendance, Live Activities, Roster) filter strictly to the active branch.
 
 
+## Multi-Organization Deactivation & Isolation Lifecycle (Migration 127)
+1. **Deactivation Rules**:
+   - **Belongs to only 1 Organization**: If an Org Admin, Branch Admin, Lead Teacher, Teacher, or Educator is deactivated from their only organization (or across all organizations):
+     - `sp_remove_user_from_organization` sets `organization_memberships.status = 'Inactive'`.
+     - `user_organization_roles` for that organization are deleted.
+     - `user_branch_assignments` are revoked (`revoked_at = NOW()`).
+     - `classroom_teachers` are deleted.
+     - Remaining active organizations count reaches 0: `users.is_active` is set to `FALSE` and `teachers.status` to `'Inactive'`.
+     - On login: `fn_sync_external_login` blocks authentication with `'user_inactive'` or `'no_active_organizations'`, redirecting to `/access-denied` and immediately signing them out.
+   - **Belongs to Multiple Organizations**: If deactivated from Org A while still an active member of Org B:
+     - `organization_memberships.status = 'Inactive'` for Org A.
+     - Roles, branch assignments, and classroom assignments in Org A are removed.
+     - `users.is_active` remains `TRUE` because Org B is active.
+     - On login: `fn_get_organizations_by_user_id` strictly EXCLUDES Org A (`om.status = 'Inactive'`).
+     - If only Org B remains active, `v_active_org_id` auto-selects Org B. If > 1 active orgs remain, user selects from remaining active orgs in `/select-organization`.
+     - Org A does not appear in `/select-organization` and attempts to set Org A via `fn_validate_and_set_organization` are rejected (`is_valid = false`).
+     - User cannot see or access any details from Org A.
+2. **Child Deactivation & Parent Isolation**:
+   - `sp_delete_child`:
+     - Sets `children.is_active = FALSE` and `children.enrollment_status = 'Withdrawn'`.
+     - Marks `family_relationships.status = 'Revoked'` and `revoked_at = NOW()`.
+   - If parent only had this child: `fn_has_active_onboarded_child` returns `FALSE`, and Parent Portal login is blocked with `'parent_access_denied'`.
+   - If parent has other active enrolled children: Parent logs in normally; `fn_get_parent_authorized_children` checks `c.is_active = TRUE`, completely excluding the deactivated child and their data.
+
 ## Organization & Branch Graphical Hierarchy Service (`IOrganizationHierarchyService`)
 - Defined in `EnjoyEveryday.Application.Services.IOrganizationHierarchyService` and implemented in `EnjoyEveryday.Infrastructure.Repositories.OrganizationHierarchyService`.
 - Powers the graphical flowchart/tree organization chart on `/users-by-role` (`UsersByRole.razor` & `OrganizationHierarchyView.razor`).

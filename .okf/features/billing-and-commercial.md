@@ -28,13 +28,26 @@ tags:
   - `ProcessRazorpayWebhookAsync`: Idempotently reconciles incoming webhook events (`payment.captured`, `order.paid`). Deduplicates against `razorpay_webhook_events` to prevent double-crediting invoices.
   - Updates `invoices` balance, logs `payments` record, and marks status as `Paid` or `PartiallyPaid`.
 
-### 2. Materials & Warehouse Marketplace (`Admin.Web`)
-* **Routes**: `/warehouse`, `/catalog`, `/orders`
-* **Entities**: `material_products`, `material_offerings`, `marketplace_orders`, `material_inventory_items`, `material_inventory_transactions`.
+### 2. Materials & Warehouse Marketplace (`Admin.Web` & `Daycare.Web`)
+* **Routes**: `/warehouse-inventory`, `/marketplace-operations`, `/materials-marketplace`
+* **Entities**: `material_products`, `material_offerings`, `material_orders`, `material_order_items`, `material_loans`, `inventory_balances`, `inventory_ledger`.
 * **Functionality**: Daycare centers order curriculum material kits, craft packs, and sensory play resources fulfilled through central inventory.
 * **Dispatch & Reversal Engine**:
   - `DispatchOrderShipmentAsync`: Enforces strict idempotency checks preventing double dispatches; deducts allocated and on-hand stock atomically.
   - `sp_reverse_dispatched_inventory`: Safely restores warehouse on-hand inventory and writes reversal ledger entries upon order cancellation.
+* **Modal Dialog Dropdown & Scrollbar Standards (`WarehouseInventoryPage.razor`)**:
+  - `select.form-input` explicit height `42px` and `line-height: 1.4` to prevent Chromium Windows dropdown option clipping.
+  - `.modal-body` custom scrollbar styling (`scrollbar-gutter: stable; scrollbar-width: thin; max-height: 72vh;`) ensuring smooth scrollability across dialog sizes.
+* **Product Image Upload & AVIF Optimization (Max 3 Images)**:
+  - Supports uploading up to 3 gallery photos per product.
+  - Client-side optimization and AVIF conversion via `window.imageConverter.convertMultipleToAvif` using bounded canvas aspect ratios (`calculateBounds` max 1280x1280).
+  - Stored in persistent blob/disk storage via `IMediaService.UploadMediaVariantsAsync`.
+  - Persisted in PostgreSQL `material_products.image_urls text[]` and JSON-serialized `image_url text`.
+* **Product Card Image Carousel (`MaterialProductCard.razor`)**:
+  - Daycare marketplace cards at `/materials-marketplace` display product images with interactive left (`‹`) and right (`›`) navigation arrows and dot indicators cycling through up to 3 gallery images.
+* **Marketplace Operations Grid Pagination & Sorting (`MarketplaceOperationsPage.razor`)**:
+  - Column sorting toolbar: Date (Newest/Oldest), Amount (High-Low/Low-High), Order #, Organization, and Status with active direction indicators.
+  - Full pagination: Page size selector (5, 10, 25, 50), item range counter ("Showing X to Y of Z orders"), and responsive page controls (`«`, `‹`, numbered pills, `›`, `»`).
 
 ### 3. Automated Monthly Recurring Tuition Billing
 * **Background Service**: `MonthlyTuitionBillingBackgroundService` in `Daycare.Web` executes on the 1st of each month (off-peak 02:00–04:00 AM window).

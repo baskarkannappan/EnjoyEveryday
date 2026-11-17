@@ -94,7 +94,17 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
             existing.Name = request.Name.Trim();
             existing.Description = request.Description.Trim();
             existing.Category = request.Category;
-            existing.ImageUrl = request.ImageUrl;
+            if (request.ImageUrls != null && request.ImageUrls.Count > 0)
+            {
+                var distinctImages = request.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)).Take(3).ToList();
+                existing.ImageUrls = distinctImages;
+                existing.ImageUrl = distinctImages.Count > 1 ? JsonSerializer.Serialize(distinctImages) : distinctImages.FirstOrDefault();
+            }
+            else
+            {
+                existing.ImageUrl = request.ImageUrl;
+                existing.ImageUrls = !string.IsNullOrWhiteSpace(request.ImageUrl) ? new List<string> { request.ImageUrl } : new List<string>();
+            }
             existing.MaterialType = request.MaterialType;
             existing.SafetyInstructions = request.SafetyInstructions;
             existing.AgeMinMonths = request.AgeMinMonths;
@@ -126,7 +136,12 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
                 Name = request.Name.Trim(),
                 Description = request.Description.Trim(),
                 Category = request.Category,
-                ImageUrl = request.ImageUrl,
+                ImageUrl = request.ImageUrls != null && request.ImageUrls.Count > 1 
+                    ? JsonSerializer.Serialize(request.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)).Take(3).ToList())
+                    : (request.ImageUrls?.FirstOrDefault() ?? request.ImageUrl),
+                ImageUrls = request.ImageUrls != null && request.ImageUrls.Count > 0
+                    ? request.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)).Take(3).ToList()
+                    : (!string.IsNullOrWhiteSpace(request.ImageUrl) ? new List<string> { request.ImageUrl } : new List<string>()),
                 MaterialType = request.MaterialType,
                 SafetyInstructions = request.SafetyInstructions,
                 AgeMinMonths = request.AgeMinMonths,

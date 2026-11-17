@@ -28,27 +28,61 @@ public class AppIdentityContext : IUserContext, ITenantContext
 
     private bool IsDevelopment()
     {
+        bool isDev = false;
         if (_hostEnvironment != null)
         {
-            return _hostEnvironment.IsDevelopment();
+            isDev = _hostEnvironment.IsDevelopment();
         }
-
-        var envVar = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
-                  ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
-        if (!string.IsNullOrEmpty(envVar))
+        else
         {
-            return string.Equals(envVar, "Development", StringComparison.OrdinalIgnoreCase);
+            var envVar = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+                      ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+            if (!string.IsNullOrEmpty(envVar))
+            {
+                isDev = string.Equals(envVar, "Development", StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                var configEnv = _configuration["ASPNETCORE_ENVIRONMENT"]
+                             ?? _configuration["DOTNET_ENVIRONMENT"]
+                             ?? _configuration["Environment"];
+                if (!string.IsNullOrEmpty(configEnv))
+                {
+                    isDev = string.Equals(configEnv, "Development", StringComparison.OrdinalIgnoreCase);
+                }
+            }
         }
 
-        var configEnv = _configuration["ASPNETCORE_ENVIRONMENT"]
-                     ?? _configuration["DOTNET_ENVIRONMENT"]
-                     ?? _configuration["Environment"];
-        if (!string.IsNullOrEmpty(configEnv))
+        if (!isDev) return false;
+
+        // Security check: Only allow development context fallback when the request originates from loopback (localhost)
+        // to prevent remote unauthenticated network callers from inheriting PlatformAdmin privileges.
+        var httpContext = _httpContextAccessor?.HttpContext;
+        if (httpContext == null)
         {
-            return string.Equals(configEnv, "Development", StringComparison.OrdinalIgnoreCase);
+            // Background workers or unit tests without active HttpContext
+            return true;
         }
 
-        return false;
+        var connection = httpContext.Connection;
+        if (connection?.RemoteIpAddress != null)
+        {
+            if (System.Net.IPAddress.IsLoopback(connection.RemoteIpAddress))
+            {
+                return true;
+            }
+
+            if (connection.RemoteIpAddress.Equals(connection.LocalIpAddress))
+            {
+                return true;
+            }
+        }
+
+        var host = httpContext.Request?.Host.Host;
+        return string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(host, "[::1]", StringComparison.OrdinalIgnoreCase);
     }
 
     private ClaimsPrincipal? User => ResolveUser();

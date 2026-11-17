@@ -16,6 +16,7 @@ public class SaveMaterialProductRequest
     public string Description { get; set; } = string.Empty;
     public string Category { get; set; } = "General";
     public string? ImageUrl { get; set; }
+    public List<string> ImageUrls { get; set; } = new();
     public string MaterialType { get; set; } = MaterialClassification.Consumable.ToString();
     public string? SafetyInstructions { get; set; }
     public int? AgeMinMonths { get; set; }

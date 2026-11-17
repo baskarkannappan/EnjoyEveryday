@@ -95,11 +95,11 @@
         <div style="flex: 1; min-width: 260px;">
             <input style="width: 100%; padding: 10px 14px; border: 1px solid var(--border, #e4e7df); border-radius: 10px; background: var(--surface, #ffffff); color: var(--text, #26332d); font-size: 13.5px;"
                    placeholder="Search orders by number, organization, product or requester..."
-                   @bind="_searchQuery" @bind:event="oninput" />
+                   @bind="_searchQuery" @bind:event="oninput" @bind:after="() => _currentPage = 1" />
         </div>
         <div style="min-width: 200px;">
             <select style="width: 100%; padding: 10px 14px; border: 1px solid var(--border, #e4e7df); border-radius: 10px; background: var(--surface, #ffffff); color: var(--text, #26332d); font-size: 13.5px;"
-                    @bind="_selectedOrgFilter">
+                    @bind="_selectedOrgFilter" @bind:after="() => _currentPage = 1">
                 <option value="All">All Organizations</option>
                 @foreach (var orgName in OrganizationsList)
                 {
@@ -109,7 +109,7 @@
         </div>
         @if (!string.IsNullOrWhiteSpace(_searchQuery) || _selectedOrgFilter != "All")
         {
-            <button class="btn secondary" style="padding: 9px 14px; font-size: 13px;" @onclick='() => { _searchQuery = ""; _selectedOrgFilter = "All"; }'>
+            <button class="btn secondary" style="padding: 9px 14px; font-size: 13px;" @onclick='() => { _searchQuery = ""; _selectedOrgFilter = "All"; _currentPage = 1; }'>
                 Clear Filters ✕
             </button>
         }
@@ -174,6 +174,26 @@
     }
     else
     {
+        <!-- SORTING TOOLBAR -->
+        <div class="sort-toolbar">
+            <span class="sort-label">Sort By:</span>
+            <button class="sort-btn @(_sortColumn == "Date" ? "active" : "")" @onclick='() => SetSort("Date")'>
+                Date @(_sortColumn == "Date" ? (_sortAscending ? "↑ Oldest" : "↓ Newest") : "")
+            </button>
+            <button class="sort-btn @(_sortColumn == "Amount" ? "active" : "")" @onclick='() => SetSort("Amount")'>
+                Amount @(_sortColumn == "Amount" ? (_sortAscending ? "↑ Low-High" : "↓ High-Low") : "")
+            </button>
+            <button class="sort-btn @(_sortColumn == "OrderNumber" ? "active" : "")" @onclick='() => SetSort("OrderNumber")'>
+                Order # @(_sortColumn == "OrderNumber" ? (_sortAscending ? "↑ A-Z" : "↓ Z-A") : "")
+            </button>
+            <button class="sort-btn @(_sortColumn == "Organization" ? "active" : "")" @onclick='() => SetSort("Organization")'>
+                Organization @(_sortColumn == "Organization" ? (_sortAscending ? "↑ A-Z" : "↓ Z-A") : "")
+            </button>
+            <button class="sort-btn @(_sortColumn == "Status" ? "active" : "")" @onclick='() => SetSort("Status")'>
+                Status @(_sortColumn == "Status" ? (_sortAscending ? "↑" : "↓") : "")
+            </button>
+        </div>
+
         <!-- ORDERS QUEUE -->
         <div class="orders-queue-list">
             @if (!FilteredOrders.Any())
@@ -182,7 +202,7 @@
             }
             else
             {
-                @foreach (var order in FilteredOrders)
+                @foreach (var order in PagedOrders)
                 {
                     <div class="queue-card">
                         <div class="queue-card-top">
@@ -269,6 +289,39 @@
                 }
             }
         </div>
+
+        @if (TotalOrdersCount > 0)
+        {
+            <!-- PAGINATION BAR -->
+            <div class="pagination-bar">
+                <div class="pagination-info">
+                    Showing <strong>@ItemRangeStart</strong> to <strong>@ItemRangeEnd</strong> of <strong>@TotalOrdersCount</strong> orders
+                    <span style="margin: 0 10px; color: var(--border);">|</span>
+                    <span style="font-size: 12px; color: var(--muted);">Per page:</span>
+                    <select @bind="_pageSize" @bind:after="OnPageSizeChanged" class="page-size-select">
+                        <option value="5">5</option>
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+
+                <div class="pagination-controls">
+                    <button class="page-btn" @onclick="() => GoToPage(1)" disabled="@(_currentPage <= 1)" title="First Page">«</button>
+                    <button class="page-btn" @onclick="() => GoToPage(_currentPage - 1)" disabled="@(_currentPage <= 1)" title="Previous Page">‹</button>
+
+                    @foreach (var p in VisiblePages)
+                    {
+                        <button class="page-btn @(p == _currentPage ? "active" : "")" @onclick="() => GoToPage(p)">
+                            @p
+                        </button>
+                    }
+
+                    <button class="page-btn" @onclick="() => GoToPage(_currentPage + 1)" disabled="@(_currentPage >= TotalPages)" title="Next Page">›</button>
+                    <button class="page-btn" @onclick="() => GoToPage(TotalPages)" disabled="@(_currentPage >= TotalPages)" title="Last Page">»</button>
+                </div>
+            </div>
+        }
     }
 </div>
 

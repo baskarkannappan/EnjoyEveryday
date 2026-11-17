@@ -29,6 +29,8 @@ public class PlatformDbOrganizationRecord
     public string? PricingRegionCode { get; set; }
     public string? PricingRegionName { get; set; }
     public Guid? TariffId { get; set; }
+    public string? TariffName { get; set; }
+    public decimal MonthlyRate { get; set; } = 299.00m;
     public string Currency { get; set; } = "INR";
 }
 

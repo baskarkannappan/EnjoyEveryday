@@ -124,7 +124,88 @@ public partial class MarketplaceOperationsPage : ComponentBase
     private void SetQueue(string queue)
     {
         _activeQueue = queue;
+        _currentPage = 1;
     }
+
+    // Sorting & Pagination state
+    private string _sortColumn = "Date";
+    private bool _sortAscending = false;
+    private int _currentPage = 1;
+    private int _pageSize = 10;
+
+    private void SetSort(string column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortAscending = !_sortAscending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = column switch
+            {
+                "Date" or "Amount" => false,
+                _ => true
+            };
+        }
+        _currentPage = 1;
+    }
+
+    private void GoToPage(int page)
+    {
+        _currentPage = Math.Clamp(page, 1, TotalPages);
+    }
+
+    private void OnPageSizeChanged()
+    {
+        _currentPage = 1;
+    }
+
+    private int TotalOrdersCount => FilteredOrders.Count();
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling((double)TotalOrdersCount / _pageSize));
+    private int ItemRangeStart => TotalOrdersCount == 0 ? 0 : (_currentPage - 1) * _pageSize + 1;
+    private int ItemRangeEnd => Math.Min(_currentPage * _pageSize, TotalOrdersCount);
+
+    private IEnumerable<int> VisiblePages
+    {
+        get
+        {
+            var total = TotalPages;
+            var current = _currentPage;
+            var start = Math.Max(1, current - 2);
+            var end = Math.Min(total, start + 4);
+            if (end - start < 4) start = Math.Max(1, end - 4);
+            for (int i = start; i <= end; i++) yield return i;
+        }
+    }
+
+    private IEnumerable<MaterialOrder> SortedOrders
+    {
+        get
+        {
+            var query = FilteredOrders;
+            query = (_sortColumn, _sortAscending) switch
+            {
+                ("Date", true) => query.OrderBy(o => o.CreatedAt),
+                ("Date", false) => query.OrderByDescending(o => o.CreatedAt),
+                ("OrderNumber", true) => query.OrderBy(o => o.OrderNumber),
+                ("OrderNumber", false) => query.OrderByDescending(o => o.OrderNumber),
+                ("Organization", true) => query.OrderBy(o => o.OrganizationName ?? ""),
+                ("Organization", false) => query.OrderByDescending(o => o.OrganizationName ?? ""),
+                ("Amount", true) => query.OrderBy(o => o.TotalAmount),
+                ("Amount", false) => query.OrderByDescending(o => o.TotalAmount),
+                ("Status", true) => query.OrderBy(o => o.WorkflowStatus),
+                ("Status", false) => query.OrderByDescending(o => o.WorkflowStatus),
+                ("Payment", true) => query.OrderBy(o => o.PaymentStatus),
+                ("Payment", false) => query.OrderByDescending(o => o.PaymentStatus),
+                _ => query.OrderByDescending(o => o.CreatedAt)
+            };
+            return query;
+        }
+    }
+
+    private List<MaterialOrder> PagedOrders =>
+        SortedOrders.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
 
     private List<string> OrganizationsList =>
         _orders.Select(o => o.OrganizationName)

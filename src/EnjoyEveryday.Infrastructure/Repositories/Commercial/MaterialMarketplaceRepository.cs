@@ -4,6 +4,7 @@ using System.Data;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Infrastructure.Data;
@@ -767,6 +768,31 @@ public class MaterialMarketplaceRepository : IMaterialMarketplaceRepository
             CreatedAt = r.created_at,
             UpdatedAt = r.updated_at
         };
+
+        if (!string.IsNullOrWhiteSpace(r.image_url))
+        {
+            var raw = r.image_url.Trim();
+            if (raw.StartsWith("[") && raw.EndsWith("]"))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<List<string>>(raw);
+                    if (parsed != null && parsed.Count > 0)
+                    {
+                        prod.ImageUrls = parsed;
+                        prod.ImageUrl = parsed.FirstOrDefault();
+                    }
+                }
+                catch
+                {
+                    prod.ImageUrls = new List<string> { raw };
+                }
+            }
+            else
+            {
+                prod.ImageUrls = new List<string> { raw };
+            }
+        }
 
         if (r.off_id != null)
         {

@@ -75,7 +75,7 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `organization_plan_history`: Immutable chronological audit trail of past and current subscription plans, tariffs, rates, and quotas per organization (Migration 123).
 * `organization_plan_change_requests`: Two-way upgrade/downgrade request and Org Admin acceptance workflow state machine (Migration 123).
 * `razorpay_webhook_events`: Idempotent processing and reconciliation ledger for Razorpay webhook event payloads.
-* `material_products`, `material_offerings`, `material_orders`, `material_order_items`, `marketplace_orders`: Curriculum materials.
+* `material_products`, `material_offerings`, `material_orders`, `material_order_items`, `marketplace_orders`: Curriculum materials (`material_products.image_urls text[]` and `image_url text` supporting up to 3 AVIF compressed images, Migration 129).
 * `inventory_locations`, `inventory_balances`, `inventory_ledger`, `material_shipments`: Warehouse inventory.
 * `platform_business_events`: Centralized cross-application immutable event store capturing commercial events (material orders, experience acquisitions, subscription payments) across all organizations.
 * `platform_admin_notifications`: Real-time and persistent in-app notifications for platform administrators with read/unread tracking and direct action URLs.

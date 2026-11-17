@@ -79,4 +79,24 @@ Redirects navigate to `/access-denied?reason=<token>`:
   - Real-time status updates are broadcast via `IBranchStatusRealtimeNotifier` (`BranchStatusRealtimeNotifier` → `DaycareRealtimeNotificationCenter.OnBranchStatusChanged`) when `BranchOperationalStatusService` or `DailyOperationsService` changes branch status, plus a 30-second fallback revalidation timer.
   - Administrative (`Management`, `BranchAdminDashboard`, `OrgAdminDashboard`), Emergency/Safeguarding (`/safety-trust/*`), Read-Only (`/announcements`, `/notifications`, `/memories`, `/attendance/monthly*`), and Public/Account (`/profile`, `/select-branch`, `/select-organization`, `/support`, `/version`, `/release-notes`) routes remain accessible per existing RBAC rules.
 
+### 7. Open Redirect & Perimeter URL Sanitization (`EnsureLocalUrl`)
+* **Vulnerability Target**: Post-authentication `returnUrl` redirection handlers across `Admin.Web`, `Daycare.Web`, and `Parent.Web` (`AuthEndpoints.cs`).
+* **Enforcement Standard**: All redirect targets must pass `EnsureLocalUrl(returnUrl, fallback)`.
+* **Validation Invariants**:
+  - Must start with a single slash (`/`).
+  - Rejects protocol-relative prefixes (`//` or `/\`).
+  - Must parse successfully as a relative URI (`Uri.TryCreate(..., UriKind.Relative, out _)`).
+  - Any external domain, absolute URL (`https://...`), or malformed target is discarded and replaced with a safe internal default route (`/` or `/select-organization`).
+
+### 8. Platform Admin Global Guard & Defense-in-Depth HTTP Headers
+* **Platform Admin Portal (`Admin.Web`) Guard**: `_Imports.razor` enforces `@attribute [Authorize(Roles = "PlatformAdmin,Superadmin")]` across all administrative pages.
+* **Daycare Billing Protection**: `OrganizationBilling.razor` requires `@attribute [Authorize(Roles = "PlatformAdmin,OrganizationOwner,OrganizationAdmin")]`.
+* **Dev Fallback Loopback Protection**: `AppIdentityContext.cs` requires incoming HTTP requests in development environments to originate from loopback (`IPAddress.IsLoopback`) or localhost before granting mock administrative identities.
+* **Perimeter Security Headers**:
+  - `X-Frame-Options: DENY` (anti-clickjacking).
+  - `X-Content-Type-Options: nosniff` (anti-MIME sniffing).
+  - `Referrer-Policy: strict-origin-when-cross-origin` (referrer privacy).
+  - Kestrel Server Header disabled (`options.AddServerHeader = false`).
+* **AI Microservice CORS**: Python AI agent strictly whitelists explicit EnjoyEveryday web portal origins rather than wildcards.
+
 

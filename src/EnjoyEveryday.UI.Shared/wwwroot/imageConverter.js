@@ -233,12 +233,15 @@ window.imageConverter = {
             reader.onload = function (event) {
                 const img = new Image();
                 img.onload = function () {
+                    const bounds = window.imageConverter.calculateBounds(img.width, img.height, 1280, 1280);
                     const canvas = document.createElement("canvas");
-                    canvas.width = img.width;
-                    canvas.height = img.height;
+                    canvas.width = bounds.width;
+                    canvas.height = bounds.height;
 
                     const ctx = canvas.getContext("2d");
-                    ctx.drawImage(img, 0, 0);
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = "high";
+                    ctx.drawImage(img, 0, 0, bounds.width, bounds.height);
 
                     // Attempt AVIF conversion with WebP fallback if AVIF not supported
                     try {

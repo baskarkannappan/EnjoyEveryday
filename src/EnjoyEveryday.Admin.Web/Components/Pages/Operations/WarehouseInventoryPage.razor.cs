@@ -2,6 +2,7 @@ using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.UI.Shared.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace EnjoyEveryday.Admin.Web.Components.Pages.Operations;
 
@@ -9,6 +10,12 @@ public partial class WarehouseInventoryPage : ComponentBase
 {
     [Inject]
     private IMaterialMarketplaceService MaterialService { get; set; } = default!;
+
+    [Inject]
+    private IMediaService MediaService { get; set; } = default!;
+
+    [Inject]
+    private IJSRuntime JSRuntime { get; set; } = default!;
 
     [Inject]
     private IAppNotificationService NotificationService { get; set; } = default!;
@@ -48,6 +55,9 @@ public partial class WarehouseInventoryPage : ComponentBase
     private decimal _newRentalFee = 0m;
     private decimal _newDeposit = 0m;
     private int _newInitialStock = 50;
+    private List<string> _newImages = new();
+    private ElementReference _imageFileInput;
+    private bool _isUploadingNewImage = false;
 
     // Edit Product modal state
     private MaterialProduct? _editProductModalItem;
@@ -66,6 +76,9 @@ public partial class WarehouseInventoryPage : ComponentBase
     private int _editDefaultLoanDays = 14;
     private int _editMaxLoanDays = 30;
     private bool _editIsActive = true;
+    private List<string> _editImages = new();
+    private ElementReference _editImageFileInput;
+    private bool _isUploadingEditImage = false;
 
     // Ledger drawer
     private InventoryBalance? _ledgerModalItem;
@@ -384,7 +397,127 @@ public partial class WarehouseInventoryPage : ComponentBase
         _newRentalFee = 0m;
         _newDeposit = 0m;
         _newInitialStock = 50;
+        _newImages = new List<string>();
+        _isUploadingNewImage = false;
         _isAddProductOpen = true;
+    }
+
+    private async Task HandleImageUpload(ChangeEventArgs e)
+    {
+        if (_newImages.Count >= 3) return;
+        _isUploadingNewImage = true;
+        StateHasChanged();
+
+        try
+        {
+            var remaining = 3 - _newImages.Count;
+            var base64List = await JSRuntime.InvokeAsync<List<string>>("window.imageConverter.convertMultipleToAvif", _imageFileInput, remaining);
+            if (base64List != null && base64List.Count > 0)
+            {
+                foreach (var dataUrl in base64List)
+                {
+                    if (_newImages.Count >= 3) break;
+                    if (string.IsNullOrWhiteSpace(dataUrl)) continue;
+
+                    var commaIdx = dataUrl.IndexOf(',');
+                    var base64 = commaIdx >= 0 ? dataUrl[(commaIdx + 1)..] : dataUrl;
+                    var header = commaIdx >= 0 ? dataUrl[..commaIdx] : "";
+                    var mime = "image/avif";
+                    if (header.Contains("image/webp", StringComparison.OrdinalIgnoreCase)) mime = "image/webp";
+                    else if (header.Contains("image/png", StringComparison.OrdinalIgnoreCase)) mime = "image/png";
+                    else if (header.Contains("image/jpeg", StringComparison.OrdinalIgnoreCase)) mime = "image/jpeg";
+
+                    var bytes = Convert.FromBase64String(base64);
+                    var uploadReq = new UploadMediaVariantRequest
+                    {
+                        EntityType = "MaterialProduct",
+                        DisplayBytes = bytes,
+                        DisplayContentType = mime,
+                        ThumbnailBytes = bytes,
+                        ThumbnailContentType = mime
+                    };
+
+                    var asset = await MediaService.UploadMediaVariantsAsync(uploadReq);
+                    _newImages.Add($"/api/media/{asset.Id}/display");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Image upload error: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _isUploadingNewImage = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveNewImage(int index)
+    {
+        if (index >= 0 && index < _newImages.Count)
+        {
+            _newImages.RemoveAt(index);
+        }
+    }
+
+    private async Task HandleEditImageUpload(ChangeEventArgs e)
+    {
+        if (_editImages.Count >= 3) return;
+        _isUploadingEditImage = true;
+        StateHasChanged();
+
+        try
+        {
+            var remaining = 3 - _editImages.Count;
+            var base64List = await JSRuntime.InvokeAsync<List<string>>("window.imageConverter.convertMultipleToAvif", _editImageFileInput, remaining);
+            if (base64List != null && base64List.Count > 0)
+            {
+                foreach (var dataUrl in base64List)
+                {
+                    if (_editImages.Count >= 3) break;
+                    if (string.IsNullOrWhiteSpace(dataUrl)) continue;
+
+                    var commaIdx = dataUrl.IndexOf(',');
+                    var base64 = commaIdx >= 0 ? dataUrl[(commaIdx + 1)..] : dataUrl;
+                    var header = commaIdx >= 0 ? dataUrl[..commaIdx] : "";
+                    var mime = "image/avif";
+                    if (header.Contains("image/webp", StringComparison.OrdinalIgnoreCase)) mime = "image/webp";
+                    else if (header.Contains("image/png", StringComparison.OrdinalIgnoreCase)) mime = "image/png";
+                    else if (header.Contains("image/jpeg", StringComparison.OrdinalIgnoreCase)) mime = "image/jpeg";
+
+                    var bytes = Convert.FromBase64String(base64);
+                    var uploadReq = new UploadMediaVariantRequest
+                    {
+                        EntityType = "MaterialProduct",
+                        DisplayBytes = bytes,
+                        DisplayContentType = mime,
+                        ThumbnailBytes = bytes,
+                        ThumbnailContentType = mime
+                    };
+
+                    var asset = await MediaService.UploadMediaVariantsAsync(uploadReq);
+                    _editImages.Add($"/api/media/{asset.Id}/display");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Image upload error: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _isUploadingEditImage = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveEditImage(int index)
+    {
+        if (index >= 0 && index < _editImages.Count)
+        {
+            _editImages.RemoveAt(index);
+        }
     }
 
     private async Task SubmitNewProduct()
@@ -401,6 +534,8 @@ public partial class WarehouseInventoryPage : ComponentBase
                 MaterialType = _newType,
                 Description = _newDesc.Trim(),
                 SafetyInstructions = _newSafety.Trim(),
+                ImageUrl = _newImages.FirstOrDefault(),
+                ImageUrls = _newImages,
                 AllowPurchase = _newBuyPrice > 0,
                 PurchasePrice = _newBuyPrice,
                 AllowBorrow = _newRentalFee > 0,
@@ -459,6 +594,10 @@ public partial class WarehouseInventoryPage : ComponentBase
             _editAgeMin = full.AgeMinMonths;
             _editAgeMax = full.AgeMaxMonths;
             _editIsActive = full.IsActive;
+            _editImages = full.ImageUrls != null && full.ImageUrls.Count > 0
+                ? full.ImageUrls.ToList()
+                : (!string.IsNullOrWhiteSpace(full.ImageUrl) ? new List<string> { full.ImageUrl } : new List<string>());
+            _isUploadingEditImage = false;
 
             var offering = full.Offering;
             _editBuyPrice = offering?.PurchasePrice ?? 0m;
@@ -489,6 +628,8 @@ public partial class WarehouseInventoryPage : ComponentBase
                 MaterialType = _editType,
                 Description = _editDesc.Trim(),
                 SafetyInstructions = _editSafety.Trim(),
+                ImageUrl = _editImages.FirstOrDefault(),
+                ImageUrls = _editImages,
                 AgeMinMonths = _editAgeMin,
                 AgeMaxMonths = _editAgeMax,
                 AllowPurchase = _editBuyPrice > 0,

@@ -19,12 +19,30 @@ app = FastAPI(
     description="Production-ready early childhood education AI intelligence engine."
 )
 
-# CORS middleware for local development and .NET microservices
+# CORS middleware restricted to trusted EnjoyEveryday portals and localhost development
+allowed_origins = [
+    "http://localhost:7003",
+    "https://localhost:7003",
+    "http://localhost:7004",
+    "https://localhost:7004",
+    "http://localhost:7005",
+    "https://localhost:7005",
+    "http://localhost:5074",
+    "http://localhost:5075",
+    "http://localhost:5076",
+    "http://127.0.0.1:7003",
+    "https://127.0.0.1:7003",
+    "http://127.0.0.1:7004",
+    "https://127.0.0.1:7004",
+    "http://127.0.0.1:7005",
+    "https://127.0.0.1:7005",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 

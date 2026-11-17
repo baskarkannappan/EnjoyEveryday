@@ -63,9 +63,11 @@ public static class MediaEndpoints
                     }
                 }
 
-                // Public marketing assets (facility profile logo & campus photo gallery) can be viewed publicly
+                // Public marketing assets & catalog items (facility profile logo, campus photo gallery, material products) can be viewed publicly
                 bool isPublicMarketingAsset = string.Equals(asset.EntityType, "FacilityProfile", StringComparison.OrdinalIgnoreCase) ||
-                                             string.Equals(asset.EntityType, "FacilityGallery", StringComparison.OrdinalIgnoreCase);
+                                             string.Equals(asset.EntityType, "FacilityGallery", StringComparison.OrdinalIgnoreCase) ||
+                                             string.Equals(asset.EntityType, "MaterialProduct", StringComparison.OrdinalIgnoreCase) ||
+                                             string.Equals(asset.EntityType, "Marketplace", StringComparison.OrdinalIgnoreCase);
 
                 if (!isSameOrg && !isPublicMarketingAsset)
                 {

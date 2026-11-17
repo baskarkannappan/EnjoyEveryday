@@ -33,13 +33,13 @@ public static class AuthEndpoints
             {
                 if (IsDevLoginPermitted(context))
                 {
-                    return Results.Redirect($"/auth/dev-login?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+                    return Results.Redirect($"/auth/dev-login?returnUrl={Uri.EscapeDataString(EnsureLocalUrl(returnUrl, "/"))}");
                 }
 
                 return Results.Redirect("/auth/access-denied?reason=google_not_configured");
             }
 
-            var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}" };
+            var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(EnsureLocalUrl(returnUrl, "/"))}" };
             properties.SetParameter("prompt", "select_account");
             
             if (!string.IsNullOrEmpty(inviteToken))
@@ -342,7 +342,7 @@ public static class AuthEndpoints
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
 
-            return Results.Redirect(returnUrl ?? "/");
+            return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         }).DisableAntiforgery();
 
         group.MapGet("/logout", async (HttpContext context) =>
@@ -404,7 +404,7 @@ public static class AuthEndpoints
         {
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
-            return Results.Redirect(returnUrl ?? "/");
+            return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         }
 
         var assignedBranches = (await conn.QueryFunctionAsync<BranchRow>(
@@ -417,19 +417,19 @@ public static class AuthEndpoints
             claims.Add(new Claim("ActiveBranchName", assignedBranches[0].name));
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
-            return Results.Redirect(returnUrl ?? "/");
+            return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         }
         else if (assignedBranches.Count > 1)
         {
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
-            return Results.Redirect($"/select-branch{(string.IsNullOrEmpty(returnUrl) ? "" : "?returnUrl=" + Uri.EscapeDataString(returnUrl))}");
+            return Results.Redirect($"/select-branch{(string.IsNullOrEmpty(returnUrl) ? "" : "?returnUrl=" + Uri.EscapeDataString(EnsureLocalUrl(returnUrl, "/")))}");
         }
         else
         {
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
-            return Results.Redirect(returnUrl ?? "/");
+            return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         }
     }
 
@@ -488,5 +488,13 @@ public static class AuthEndpoints
         }
 
         return true;
+    }
+
+    private static string EnsureLocalUrl(string? returnUrl, string fallback = "/")
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl)) return fallback;
+        if (returnUrl.StartsWith("//") || returnUrl.StartsWith("/\\")) return fallback;
+        if (returnUrl.StartsWith("/") && Uri.TryCreate(returnUrl, UriKind.Relative, out _)) return returnUrl;
+        return fallback;
     }
 }

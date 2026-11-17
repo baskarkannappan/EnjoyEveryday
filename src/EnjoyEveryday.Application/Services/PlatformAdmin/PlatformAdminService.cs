@@ -120,7 +120,8 @@ public class PlatformAdminService : IPlatformAdminService
                                 PricingRegionCode = r.PricingRegionCode,
                                 PricingRegionName = r.PricingRegionName,
                                 TariffId = r.TariffId,
-                                MonthlyRate = 299.00m,
+                                TariffName = r.TariffName ?? string.Empty,
+                                MonthlyRate = r.MonthlyRate > 0 ? r.MonthlyRate : 299.00m,
                                 NextBillingDate = DateTimeOffset.UtcNow.AddDays(15),
                                 Currency = !string.IsNullOrWhiteSpace(r.Currency) ? r.Currency : "INR",
                                 AdminEmail = !string.IsNullOrWhiteSpace(r.AdminEmail) ? r.AdminEmail : $"admin@{r.Name.ToLowerInvariant().Replace(" ", "").Replace("·", "")}.com",
@@ -141,6 +142,8 @@ public class PlatformAdminService : IPlatformAdminService
                             if (r.PlanId.HasValue) existing.PlanId = r.PlanId.Value;
                             if (!string.IsNullOrWhiteSpace(r.PlanName)) existing.PlanName = r.PlanName;
                             if (r.TariffId.HasValue) existing.TariffId = r.TariffId;
+                            if (!string.IsNullOrWhiteSpace(r.TariffName)) existing.TariffName = r.TariffName;
+                            if (r.MonthlyRate > 0) existing.MonthlyRate = r.MonthlyRate;
                             if (!string.IsNullOrWhiteSpace(r.Currency)) existing.Currency = r.Currency;
                             if (Enum.TryParse<AccountStatus>(r.AccountStatus, true, out var parsedExistingStatus))
                             {

@@ -182,6 +182,36 @@ public class UserService
     }
 
     /// <summary>
+    /// Deactivates a user from an organization context, revoking their organization roles,
+    /// branch assignments, and classroom assignments. If the user has no remaining active
+    /// organizations, their user account and teacher profile are marked inactive globally.
+    /// </summary>
+    public async Task RemoveUserFromOrganizationAsync(Guid targetUserId, Guid? organizationId = null, CancellationToken cancellationToken = default)
+    {
+        var canManage = _userContext.HasPermission(Permissions.StaffManage) || _userContext.HasPermission("user.manage");
+        if (!canManage)
+            throw new UnauthorizedAccessException("Requires staff.manage or user.manage permission.");
+
+        if (targetUserId == _userContext.UserId)
+            throw new InvalidOperationException("Cannot deactivate yourself from your active organization.");
+
+        var tenantId = _tenantContext.TenantId;
+        var targetOrgId = organizationId ?? _userContext.OrganizationId ?? tenantId;
+
+        await _userRepository.RemoveUserFromOrganizationAsync(tenantId, targetOrgId, targetUserId, cancellationToken);
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = tenantId,
+            UserId = _userContext.UserId,
+            Action = "User.DeactivatedFromOrganization",
+            EntityType = "User",
+            EntityId = targetUserId,
+            Details = new { OrganizationId = targetOrgId }
+        }, cancellationToken);
+    }
+
+    /// <summary>
     /// Promotes an existing teacher to Lead Teacher within an organization and branch context,
     /// configuring their classroom assignments and recording an audit trail.
     /// </summary>

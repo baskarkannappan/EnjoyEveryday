@@ -32,13 +32,13 @@ public static class AuthEndpoints
             {
                 if (IsDevLoginPermitted(context))
                 {
-                    return Results.Redirect($"/auth/dev-login?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+                    return Results.Redirect($"/auth/dev-login?returnUrl={Uri.EscapeDataString(EnsureLocalUrl(returnUrl, "/"))}");
                 }
 
                 return Results.Redirect("/auth/access-denied?reason=google_not_configured");
             }
 
-            var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}" };
+            var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(EnsureLocalUrl(returnUrl, "/"))}" };
             if (!string.IsNullOrEmpty(inviteToken))
             {
                 properties.Items["InviteToken"] = inviteToken;
@@ -97,7 +97,7 @@ public static class AuthEndpoints
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
-            return Results.Redirect(returnUrl ?? "/");
+            return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         });
 
         group.MapGet("/callback", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
@@ -190,7 +190,7 @@ public static class AuthEndpoints
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
 
-            return Results.Redirect(returnUrl ?? "/");
+            return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         });
 
         group.MapGet("/logout", async (HttpContext context) =>
@@ -239,5 +239,13 @@ public static class AuthEndpoints
         }
 
         return true;
+    }
+
+    private static string EnsureLocalUrl(string? returnUrl, string fallback = "/")
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl)) return fallback;
+        if (returnUrl.StartsWith("//") || returnUrl.StartsWith("/\\")) return fallback;
+        if (returnUrl.StartsWith("/") && Uri.TryCreate(returnUrl, UriKind.Relative, out _)) return returnUrl;
+        return fallback;
     }
 }
