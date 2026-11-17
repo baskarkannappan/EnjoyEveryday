@@ -27,4 +27,9 @@ public interface IParentCommunicationAssistantService
     Task<ParentCommunication> ApproveAndSendAsync(
         SendParentCommunicationInput input, 
         CancellationToken cancellationToken = default);
+
+    Task<string> RefineMessageToneAsync(
+        string messageContent, 
+        string tonePreference = "ConstructiveAndEmpathetic", 
+        CancellationToken cancellationToken = default);
 }

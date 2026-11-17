@@ -289,6 +289,9 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
         }
 
         var itemsToSave = input.ConfirmedItems.Any() ? input.ConfirmedItems : draft.Items;
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        int scheduledCount = 0;
+        int skippedCount = 0;
 
         foreach (var item in itemsToSave)
         {
@@ -298,8 +301,19 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
                 var existing = await _scheduleRepository.GetByIdAsync(item.ResultingScheduleId.Value);
                 if (existing != null)
                 {
+                    scheduledCount++;
                     continue;
                 }
+            }
+
+            // Skip past dates (e.g. earlier days in the current week)
+            if (item.ScheduledDate < today)
+            {
+                item.ValidationStatus = "Warning";
+                item.ValidationNotes = $"Past date ({item.ScheduledDate:MMM d}) — skipped scheduling.";
+                await _repository.UpdateDraftItemAsync(item, cancellationToken);
+                skippedCount++;
+                continue;
             }
 
             // Skip or block closed dates
@@ -308,6 +322,7 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
                 item.ValidationStatus = "Warning";
                 item.ValidationNotes = closedReason;
                 await _repository.UpdateDraftItemAsync(item, cancellationToken);
+                skippedCount++;
                 continue;
             }
 
@@ -327,28 +342,49 @@ public class WeeklyPlanningAssistantService : IWeeklyPlanningAssistantService
                 }
             }
 
-            // Schedule via existing PlannerService
-            var schedule = await _plannerService.ScheduleExperienceAsync(
-                experienceId: item.ExperienceId,
-                classroomId: draft.ClassroomId,
-                scheduledDate: item.ScheduledDate,
-                timeOfDay: item.TimeOfDay,
-                primaryTeacherId: teacherId,
-                notes: $"{item.LearningGoal} [Weekly Assistant Rationale: {item.Rationale}]"
-            );
-
-            item.ResultingScheduleId = schedule.Id;
-            item.ValidationStatus = "Valid";
-            await _repository.UpdateDraftItemAsync(item, cancellationToken);
-
-            if (input.AutoConfirmSchedules)
+            try
             {
-                await _plannerService.ConfirmScheduleAsync(schedule.Id);
+                // Schedule via existing PlannerService
+                var schedule = await _plannerService.ScheduleExperienceAsync(
+                    experienceId: item.ExperienceId,
+                    classroomId: draft.ClassroomId,
+                    scheduledDate: item.ScheduledDate,
+                    timeOfDay: item.TimeOfDay,
+                    primaryTeacherId: teacherId,
+                    notes: $"{item.LearningGoal} [Weekly Assistant Rationale: {item.Rationale}]"
+                );
+
+                item.ResultingScheduleId = schedule.Id;
+                item.ValidationStatus = "Valid";
+                item.ValidationNotes = null;
+                await _repository.UpdateDraftItemAsync(item, cancellationToken);
+
+                if (input.AutoConfirmSchedules)
+                {
+                    await _plannerService.ConfirmScheduleAsync(schedule.Id);
+                }
+                scheduledCount++;
+            }
+            catch (Exception ex)
+            {
+                item.ValidationStatus = "Warning";
+                item.ValidationNotes = ex.Message;
+                await _repository.UpdateDraftItemAsync(item, cancellationToken);
+                skippedCount++;
             }
         }
 
-        await _repository.UpdateDraftStatusAsync(tenantId, draft.Id, "Approved", cancellationToken);
-        draft.Status = "Approved";
+        if (scheduledCount > 0)
+        {
+            await _repository.UpdateDraftStatusAsync(tenantId, draft.Id, "Approved", cancellationToken);
+            draft.Status = "Approved";
+        }
+        else if (skippedCount > 0)
+        {
+            throw new InvalidOperationException("No experiences could be scheduled. Past dates or conflicting slots were skipped. Please review the warnings on the day cards.");
+        }
+
+        draft.Items = itemsToSave.ToList();
         return draft;
     }
 

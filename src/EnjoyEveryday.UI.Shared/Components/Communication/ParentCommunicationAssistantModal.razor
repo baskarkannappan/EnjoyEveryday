@@ -143,13 +143,32 @@
                             </div>
 
                             <div class="form-group">
-                                <label>Message Body (Editable)</label>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <label style="margin: 0;">Message Body (Editable)</label>
+                                    <button type="button" class="btn secondary btn-sm" style="font-size: 11px; padding: 2px 8px; border-radius: 4px;" @onclick="RefineToneAsync" disabled="@_isRefiningTone" title="Review draft with positive, constructive early-childhood language">
+                                        @if (_isRefiningTone)
+                                        {
+                                            <span class="spinner-small"></span> <span>Refining tone...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>✨ Refine Tone &amp; Empathy</span>
+                                        }
+                                    </button>
+                                </div>
                                 <textarea class="form-control content-textarea" rows="8" @bind="_currentDraft.ContentFinal"></textarea>
                             </div>
 
                             <div class="form-group">
-                                <label>Family Conversation Starter</label>
-                                <input type="text" class="form-control" @bind="_currentDraft.FamilyConversationStarter" placeholder="Open-ended question for family dinner or bedtime..." />
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <label style="margin: 0;">Family Conversation Starter</label>
+                                    <div style="display: flex; gap: 6px;">
+                                        <button type="button" class="btn secondary btn-sm" style="font-size: 10px; padding: 2px 6px;" @onclick='() => SetStarterCategory("Car")'>🚗 Car Ride</button>
+                                        <button type="button" class="btn secondary btn-sm" style="font-size: 10px; padding: 2px 6px;" @onclick='() => SetStarterCategory("Dinner")'>🍽️ Dinner</button>
+                                        <button type="button" class="btn secondary btn-sm" style="font-size: 10px; padding: 2px 6px;" @onclick='() => SetStarterCategory("Bedtime")'>🌙 Bedtime</button>
+                                    </div>
+                                </div>
+                                <input type="text" class="form-control" @bind="_currentDraft.FamilyConversationStarter" placeholder="Open-ended question for family car ride, dinner or bedtime..." />
                             </div>
                         </div>
                     }
@@ -310,8 +329,59 @@
     private bool _isGenerating;
     private bool _isSaving;
     private bool _isSending;
+    private bool _isRefiningTone;
     private string? _errorMessage;
     private string? _successMessage;
+
+    private async Task RefineToneAsync()
+    {
+        if (_currentDraft == null || string.IsNullOrWhiteSpace(_currentDraft.ContentFinal)) return;
+        _isRefiningTone = true;
+        _errorMessage = null;
+        StateHasChanged();
+        try
+        {
+            var refined = await CommService.RefineMessageToneAsync(_currentDraft.ContentFinal);
+            if (!string.IsNullOrWhiteSpace(refined))
+            {
+                _currentDraft.ContentFinal = refined;
+                _successMessage = "Message refined with empathetic, constructive framing.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error refining tone: {ex.Message}";
+        }
+        finally
+        {
+            _isRefiningTone = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetStarterCategory(string category)
+    {
+        if (_currentDraft == null) return;
+        var existing = _currentDraft.FamilyConversationStarter ?? "";
+        existing = System.Text.RegularExpressions.Regex.Replace(existing, @"^\[.*?\]\s*", "");
+        if (string.IsNullOrWhiteSpace(existing))
+        {
+            existing = $"Ask {ChildName} what their favorite moment was today!";
+        }
+
+        switch (category)
+        {
+            case "Car":
+                _currentDraft.FamilyConversationStarter = $"[🚗 On the car ride home] {existing}";
+                break;
+            case "Dinner":
+                _currentDraft.FamilyConversationStarter = $"[🍽️ At the dinner table] {existing}";
+                break;
+            case "Bedtime":
+                _currentDraft.FamilyConversationStarter = $"[🌙 Before bedtime] {existing}";
+                break;
+        }
+    }
 
     private ParentCommunicationRecipientInfo? SelectedRecipient =>
         _recipients.FirstOrDefault(r => r.PersonId == _selectedRecipientId) ?? _recipients.FirstOrDefault();

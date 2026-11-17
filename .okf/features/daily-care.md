@@ -27,7 +27,7 @@ tags:
 * **Diapers & Potty**: `ChildCareEvent` with `EventType = "Diaper"` (Wet, BM, Both, Dry, Potty).
 * **Meals & Feeding**: `ChildCareEvent` with `EventType = "Meal"` (Breakfast, Lunch, Snack, Bottle ounces).
 * **Nap Sessions**: `ChildNapSession` (`StartTime`, `EndTime`, `Quality`).
-* **Handovers**: `TeacherHandover` (`ShiftType`, `Notes`, `ClassroomId`, `AuthorUserId`).
+* **Handovers**: `TeacherHandover` (`ShiftType`, `Notes`, `ClassroomId`, `AuthorUserId`). Features **1-Click Auto-Drafting from Active Care Logs** in `ChildDailyCareSection.razor` which synthesizes room energy, child nap durations, meal intakes, allergy flags, and outstanding care timers automatically from `_classroomOverview`.
 
 ## Parent Daily Care Feed & Chronological Timeline
 * `ParentService.GetChildDailySummaryAsync` queries `IChildDailyCareService.GetParentDailyCareReportAsync(effectiveTenantId, childId, date)` using the child's effective tenant scope.

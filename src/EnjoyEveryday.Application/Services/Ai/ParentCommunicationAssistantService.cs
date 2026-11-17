@@ -513,6 +513,67 @@ public class ParentCommunicationAssistantService : IParentCommunicationAssistant
         };
     }
 
+    public async Task<string> RefineMessageToneAsync(
+        string messageContent, 
+        string tonePreference = "ConstructiveAndEmpathetic", 
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(messageContent)) return messageContent;
+
+        try
+        {
+            var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                var payload = new
+                {
+                    content = messageContent,
+                    tone = tonePreference
+                };
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, "api/parent/refine-tone");
+                req.Headers.Add("X-Tenant-Api-Key", apiKey);
+                req.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
+                req.Content = JsonContent.Create(payload);
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+                var response = await _httpClient.SendAsync(req, linked.Token);
+                if (response.IsSuccessStatusCode)
+                {
+                    var res = await response.Content.ReadFromJsonAsync<ToneRefineResponse>(cancellationToken: linked.Token);
+                    if (!string.IsNullOrWhiteSpace(res?.RefinedContent))
+                    {
+                        return res.RefinedContent;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to deterministic framing
+        }
+
+        return ApplyDeterministicConstructiveTone(messageContent);
+    }
+
+    private static string ApplyDeterministicConstructiveTone(string text)
+    {
+        var refined = text;
+        refined = System.Text.RegularExpressions.Regex.Replace(refined, @"\bdid not share\b", "is practicing taking turns", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        refined = System.Text.RegularExpressions.Regex.Replace(refined, @"\brefused to eat\b", "preferred lighter portions and explored gentle choices", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        refined = System.Text.RegularExpressions.Regex.Replace(refined, @"\bwas crying all\b", "experienced big feelings and was comforted through", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        refined = System.Text.RegularExpressions.Regex.Replace(refined, @"\bhad a tantrum\b", "expressed strong emotions during transition and was gently supported", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        refined = System.Text.RegularExpressions.Regex.Replace(refined, @"\bdid not listen\b", "needed gentle reminders to follow the group rhythm", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        refined = System.Text.RegularExpressions.Regex.Replace(refined, @"\bhit\b", "was supported with safe gentle hands during a moment of big energy", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return refined;
+    }
+
+    private class ToneRefineResponse
+    {
+        public string? RefinedContent { get; set; }
+    }
+
     private class AiDraftDto
     {
         public string Title { get; set; } = string.Empty;

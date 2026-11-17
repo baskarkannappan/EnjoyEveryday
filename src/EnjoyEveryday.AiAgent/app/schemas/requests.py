@@ -1,8 +1,19 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 
+class TopExperienceDto(BaseModel):
+    id: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+
 class IdeaRequest(BaseModel):
     idea: str = Field(..., min_length=2, max_length=1000, description="The starting concept or learning theme")
+    ageGroup: Optional[str] = Field(default=None, description="Target age group e.g. 3-5 years, Toddler 18-36m")
+    environment: Optional[str] = Field(default=None, description="Indoor, Outdoor, or Indoor / Outdoor")
+    focusArea: Optional[str] = Field(default=None, description="Pedagogical focus area e.g. Sensory, Motor, Language, STEM")
+    availableMaterials: List[str] = Field(default_factory=list, description="Available classroom materials to incorporate")
+    topExperiences: List[TopExperienceDto] = Field(default_factory=list, description="Reference top-performing tenant experiences")
 
 class ImproveRequest(BaseModel):
     experienceDna: Dict[str, Any] = Field(..., description="The current Experience DNA representation")
@@ -10,6 +21,11 @@ class ImproveRequest(BaseModel):
 
 class MaterialsRequest(BaseModel):
     experienceDna: Dict[str, Any] = Field(..., description="The current Experience DNA representation")
+
+class InSessionPivotRequest(BaseModel):
+    experienceTitle: str
+    situation: str
+    materials: Optional[str] = None
 
 class RecommendationCandidateDto(BaseModel):
     id: str

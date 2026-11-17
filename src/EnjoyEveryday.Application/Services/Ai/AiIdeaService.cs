@@ -23,11 +23,16 @@ public class AiIdeaService : IAiIdeaService
 
     public async Task<IEnumerable<ExperienceFullData>> GenerateIdeasAsync(string ideaInput)
     {
-        var result = await GenerateIdeasWithDiagnosticsAsync(ideaInput);
+        var result = await GenerateIdeasWithDiagnosticsAsync(ideaInput, (IdeaGenerationOptions?)null);
         return result.Suggestions;
     }
 
-    public async Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, Action<string>? onProgress = null)
+    public Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, Action<string>? onProgress = null)
+    {
+        return GenerateIdeasWithDiagnosticsAsync(ideaInput, null, onProgress);
+    }
+
+    public async Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, IdeaGenerationOptions? options, Action<string>? onProgress = null)
     {
         var result = new AiIdeaGenerationResult();
         void Log(string msg)
@@ -50,6 +55,20 @@ public class AiIdeaService : IAiIdeaService
         var preview = trimmedPrompt.Length > 50 ? trimmedPrompt.Substring(0, 47) + "..." : trimmedPrompt;
         Log($"Starting pedagogical idea exploration for: \"{preview}\"");
 
+        if (options != null)
+        {
+            var contextParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(options.AgeGroup)) contextParts.Add($"Age: {options.AgeGroup}");
+            if (!string.IsNullOrWhiteSpace(options.FocusArea)) contextParts.Add($"Focus: {options.FocusArea}");
+            if (!string.IsNullOrWhiteSpace(options.Environment)) contextParts.Add($"Env: {options.Environment}");
+            if (options.AvailableMaterials != null && options.AvailableMaterials.Count > 0) contextParts.Add($"{options.AvailableMaterials.Count} inventory materials");
+            if (options.TopExperiences != null && options.TopExperiences.Count > 0) contextParts.Add($"{options.TopExperiences.Count} exemplar references");
+            if (contextParts.Count > 0)
+            {
+                Log($"Applied pedagogical grounding: {string.Join(", ", contextParts)}");
+            }
+        }
+
         var baseUrl = _httpClient.BaseAddress?.ToString() ?? "http://127.0.0.1:8000/";
         Log($"Connecting to AI Engine at {baseUrl}api/ideas...");
 
@@ -61,7 +80,21 @@ public class AiIdeaService : IAiIdeaService
                 apiKey = "DEFAULT_AI_KEY";
             }
 
-            var request = new { idea = trimmedPrompt };
+            var request = new
+            {
+                idea = trimmedPrompt,
+                ageGroup = options?.AgeGroup,
+                environment = options?.Environment,
+                focusArea = options?.FocusArea,
+                availableMaterials = options?.AvailableMaterials ?? new List<string>(),
+                topExperiences = (options?.TopExperiences ?? new List<TopExperienceSummaryDto>()).Select(t => new
+                {
+                    id = t.Id?.ToString(),
+                    title = t.Title,
+                    description = t.Description,
+                    category = t.Category
+                }).ToList()
+            };
             using var message = new HttpRequestMessage(HttpMethod.Post, "api/ideas");
             message.Headers.Add("X-Tenant-Api-Key", apiKey);
             message.Headers.Add("X-Tenant-Id", _tenantContext.TenantId != Guid.Empty ? _tenantContext.TenantId.ToString() : "10000000-0000-0000-0000-000000000001");
@@ -76,8 +109,8 @@ public class AiIdeaService : IAiIdeaService
 
             if (response.IsSuccessStatusCode)
             {
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var apiResult = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(options);
+                var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var apiResult = await response.Content.ReadFromJsonAsync<AiIdeaResponse>(jsonOptions);
                 if (apiResult?.Suggestions != null && apiResult.Suggestions.Count > 0)
                 {
                     result.Suggestions = apiResult.Suggestions;
@@ -527,6 +560,139 @@ public class AiIdeaService : IAiIdeaService
         }
 
         return string.IsNullOrWhiteSpace(cleaned) ? "Creative Exploration" : char.ToUpper(cleaned[0]) + cleaned.Substring(1);
+    }
+
+    public async Task<IEnumerable<InSessionAdaptationResult>> GenerateInSessionAdaptationsAsync(string experienceTitle, string situation, string? currentMaterials = null)
+    {
+        var cleanTitle = string.IsNullOrWhiteSpace(experienceTitle) ? "Activity" : experienceTitle.Trim();
+        var cleanSit = string.IsNullOrWhiteSpace(situation) ? "Extension" : situation.Trim();
+
+        try
+        {
+            var apiKey = await _settingsService.GetAiApiKeyAsync(_tenantContext.TenantId);
+            if (string.IsNullOrEmpty(apiKey)) apiKey = "DEFAULT_AI_KEY";
+
+            var payload = new
+            {
+                experienceTitle = cleanTitle,
+                situation = cleanSit,
+                materials = currentMaterials ?? ""
+            };
+
+            using var message = new HttpRequestMessage(HttpMethod.Post, "api/in-session-pivot");
+            message.Headers.Add("X-Tenant-Api-Key", apiKey);
+            message.Headers.Add("X-Tenant-Id", _tenantContext.TenantId != Guid.Empty ? _tenantContext.TenantId.ToString() : "10000000-0000-0000-0000-000000000001");
+            message.Headers.Add("X-Correlation-Id", System.Diagnostics.Activity.Current?.Id ?? Guid.NewGuid().ToString("N"));
+            message.Content = JsonContent.Create(payload);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var response = await _httpClient.SendAsync(message, cts.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var apiResult = await response.Content.ReadFromJsonAsync<InSessionPivotApiResponse>(options);
+                if (apiResult?.Pivots != null && apiResult.Pivots.Any())
+                {
+                    return apiResult.Pivots;
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to deterministic rules
+        }
+
+        return BuildDeterministicInSessionPivots(cleanTitle, cleanSit, currentMaterials);
+    }
+
+    private static List<InSessionAdaptationResult> BuildDeterministicInSessionPivots(string title, string situation, string? materials)
+    {
+        var results = new List<InSessionAdaptationResult>();
+        var sitLower = situation.ToLowerInvariant();
+
+        if (sitLower.Contains("fast") || sitLower.Contains("early") || sitLower.Contains("finish"))
+        {
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Finished Too Fast",
+                AdaptationTitle = "The Mystery Explorer Twist",
+                TeacherPrompt = "Say: 'You mastered that so quickly! Can anyone find a way to make your creation twice as tall, or hide a secret detail?'",
+                ChildrenPrompt = "Children inspect their work to add an imaginative second layer or secret feature.",
+                QuickTip = "Celebrate their speed, then introduce an open-ended constraint like using only one hand or matching colors."
+            });
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Finished Too Fast",
+                AdaptationTitle = "Partner Museum Showcase",
+                TeacherPrompt = "Say: 'Let us become museum tour guides! Turn to your friend and describe the coolest part of what you built.'",
+                ChildrenPrompt = "Children pair up to describe their creation and ask their friend one question.",
+                QuickTip = "Promotes expressive vocabulary and peer listening without needing any new materials."
+            });
+        }
+        else if (sitLower.Contains("restless") || sitLower.Contains("energy") || sitLower.Contains("loud") || sitLower.Contains("fidget"))
+        {
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Restless / High Energy",
+                AdaptationTitle = "Stand & Shake Sensory Reset",
+                TeacherPrompt = "Say: 'Before our next step, everyone stand tall like trees! Reach your hands to the clouds, take one deep breath, and gently tiptoe three times.'",
+                ChildrenPrompt = "Children perform a 20-second gross-motor stretch and breathing reset.",
+                QuickTip = "Channels fidgety energy into a deliberate sensory release before re-focusing at the table."
+            });
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Restless / High Energy",
+                AdaptationTitle = "The Whisper Mission",
+                TeacherPrompt = "Lower your voice to a playful whisper: 'I have a secret mission for the next step, but only ears listening to this tiny whisper can hear it...'",
+                ChildrenPrompt = "Children immediately quiet down to lean in and listen closely.",
+                QuickTip = "Whispering instantly flips classroom acoustics and draws attention back without raising educator voice."
+            });
+        }
+        else if (sitLower.Contains("challeng") || sitLower.Contains("difficult") || sitLower.Contains("frustrat") || sitLower.Contains("hard"))
+        {
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Too Challenging",
+                AdaptationTitle = "Cooperative Buddy Support",
+                TeacherPrompt = "Say: 'Let us combine powers! Team up with a friend: one holds the piece, the other secures it.'",
+                ChildrenPrompt = "Children work in pairs, sharing fine-motor coordination burdens.",
+                QuickTip = "Removes individual failure anxiety and builds collaborative resilience."
+            });
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Too Challenging",
+                AdaptationTitle = "Simplified Chunky Steps",
+                TeacherPrompt = "Model one single simple motion: 'Just try this one small step first. There is no right or wrong way to explore!'",
+                ChildrenPrompt = "Children focus on basic tactile handling rather than perfect assembly.",
+                QuickTip = "Validate effort over outcome; modify tools to larger chunky grips if available."
+            });
+        }
+        else
+        {
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Alternative Variation",
+                AdaptationTitle = "Sensory Storytelling Shift",
+                TeacherPrompt = "Say: 'What sounds does your creation make? Can you show me what it would do on a windy or rainy day?'",
+                ChildrenPrompt = "Children use sound effects and dramatic play to breathe life into their activity materials.",
+                QuickTip = "Connects physical handling to imaginative theater play."
+            });
+            results.Add(new InSessionAdaptationResult
+            {
+                Situation = "Alternative Variation",
+                AdaptationTitle = "Pass-the-Treasure Circle",
+                TeacherPrompt = "Say: 'Let us pass one piece around the circle. Each friend adds one idea or descriptive word!'",
+                ChildrenPrompt = "Children contribute turn-by-turn to a shared classroom creation.",
+                QuickTip = "Fosters collective ownership and positive turn-taking."
+            });
+        }
+
+        return results;
+    }
+
+    private class InSessionPivotApiResponse
+    {
+        public List<InSessionAdaptationResult>? Pivots { get; set; }
     }
 
     private class AiMaterialsResponse

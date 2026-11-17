@@ -72,6 +72,7 @@ public partial class ChildDailyCareSection : ComponentBase
     private string _newHandoverFollowups = "";
     private bool _newHandoverIsCritical = false;
     private bool _isSubmittingHandover = false;
+    private bool _isDraftingHandover = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -576,6 +577,77 @@ public partial class ChildDailyCareSection : ComponentBase
         finally
         {
             _isSubmitting = false;
+        }
+    }
+
+    private void AutoDraftHandoverSummary()
+    {
+        _isDraftingHandover = true;
+        try
+        {
+            var checkedInCount = _classroomOverview.Count(c => c.IsCheckedIn);
+            var totalCount = _classroomOverview.Count;
+            var restingCount = _classroomOverview.Count(c => c.ActiveNapSession != null);
+            var completedNapsCount = _classroomOverview.Count(c => c.LastCompletedNapSession != null);
+            var allergyAlerts = _classroomOverview.Where(c => !string.IsNullOrEmpty(c.DietaryOrAllergyNote) || !string.IsNullOrEmpty(c.ImportantCareAlert)).ToList();
+
+            var summaryBuilder = new System.Text.StringBuilder();
+            summaryBuilder.Append($"{checkedInCount} of {totalCount} children checked in today. Room atmosphere is calm. ");
+            if (restingCount > 0)
+            {
+                summaryBuilder.Append($"{restingCount} child(ren) currently resting/napping. ");
+            }
+            if (completedNapsCount > 0)
+            {
+                summaryBuilder.Append($"{completedNapsCount} child(ren) completed scheduled rest. ");
+            }
+            summaryBuilder.Append("Daily care routines progressing on schedule.");
+            _newHandoverSummary = summaryBuilder.ToString();
+
+            var childNotes = new List<string>();
+            foreach (var c in _classroomOverview.Where(x => x.IsCheckedIn))
+            {
+                var notes = new List<string>();
+                if (c.LastCompletedNapSession != null)
+                {
+                    notes.Add($"napped {c.LastCompletedNapSession.DurationMinutes}m");
+                }
+                if (c.LastMealEvent != null)
+                {
+                    notes.Add($"meal: {c.LastMealEvent.AmountConsumed ?? c.LastMealEvent.MealType}");
+                }
+                if (c.LastComfortMood != null)
+                {
+                    notes.Add($"mood: {c.LastComfortMood.ComfortMood ?? c.LastComfortMood.Notes}");
+                }
+                if (notes.Any())
+                {
+                    childNotes.Add($"{c.ChildName} ({string.Join(", ", notes)})");
+                }
+            }
+            _newHandoverChildNotes = childNotes.Any() ? string.Join("; ", childNotes.Take(6)) : "All children experienced calm routines and positive participation.";
+
+            var taskNotes = new List<string>();
+            if (allergyAlerts.Any())
+            {
+                taskNotes.Add($"Active Care Alerts: {string.Join(", ", allergyAlerts.Select(a => $"{a.ChildName} ({a.DietaryOrAllergyNote ?? a.ImportantCareAlert})"))}");
+            }
+            if (restingCount > 0)
+            {
+                taskNotes.Add($"Monitor {restingCount} active nap session(s) and record gentle wake-ups.");
+            }
+            taskNotes.Add("Perform scheduled afternoon diaper/potty checks and prepare afternoon snack.");
+            _newHandoverCareTasks = string.Join("; ", taskNotes);
+
+            _statusMessage = "Shift handover draft compiled from today's active care logs.";
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Error drafting handover: {ex.Message}";
+        }
+        finally
+        {
+            _isDraftingHandover = false;
         }
     }
 

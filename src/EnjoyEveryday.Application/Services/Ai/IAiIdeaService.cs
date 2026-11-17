@@ -73,16 +73,44 @@ public class AiIdeaDiagnostics
     public AiExecutionMeta? Meta { get; set; }
 }
 
+public class TopExperienceSummaryDto
+{
+    public Guid? Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? Category { get; set; }
+}
+
+public class IdeaGenerationOptions
+{
+    public string? AgeGroup { get; set; }
+    public string? Environment { get; set; }
+    public string? FocusArea { get; set; }
+    public List<string> AvailableMaterials { get; set; } = new();
+    public List<TopExperienceSummaryDto> TopExperiences { get; set; } = new();
+}
+
 public class AiIdeaGenerationResult
 {
     public List<ExperienceFullData> Suggestions { get; set; } = new();
     public AiIdeaDiagnostics Diagnostics { get; set; } = new();
 }
 
+public class InSessionAdaptationResult
+{
+    public string Situation { get; set; } = string.Empty;
+    public string AdaptationTitle { get; set; } = string.Empty;
+    public string TeacherPrompt { get; set; } = string.Empty;
+    public string ChildrenPrompt { get; set; } = string.Empty;
+    public string QuickTip { get; set; } = string.Empty;
+}
+
 public interface IAiIdeaService
 {
     Task<IEnumerable<ExperienceFullData>> GenerateIdeasAsync(string ideaInput);
     Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, Action<string>? onProgress = null);
+    Task<AiIdeaGenerationResult> GenerateIdeasWithDiagnosticsAsync(string ideaInput, IdeaGenerationOptions? options, Action<string>? onProgress = null);
     Task<ExperienceImprovementResult?> ImproveExperienceAsync(object experienceDna, string requestContext, Action<string>? onProgress = null);
     Task<IEnumerable<string>> SuggestMaterialsAsync(object experienceDna);
+    Task<IEnumerable<InSessionAdaptationResult>> GenerateInSessionAdaptationsAsync(string experienceTitle, string situation, string? currentMaterials = null);
 }

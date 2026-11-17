@@ -57,6 +57,17 @@
                 </div>
             }
 
+            @if (_experienceId.HasValue && DefaultExperienceId.HasValue && _experienceId == DefaultExperienceId)
+            {
+                var suggestedTitle = _experiences.FirstOrDefault(e => e.Id == DefaultExperienceId)?.Title ?? "Recommended Experience";
+                <div style="background: #eef5ef; border: 1px solid #cbd9ce; border-radius: 0px; padding: 8px 12px; margin-bottom: 8px; font-size: 12px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 16px;">✨</span>
+                    <div style="color: #263d32; line-height: 1.4;">
+                        <strong>1-Click Plan:</strong> <em>@suggestedTitle</em> was suggested from developmental insights and is pre-selected.
+                    </div>
+                </div>
+            }
+
             <div style="display: flex; flex-direction: column; gap: 6px;">
                 
                 <div>
@@ -204,6 +215,7 @@
     [Parameter] public Guid? DefaultClassroomId { get; set; }
     [Parameter] public DateOnly? DefaultDate { get; set; }
     [Parameter] public Guid? ScheduleId { get; set; }
+    [Parameter] public Guid? DefaultExperienceId { get; set; }
     [Parameter] public EventCallback<Guid> OnPlanCreated { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
@@ -515,7 +527,7 @@
         }
         else
         {
-            _experienceId = null;
+            _experienceId = DefaultExperienceId;
             _classroomId = DefaultClassroomId;
             var cls = _classrooms.FirstOrDefault(c => c.Id == _classroomId);
             _branchId = cls?.BranchId ?? _branches.FirstOrDefault()?.Id;
@@ -526,6 +538,24 @@
             _endTime = null;
             _notes = "";
             _isReadOnly = false;
+        }
+
+        if (!_experiences.Any())
+        {
+            _experiences = (await ExperienceService.GetExperiencesAsync()).ToList();
+        }
+
+        if (_experienceId.HasValue && !_experiences.Any(e => e.Id == _experienceId.Value))
+        {
+            try
+            {
+                var exp = await ExperienceService.GetExperienceByIdAsync(_experienceId.Value);
+                if (exp != null)
+                {
+                    _experiences.Insert(0, exp);
+                }
+            }
+            catch { }
         }
 
         await CheckClassroomSlotAvailabilityAsync();

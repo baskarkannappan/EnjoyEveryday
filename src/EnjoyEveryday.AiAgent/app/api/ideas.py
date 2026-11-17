@@ -4,7 +4,7 @@ import logging
 import re
 import time
 from typing import List, Dict, Any
-from app.schemas.requests import IdeaRequest, ImproveRequest, MaterialsRequest
+from app.schemas.requests import IdeaRequest, ImproveRequest, MaterialsRequest, InSessionPivotRequest
 from app.schemas.responses import IdeaResponse, ImproveResponse, MaterialsResponse
 from app.security.auth import get_tenant_context
 from app.security.tenant_context import TenantContext
@@ -131,7 +131,24 @@ async def generate_ideas(
         return cached_ideas
 
     start_time = time.time()
-    prompt = f"Learning Theme / Starting Idea: {req.idea.strip()}"
+    
+    # Assemble rich pedagogical context
+    context_lines = [f"Learning Theme / Starting Idea: {req.idea.strip()}"]
+    if req.ageGroup:
+        context_lines.append(f"Target Age Group: {req.ageGroup.strip()}")
+    if req.environment:
+        context_lines.append(f"Preferred Environment: {req.environment.strip()}")
+    if req.focusArea:
+        context_lines.append(f"Pedagogical Focus Area: {req.focusArea.strip()}")
+    if req.availableMaterials and len(req.availableMaterials) > 0:
+        context_lines.append(f"Available Classroom Inventory / Materials to Prioritize: {', '.join(req.availableMaterials[:15])}")
+    if req.topExperiences and len(req.topExperiences) > 0:
+        context_lines.append("Reference Exemplar Experiences from Center's Library (Adopt similar pedagogical depth and warm tone):")
+        for top_exp in req.topExperiences[:3]:
+            desc_snip = f" - {top_exp.description[:100]}..." if top_exp.description else ""
+            context_lines.append(f"  * {top_exp.title}{desc_snip}")
+
+    prompt = "\n".join(context_lines)
     meta = {
         "provider": "GoogleGemini",
         "model": "gemini-3.1-flash-lite",
@@ -201,18 +218,13 @@ async def generate_ideas(
         else:
             raw_suggestions = [raw_suggestions]
 
+    target_age_min = 2 if (req.ageGroup and any(w in req.ageGroup.lower() for w in ["toddler", "18", "2 "])) else 3
+
     validated_suggestions = []
     for item in raw_suggestions:
         if isinstance(item, dict):
             clean_item = experience_validator.sanitize_and_validate(item)
-            safety_res = safety_validator.validate_experience(clean_item)
-            if safety_res.required_supervision_notes:
-                current_safety = clean_item["ExecutionGuide"].get("Safety", [])
-                for note in safety_res.required_supervision_notes:
-                    if note not in current_safety:
-                        current_safety.append(note)
-                clean_item["ExecutionGuide"]["Safety"] = current_safety
-
+            clean_item = safety_validator.sanitize_and_secure_experience(clean_item, target_age_min=target_age_min)
             validated_suggestions.append(clean_item)
 
     result = {"suggestions": validated_suggestions, "meta": meta}
@@ -260,6 +272,8 @@ async def improve_experience(
             for k, v in fallback.items():
                 if not clean_data.get(k):
                     clean_data[k] = v
+
+        clean_data = safety_validator.sanitize_and_secure_experience(clean_data, target_age_min=int(clean_data.get("AgeMin", 3)))
 
         res = {"reason": reason, "updatedData": clean_data, "meta": meta}
         await ai_cache.set(cache_key, res, ttl_seconds=1800)
@@ -319,3 +333,48 @@ async def extract_materials(
     res = {"materials": final_list}
     await ai_cache.set(cache_key, res, ttl_seconds=1800)
     return res
+
+@router.post("/api/in-session-pivot")
+async def generate_in_session_pivot(
+    req: InSessionPivotRequest,
+    context: TenantContext = Depends(get_tenant_context)
+):
+    instruction = """You are an agile early childhood classroom co-teacher. 
+Given an active classroom activity and an on-the-spot situation (e.g. finished too fast, restless, too hard, or need variation), provide EXACTLY 2 practical, immediate micro-adaptations using ONLY existing materials.
+Return JSON format:
+{
+  "pivots": [
+    {
+      "situation": "...",
+      "adaptationTitle": "Short catchy name",
+      "teacherPrompt": "Direct spoken quote teacher says to children",
+      "childrenPrompt": "What children physically do",
+      "quickTip": "Pedagogical facilitation tip"
+    }
+  ]
+}"""
+    prompt = f"Activity: {req.experienceTitle}\nSituation: {req.situation}\nMaterials Available: {req.materials or 'Standard classroom tools'}"
+    try:
+        raw_result = await ai_provider_registry.generate_with_failover(
+            prompt=prompt,
+            system_instruction=instruction,
+            tenant_context=context,
+            temperature=0.3
+        )
+        if isinstance(raw_result, dict) and "pivots" in raw_result:
+            return raw_result
+    except Exception as ex:
+        logger.warning(f"In-session pivot AI failed: {ex}")
+
+    # Fallback response
+    return {
+        "pivots": [
+            {
+                "situation": req.situation,
+                "adaptationTitle": "Explorer Variation",
+                "teacherPrompt": f"Who can show me a different way to test our {req.experienceTitle.lower()}?",
+                "childrenPrompt": "Children experiment with an alternative angle or speed.",
+                "quickTip": "Focus on playful curiosity over rigid execution."
+            }
+        ]
+    }

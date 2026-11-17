@@ -116,15 +116,25 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
         var allExperiences = await _experienceService.GetExperiencesAsync(cancellationToken);
         var activeExperiences = allExperiences.Where(e => e.Status == "Active" || e.Status == "Published").ToList();
 
-        // 5. Build structured evidence package
-        var evidenceItems = memoryList.Select(m => new
+        // 5. Build structured evidence package with domain clustering & PII sanitization
+        var clusteredMemories = memoryList
+            .GroupBy(ClassifyDevelopmentalDomain)
+            .SelectMany(g => g.Take(10)) // Balance up to 10 per developmental domain
+            .OrderByDescending(m => m.EventDate)
+            .Take(40)
+            .ToList();
+
+        var selectedMemories = clusteredMemories.Any() ? clusteredMemories : memoryList.Take(40).ToList();
+
+        var evidenceItems = selectedMemories.Select(m => new
         {
             id = m.Id.ToString(),
             sourceId = m.SourceId.ToString(),
             sourceType = m.SourceType,
             eventType = m.EventType,
-            title = m.Title,
-            description = m.Description,
+            domain = ClassifyDevelopmentalDomain(m),
+            title = SanitizePii(m.Title, child.LastName),
+            description = SanitizePii(m.Description, child.LastName),
             eventDate = m.EventDate.ToString("yyyy-MM-dd")
         }).ToList();
 
@@ -153,15 +163,16 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
         {
             try
             {
+                var maskedChildName = !string.IsNullOrWhiteSpace(child.FirstName) ? child.FirstName.Trim() : "Child";
                 var payload = new
                 {
                     childId = child.Id.ToString(),
-                    childName = child.FirstName,
+                    childName = maskedChildName,
                     periodType = input.PeriodType,
                     periodStartDate = startDate.ToString("yyyy-MM-dd"),
                     periodEndDate = endDate.ToString("yyyy-MM-dd"),
                     focusArea = input.FocusArea,
-                    teacherQuestion = input.TeacherQuestion,
+                    teacherQuestion = SanitizePii(input.TeacherQuestion, child.LastName),
                     evidenceMemories = evidenceItems,
                     candidateExperiences = candidateItems
                 };
@@ -533,5 +544,38 @@ public class ChildJourneyInsightService : IChildJourneyInsightService
         public string Title { get; set; } = string.Empty;
         public string? Summary { get; set; }
         public string? EventDate { get; set; }
+    }
+
+    private static string SanitizePii(string? text, string? childLastName)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var sanitized = text;
+        if (!string.IsNullOrWhiteSpace(childLastName) && childLastName.Trim().Length > 1)
+        {
+            sanitized = System.Text.RegularExpressions.Regex.Replace(
+                sanitized,
+                $@"\b{System.Text.RegularExpressions.Regex.Escape(childLastName.Trim())}\b",
+                "[Surname]",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        // Scrub email addresses
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[Email]");
+        // Scrub phone numbers
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", "[Phone]");
+        return sanitized;
+    }
+
+    private static string ClassifyDevelopmentalDomain(MemoryEvent m)
+    {
+        var text = $"{m.Category} {m.Title} {m.Description} {m.ExperienceTitle}".ToLowerInvariant();
+        if (text.Contains("word") || text.Contains("talk") || text.Contains("speech") || text.Contains("story") || text.Contains("book") || text.Contains("read") || text.Contains("sound") || text.Contains("sing") || text.Contains("language") || text.Contains("vocal"))
+            return "Communication";
+        if (text.Contains("friend") || text.Contains("share") || text.Contains("turn") || text.Contains("help") || text.Contains("collaborat") || text.Contains("feel") || text.Contains("emotion") || text.Contains("comfort") || text.Contains("empathy"))
+            return "SocialEmotional";
+        if (text.Contains("run") || text.Contains("jump") || text.Contains("climb") || text.Contains("cut") || text.Contains("scissor") || text.Contains("draw") || text.Contains("grip") || text.Contains("texture") || text.Contains("sensory") || text.Contains("motor") || text.Contains("balance") || text.Contains("paint"))
+            return "PhysicalMotor";
+        if (text.Contains("count") || text.Contains("number") || text.Contains("sort") || text.Contains("pattern") || text.Contains("build") || text.Contains("block") || text.Contains("puzzle") || text.Contains("investigat") || text.Contains("shape") || text.Contains("science"))
+            return "CognitiveInquiry";
+        return "GeneralExperience";
     }
 }

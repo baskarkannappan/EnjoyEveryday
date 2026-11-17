@@ -12,6 +12,30 @@ namespace EnjoyEveryday.Infrastructure.Repositories;
 
 public class WeeklyPlanningRepository : IWeeklyPlanningRepository
 {
+    private static readonly string[] CreateDraftRequestParams =
+    [
+        "Id", "TenantId", "OrganizationId", "ClassroomId", "RequestedByUserId",
+        "WeekStartDate", "WeekEndDate", "FocusAreas", "IndoorOutdoorPreference",
+        "MaterialsNotes", "Status", "CreatedAt", "UpdatedAt"
+    ];
+
+    private static readonly string[] CreateDraftItemParams =
+    [
+        "Id", "RequestId", "TenantId", "ScheduledDate", "DayOfWeek",
+        "TimeOfDay", "ExperienceId", "ExperienceTitle", "LearningGoal",
+        "GroupFormat", "EstimatedDurationMinutes", "RequiredMaterials",
+        "Rationale", "ValidationStatus", "ValidationNotes",
+        "ResultingScheduleId", "CreatedAt"
+    ];
+
+    private static readonly string[] UpdateDraftItemParams =
+    [
+        "Id", "TenantId", "ScheduledDate", "DayOfWeek", "TimeOfDay",
+        "ExperienceId", "ExperienceTitle", "LearningGoal", "GroupFormat",
+        "EstimatedDurationMinutes", "RequiredMaterials", "Rationale",
+        "ValidationStatus", "ValidationNotes", "ResultingScheduleId"
+    ];
+
     private readonly IDbConnectionFactory _connectionFactory;
 
     public WeeklyPlanningRepository(IDbConnectionFactory connectionFactory)
@@ -29,6 +53,7 @@ public class WeeklyPlanningRepository : IWeeklyPlanningRepository
         await conn.ExecuteProcedureAsync(
             "sp_create_weekly_planning_draft_request",
             request,
+            parameterNames: CreateDraftRequestParams,
             transaction: tx,
             cancellationToken: cancellationToken);
 
@@ -43,6 +68,7 @@ public class WeeklyPlanningRepository : IWeeklyPlanningRepository
                 await conn.ExecuteProcedureAsync(
                     "sp_create_weekly_planning_draft_item",
                     item,
+                    parameterNames: CreateDraftItemParams,
                     transaction: tx,
                     cancellationToken: cancellationToken);
             }
@@ -100,6 +126,7 @@ public class WeeklyPlanningRepository : IWeeklyPlanningRepository
         await conn.ExecuteProcedureAsync(
             "sp_update_weekly_planning_draft_item",
             item,
+            parameterNames: UpdateDraftItemParams,
             cancellationToken: cancellationToken);
     }
 

@@ -15,7 +15,13 @@ class SafetyValidator:
     CHOKING_HAZARDS = [
         "small bead", "beads", "marble", "marbles", "button", "buttons",
         "raw bean", "dried beans", "dry beans", "lentil", "lentils", "unpopped popcorn",
-        "small coin", "coins", "latex balloon", "balloons", "small screw", "magnets", "small marble"
+        "small coin", "coins", "latex balloon", "balloons", "small screw", "magnets", "small marble",
+        "water beads", "water crystals", "sensory gel beads", "button battery", "small pom pom", "styrofoam"
+    ]
+
+    # Common early childhood allergens
+    ALLERGEN_HAZARDS = [
+        "peanut", "peanut butter", "tree nut", "almond flour", "raw egg carton", "egg carton"
     ]
 
     # Sharp tools
@@ -78,7 +84,13 @@ class SafetyValidator:
                 concerns.append(f"Thermal or chemical hazard detected: '{hh}'.")
                 alternatives.append("Use child-safe washable glue sticks or cold water instead.")
 
-        # 5. Water play drowning/slip check
+        # 5. Allergen hazards
+        for ah in cls.ALLERGEN_HAZARDS:
+            if ah in combined_text:
+                concerns.append(f"Potential allergen risk in early childhood setting: '{ah}'.")
+                alternatives.append("Use allergen-free natural materials or sanitized commercial craft supplies.")
+
+        # 6. Water play drowning/slip check
         if "water" in combined_text and ("basin" in combined_text or "tub" in combined_text or "water table" in combined_text):
             if "supervis" not in safety_notes.lower() and "slip" not in safety_notes.lower():
                 supervision.append("Active constant teacher supervision required around water play; wipe up splashes immediately to prevent slips.")
@@ -99,5 +111,23 @@ class SafetyValidator:
             required_supervision_notes=supervision,
             safer_alternatives=alternatives
         )
+
+    @classmethod
+    def sanitize_and_secure_experience(cls, experience_data: Dict[str, Any], target_age_min: int = 3) -> Dict[str, Any]:
+        """Automatically attaches necessary supervision and safety protocols to execution guide."""
+        res = cls.validate_experience(experience_data, target_age_min)
+        exec_guide = experience_data.setdefault("ExecutionGuide", {})
+        existing_safety = exec_guide.setdefault("Safety", [])
+        
+        for note in res.required_supervision_notes:
+            if not any(note.lower() in s.lower() for s in existing_safety):
+                existing_safety.append(note)
+                
+        for concern in res.flagged_concerns:
+            warn = f"Safety notice: {concern}"
+            if not any(concern.lower() in s.lower() for s in existing_safety):
+                existing_safety.append(warn)
+                
+        return experience_data
 
 safety_validator = SafetyValidator()

@@ -12,6 +12,7 @@
 @inject BranchService BranchService
 @inject TimeProvider TimeProvider
 @inject IChildJourneyService JourneyService
+@inject IAiIdeaService AiIdeaService
 @if (IsOpen)
 {
     <div class="active-session-modal-backdrop" @onclick="CloseDialog">
@@ -139,6 +140,51 @@
                             }
                         </div>
                     }
+
+                    <!-- On-the-Fly Activity Adaptations Co-Pilot -->
+                    <div class="in-session-pivot-panel" style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 12px; padding: 14px 16px; margin: 16px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 16px;">✨</span>
+                                <strong style="font-size: 13px; color: var(--text, #26332d);">On-the-Fly Activity Pivots</strong>
+                                <span style="font-size: 11px; color: var(--muted, #6c7870);">(Instant facilitation adjustments)</span>
+                            </div>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button type="button" class="btn secondary btn-sm" style="font-size: 11px; padding: 4px 8px; @(_activePivotSituation == "FinishedFast" ? "background: var(--accent-light, #e6eee9); font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c);" : "")" @onclick='() => RequestPivotAsync("FinishedFast")' disabled="@_isLoadingPivot">
+                                    ⏱️ Finished Early
+                                </button>
+                                <button type="button" class="btn secondary btn-sm" style="font-size: 11px; padding: 4px 8px; @(_activePivotSituation == "Restless" ? "background: var(--accent-light, #e6eee9); font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c);" : "")" @onclick='() => RequestPivotAsync("Restless")' disabled="@_isLoadingPivot">
+                                    ⚡ Restless / High Energy
+                                </button>
+                                <button type="button" class="btn secondary btn-sm" style="font-size: 11px; padding: 4px 8px; @(_activePivotSituation == "TooChallenging" ? "background: var(--accent-light, #e6eee9); font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c);" : "")" @onclick='() => RequestPivotAsync("TooChallenging")' disabled="@_isLoadingPivot">
+                                    🧩 Too Challenging
+                                </button>
+                                <button type="button" class="btn secondary btn-sm" style="font-size: 11px; padding: 4px 8px; @(_activePivotSituation == "Variation" ? "background: var(--accent-light, #e6eee9); font-weight: 700; color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c);" : "")" @onclick='() => RequestPivotAsync("Variation")' disabled="@_isLoadingPivot">
+                                    🌿 Need Variation
+                                </button>
+                            </div>
+                        </div>
+
+                        @if (_isLoadingPivot)
+                        {
+                            <div style="font-size: 12px; color: var(--accent-dark, #31523c); padding: 8px; text-align: center;">
+                                Finding instant pedagogical pivot...
+                            </div>
+                        }
+                        else if (_activePivots.Any())
+                        {
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; margin-top: 10px;">
+                                @foreach (var p in _activePivots)
+                                {
+                                    <div style="background: #ffffff; border: 1px solid #c2e0cf; border-radius: 8px; padding: 10px 12px;">
+                                        <div style="font-size: 12px; font-weight: 800; color: var(--accent-dark, #31523c); margin-bottom: 4px;">@p.AdaptationTitle</div>
+                                        <div style="font-size: 12px; color: var(--text, #26332d); margin-bottom: 4px;"><strong>Teacher Prompt:</strong> "@p.TeacherPrompt"</div>
+                                        <div style="font-size: 11.5px; color: var(--muted, #6c7870);"><strong>Pedagogical Tip:</strong> @p.QuickTip</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                     
                     <!-- Session Feedback -->
                     <div class="feedback-section">
@@ -828,6 +874,33 @@
     private int _currentModalStep = 1;
     private bool _isSavingJourneyMoments = false;
     private List<ChildJourneyDraftItem> _journeyDrafts = new();
+
+    private string _activePivotSituation = string.Empty;
+    private bool _isLoadingPivot = false;
+    private List<InSessionAdaptationResult> _activePivots = new();
+
+    private async Task RequestPivotAsync(string situation)
+    {
+        _activePivotSituation = situation;
+        _isLoadingPivot = true;
+        _activePivots.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var pivots = await AiIdeaService.GenerateInSessionAdaptationsAsync(_experienceTitle, situation);
+            _activePivots = pivots.ToList();
+        }
+        catch
+        {
+            // Fallback handled inside service
+        }
+        finally
+        {
+            _isLoadingPivot = false;
+            StateHasChanged();
+        }
+    }
 
     private class ChildJourneyDraftItem
     {

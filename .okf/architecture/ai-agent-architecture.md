@@ -42,6 +42,18 @@ Every AI service endpoint (`/api/ideas`, `/api/improve`, `/api/materials`, `/api
 3. **Tier 3 (Deterministic Safe Fallback)**:
    * If both Google Gemini and OpenAI fail or are offline, the engine builds deterministic pedagogical fallback templates directly from the prompt keywords so that no user request ever hangs, crashes, or fails.
 
+## Context Grounding & Quality Engineering
+
+* **Classroom Grounding & Inventory Prioritization**: `/api/ideas` receives structured classroom parameters (`ageGroup`, `environment`, `focusArea`, `availableMaterials`, `topExperiences`). Prompts prioritize on-hand inventory supplies and align pedagogical depth with the center's top exemplar experiences.
+* **Domain-Clustered Memory Pre-Processing**: In `ChildJourneyInsightService`, raw chronological memories are classified into 4 early childhood developmental domains (Communication & Language, Social-Emotional, Physical & Motor, Cognitive & STEM Inquiry) with balanced quotas before prompting.
+* **PII Minimization & De-Identification**: Child surnames, phone numbers, and email patterns are masked (`[Surname]`, `[Phone]`, `[Email]`) before transmitting evidence to external LLM providers.
+* **Pediatric Early Childhood Safety Validator**: `SafetyValidator` inspects generated activities for choking hazards (water beads, small loose parts, magnets), sharp cutting tools, toxic substances, and common early childhood allergens (peanuts, tree nuts, raw egg cartons) with age-adaptive thresholding (<36 months vs 3–5 years).
+* **Trajectory & Zone of Proximal Development (ZPD) Modeling**: Child journey prompts (`JOURNEY_INSIGHTS_INSTRUCTION` v2.1.0) analyze the gap between independent evidence and proximal emergent milestones, generating actionable next-step suggestions with 1-click scheduling directly into the classroom calendar.
+* **On-the-Fly In-Session Pivots**: `/api/in-session-pivot` gives teachers 2 immediate classroom micro-adaptations using existing materials when children finish early, get restless, or encounter difficulty.
+* **Constructive Tone & Empathy Refinement**: `ParentCommunicationAssistantService.RefineMessageToneAsync` transforms sensitive notes into strength-based developmental growth language.
+* **Shift Handover Auto-Drafter**: Synthesizes room energy, child nap lengths, meal intakes, allergy alerts, and care timers directly from active daily care logs into shift handovers.
+* **Curriculum Health & Domain Gap Audit**: In `HarvestView.razor`, evaluates learning domain distributions and recommends library activities to fill under-represented areas with 1-click calendar planning.
+
 ## API Key Encryption & Configuration
 * Primary Gemini key is encrypted at rest with AES-256 in `tenants.encrypted_ai_api_key` and decrypted per-tenant.
 * OpenAI fallback key is configured via `OPENAI_API_KEY` in `src/EnjoyEveryday.AiAgent/.env` or passed via `X-OpenAI-Api-Key` request header.

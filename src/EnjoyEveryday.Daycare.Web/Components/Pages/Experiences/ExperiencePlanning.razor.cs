@@ -55,6 +55,22 @@ public partial class ExperiencePlanning : ComponentBase
     [Inject]
     private EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth { get; set; } = default!;
 
+    [Inject]
+    private ExperienceService ExperienceService { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "experienceId")]
+    public Guid? ExperienceId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "classroomId")]
+    public Guid? ClassroomId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "childId")]
+    public Guid? ChildId { get; set; }
+
+    private Guid? _wizardDefaultExperienceId;
+    private Experience? _suggestedExperience;
+    private bool _handledQueryPlan = false;
+
     private bool _canPlan = false;
 
     private bool _isMaterialReadinessModalOpen = false;
@@ -264,7 +280,23 @@ public partial class ExperiencePlanning : ComponentBase
                 ?? _allBranches.FirstOrDefault(b => b.IsActive && string.Equals(b.OperationalStatus, "Open", StringComparison.OrdinalIgnoreCase))
                 ?? _allBranches.FirstOrDefault();
         }
-        if (defaultBranch != null)
+        if (ClassroomId.HasValue && ClassroomId.Value != Guid.Empty)
+        {
+            var targetClassroom = _allClassrooms.FirstOrDefault(c => c.Id == ClassroomId.Value);
+            if (targetClassroom != null)
+            {
+                _selectedBranchId = targetClassroom.BranchId;
+                _classroom = targetClassroom;
+                _selectedClassroomId = targetClassroom.Id;
+            }
+            else if (defaultBranch != null)
+            {
+                _selectedBranchId = defaultBranch.Id;
+                _classroom = _allClassrooms.FirstOrDefault(c => c.BranchId == _selectedBranchId);
+                _selectedClassroomId = _classroom?.Id;
+            }
+        }
+        else if (defaultBranch != null)
         {
             _selectedBranchId = defaultBranch.Id;
             _classroom = _allClassrooms.FirstOrDefault(c => c.BranchId == _selectedBranchId);
@@ -273,6 +305,46 @@ public partial class ExperiencePlanning : ComponentBase
 
         await CheckSelectedBranchStatusAsync();
         await LoadSchedules();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ExperienceId.HasValue && !_handledQueryPlan)
+        {
+            _handledQueryPlan = true;
+            _wizardDefaultExperienceId = ExperienceId.Value;
+
+            try
+            {
+                _suggestedExperience = await ExperienceService.GetExperienceByIdAsync(ExperienceId.Value);
+            }
+            catch { }
+
+            if (ClassroomId.HasValue && ClassroomId.Value != Guid.Empty)
+            {
+                var targetClassroom = _allClassrooms.FirstOrDefault(c => c.Id == ClassroomId.Value);
+                if (targetClassroom != null && _selectedClassroomId != targetClassroom.Id)
+                {
+                    _classroom = targetClassroom;
+                    _selectedClassroomId = targetClassroom.Id;
+                    _selectedBranchId = targetClassroom.BranchId;
+                    await CheckSelectedBranchStatusAsync();
+                    await LoadSchedules();
+                }
+            }
+
+            if (!_isSelectedBranchClosed)
+            {
+                _wizardDefaultDate = GetDefaultPlanDate();
+                _wizardScheduleId = null;
+                _isPlanWizardOpen = true;
+
+                if (_suggestedExperience != null)
+                {
+                    _ = NotificationService.ShowInfoAsync($"1-Click Plan: Suggested experience '{_suggestedExperience.Title}' pre-selected!");
+                }
+            }
+        }
     }
 
     private async Task CheckSelectedBranchStatusAsync()
@@ -448,6 +520,10 @@ public partial class ExperiencePlanning : ComponentBase
 
     private async Task OnPlanCreatedFromWizard(Guid classroomId)
     {
+        _isPlanWizardOpen = false;
+        _wizardScheduleId = null;
+        _wizardDefaultExperienceId = null;
+        _suggestedExperience = null;
         if (SelectedClassroomId != classroomId)
         {
             SelectedClassroomId = classroomId; // This setter already calls RefreshSchedules
@@ -467,7 +543,27 @@ public partial class ExperiencePlanning : ComponentBase
         }
         _wizardDefaultDate = GetDefaultPlanDate();
         _wizardScheduleId = null;
+        _wizardDefaultExperienceId = null;
         _isPlanWizardOpen = true;
+    }
+
+    private void OpenPlanWizardForExperience(Guid expId)
+    {
+        if (_isSelectedBranchClosed)
+        {
+            _ = NotificationService.ShowWarningAsync("Branch is currently closed. Experience planning is not allowed until the branch is reopened.");
+            return;
+        }
+        _wizardDefaultExperienceId = expId;
+        _wizardDefaultDate = GetDefaultPlanDate();
+        _wizardScheduleId = null;
+        _isPlanWizardOpen = true;
+    }
+
+    private void DismissSuggestionBanner()
+    {
+        _suggestedExperience = null;
+        _wizardDefaultExperienceId = null;
     }
 
     private void OpenPlanWizardForDate(DateOnly date)
@@ -491,6 +587,7 @@ public partial class ExperiencePlanning : ComponentBase
 
         _wizardDefaultDate = date;
         _wizardScheduleId = null;
+        _wizardDefaultExperienceId = null;
         _isPlanWizardOpen = true;
     }
 
@@ -511,6 +608,7 @@ public partial class ExperiencePlanning : ComponentBase
 
         _wizardDefaultDate = schedule.ScheduledDate;
         _wizardScheduleId = schedule.Id;
+        _wizardDefaultExperienceId = schedule.ExperienceId;
         _isPlanWizardOpen = true;
     }
 
@@ -555,6 +653,7 @@ public partial class ExperiencePlanning : ComponentBase
     {
         _isPlanWizardOpen = false;
         _wizardScheduleId = null;
+        _wizardDefaultExperienceId = null;
     }
 
     private IEnumerable<ExperienceSchedule> GetSchedulesForDayAndPeriod(DateTime date, string period)

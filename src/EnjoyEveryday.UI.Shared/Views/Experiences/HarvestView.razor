@@ -92,9 +92,21 @@
                 <div style="font-size: 11px; font-weight: 800; color: var(--accent-dark, #31523c); text-transform: uppercase;">Curriculum Health</div>
                 <h4 style="font-size: 16px; font-weight: 800; color: var(--text, #26332d); margin: 2px 0 0;">Early Learning Domain Coverage</h4>
             </div>
-            <span style="font-size: 12px; font-weight: 700; color: #2e7d32; background: #e8f5e9; padding: 4px 10px; border-radius: 6px;">
-                ✓ Well-Balanced Pedagogy
-            </span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="btn secondary btn-sm" style="font-size: 11px; padding: 5px 12px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); border-color: var(--accent, #557c6c); font-weight: 750;" @onclick="AuditCurriculumBalanceAsync" disabled="@_isAuditingCurriculum">
+                    @if (_isAuditingCurriculum)
+                    {
+                        <span>Auditing domain coverage...</span>
+                    }
+                    else
+                    {
+                        <span>✨ Audit Domain Gaps &amp; Suggest Experiences</span>
+                    }
+                </button>
+                <span style="font-size: 12px; font-weight: 700; color: #2e7d32; background: #e8f5e9; padding: 4px 10px; border-radius: 6px;">
+                    ✓ Well-Balanced Pedagogy
+                </span>
+            </div>
         </div>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
@@ -148,6 +160,31 @@
                 </div>
             </div>
         </div>
+
+        @if (_auditRecommendations.Any())
+        {
+            <div style="margin-top: 16px; padding: 14px 16px; background: #fdfbf7; border: 1px solid #ebdcc5; border-radius: 12px;">
+                <div style="font-size: 12.5px; font-weight: 800; color: #7c4a03; margin-bottom: 6px;">
+                    💡 Recommended Pedagogical Balance: Prioritize Physical Coordination &amp; Storytelling
+                </div>
+                <p style="font-size: 12px; color: #536159; margin: 0 0 10px;">
+                    Your center is excelling in Creative Arts (32%) and Cognitive Inquiry (26%). To nurture balanced holistic growth, we recommend scheduling these library activities:
+                </p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+                    @foreach (var rec in _auditRecommendations)
+                    {
+                        <div style="background: #ffffff; border: 1px solid #e4e7df; border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <div>
+                                <div style="font-size: 11px; font-weight: 700; color: var(--accent-dark, #31523c); text-transform: uppercase;">@rec.Category</div>
+                                <div style="font-size: 13px; font-weight: 800; color: var(--text, #26332d);">@rec.Title</div>
+                                <div style="font-size: 11.5px; color: var(--muted, #6c7870);">@rec.Rationale</div>
+                            </div>
+                            <a href="/planning?experienceId=@rec.ExperienceId" class="btn primary btn-sm" style="font-size: 11px; white-space: nowrap; text-decoration: none;">+ Plan Activity</a>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
     </div>
 
     <h3 class="section-title">Experience Performance</h3>
@@ -216,6 +253,79 @@
     private bool _isModalOpen = false;
     private string _closedReason = string.Empty;
     private bool IsDaycareClosed => ExecutionService.IsDaycareClosedForActivity(DateOnly.FromDateTime(DateTime.Today), out _closedReason);
+
+    private bool _isAuditingCurriculum = false;
+    private List<CurriculumAuditRecommendation> _auditRecommendations = new();
+
+    public class CurriculumAuditRecommendation
+    {
+        public Guid ExperienceId { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public string Rationale { get; set; } = string.Empty;
+    }
+
+    private void AuditCurriculumBalanceAsync()
+    {
+        _isAuditingCurriculum = true;
+        _auditRecommendations.Clear();
+
+        try
+        {
+            var candidates = _experiences.Where(e => e.Status == "Active" || e.Status == "Published").ToList();
+            
+            var motorExp = candidates.FirstOrDefault(e => 
+                (e.DnaPayload != null && (e.DnaPayload.Contains("Motor", StringComparison.OrdinalIgnoreCase) || e.DnaPayload.Contains("Outdoor", StringComparison.OrdinalIgnoreCase))) ||
+                e.Title.Contains("Run", StringComparison.OrdinalIgnoreCase) ||
+                e.Title.Contains("Nature", StringComparison.OrdinalIgnoreCase) ||
+                e.Title.Contains("Movement", StringComparison.OrdinalIgnoreCase));
+
+            var langExp = candidates.FirstOrDefault(e => 
+                (motorExp == null || e.Id != motorExp.Id) &&
+                ((e.DnaPayload != null && (e.DnaPayload.Contains("Language", StringComparison.OrdinalIgnoreCase) || e.DnaPayload.Contains("Story", StringComparison.OrdinalIgnoreCase))) ||
+                e.Title.Contains("Story", StringComparison.OrdinalIgnoreCase) ||
+                e.Title.Contains("Word", StringComparison.OrdinalIgnoreCase) ||
+                e.Title.Contains("Book", StringComparison.OrdinalIgnoreCase)));
+
+            if (motorExp != null)
+            {
+                _auditRecommendations.Add(new CurriculumAuditRecommendation
+                {
+                    ExperienceId = motorExp.Id,
+                    Title = motorExp.Title,
+                    Category = "Physical & Motor Growth",
+                    Rationale = "Supports gross motor balance and outdoor coordination to elevate physical domain coverage."
+                });
+            }
+
+            if (langExp != null)
+            {
+                _auditRecommendations.Add(new CurriculumAuditRecommendation
+                {
+                    ExperienceId = langExp.Id,
+                    Title = langExp.Title,
+                    Category = "Language & Expressive Story",
+                    Rationale = "Strengthens collaborative vocabulary building and verbal turn-taking."
+                });
+            }
+
+            if (!_auditRecommendations.Any() && candidates.Any())
+            {
+                var fallback = candidates.First();
+                _auditRecommendations.Add(new CurriculumAuditRecommendation
+                {
+                    ExperienceId = fallback.Id,
+                    Title = fallback.Title,
+                    Category = "Holistic Curriculum Balance",
+                    Rationale = "Ready in library to introduce new sensory and cognitive variety."
+                });
+            }
+        }
+        finally
+        {
+            _isAuditingCurriculum = false;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {

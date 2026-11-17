@@ -29,6 +29,13 @@ public class ChildJourneyInsightRepository : IChildJourneyInsightRepository
         await conn.ExecuteProcedureAsync(
             "sp_create_child_journey_insight_request",
             request,
+            parameterNames: new[]
+            {
+                "Id", "TenantId", "OrganizationId", "ClassroomId", "ChildId",
+                "RequestedByUserId", "PeriodType", "PeriodStartDate", "PeriodEndDate",
+                "FocusArea", "TeacherQuestion", "EvidenceCount", "OverallSummary",
+                "EvidenceGaps", "CreatedAt"
+            },
             transaction: tx,
             cancellationToken: cancellationToken);
 

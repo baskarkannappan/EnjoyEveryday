@@ -38,6 +38,7 @@ tags:
 
 ## UI Endpoints
 * **Cockpit Handover Modal**: Accessed from `TeacherWorkspace.razor` via the "+ Handover" action button.
+* **Parent & Classroom Messages**: `ClassroomMessages.razor` (`/classroom-messages`, `/messages`) hosting `ClassroomMessagesView.razor` and `ChatMessageThread.razor`. Uses `white-space: pre-wrap`, `line-height: 1.58`, and Scandinavian bubble styling (`#31523c` educator surface, `#a7f3d0` subheader, `#ffffff` parent card) to preserve paragraph breaks, salutations, growth observations, and sign-offs without wall-of-text collapse.
 * **Classroom Messages**: `src/EnjoyEveryday.Daycare.Web/Components/Pages/Communication/ClassroomMessages.razor` wrapping `ClassroomMessagesView.razor`.
 * **Daycare Announcements & Notifications**: 
   - Dedicated administrator broadcast management at `src/EnjoyEveryday.Daycare.Web/Components/Pages/Organization/AnnouncementsPage.razor` (`/announcements`, `/management/announcements`). Allows Org Admins and Branch Admins to publish scoped announcements with tags (Notice, Reminder, Urgent Alert, Weather, Event, Policy).
