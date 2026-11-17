@@ -171,6 +171,23 @@ public interface IEmailNotificationService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Sends a campus tour calendar invite (.ics) email when a tour is scheduled or rescheduled.
+    /// </summary>
+    Task<EmailNotificationResult> SendTourCalendarInviteAsync(
+        string recipientEmail,
+        string parentName,
+        string childName,
+        Guid applicationId,
+        DateTime tourDateTime,
+        bool isReschedule,
+        string daycareName,
+        string location,
+        string? notes,
+        string orgAdminCcEmail,
+        Guid? tenantId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Sends consent submission confirmation to parent with mandatory Org Admin CC.
     /// </summary>
     Task<EmailNotificationResult> SendConsentSubmittedConfirmationAsync(
@@ -218,6 +235,51 @@ public interface IEmailNotificationService
         decimal amount, 
         DateTime dueDate, 
         string invoiceUrl, 
+        Guid? tenantId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Notifies Platform Admin when an Org Admin requests a subscription plan upgrade or downgrade.
+    /// </summary>
+    Task<EmailNotificationResult> SendPlanChangeRequestedAsync(
+        string platformAdminEmail,
+        string organizationName,
+        string orgAdminEmail,
+        string currentPlanName,
+        string requestedPlanName,
+        string requestType,
+        string? notes,
+        string adminPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Notifies Org Admin that Platform Admin has updated/proposed a plan change and asks them to accept it.
+    /// </summary>
+    Task<EmailNotificationResult> SendPlanChangeProposalForAcceptanceAsync(
+        string orgAdminEmail,
+        string organizationName,
+        string currentPlanName,
+        string proposedPlanName,
+        string proposedTariffName,
+        string formattedRate,
+        string effectiveDateText,
+        string? platformNotes,
+        string subscriptionPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Confirms to Org Admin (and CCs Platform Admin) when a proposed plan change is accepted or declined.
+    /// </summary>
+    Task<EmailNotificationResult> SendPlanChangeDecisionConfirmationAsync(
+        string orgAdminEmail,
+        string platformAdminEmail,
+        string organizationName,
+        string planName,
+        bool accepted,
+        string? decisionNotes,
+        string subscriptionPortalUrl,
         Guid? tenantId = null,
         CancellationToken ct = default);
 }

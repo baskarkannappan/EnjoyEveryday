@@ -167,6 +167,17 @@ public static class AuthEndpoints
                     p_tenant_id = tenantId
                 });
 
+            // Block Parent Portal sign-in until at least one linked child is onboarded and active
+            var hasOnboardedChild = await conn.ExecuteScalarFunctionAsync<bool>(
+                "public.fn_has_active_onboarded_child",
+                new { p_user_id = userId.Value });
+
+            if (!hasOnboardedChild)
+            {
+                await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                return Results.Redirect("/auth/access-denied?reason=not_onboarded");
+            }
+
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, userId.Value.ToString()),
@@ -196,6 +207,7 @@ public static class AuthEndpoints
                 "invalid_invite" => "The invitation link is invalid or expired.",
                 "account_disabled" => "Your account is disabled. Contact your daycare administrator.",
                 "not_a_parent" => "No active guardian relationship was found for this account. Contact your daycare administrator.",
+                "not_onboarded" => "Your child's enrollment is not yet onboarded and active. Parent Portal access is enabled once enrollment is finalized.",
                 "google_not_configured" => "Google Authentication is not yet configured. Please set Authentication:Google:ClientId in appsettings.json or use dev login.",
                 _ => "Access Denied."
             };

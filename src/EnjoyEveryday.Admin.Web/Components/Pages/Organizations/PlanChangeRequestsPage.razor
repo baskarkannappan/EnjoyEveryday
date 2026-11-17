@@ -1,0 +1,395 @@
+@page "/plan-requests"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+
+@inject IOrganizationSubscriptionService SubscriptionService
+@inject IUserContext UserContext
+@inject ICurrencyService CurrencyService
+
+<PageTitle>Plan Change Requests — Platform Admin</PageTitle>
+
+<div class="content" style="display:flex;flex-direction:column;gap:20px;">
+    <PageHero Eyebrow="COMMERCIAL OPERATIONS"
+              Title="Plan Upgrade &amp; Downgrade Requests"
+              Subtitle="Review subscription change requests from daycare organizations, configure updated plan terms, and send proposals for Org Admin acceptance.">
+        <RightContent>
+            <a href="/organizations" class="btn secondary">← Back to Organizations</a>
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_feedback))
+    {
+        <div style="padding:12px 18px;display:flex;justify-content:space-between;align-items:center;font-size:13.5px;font-weight:600;background:@(_feedbackError ? "#fff5f5" : "var(--accent-light, #e6eee9)");border:1px solid @(_feedbackError ? "#fed7d7" : "#c8dacd");color:@(_feedbackError ? "#9b2c2c" : "var(--accent-dark, #31523c)");">
+            <span>@(_feedbackError ? "⚠️" : "✓") @_feedback</span>
+            <button type="button" style="background:none;border:none;cursor:pointer;color:inherit;" @onclick="() => _feedback = null">✕</button>
+        </div>
+    }
+
+    <div class="tabs">
+        <button type="button" class="tab @(_statusFilter == "" ? "active" : "")" @onclick='() => SetFilterAsync("")'>
+            All (@_allRequests.Count)
+        </button>
+        <button type="button" class="tab @(_statusFilter == PlanChangeRequestStatuses.PendingPlatformReview ? "active" : "")"
+                @onclick='() => SetFilterAsync(PlanChangeRequestStatuses.PendingPlatformReview)'>
+            Needs Review (@_allRequests.Count(r => r.Status == PlanChangeRequestStatuses.PendingPlatformReview))
+        </button>
+        <button type="button" class="tab @(_statusFilter == PlanChangeRequestStatuses.PendingOrgAcceptance ? "active" : "")"
+                @onclick='() => SetFilterAsync(PlanChangeRequestStatuses.PendingOrgAcceptance)'>
+            Awaiting Org Acceptance (@_allRequests.Count(r => r.Status == PlanChangeRequestStatuses.PendingOrgAcceptance))
+        </button>
+        <button type="button" class="tab @(_statusFilter == PlanChangeRequestStatuses.Accepted ? "active" : "")"
+                @onclick='() => SetFilterAsync(PlanChangeRequestStatuses.Accepted)'>
+            Accepted (@_allRequests.Count(r => r.Status == PlanChangeRequestStatuses.Accepted))
+        </button>
+    </div>
+
+    <div style="background:var(--surface,#fff);border:1px solid var(--border,#e4e7df);border-radius:var(--radius,18px);box-shadow:var(--shadow);padding:20px;">
+        @if (_isLoading)
+        {
+            <p style="color:var(--muted,#6c7870);">Loading plan change requests...</p>
+        }
+        else if (!FilteredRequests.Any())
+        {
+            <p style="color:var(--muted,#6c7870);margin:0;">No plan change requests match this filter.</p>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+                    <thead>
+                        <tr style="text-align:left;color:var(--muted,#6c7870);font-size:11.5px;text-transform:uppercase;border-bottom:1px solid var(--border,#e4e7df);">
+                            <th style="padding:10px 12px;">Organization</th>
+                            <th style="padding:10px 12px;">Type</th>
+                            <th style="padding:10px 12px;">Current → Requested</th>
+                            <th style="padding:10px 12px;">Proposed Terms</th>
+                            <th style="padding:10px 12px;">Status</th>
+                            <th style="padding:10px 12px;">Requested</th>
+                            <th style="padding:10px 12px;text-align:right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var req in FilteredRequests)
+                        {
+                            <tr style="border-bottom:1px solid var(--border,#e4e7df);">
+                                <td style="padding:12px;">
+                                    <div style="font-weight:700;">@req.OrganizationName</div>
+                                    <div style="font-size:12px;color:var(--muted,#6c7870);">@(req.RequestedByEmail ?? "Org Admin")</div>
+                                </td>
+                                <td style="padding:12px;font-weight:700;">@req.RequestType</td>
+                                <td style="padding:12px;">
+                                    <div>@req.CurrentPlanName → <strong>@req.RequestedPlanName</strong></div>
+                                    @if (!string.IsNullOrWhiteSpace(req.OrgAdminNotes))
+                                    {
+                                        <div style="font-size:12px;color:var(--muted,#6c7870);margin-top:3px;">“@req.OrgAdminNotes”</div>
+                                    }
+                                </td>
+                                <td style="padding:12px;">
+                                    @if (req.ProposedRate.HasValue)
+                                    {
+                                        <div><strong>@(req.ProposedPlanName ?? req.RequestedPlanName)</strong></div>
+                                        <div style="font-size:12px;color:var(--muted,#6c7870);">
+                                            @CurrencyService.Format(req.ProposedRate.Value, req.ProposedCurrency ?? req.CurrentCurrency)
+                                            · @(req.ProposedTariffName ?? "Monthly")
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span style="color:var(--muted,#6c7870);">Not yet proposed</span>
+                                    }
+                                </td>
+                                <td style="padding:12px;">
+                                    <span style="display:inline-block;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;@GetStatusStyle(req.Status)">
+                                        @req.Status
+                                    </span>
+                                </td>
+                                <td style="padding:12px;font-size:12.5px;color:var(--muted,#6c7870);">
+                                    @FormatIstDate(req.RequestedAt)
+                                </td>
+                                <td style="padding:12px;text-align:right;">
+                                    @if (req.Status == PlanChangeRequestStatuses.PendingPlatformReview || req.Status == PlanChangeRequestStatuses.PendingOrgAcceptance)
+                                    {
+                                        <button type="button" class="primary" style="padding:7px 14px;font-size:12.5px;" @onclick="() => OpenReviewModalAsync(req)">
+                                            @(req.Status == PlanChangeRequestStatuses.PendingPlatformReview ? "Review & Propose" : "Update Proposal")
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span style="font-size:12px;color:var(--muted,#6c7870);">Completed</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_selectedRequest != null)
+{
+    <div style="position:fixed;inset:0;background:rgba(24,34,28,0.45);display:flex;align-items:center;justify-content:center;z-index:1200;padding:16px;" @onclick="CloseReviewModal">
+        <div style="background:#fff;border:1px solid var(--border,#e4e7df);border-radius:18px;max-width:560px;width:100%;padding:24px;box-shadow:0 20px 50px rgba(24,34,28,0.2);" @onclick:stopPropagation="true">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+                <div>
+                    <span style="font-size:11px;font-weight:700;color:var(--accent-dark,#31523c);text-transform:uppercase;">PROPOSE PLAN UPDATE</span>
+                    <h3 style="margin:4px 0 0;">@_selectedRequest.OrganizationName</h3>
+                    <p style="margin:4px 0 0;font-size:13px;color:var(--muted,#6c7870);">
+                        Requested: <strong>@_selectedRequest.CurrentPlanName → @_selectedRequest.RequestedPlanName</strong>
+                    </p>
+                </div>
+                <button type="button" style="background:none;border:none;cursor:pointer;font-size:16px;" @onclick="CloseReviewModal">✕</button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                    <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:4px;">Proposed Subscription Plan</label>
+                    <select style="width:100%;padding:9px 12px;border:1px solid var(--border,#e4e7df);border-radius:8px;background:var(--surface-soft,#f8f9f5);"
+                            value="@_proposedPlanId"
+                            @onchange="OnPlanChanged">
+                        @foreach (var p in _orgPlans)
+                        {
+                            <option value="@p.PlanId">@p.PlanName (@p.MaxBranches B / @p.MaxClassrooms R / @p.MaxChildren C)</option>
+                        }
+                    </select>
+                </div>
+
+                @if (_selectedPlanTariffs.Any())
+                {
+                    <div>
+                        <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:4px;">Regional Tariff Schedule</label>
+                        <select style="width:100%;padding:9px 12px;border:1px solid var(--border,#e4e7df);border-radius:8px;background:var(--surface-soft,#f8f9f5);"
+                                value="@_proposedTariffId"
+                                @onchange="OnTariffChanged">
+                            @foreach (var t in _selectedPlanTariffs)
+                            {
+                                <option value="@t.Id">@t.Name (@t.Frequency) — @t.Currency @t.Price.ToString("N0")</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div>
+                        <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:4px;">Rate (@_proposedCurrency)</label>
+                        <input type="number" step="0.01" @bind="_proposedRate"
+                               style="width:100%;padding:9px 12px;border:1px solid var(--border,#e4e7df);border-radius:8px;background:var(--surface-soft,#f8f9f5);box-sizing:border-box;" />
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:4px;">Effective Date</label>
+                        <input type="date" @bind="_effectiveDate"
+                               style="width:100%;padding:9px 12px;border:1px solid var(--border,#e4e7df);border-radius:8px;background:var(--surface-soft,#f8f9f5);box-sizing:border-box;" />
+                    </div>
+                </div>
+
+                <div>
+                    <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:4px;">Notes for Org Admin</label>
+                    <textarea rows="3" @bind="_platformNotes"
+                              placeholder="Explain the updated plan terms or effective billing cycle..."
+                              style="width:100%;padding:9px 12px;border:1px solid var(--border,#e4e7df);border-radius:8px;background:var(--surface-soft,#f8f9f5);box-sizing:border-box;"></textarea>
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
+                <button type="button" class="secondary" style="color:#9b2c2c;border-color:#fed7d7;" disabled="@_isSubmitting" @onclick="DeclineRequestAsync">
+                    Decline Request
+                </button>
+                <div style="display:flex;gap:10px;">
+                    <button type="button" class="secondary" @onclick="CloseReviewModal">Cancel</button>
+                    <button type="button" class="primary" disabled="@_isSubmitting" @onclick="SendProposalAsync">
+                        @(_isSubmitting ? "Sending..." : "Send to Org Admin for Acceptance")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private bool _isSubmitting = false;
+    private string _statusFilter = string.Empty;
+    private string? _feedback;
+    private bool _feedbackError;
+
+    private List<OrganizationPlanChangeRequest> _allRequests = new();
+    private OrganizationPlanChangeRequest? _selectedRequest;
+    private List<AvailableSubscriptionPlanOption> _orgPlans = new();
+    private List<RegionPlanTariff> _selectedPlanTariffs = new();
+
+    private string _proposedPlanId = string.Empty;
+    private string _proposedTariffId = string.Empty;
+    private decimal _proposedRate;
+    private string _proposedCurrency = "INR";
+    private DateTime _effectiveDate = DateTime.SpecifyKind(ToIst(DateTimeOffset.UtcNow).Date, DateTimeKind.Unspecified);
+    private string _platformNotes = string.Empty;
+
+    private IEnumerable<OrganizationPlanChangeRequest> FilteredRequests =>
+        string.IsNullOrWhiteSpace(_statusFilter)
+            ? _allRequests
+            : _allRequests.Where(r => r.Status == _statusFilter);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRequestsAsync();
+    }
+
+    private async Task LoadRequestsAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _allRequests = await SubscriptionService.GetAllRequestsAsync();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private Task SetFilterAsync(string status)
+    {
+        _statusFilter = status;
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenReviewModalAsync(OrganizationPlanChangeRequest req)
+    {
+        _selectedRequest = req;
+        _orgPlans = await SubscriptionService.GetAvailablePlansForOrganizationAsync(req.OrganizationId);
+
+        var initialPlanId = req.ProposedPlanId ?? req.RequestedPlanId;
+        _proposedPlanId = initialPlanId.ToString();
+        _proposedCurrency = !string.IsNullOrWhiteSpace(req.ProposedCurrency)
+            ? req.ProposedCurrency
+            : (!string.IsNullOrWhiteSpace(req.CurrentCurrency) ? req.CurrentCurrency : "INR");
+        _effectiveDate = DateTime.SpecifyKind(ToIst(req.ProposedEffectiveDate ?? DateTimeOffset.UtcNow).Date, DateTimeKind.Unspecified);
+        _platformNotes = req.PlatformAdminNotes ?? string.Empty;
+
+        SyncTariffsForSelectedPlan(initialPlanId, req.ProposedTariffId ?? req.RequestedTariffId, req.ProposedRate);
+    }
+
+    private void OnPlanChanged(ChangeEventArgs e)
+    {
+        _proposedPlanId = e.Value?.ToString() ?? string.Empty;
+        if (Guid.TryParse(_proposedPlanId, out var planId))
+        {
+            SyncTariffsForSelectedPlan(planId, null, null);
+        }
+    }
+
+    private void OnTariffChanged(ChangeEventArgs e)
+    {
+        _proposedTariffId = e.Value?.ToString() ?? string.Empty;
+        if (Guid.TryParse(_proposedTariffId, out var tariffId))
+        {
+            var t = _selectedPlanTariffs.FirstOrDefault(x => x.Id == tariffId);
+            if (t != null)
+            {
+                _proposedRate = t.Price;
+                _proposedCurrency = t.Currency;
+            }
+        }
+    }
+
+    private void SyncTariffsForSelectedPlan(Guid planId, Guid? preferredTariffId, decimal? existingRate)
+    {
+        var plan = _orgPlans.FirstOrDefault(p => p.PlanId == planId);
+        _selectedPlanTariffs = plan?.RegionalTariffs ?? new List<RegionPlanTariff>();
+        var tariff = preferredTariffId.HasValue
+            ? _selectedPlanTariffs.FirstOrDefault(t => t.Id == preferredTariffId.Value) ?? _selectedPlanTariffs.FirstOrDefault()
+            : _selectedPlanTariffs.FirstOrDefault();
+
+        _proposedTariffId = tariff?.Id.ToString() ?? string.Empty;
+        _proposedRate = existingRate ?? tariff?.Price ?? plan?.BasePrice ?? 0m;
+        if (tariff != null) _proposedCurrency = tariff.Currency;
+    }
+
+    private void CloseReviewModal() => _selectedRequest = null;
+
+    private async Task SendProposalAsync()
+    {
+        if (_selectedRequest == null || !Guid.TryParse(_proposedPlanId, out var planId)) return;
+
+        _isSubmitting = true;
+        try
+        {
+            Guid? tariffId = Guid.TryParse(_proposedTariffId, out var tid) ? tid : null;
+            var istDate = DateTime.SpecifyKind(_effectiveDate.Date, DateTimeKind.Unspecified);
+            var effectiveDateUtc = new DateTimeOffset(istDate, IstOffset).ToUniversalTime();
+            await SubscriptionService.ProposePlanChangeForAcceptanceAsync(
+                _selectedRequest.Id,
+                planId,
+                tariffId,
+                _proposedRate,
+                string.IsNullOrWhiteSpace(_proposedCurrency) ? "INR" : _proposedCurrency,
+                effectiveDateUtc,
+                _platformNotes,
+                UserContext.UserId,
+                UserContext.Email);
+
+            _feedback = $"Updated plan proposal sent to {_selectedRequest.OrganizationName} for Org Admin acceptance (email dispatched).";
+            _feedbackError = false;
+            _selectedRequest = null;
+            await LoadRequestsAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = ex.Message;
+            _feedbackError = true;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task DeclineRequestAsync()
+    {
+        if (_selectedRequest == null) return;
+
+        _isSubmitting = true;
+        try
+        {
+            await SubscriptionService.RejectPlanChangeRequestAsync(
+                _selectedRequest.Id,
+                _platformNotes,
+                UserContext.UserId,
+                UserContext.Email);
+
+            _feedback = $"Request for {_selectedRequest.OrganizationName} declined and email notification dispatched.";
+            _feedbackError = false;
+            _selectedRequest = null;
+            await LoadRequestsAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedback = ex.Message;
+            _feedbackError = true;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private static readonly TimeSpan IstOffset = TimeSpan.FromMinutes(330);
+
+    private static DateTimeOffset ToIst(DateTimeOffset utcOrAny) => utcOrAny.ToOffset(IstOffset);
+
+    private static string FormatIstDate(DateTimeOffset dto) => dto.ToOffset(IstOffset).ToString("MMM dd, yyyy");
+
+    private static string GetStatusStyle(string status) => status switch
+    {
+        PlanChangeRequestStatuses.PendingPlatformReview => "background:#f4eee1;color:#7c5822;border:1px solid #e4d4b7;",
+        PlanChangeRequestStatuses.PendingOrgAcceptance => "background:#31523c;color:#ffffff;",
+        PlanChangeRequestStatuses.Accepted => "background:#e6eee9;color:#31523c;border:1px solid #c8dacd;",
+        _ => "background:#fff5f5;color:#9b2c2c;border:1px solid #fed7d7;"
+    };
+}
+

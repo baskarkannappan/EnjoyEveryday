@@ -248,11 +248,22 @@ public partial class ExperiencePlanning : ComponentBase
 
         _allClassrooms = (await ClassroomService.GetAllClassroomsAsync()).ToList();
         
-        // Select user's assigned branch (or first branch) and its first classroom by default
-        var defaultBranch = (profile.AssignedBranchIds.Count > 0
-                ? _allBranches.FirstOrDefault(b => profile.AssignedBranchIds.Contains(b.Id))
-                : null)
-            ?? _allBranches.FirstOrDefault();
+        // Prefer an open branch for OrgAdmin/PlatformAdmin (or user's assigned branch if open), falling back to first branch
+        Branch? defaultBranch = null;
+        if (profile.IsOrgAdmin || profile.IsPlatformAdmin)
+        {
+            defaultBranch = _allBranches.FirstOrDefault(b => b.IsActive && string.Equals(b.OperationalStatus, "Open", StringComparison.OrdinalIgnoreCase))
+                ?? _allBranches.FirstOrDefault();
+        }
+        else
+        {
+            defaultBranch = (profile.AssignedBranchIds.Count > 0
+                    ? _allBranches.FirstOrDefault(b => profile.AssignedBranchIds.Contains(b.Id) && string.Equals(b.OperationalStatus, "Open", StringComparison.OrdinalIgnoreCase))
+                        ?? _allBranches.FirstOrDefault(b => profile.AssignedBranchIds.Contains(b.Id))
+                    : null)
+                ?? _allBranches.FirstOrDefault(b => b.IsActive && string.Equals(b.OperationalStatus, "Open", StringComparison.OrdinalIgnoreCase))
+                ?? _allBranches.FirstOrDefault();
+        }
         if (defaultBranch != null)
         {
             _selectedBranchId = defaultBranch.Id;

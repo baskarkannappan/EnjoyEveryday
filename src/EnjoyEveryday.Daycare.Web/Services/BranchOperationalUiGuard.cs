@@ -82,7 +82,7 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
         _viewPreference.OnBranchChanged += HandlePreferenceChanged;
         _viewPreference.OnViewChanged += HandlePreferenceChanged;
 
-        _pollTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        _pollTimer = new PeriodicTimer(TimeSpan.FromSeconds(120));
         _ = RunBackgroundRevalidationAsync();
     }
 
@@ -157,7 +157,7 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
         if (_disposed) return _currentState;
         var currentPrefView = _viewPreference.CurrentView;
         if (!forceRefresh && _currentState.IsLoaded
-            && (DateTimeOffset.UtcNow - _lastLoadedUtc) < TimeSpan.FromSeconds(5)
+            && (DateTimeOffset.UtcNow - _lastLoadedUtc) < TimeSpan.FromSeconds(15)
             && (string.IsNullOrWhiteSpace(currentPrefView) || string.Equals(currentPrefView, _currentState.ActiveView, StringComparison.OrdinalIgnoreCase))
             && (!_viewPreference.ActiveBranchId.HasValue || _viewPreference.ActiveBranchId.Value == _currentState.BranchId))
         {
@@ -169,7 +169,7 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
         {
             currentPrefView = _viewPreference.CurrentView;
             if (!forceRefresh && _currentState.IsLoaded
-                && (DateTimeOffset.UtcNow - _lastLoadedUtc) < TimeSpan.FromSeconds(5)
+                && (DateTimeOffset.UtcNow - _lastLoadedUtc) < TimeSpan.FromSeconds(15)
                 && (string.IsNullOrWhiteSpace(currentPrefView) || string.Equals(currentPrefView, _currentState.ActiveView, StringComparison.OrdinalIgnoreCase))
                 && (!_viewPreference.ActiveBranchId.HasValue || _viewPreference.ActiveBranchId.Value == _currentState.BranchId))
             {
@@ -202,8 +202,11 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
                 return _currentState;
             }
 
-            var opStatus = await _branchOpService.GetBranchStatusAsync(_tenantContext.TenantId, branchId, null, ct);
-            var dailyStatus = await _dailyOpsService.GetBranchDailyStatusAsync(branchId, null, ct);
+            var opStatusTask = _branchOpService.GetBranchStatusAsync(_tenantContext.TenantId, branchId, null, ct);
+            var dailyStatusTask = _dailyOpsService.GetBranchDailyStatusAsync(branchId, null, ct);
+            await Task.WhenAll(opStatusTask, dailyStatusTask);
+            var opStatus = opStatusTask.Result;
+            var dailyStatus = dailyStatusTask.Result;
             var bypassed = _dailyOpsService.IsBypassedForTesting();
 
             var isOperational = opStatus.IsOperational;
@@ -250,15 +253,15 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
 
         if (state.IsBranchClosed && category == BranchRouteCategory.Operational)
         {
-            // PlatformAdmin retains access; OrgAdmin/BranchAdmin in Admin view are not on Operational routes (except direct classroom ops)
-            if (!profile.IsPlatformAdmin)
+            // PlatformAdmin and OrgAdmin in OrgAdmin view retain access so they can switch between open/closed branches
+            var isOrgAdminView = profile.IsOrgAdmin && string.Equals(state.ActiveView, "OrgAdmin", StringComparison.OrdinalIgnoreCase);
+            if (!profile.IsPlatformAdmin && !isOrgAdminView)
             {
                 var isTeacherView = string.Equals(state.ActiveView, "Teacher", StringComparison.OrdinalIgnoreCase)
                                  || string.Equals(state.ActiveView, "LeadTeacher", StringComparison.OrdinalIgnoreCase);
+                var isBranchAdminView = string.Equals(state.ActiveView, "BranchAdmin", StringComparison.OrdinalIgnoreCase);
 
-                // Even if an OrgAdmin/BranchAdmin visits a teacher operational route directly (e.g., /daily-care or /today-activities),
-                // block classroom operational routes for Teacher/LeadTeacher/BranchAdmin, and only allow OrgAdmin if they are managing.
-                if (isTeacherView || profile.IsBranchAdmin || !profile.IsOrgAdmin)
+                if (isTeacherView || isBranchAdminView || !profile.IsOrgAdmin)
                 {
                     blocked = true;
                 }
@@ -290,6 +293,7 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
     public bool IsOperationalNavItemLocked(string href)
     {
         if (!_currentState.IsLoaded || !_currentState.IsBranchClosed) return false;
+        if (string.Equals(_currentState.ActiveView, "OrgAdmin", StringComparison.OrdinalIgnoreCase)) return false;
         var category = BranchRoutePolicy.ClassifyRoute(href, _currentState.ActiveView);
         return category == BranchRouteCategory.Operational;
     }
@@ -334,9 +338,13 @@ public sealed class BranchOperationalUiGuard : IBranchOperationalUiGuard, IDispo
             }
         }
 
-        if (profile.OrganizationId != Guid.Empty)
+        var targetOrgId = _userContext.OrganizationId.HasValue && _userContext.OrganizationId.Value != Guid.Empty
+            ? _userContext.OrganizationId.Value
+            : profile.OrganizationId;
+
+        if (targetOrgId != Guid.Empty)
         {
-            var branches = (await _branchService.GetBranchesAsync(profile.OrganizationId)).ToList();
+            var branches = (await _branchService.GetBranchesAsync(targetOrgId)).ToList();
             if (branches.Count > 0)
             {
                 return (branches[0].Id, branches[0].Name);

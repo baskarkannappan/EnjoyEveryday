@@ -98,6 +98,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IBranchBenchmarkingRepository, BranchBenchmarkingRepository>();
         services.AddScoped<IChildDevelopmentPortfolioRepository, ChildDevelopmentPortfolioRepository>();
         services.AddScoped<IPlatformAdminRepository, PlatformAdminRepository>();
+        services.AddScoped<IOrganizationSubscriptionRepository, EnjoyEveryday.Infrastructure.Repositories.Commercial.OrganizationSubscriptionRepository>();
         services.AddScoped<IPlatformBusinessEventRepository, PlatformBusinessEventRepository>();
         services.AddScoped<IAgentTokenRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentTokenRepository>();
         services.AddScoped<IAgentWebhookRepository, EnjoyEveryday.Infrastructure.Repositories.Security.AgentWebhookRepository>();
@@ -123,6 +124,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<EnjoyEveryday.Application.Services.IFacilityProfileService, EnjoyEveryday.Infrastructure.Services.FacilityProfileService>();
 
         // QR Code Generator (Pure Managed C# Generator for Payment Invoices & Checkouts)
+        services.AddSingleton<EnjoyEveryday.Application.Services.IPlatformPaymentSettingsService, EnjoyEveryday.Infrastructure.Services.Commercial.PlatformPaymentSettingsService>();
         services.AddSingleton<EnjoyEveryday.Application.Services.IQrCodeService, EnjoyEveryday.Infrastructure.Services.Commercial.QrCodeService>();
 
         // Storage (Provider-Independent Object Storage Abstraction + Multi-Provider Adapters)

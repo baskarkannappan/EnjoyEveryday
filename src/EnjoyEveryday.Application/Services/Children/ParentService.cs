@@ -353,10 +353,14 @@ public class ParentService : IParentService
                         continue;
                     }
 
+                    var careEventTime = careItem.EventTime != default
+                        ? (careItem.EventTime.Kind == DateTimeKind.Utc ? careItem.EventTime.ToLocalTime() : careItem.EventTime)
+                        : baseDateTime.AddHours(12);
+
                     timelineItems.Add(new ChildDailyTimelineItem
                     {
-                        EventTime = careItem.EventTime != default ? careItem.EventTime : baseDateTime.AddHours(12),
-                        TimeLabel = careItem.TimeLabel,
+                        EventTime = careEventTime,
+                        TimeLabel = careEventTime.ToString("h:mm tt"),
                         Title = careItem.Title,
                         Description = careItem.Description,
                         Category = careItem.Category,
@@ -372,8 +376,10 @@ public class ParentService : IParentService
             }
         }
 
-        // Sort all items strictly into chronological time-series order
-        timelineItems = timelineItems.OrderBy(t => t.EventTime).ToList();
+        // Sort all items strictly into chronological time-series order (normalized to local time)
+        timelineItems = timelineItems
+            .OrderBy(t => t.EventTime.Kind == DateTimeKind.Utc ? t.EventTime.ToLocalTime() : t.EventTime)
+            .ToList();
 
         var hasCareUpdates = careReport != null && (
             careReport.DiaperChangesCount > 0 ||
@@ -461,7 +467,58 @@ public class ParentService : IParentService
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
         var effectiveTenantId = await ResolveEffectiveTenantIdAsync(childId, cancellationToken);
-        return await _parentRepository.GetApprovedJourneyEntriesAsync(effectiveTenantId, childId, cancellationToken);
+        var entries = (await _parentRepository.GetApprovedJourneyEntriesAsync(effectiveTenantId, childId, cancellationToken)).ToList();
+
+        var attendance = await _parentRepository.GetChildAttendanceForDateAsync(effectiveTenantId, childId, DateTime.Today, cancellationToken);
+        if (attendance != null)
+        {
+            if (attendance.ArrivalTime.HasValue && !entries.Any(e =>
+                string.Equals(e.JourneyType, "Attendance", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.ParticipationType, "Arrival", StringComparison.OrdinalIgnoreCase) &&
+                e.ObservationDate.ToLocalTime().Date == DateTime.Today))
+            {
+                var arrTime = DateTime.Today.Add(attendance.ArrivalTime.Value);
+                entries.Add(new ChildJourneyEntry
+                {
+                    Id = attendance.Id,
+                    TenantId = effectiveTenantId,
+                    ChildId = childId,
+                    JourneyType = "Attendance",
+                    Title = "Classroom Check-In",
+                    Observation = $"Checked in at {arrTime:h:mm tt}.",
+                    ObservationDate = new DateTimeOffset(arrTime, TimeZoneInfo.Local.GetUtcOffset(arrTime)),
+                    ParticipationType = "Arrival",
+                    IsParentVisible = true,
+                    ParentVisibilityStatus = "Approved"
+                });
+            }
+
+            if (attendance.DepartureTime.HasValue && !entries.Any(e =>
+                string.Equals(e.JourneyType, "Attendance", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.ParticipationType, "Departure", StringComparison.OrdinalIgnoreCase) &&
+                e.ObservationDate.ToLocalTime().Date == DateTime.Today))
+            {
+                var depTime = DateTime.Today.Add(attendance.DepartureTime.Value);
+                var pickupDesc = !string.IsNullOrWhiteSpace(attendance.PickupPersonName)
+                    ? $"Picked up by {attendance.PickupPersonName} ({attendance.PickupPersonRelationship ?? "Authorized Pickup"}). Handover verified."
+                    : "Child departed / checked out safely.";
+                entries.Add(new ChildJourneyEntry
+                {
+                    Id = attendance.Id,
+                    TenantId = effectiveTenantId,
+                    ChildId = childId,
+                    JourneyType = "Attendance",
+                    Title = "Classroom Departure / Check-Out",
+                    Observation = $"Checked out at {depTime:h:mm tt}. {pickupDesc}",
+                    ObservationDate = new DateTimeOffset(depTime, TimeZoneInfo.Local.GetUtcOffset(depTime)),
+                    ParticipationType = "Departure",
+                    IsParentVisible = true,
+                    ParentVisibilityStatus = "Approved"
+                });
+            }
+        }
+
+        return entries.OrderByDescending(e => e.ObservationDate.ToLocalTime());
     }
 
     public async Task<IEnumerable<ChildMilestone>> GetApprovedMilestonesAsync(Guid childId, CancellationToken cancellationToken = default)
@@ -617,7 +674,7 @@ public class ParentService : IParentService
                     });
                 }
             }
-            else if (!string.IsNullOrEmpty(entry.Observation))
+            else if (!string.IsNullOrEmpty(entry.Observation) && !string.Equals(entry.JourneyType, "Attendance", StringComparison.OrdinalIgnoreCase))
             {
                 mediaList.Add(new ParentMediaItem
                 {

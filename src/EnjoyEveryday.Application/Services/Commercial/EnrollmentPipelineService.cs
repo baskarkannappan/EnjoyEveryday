@@ -268,6 +268,12 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
     public async Task UpdateStageAsync(Guid applicationId, string newStage, string? notes = null, DateTime? tourDate = null, CancellationToken ct = default)
     {
         var tenantId = _tenantContext.TenantId;
+        var existingApp = string.Equals(newStage, "TourScheduled", StringComparison.OrdinalIgnoreCase)
+            ? await GetApplicationByIdAsync(applicationId, ct)
+            : null;
+        bool isTourReschedule = string.Equals(newStage, "TourScheduled", StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(existingApp?.PipelineStage, "TourScheduled", StringComparison.OrdinalIgnoreCase) || existingApp?.TourDate != null);
+
         await _repository.UpdateStageAsync(tenantId, applicationId, newStage, notes, tourDate, ct);
 
         await _auditService.LogAsync(new AuditEntry
@@ -313,18 +319,37 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
                     {
                         try
                         {
-                            await _emailService.SendOnboardingStageNotificationAsync(
-                                recipientEmail: app.ParentEmail.Trim(),
-                                parentName: app.ParentGuardianName ?? "Parent Guardian",
-                                childName: app.ChildFirstName,
-                                stage: newStage,
-                                stageDescription: stageDesc,
-                                daycareName: "EnjoyEveryday",
-                                actionRequired: null,
-                                actionUrl: "https://localhost:7005/",
-                                orgAdminCcEmail: orgAdminEmail ?? "admin@littlestars.com",
-                                tenantId: tenantId,
-                                ct: CancellationToken.None);
+                            if (string.Equals(newStage, "TourScheduled", StringComparison.OrdinalIgnoreCase) && tourDate.HasValue)
+                            {
+                                await _emailService.SendTourCalendarInviteAsync(
+                                    recipientEmail: app.ParentEmail.Trim(),
+                                    parentName: app.ParentGuardianName ?? "Parent Guardian",
+                                    childName: $"{app.ChildFirstName} {app.ChildLastName}".Trim(),
+                                    applicationId: applicationId,
+                                    tourDateTime: tourDate.Value,
+                                    isReschedule: isTourReschedule,
+                                    daycareName: "EnjoyEveryday",
+                                    location: "EnjoyEveryday Campus",
+                                    notes: notes ?? app.InternalNotes,
+                                    orgAdminCcEmail: orgAdminEmail ?? "admin@littlestars.com",
+                                    tenantId: tenantId,
+                                    ct: CancellationToken.None);
+                            }
+                            else
+                            {
+                                await _emailService.SendOnboardingStageNotificationAsync(
+                                    recipientEmail: app.ParentEmail.Trim(),
+                                    parentName: app.ParentGuardianName ?? "Parent Guardian",
+                                    childName: app.ChildFirstName,
+                                    stage: newStage,
+                                    stageDescription: stageDesc,
+                                    daycareName: "EnjoyEveryday",
+                                    actionRequired: null,
+                                    actionUrl: "https://localhost:7005/",
+                                    orgAdminCcEmail: orgAdminEmail ?? "admin@littlestars.com",
+                                    tenantId: tenantId,
+                                    ct: CancellationToken.None);
+                            }
                         }
                         catch (Exception ex)
                         {

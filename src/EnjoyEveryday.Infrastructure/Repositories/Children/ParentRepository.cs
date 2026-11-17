@@ -61,7 +61,10 @@ public class ParentRepository : IParentRepository
                 "fn_get_parent_child_photo_consent",
                 new { ChildId = childId },
                 cancellationToken: cancellationToken);
-            bool hasPhotoConsent = string.Equals(consentStatus, "Signed", StringComparison.OrdinalIgnoreCase);
+            // Allow photos when signed OR when no Photo/Media consent document has been created yet;
+            // only withhold if a Photo/Media consent document exists and is not Signed (e.g. Pending/Declined/Revoked).
+            bool hasPhotoConsent = string.IsNullOrWhiteSpace(consentStatus)
+                                || string.Equals(consentStatus, "Signed", StringComparison.OrdinalIgnoreCase);
 
             if (hasPhotoConsent)
             {

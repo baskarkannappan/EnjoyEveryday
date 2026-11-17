@@ -30,6 +30,8 @@ public class NpgsqlConnectionFactory : IDbConnectionFactory, IAsyncDisposable, I
             builder.ConnectionStringBuilder.MaxPoolSize = 100;
         }
         builder.ConnectionStringBuilder.ConnectionIdleLifetime = 300; // 5 minutes
+        builder.ConnectionStringBuilder.ConnectionPruningInterval = 10; // Prune stale pooled connections every 10s
+        builder.ConnectionStringBuilder.KeepAlive = 30; // TCP keepalive every 30s to prevent Docker/host socket drops
         builder.ConnectionStringBuilder.Timeout = 15; // 15-second connect timeout
         builder.ConnectionStringBuilder.CommandTimeout = 30; // 30-second default command timeout
 

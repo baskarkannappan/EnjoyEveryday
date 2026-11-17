@@ -68,9 +68,12 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `child_journey_entries`, `child_journey_developments`, `child_journey_evidence`, `child_stories`: Parent timeline moments.
 * `activity_recommendation_requests`, `activity_recommendation_items`, `activity_recommendation_decisions`: ADK activity suggestions.
 
-## 7. Commercial, Billing & Marketplace (18 Tables)
+## 7. Commercial, Billing & Marketplace (21 Tables)
 * `invoices`, `invoice_line_items`, `payments`, `family_billing_contracts`: Tuition billing.
+* `platform_payment_settings`: Platform Admin configurable bank account, UPI ID (`pa`), payee name (`pn`), and optional custom QR code image (Migration 124).
 * `organization_billing_settings`, `organization_entitlements`: Tenant plan tier and add-ons.
+* `organization_plan_history`: Immutable chronological audit trail of past and current subscription plans, tariffs, rates, and quotas per organization (Migration 123).
+* `organization_plan_change_requests`: Two-way upgrade/downgrade request and Org Admin acceptance workflow state machine (Migration 123).
 * `razorpay_webhook_events`: Idempotent processing and reconciliation ledger for Razorpay webhook event payloads.
 * `material_products`, `material_offerings`, `material_orders`, `material_order_items`, `marketplace_orders`: Curriculum materials.
 * `inventory_locations`, `inventory_balances`, `inventory_ledger`, `material_shipments`: Warehouse inventory.

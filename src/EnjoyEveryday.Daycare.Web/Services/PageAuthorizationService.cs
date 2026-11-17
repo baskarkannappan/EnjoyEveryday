@@ -54,6 +54,7 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
 
     // Cache profile per scope
     private UserRoleProfile? _cachedProfile;
+    private readonly SemaphoreSlim _profileLock = new(1, 1);
 
     public PageAuthorizationService(
         IUserContext userContext,
@@ -79,118 +80,104 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
     {
         if (_cachedProfile != null) return _cachedProfile;
 
-        var profile = new UserRoleProfile
+        await _profileLock.WaitAsync(ct);
+        try
         {
-            UserId = _userContext.UserId,
-            Email = _userContext.Email ?? string.Empty,
-            IsAuthenticated = _userContext.IsAuthenticated
-        };
+            if (_cachedProfile != null) return _cachedProfile;
 
-        if (!profile.IsAuthenticated || _tenantContext.TenantId == Guid.Empty)
-        {
-            _cachedProfile = profile;
-            return profile;
-        }
-
-        var tenantId = _tenantContext.TenantId;
-        var userId = profile.UserId;
-        var orgId = _userContext.OrganizationId ?? Guid.Empty;
-
-        // If organization is not in claims or session, resolve from user's active memberships
-        if (orgId == Guid.Empty && userId != Guid.Empty)
-        {
-            try
+            var profile = new UserRoleProfile
             {
-                var userOrgs = (await _orgRepo.GetOrganizationsByUserIdAsync(userId, ct)).ToList();
-                if (userOrgs.Count > 0)
+                UserId = _userContext.UserId,
+                Email = _userContext.Email ?? string.Empty,
+                IsAuthenticated = _userContext.IsAuthenticated
+            };
+
+            if (!profile.IsAuthenticated || _tenantContext.TenantId == Guid.Empty)
+            {
+                _cachedProfile = profile;
+                return profile;
+            }
+
+            var tenantId = _tenantContext.TenantId;
+            var userId = profile.UserId;
+            var orgId = _userContext.OrganizationId ?? Guid.Empty;
+
+            // If organization is not in claims or session, resolve from user's active memberships
+            if (orgId == Guid.Empty && userId != Guid.Empty)
+            {
+                try
                 {
-                    var activeOrg = userOrgs.FirstOrDefault(o => o.IsActive) ?? userOrgs[0];
-                    orgId = activeOrg.Id;
-                    if (tenantId == Guid.Empty || tenantId != activeOrg.TenantId)
+                    var userOrgs = (await _orgRepo.GetOrganizationsByUserIdAsync(userId, ct)).ToList();
+                    if (userOrgs.Count > 0)
                     {
-                        tenantId = activeOrg.TenantId;
+                        var activeOrg = userOrgs.FirstOrDefault(o => o.IsActive) ?? userOrgs[0];
+                        orgId = activeOrg.Id;
+                        if (tenantId == Guid.Empty || tenantId != activeOrg.TenantId)
+                        {
+                            tenantId = activeOrg.TenantId;
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[PageAuth] Error resolving user org from DB: {ex.Message}");
-            }
-        }
-        profile.OrganizationId = orgId;
-
-        if (orgId != Guid.Empty)
-        {
-            try
-            {
-                var org = await _orgRepo.GetByIdAsync(orgId, ct);
-                if (org != null)
+                catch (Exception ex)
                 {
-                    profile.OrganizationName = org.Name;
-                    if (string.Equals(org.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase) || !org.IsActive)
-                    {
-                        profile.IsOrganizationSuspended = true;
-                        profile.SuspensionReason = !string.IsNullOrWhiteSpace(org.SuspensionReason)
-                            ? org.SuspensionReason
-                            : "Account suspended by platform administration.";
-                    }
+                    Console.WriteLine($"[PageAuth] Error resolving user org from DB: {ex.Message}");
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[PageAuth] Error checking organization status: {ex.Message}");
-            }
-        }
+            profile.OrganizationId = orgId;
 
-        if (userId != Guid.Empty && _userRepo != null)
-        {
-            try
+            // Run independent org, user, scope, and role lookups in parallel
+            var orgTask = orgId != Guid.Empty
+                ? FetchOrgAsync(orgId, ct)
+                : Task.FromResult<Domain.Entities.Organization?>(null);
+
+            var userTask = (userId != Guid.Empty && _userRepo != null)
+                ? FetchUserAsync(tenantId, userId, ct)
+                : Task.FromResult<Domain.Entities.User?>(null);
+
+            var classroomIdsTask = _scopeRepo.GetAssignedClassroomIdsAsync(
+                tenantId,
+                userId,
+                orgId != Guid.Empty ? orgId : null,
+                _userContext.BranchId,
+                ct);
+
+            var branchIdsTask = orgId != Guid.Empty
+                ? _scopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId, userId, ct)
+                : Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>());
+
+            var dbRolesTask = (orgId != Guid.Empty && userId != Guid.Empty)
+                ? FetchOrgRolesAsync(tenantId, orgId, userId, ct)
+                : Task.FromResult<IEnumerable<string>>(Array.Empty<string>());
+
+            await Task.WhenAll(orgTask, userTask, classroomIdsTask, branchIdsTask, dbRolesTask);
+
+            var org = orgTask.Result;
+            if (org != null)
             {
-                var user = await _userRepo.GetByIdAsync(tenantId, userId, ct);
-                if (user != null && !string.IsNullOrWhiteSpace(user.DisplayName))
+                profile.OrganizationName = org.Name;
+                if (string.Equals(org.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase) || !org.IsActive)
                 {
-                    profile.DisplayName = user.DisplayName;
+                    profile.IsOrganizationSuspended = true;
+                    profile.SuspensionReason = !string.IsNullOrWhiteSpace(org.SuspensionReason)
+                        ? org.SuspensionReason
+                        : "Account suspended by platform administration.";
                 }
             }
-            catch (Exception ex)
+
+            var user = userTask.Result;
+            if (user != null && !string.IsNullOrWhiteSpace(user.DisplayName))
             {
-                Console.WriteLine($"[PageAuth] Error loading user display name: {ex.Message}");
+                profile.DisplayName = user.DisplayName;
             }
-        }
 
-        // Fetch live scopes from database scoped to current organization and active branch
-        var classroomIds = await _scopeRepo.GetAssignedClassroomIdsAsync(
-            tenantId, 
-            userId, 
-            orgId != Guid.Empty ? orgId : null, 
-            _userContext.BranchId, 
-            ct);
-        profile.AssignedClassroomIds = new HashSet<Guid>(classroomIds);
+            profile.AssignedClassroomIds = new HashSet<Guid>(classroomIdsTask.Result);
+            profile.AssignedBranchIds = new HashSet<Guid>(branchIdsTask.Result);
 
-        if (orgId != Guid.Empty)
-        {
-            var branchIds = await _scopeRepo.GetAssignedBranchIdsAsync(tenantId, orgId, userId, ct);
-            profile.AssignedBranchIds = new HashSet<Guid>(branchIds);
-        }
-
-        var roles = new HashSet<string>(_userContext.Roles ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-
-        // Fetch live organization roles from database (user_organization_roles) so admin assignments take effect immediately
-        if (orgId != Guid.Empty && userId != Guid.Empty)
-        {
-            try
+            var roles = new HashSet<string>(_userContext.Roles ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            foreach (var r in dbRolesTask.Result)
             {
-                var dbRoles = await _scopeRepo.GetOrganizationRoleNamesAsync(tenantId, orgId, userId, ct);
-                foreach (var r in dbRoles)
-                {
-                    roles.Add(r);
-                }
+                roles.Add(r);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[PageAuth] Error loading live org roles: {ex.Message}");
-            }
-        }
 
         // 0. Platform Admin check
         profile.IsPlatformAdmin = roles.Any(r =>
@@ -253,6 +240,50 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
 
         _cachedProfile = profile;
         return profile;
+        }
+        finally
+        {
+            _profileLock.Release();
+        }
+    }
+
+    private async Task<Domain.Entities.Organization?> FetchOrgAsync(Guid orgId, CancellationToken ct)
+    {
+        try
+        {
+            return await _orgRepo.GetByIdAsync(orgId, ct);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[PageAuth] Error checking organization status: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task<Domain.Entities.User?> FetchUserAsync(Guid tenantId, Guid userId, CancellationToken ct)
+    {
+        try
+        {
+            return await _userRepo!.GetByIdAsync(tenantId, userId, ct);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[PageAuth] Error loading user display name: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task<IEnumerable<string>> FetchOrgRolesAsync(Guid tenantId, Guid orgId, Guid userId, CancellationToken ct)
+    {
+        try
+        {
+            return await _scopeRepo.GetOrganizationRoleNamesAsync(tenantId, orgId, userId, ct);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[PageAuth] Error loading live org roles: {ex.Message}");
+            return Array.Empty<string>();
+        }
     }
 
     public async Task<bool> CanAccessRouteAsync(string relativePath, CancellationToken ct = default)
@@ -448,6 +479,7 @@ public sealed class PageAuthorizationService : IPageAuthorizationService
         return path == "/management/dashboard"
             || path == "/org-dashboard"
             || path == "/management/billing"
+            || path == "/management/subscription"
             || path == "/billing"
             || path == "/billing/invoices"
             || path == "/billing/reports"

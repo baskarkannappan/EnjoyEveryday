@@ -15,6 +15,18 @@ public partial class BillingPage : ComponentBase, IDisposable
     private IPlatformAdminService PlatformService { get; set; } = default!;
 
     [Inject]
+    private IOrganizationSubscriptionService SubscriptionService { get; set; } = default!;
+
+    [Inject]
+    private IPlatformPaymentSettingsService PaymentSettingsService { get; set; } = default!;
+
+    [Inject]
+    private IQrCodeService QrCodeService { get; set; } = default!;
+
+    [Inject]
+    private EnjoyEveryday.Shared.Tenancy.IUserContext? UserContext { get; set; }
+
+    [Inject]
     private IEmailNotificationService? EmailNotificationService { get; set; }
 
     [Inject]
@@ -251,27 +263,74 @@ public partial class BillingPage : ComponentBase, IDisposable
         }
     }
 
-    private void OpenCreateInvoiceModal()
+    private async Task OpenCreateInvoiceModal()
     {
         _editingInvoiceId = null;
         _invoiceOrgId = _selectedOrgId ?? (_organizations.FirstOrDefault()?.Id ?? Guid.Empty);
-        _invoiceIssueDate = DateTime.Today;
-        _invoiceDueDate = DateTime.Today.AddDays(14);
+        var istToday = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromMinutes(330)).Date;
+        _invoiceIssueDate = istToday;
+        _invoiceDueDate = istToday.AddDays(14);
+        _invoiceTaxRate = 0;
+        _invoicePaymentInstructions = "Remit payment within 14 days via Bank Transfer or UPI.";
+        await ApplyOrganizationPlanDefaultsAsync(_invoiceOrgId);
+        _showInvoiceModal = true;
+    }
+
+    private async Task OnInvoiceOrgChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var orgId))
+        {
+            _invoiceOrgId = orgId;
+            await ApplyOrganizationPlanDefaultsAsync(orgId);
+        }
+        else
+        {
+            _invoiceOrgId = Guid.Empty;
+        }
+    }
+
+    private async Task ApplyOrganizationPlanDefaultsAsync(Guid organizationId)
+    {
+        if (organizationId != Guid.Empty)
+        {
+            try
+            {
+                var overview = await SubscriptionService.GetOverviewAsync(organizationId);
+                if (overview != null)
+                {
+                    _invoiceCurrency = !string.IsNullOrWhiteSpace(overview.Currency) ? overview.Currency : "INR";
+                    _invoiceDescription = $"{overview.PlanName} — {overview.TariffName} ({overview.BillingFrequency})";
+                    _lineItems = new List<CreateInvoiceLineItemRequest>
+                    {
+                        new CreateInvoiceLineItemRequest
+                        {
+                            Description = $"EnjoyEveryday {overview.PlanName} Subscription ({overview.TariffName})",
+                            Quantity = 1,
+                            UnitPrice = overview.CurrentRate > 0 ? overview.CurrentRate : 2999.00m,
+                            Category = "Subscription"
+                        }
+                    };
+                    return;
+                }
+            }
+            catch
+            {
+                // Fall back to default template below if subscription overview lookup fails
+            }
+        }
+
         _invoiceCurrency = "INR";
         _invoiceDescription = "Monthly Subscription Fee";
-        _invoiceTaxRate = 0;
-        _invoicePaymentInstructions = "Remit payment within 14 days via Bank Transfer or ACH.";
         _lineItems = new List<CreateInvoiceLineItemRequest>
         {
             new CreateInvoiceLineItemRequest
             {
                 Description = "EnjoyEveryday Early-Childhood Platform Subscription",
                 Quantity = 1,
-                UnitPrice = 299.00m,
+                UnitPrice = 2999.00m,
                 Category = "Subscription"
             }
         };
-        _showInvoiceModal = true;
     }
 
     private void OpenEditDraftModal(Invoice inv)
@@ -701,6 +760,77 @@ public partial class BillingPage : ComponentBase, IDisposable
         }
     }
 
+    private bool _showQrSettingsModal;
+    private bool _isSavingQrSettings;
+    private PlatformPaymentSettings _qrSettings = new();
+
+    private async Task OpenQrSettingsModalAsync()
+    {
+        var current = await PaymentSettingsService.GetSettingsAsync();
+        _qrSettings = new PlatformPaymentSettings
+        {
+            Id = current.Id,
+            UpiId = current.UpiId,
+            PayeeName = current.PayeeName,
+            BankName = current.BankName,
+            AccountNumber = current.AccountNumber,
+            IfscCode = current.IfscCode,
+            UseCustomQrImage = current.UseCustomQrImage,
+            CustomQrDataUri = current.CustomQrDataUri
+        };
+        _showQrSettingsModal = true;
+    }
+
+    private async Task HandleQrImageUploadAsync(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+            using var stream = file.OpenReadStream(maxAllowedSize: 2 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            _qrSettings.CustomQrDataUri = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}";
+            _qrSettings.UseCustomQrImage = true;
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Could not read uploaded QR image (max 2 MB).");
+        }
+    }
+
+    private string GetPreviewQrDataUri()
+    {
+        if (_qrSettings.UseCustomQrImage && !string.IsNullOrWhiteSpace(_qrSettings.CustomQrDataUri))
+        {
+            return _qrSettings.CustomQrDataUri;
+        }
+
+        var upi = string.IsNullOrWhiteSpace(_qrSettings.UpiId) ? "billing@enjoyeveryday" : _qrSettings.UpiId.Trim();
+        var payee = Uri.EscapeDataString(string.IsNullOrWhiteSpace(_qrSettings.PayeeName) ? "EnjoyEveryday Platform" : _qrSettings.PayeeName.Trim());
+        var payload = $"upi://pay?pa={Uri.EscapeDataString(upi)}&pn={payee}&cu=INR";
+        return QrCodeService.GeneratePngDataUri(payload, moduleSize: 5, border: 2);
+    }
+
+    private async Task SaveQrSettingsAsync()
+    {
+        _isSavingQrSettings = true;
+        try
+        {
+            await PaymentSettingsService.SaveSettingsAsync(_qrSettings, UserContext?.Email);
+            ShowToast("Platform bank account & payment QR settings saved. All invoices & emails now use the updated QR.", isError: false);
+            _showQrSettingsModal = false;
+        }
+        catch (Exception ex)
+        {
+            await HandleErrorAsync(ex, "Error saving payment & QR settings.");
+        }
+        finally
+        {
+            _isSavingQrSettings = false;
+        }
+    }
+
     private void CloseModals()
     {
         _showInvoiceModal = false;
@@ -710,6 +840,7 @@ public partial class BillingPage : ComponentBase, IDisposable
         _showVoidModal = false;
         _showSettingsModal = false;
         _showPreviewModal = false;
+        _showQrSettingsModal = false;
         _selectedInvoiceForAction = null;
         _selectedPaymentForReversal = null;
         _cashConfirmed = false;

@@ -1,0 +1,633 @@
+@page "/management/subscription"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Daycare.Web.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+
+@inject IOrganizationSubscriptionService SubscriptionService
+@inject IPageAuthorizationService PageAuth
+@inject IUserContext UserContext
+@inject ITenantContext TenantContext
+@inject ICurrencyService CurrencyService
+
+<PageTitle>Subscription &amp; Plan History — EnjoyEveryday</PageTitle>
+
+<div class="content subscription-page">
+    <PageHero Eyebrow="ORGANIZATION MANAGEMENT"
+              Title="Subscription &amp; Plan History"
+              Subtitle="View your active daycare subscription plan, resource quotas, past plan history, and request upgrades or downgrades.">
+        <RightContent>
+            <a href="/management/billing" class="btn secondary">Invoices &amp; Billing</a>
+            @if (_overview != null && !_hasActiveRequest)
+            {
+                <button class="primary" @onclick="() => OpenRequestModal(null)">+ Request Plan Change</button>
+            }
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_feedbackMessage))
+    {
+        <div class="sub-alert @(_feedbackIsError ? "sub-alert-error" : "sub-alert-success")">
+            <span>@(_feedbackIsError ? "⚠️" : "✓") @_feedbackMessage</span>
+            <button type="button" class="sub-alert-close" @onclick="() => _feedbackMessage = null">✕</button>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="sub-card">
+            <p class="sub-muted">Loading subscription details and plan history...</p>
+        </div>
+    }
+    else if (!_isAuthorized)
+    {
+        <div class="sub-card">
+            <h3>Access Restricted</h3>
+            <p class="sub-muted">Only Organization Administrators can view and manage subscription plans.</p>
+        </div>
+    }
+    else if (_overview == null)
+    {
+        <div class="sub-card">
+            <h3>Organization Not Found</h3>
+            <p class="sub-muted">We could not resolve your organization's subscription record.</p>
+        </div>
+    }
+    else
+    {
+        @* 1. ACTION REQUIRED: PROPOSAL AWAITING ORG ADMIN ACCEPTANCE *@
+        @if (_pendingProposal != null)
+        {
+            <div class="sub-proposal-banner">
+                <div class="sub-proposal-header">
+                    <div>
+                        <span class="sub-badge sub-badge-action">ACTION REQUIRED · ACCEPT PROPOSAL</span>
+                        <h2>Platform Admin Updated Your Plan Proposal</h2>
+                        <p class="sub-muted">
+                            Reviewed by @(_pendingProposal.ReviewedByEmail ?? "Platform Admin") on @(_pendingProposal.ReviewedAt.HasValue ? FormatIstDate(_pendingProposal.ReviewedAt.Value) : "Today").
+                            Your current plan remains active until you accept.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="sub-proposal-grid">
+                    <div class="sub-proposal-box">
+                        <span class="sub-label">Current Plan</span>
+                        <strong>@_pendingProposal.CurrentPlanName</strong>
+                        <span class="sub-muted">@CurrencyService.Format(_pendingProposal.CurrentRate, _pendingProposal.CurrentCurrency)</span>
+                    </div>
+                    <div class="sub-proposal-arrow">→</div>
+                    <div class="sub-proposal-box sub-proposal-box-highlight">
+                        <span class="sub-label">Proposed Plan</span>
+                        <strong>@(_pendingProposal.ProposedPlanName ?? _pendingProposal.RequestedPlanName)</strong>
+                        <span class="sub-accent-text">
+                            @CurrencyService.Format(_pendingProposal.ProposedRate ?? 0, _pendingProposal.ProposedCurrency ?? _overview.Currency)
+                            · @(_pendingProposal.ProposedTariffName ?? "Monthly Standard")
+                        </span>
+                        <span class="sub-muted" style="font-size:12px;">
+                            Effective: @(_pendingProposal.ProposedEffectiveDate.HasValue ? FormatIstDate(_pendingProposal.ProposedEffectiveDate.Value) : "Immediate")
+                        </span>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_pendingProposal.PlatformAdminNotes))
+                {
+                    <div class="sub-notes-box">
+                        <strong>Platform Admin Notes:</strong> @_pendingProposal.PlatformAdminNotes
+                    </div>
+                }
+
+                <div class="sub-proposal-actions">
+                    <input class="sub-input"
+                           @bind="_orgResponseNotes"
+                           placeholder="Optional notes for Platform Admin (e.g. 'Confirmed, please activate')..." />
+                    <div class="sub-btn-row">
+                        <button type="button"
+                                class="secondary"
+                                disabled="@_isSubmitting"
+                                @onclick="() => HandleProposalDecisionAsync(false)">
+                            Decline Proposal
+                        </button>
+                        <button type="button"
+                                class="primary"
+                                disabled="@_isSubmitting"
+                                @onclick="() => HandleProposalDecisionAsync(true)">
+                            @(_isSubmitting ? "Activating..." : "✓ Accept & Activate Plan")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (_pendingReviewRequest != null)
+        {
+            <div class="sub-pending-banner">
+                <div>
+                    <span class="sub-badge sub-badge-pending">PENDING PLATFORM REVIEW</span>
+                    <strong>Plan @_pendingReviewRequest.RequestType Request Submitted</strong>
+                    <p class="sub-muted" style="margin:4px 0 0;">
+                        Requested change from <strong>@_pendingReviewRequest.CurrentPlanName</strong> to
+                        <strong>@_pendingReviewRequest.RequestedPlanName</strong> on
+                        @FormatIstDate(_pendingReviewRequest.RequestedAt).
+                        You will receive an email once Platform Admin prepares your updated plan for acceptance.
+                    </p>
+                </div>
+            </div>
+        }
+
+        @* 2. CURRENT SUBSCRIPTION OVERVIEW + QUOTAS *@
+        <div class="sub-overview-grid">
+            <div class="sub-card">
+                <div class="sub-card-top">
+                    <div>
+                        <span class="sub-badge sub-badge-active">ACTIVE SUBSCRIPTION</span>
+                        <h2 style="margin:8px 0 4px;">@_overview.PlanName</h2>
+                        <p class="sub-muted" style="margin:0;">
+                            Code: <code>@_overview.PlanCode</code>
+                            @if (!string.IsNullOrWhiteSpace(_overview.PricingRegionName))
+                            {
+                                <span> · 📍 @_overview.PricingRegionName</span>
+                            }
+                        </p>
+                    </div>
+                    <div class="sub-price-block">
+                        <div class="sub-price-amount">@CurrencyService.Format(_overview.CurrentRate, _overview.Currency)</div>
+                        <div class="sub-muted" style="font-size:12px;">@_overview.TariffName (@_overview.BillingFrequency)</div>
+                    </div>
+                </div>
+
+                <div class="sub-meta-row">
+                    <div>
+                        <span class="sub-label">Subscribed Since</span>
+                        <strong>@(_overview.SubscribedSince.HasValue ? FormatIstDate(_overview.SubscribedSince.Value) : "—")</strong>
+                    </div>
+                    <div>
+                        <span class="sub-label">Currency</span>
+                        <strong>@_overview.Currency</strong>
+                    </div>
+                    <div>
+                        <span class="sub-label">AI Features</span>
+                        <strong>@(_overview.IncludesAi ? "Included" : "Not Included")</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-card">
+                <h3 style="margin:0 0 14px;">Current Plan Quota Usage</h3>
+
+                <div class="sub-quota-item">
+                    <div class="sub-quota-label">
+                        <span>Branches</span>
+                        <strong>@_overview.CurrentBranches / @_overview.MaxBranches</strong>
+                    </div>
+                    <div class="sub-progress-track">
+                        <div class="sub-progress-fill" style="width: @GetUsagePercent(_overview.CurrentBranches, _overview.MaxBranches)%;"></div>
+                    </div>
+                </div>
+
+                <div class="sub-quota-item">
+                    <div class="sub-quota-label">
+                        <span>Classrooms</span>
+                        <strong>@_overview.CurrentClassrooms / @_overview.MaxClassrooms</strong>
+                    </div>
+                    <div class="sub-progress-track">
+                        <div class="sub-progress-fill" style="width: @GetUsagePercent(_overview.CurrentClassrooms, _overview.MaxClassrooms)%;"></div>
+                    </div>
+                </div>
+
+                <div class="sub-quota-item" style="margin-bottom:0;">
+                    <div class="sub-quota-label">
+                        <span>Enrolled Children</span>
+                        <strong>@_overview.CurrentChildren / @_overview.MaxChildren</strong>
+                    </div>
+                    <div class="sub-progress-track">
+                        <div class="sub-progress-fill" style="width: @GetUsagePercent(_overview.CurrentChildren, _overview.MaxChildren)%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* 3. AVAILABLE PLANS COMPARISON *@
+        <div class="sub-section-header">
+            <div>
+                <h3>Available Subscription Plans</h3>
+                <p class="sub-muted">Compare plan limits and request an upgrade or downgrade anytime.</p>
+            </div>
+        </div>
+
+        <div class="sub-plans-grid">
+            @foreach (var plan in _availablePlans)
+            {
+                var isCurrent = plan.PlanId == _overview.PlanId;
+                var displayPrice = plan.RegionalTariffs.FirstOrDefault()?.Price ?? plan.BasePrice;
+                var displayCurrency = plan.RegionalTariffs.FirstOrDefault()?.Currency ?? _overview.Currency;
+                <div class="sub-card @(isCurrent ? "sub-plan-current" : "")">
+                    <div class="sub-plan-head">
+                        <span class="sub-badge @(isCurrent ? "sub-badge-active" : "sub-badge-neutral")">
+                            @(isCurrent ? "CURRENT PLAN" : plan.PlanCode)
+                        </span>
+                        <div class="sub-plan-price">@CurrencyService.Format(displayPrice, displayCurrency)<span>/mo</span></div>
+                    </div>
+                    <h4 style="margin:10px 0 6px;">@plan.PlanName</h4>
+                    <p class="sub-muted" style="font-size:13px;min-height:38px;">@plan.Description</p>
+                    <ul class="sub-plan-features">
+                        <li>Up to <strong>@plan.MaxBranches</strong> @(plan.MaxBranches == 1 ? "Branch" : "Branches")</li>
+                        <li>Up to <strong>@plan.MaxClassrooms</strong> Classrooms</li>
+                        <li>Up to <strong>@plan.MaxChildren</strong> Children</li>
+                        <li>AI Insights &amp; Planning: <strong>@(plan.IncludesAi ? "Included" : "No")</strong></li>
+                    </ul>
+                    @if (!isCurrent)
+                    {
+                        <button type="button"
+                                class="secondary"
+                                style="width:100%;"
+                                disabled="@_hasActiveRequest"
+                                @onclick="() => OpenRequestModal(plan)">
+                            @(_hasActiveRequest ? "Request In Progress" : GetActionLabel(plan.PlanId))
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        @* 4. PLAN HISTORY & REQUESTS TABS *@
+        <div class="sub-card" style="margin-top:24px;">
+            <div class="tabs" style="margin-bottom:18px;">
+                <button type="button" class="tab @(_activeTab == "History" ? "active" : "")" @onclick='() => _activeTab = "History"'>
+                    Plan History (@_history.Count)
+                </button>
+                <button type="button" class="tab @(_activeTab == "Requests" ? "active" : "")" @onclick='() => _activeTab = "Requests"'>
+                    Change Requests (@_requests.Count)
+                </button>
+            </div>
+
+            @if (_activeTab == "History")
+            {
+                @if (!_history.Any())
+                {
+                    <p class="sub-muted">No subscription history recorded yet.</p>
+                }
+                else
+                {
+                    <div class="sub-table-wrap">
+                        <table class="sub-table">
+                            <thead>
+                                <tr>
+                                    <th>Period</th>
+                                    <th>Plan &amp; Tariff</th>
+                                    <th>Previous Plan</th>
+                                    <th>Rate</th>
+                                    <th>Quotas</th>
+                                    <th>Change Type</th>
+                                    <th>Reason / Actor</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _history)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div style="font-weight:700;">@FormatIstDate(item.EffectiveFrom)</div>
+                                            <div class="sub-muted" style="font-size:12px;">
+                                                @(item.EffectiveTo.HasValue ? $"to {FormatIstDate(item.EffectiveTo.Value)}" : "Present (Active)")
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style="font-weight:700;">@item.NewPlanName</div>
+                                            <div class="sub-muted" style="font-size:12px;">@(item.NewTariffName ?? "Monthly Standard")</div>
+                                        </td>
+                                        <td class="sub-muted">
+                                            @(string.IsNullOrWhiteSpace(item.PreviousPlanName) ? "—" : item.PreviousPlanName)
+                                        </td>
+                                        <td style="font-weight:700;">@CurrencyService.Format(item.NewRate, item.NewCurrency)</td>
+                                        <td style="font-size:12.5px;">
+                                            @item.MaxBranches B · @item.MaxClassrooms R · @item.MaxChildren C
+                                        </td>
+                                        <td>
+                                            <span class="sub-badge @(item.IsCurrent ? "sub-badge-active" : "sub-badge-neutral")">
+                                                @item.ChangeType
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div>@(item.Reason ?? "—")</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.ChangedByEmail))
+                                            {
+                                                <div class="sub-muted" style="font-size:11.5px;">@item.ChangedByEmail</div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            else
+            {
+                @if (!_requests.Any())
+                {
+                    <p class="sub-muted">No plan upgrade or downgrade requests have been submitted yet.</p>
+                }
+                else
+                {
+                    <div class="sub-table-wrap">
+                        <table class="sub-table">
+                            <thead>
+                                <tr>
+                                    <th>Requested</th>
+                                    <th>Type</th>
+                                    <th>From → Requested</th>
+                                    <th>Proposed Terms</th>
+                                    <th>Status</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var req in _requests)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div style="font-weight:700;">@FormatIstDate(req.RequestedAt)</div>
+                                            <div class="sub-muted" style="font-size:12px;">@(req.RequestedByEmail ?? "Org Admin")</div>
+                                        </td>
+                                        <td><strong>@req.RequestType</strong></td>
+                                        <td>@req.CurrentPlanName → <strong>@req.RequestedPlanName</strong></td>
+                                        <td>
+                                            @if (req.ProposedRate.HasValue)
+                                            {
+                                                <div><strong>@(req.ProposedPlanName ?? req.RequestedPlanName)</strong></div>
+                                                <div class="sub-muted" style="font-size:12px;">
+                                                    @CurrencyService.Format(req.ProposedRate.Value, req.ProposedCurrency ?? _overview.Currency)
+                                                    · @(req.ProposedTariffName ?? "Monthly")
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="sub-muted">Awaiting proposal</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="sub-badge @GetStatusBadgeClass(req.Status)">@FormatStatus(req.Status)</span>
+                                        </td>
+                                        <td style="font-size:12.5px;">
+                                            @if (!string.IsNullOrWhiteSpace(req.OrgAdminNotes))
+                                            {
+                                                <div><strong>Org:</strong> @req.OrgAdminNotes</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(req.PlatformAdminNotes))
+                                            {
+                                                <div><strong>Platform:</strong> @req.PlatformAdminNotes</div>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@* REQUEST UPGRADE / DOWNGRADE MODAL *@
+@if (_showRequestModal && _overview != null)
+{
+    <div class="sub-modal-backdrop" @onclick="CloseRequestModal">
+        <div class="sub-modal" @onclick:stopPropagation="true">
+            <div class="sub-modal-header">
+                <div>
+                    <span class="sub-badge sub-badge-neutral">PLAN CHANGE REQUEST</span>
+                    <h3 style="margin:6px 0 0;">Request Plan Upgrade or Downgrade</h3>
+                </div>
+                <button type="button" class="sub-alert-close" @onclick="CloseRequestModal">✕</button>
+            </div>
+
+            <div class="sub-modal-body">
+                <p class="sub-muted" style="margin-top:0;">
+                    Your request will be emailed to Platform Administration. They will configure your updated plan terms and send them back to you for final acceptance.
+                </p>
+
+                <label class="sub-field-label">Select Target Plan</label>
+                <select class="sub-input" @bind="_selectedPlanIdString">
+                    @foreach (var plan in _availablePlans.Where(p => p.PlanId != _overview.PlanId))
+                    {
+                        var price = plan.RegionalTariffs.FirstOrDefault()?.Price ?? plan.BasePrice;
+                        var curr = plan.RegionalTariffs.FirstOrDefault()?.Currency ?? _overview.Currency;
+                        <option value="@plan.PlanId">@plan.PlanName — @CurrencyService.Format(price, curr)/mo (@plan.MaxBranches B / @plan.MaxClassrooms R / @plan.MaxChildren C)</option>
+                    }
+                </select>
+
+                <label class="sub-field-label" style="margin-top:14px;">Notes for Platform Admin</label>
+                <textarea class="sub-input"
+                          rows="3"
+                          @bind="_requestNotes"
+                          placeholder="Share why you are upgrading or downgrading (e.g., opening a new branch next month)..."></textarea>
+            </div>
+
+            <div class="sub-modal-footer">
+                <button type="button" class="secondary" @onclick="CloseRequestModal">Cancel</button>
+                <button type="button" class="primary" disabled="@_isSubmitting" @onclick="SubmitPlanRequestAsync">
+                    @(_isSubmitting ? "Submitting..." : "Send Request to Platform Admin")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private bool _isAuthorized = false;
+    private bool _isSubmitting = false;
+    private string _activeTab = "History";
+    private string? _feedbackMessage;
+    private bool _feedbackIsError;
+
+    private Guid _organizationId;
+    private OrganizationSubscriptionOverview? _overview;
+    private List<OrganizationPlanHistory> _history = new();
+    private List<OrganizationPlanChangeRequest> _requests = new();
+    private List<AvailableSubscriptionPlanOption> _availablePlans = new();
+
+    private OrganizationPlanChangeRequest? _pendingProposal =>
+        _requests.FirstOrDefault(r => r.Status == PlanChangeRequestStatuses.PendingOrgAcceptance);
+
+    private OrganizationPlanChangeRequest? _pendingReviewRequest =>
+        _requests.FirstOrDefault(r => r.Status == PlanChangeRequestStatuses.PendingPlatformReview);
+
+    private bool _hasActiveRequest => _pendingProposal != null || _pendingReviewRequest != null;
+
+    private bool _showRequestModal = false;
+    private string _selectedPlanIdString = string.Empty;
+    private string _requestNotes = string.Empty;
+    private string _orgResponseNotes = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!await PageAuth.EnsureAuthorizedAsync("/management/subscription"))
+            {
+                return;
+            }
+
+            var profile = await PageAuth.GetUserProfileAsync();
+            _isAuthorized = profile.IsAuthenticated && profile.IsOrgAdmin;
+            _organizationId = profile.OrganizationId != Guid.Empty
+                ? profile.OrganizationId
+                : TenantContext.TenantId;
+
+            if (_isAuthorized && _organizationId != Guid.Empty)
+            {
+                await LoadDataAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = $"Unable to load subscription details: {ex.Message}";
+            _feedbackIsError = true;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _overview = await SubscriptionService.GetOverviewAsync(_organizationId);
+        _history = await SubscriptionService.GetPlanHistoryAsync(_organizationId);
+        _requests = await SubscriptionService.GetRequestsForOrganizationAsync(_organizationId);
+        _availablePlans = await SubscriptionService.GetAvailablePlansForOrganizationAsync(_organizationId);
+    }
+
+    private void OpenRequestModal(AvailableSubscriptionPlanOption? preselected)
+    {
+        if (_overview == null) return;
+        var target = preselected ?? _availablePlans.FirstOrDefault(p => p.PlanId != _overview.PlanId);
+        _selectedPlanIdString = target?.PlanId.ToString() ?? string.Empty;
+        _requestNotes = string.Empty;
+        _showRequestModal = true;
+    }
+
+    private void CloseRequestModal() => _showRequestModal = false;
+
+    private async Task SubmitPlanRequestAsync()
+    {
+        if (!_isAuthorized) return;
+
+        if (!Guid.TryParse(_selectedPlanIdString, out var targetPlanId) || _overview == null)
+        {
+            _feedbackMessage = "Please select a valid target plan.";
+            _feedbackIsError = true;
+            return;
+        }
+
+        _isSubmitting = true;
+        try
+        {
+            var targetPlan = _availablePlans.FirstOrDefault(p => p.PlanId == targetPlanId);
+            var targetTariffId = targetPlan?.RegionalTariffs.FirstOrDefault()?.Id;
+
+            await SubscriptionService.SubmitPlanChangeRequestAsync(
+                _organizationId,
+                targetPlanId,
+                targetTariffId,
+                _requestNotes,
+                UserContext.UserId,
+                UserContext.Email);
+
+            _showRequestModal = false;
+            _feedbackMessage = "Plan change request sent to Platform Administration. A confirmation email has been dispatched.";
+            _feedbackIsError = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = ex.Message;
+            _feedbackIsError = true;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task HandleProposalDecisionAsync(bool accept)
+    {
+        if (!_isAuthorized || _pendingProposal == null) return;
+
+        _isSubmitting = true;
+        try
+        {
+            await SubscriptionService.RespondToProposalAsync(
+                _pendingProposal.Id,
+                accept,
+                _orgResponseNotes,
+                UserContext.UserId,
+                UserContext.Email);
+
+            _orgResponseNotes = string.Empty;
+            _feedbackMessage = accept
+                ? "Plan proposal accepted! Your new subscription plan and quotas are now active."
+                : "Plan proposal declined. Your existing subscription remains unchanged.";
+            _feedbackIsError = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _feedbackMessage = ex.Message;
+            _feedbackIsError = true;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private static readonly TimeSpan IstOffset = TimeSpan.FromMinutes(330);
+
+    private static string FormatIstDate(DateTimeOffset dto) => dto.ToOffset(IstOffset).ToString("MMM dd, yyyy");
+
+    private static int GetUsagePercent(int current, int max)
+    {
+        if (max <= 0) return 0;
+        return Math.Clamp((int)Math.Round(current * 100.0 / max), 0, 100);
+    }
+
+    private string GetActionLabel(Guid targetPlanId)
+    {
+        if (_overview == null) return "Request Change";
+        var order = new Dictionary<Guid, int>
+        {
+            [Guid.Parse("11111111-1111-1111-1111-111111111111")] = 1,
+            [Guid.Parse("22222222-2222-2222-2222-222222222222")] = 2,
+            [Guid.Parse("33333333-3333-3333-3333-333333333333")] = 3
+        };
+        var curr = order.GetValueOrDefault(_overview.PlanId, 2);
+        var next = order.GetValueOrDefault(targetPlanId, 2);
+        return next > curr ? "Request Upgrade" : "Request Downgrade";
+    }
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        PlanChangeRequestStatuses.PendingPlatformReview => "sub-badge-pending",
+        PlanChangeRequestStatuses.PendingOrgAcceptance => "sub-badge-action",
+        PlanChangeRequestStatuses.Accepted => "sub-badge-active",
+        _ => "sub-badge-error"
+    };
+
+    private static string FormatStatus(string status) => status switch
+    {
+        PlanChangeRequestStatuses.PendingPlatformReview => "Pending Platform Review",
+        PlanChangeRequestStatuses.PendingOrgAcceptance => "Awaiting Your Acceptance",
+        PlanChangeRequestStatuses.Accepted => "Accepted & Active",
+        PlanChangeRequestStatuses.DeclinedByOrg => "Declined by Org",
+        PlanChangeRequestStatuses.RejectedByPlatform => "Declined by Platform",
+        _ => status
+    };
+}
+

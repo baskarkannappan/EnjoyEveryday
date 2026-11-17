@@ -12,6 +12,10 @@ public class ClassroomService : IClassroomService
     private readonly IPlanQuotaService? _quotaService;
     private readonly IBranchRepository? _branchRepository;
 
+    // Short-lived scoped cache to avoid duplicate fn_get_all_classrooms roundtrips within a circuit/request
+    private (Guid TenantId, Guid? OrgId, DateTimeOffset ExpiresAt, IReadOnlyList<Classroom> Items)? _allClassroomsCache;
+    private readonly SemaphoreSlim _cacheLock = new(1, 1);
+
     public ClassroomService(
         IClassroomRepository classroomRepository, 
         ITenantContext tenantContext, 
@@ -30,13 +34,40 @@ public class ClassroomService : IClassroomService
     {
         var tenantId = _tenantContext.TenantId;
         var orgId = _userContext.OrganizationId;
-        return await _classroomRepository.GetAllAsync(tenantId, orgId, cancellationToken);
+        return await GetAllCachedAsync(tenantId, orgId, cancellationToken);
     }
 
     public async Task<IEnumerable<Classroom>> GetClassroomsByOrganizationAsync(Guid organizationId, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;
-        return await _classroomRepository.GetAllAsync(tenantId, organizationId, cancellationToken);
+        return await GetAllCachedAsync(tenantId, organizationId, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<Classroom>> GetAllCachedAsync(Guid tenantId, Guid? orgId, CancellationToken cancellationToken)
+    {
+        var cached = _allClassroomsCache;
+        if (cached.HasValue && cached.Value.TenantId == tenantId && cached.Value.OrgId == orgId && DateTimeOffset.UtcNow < cached.Value.ExpiresAt)
+        {
+            return cached.Value.Items;
+        }
+
+        await _cacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            cached = _allClassroomsCache;
+            if (cached.HasValue && cached.Value.TenantId == tenantId && cached.Value.OrgId == orgId && DateTimeOffset.UtcNow < cached.Value.ExpiresAt)
+            {
+                return cached.Value.Items;
+            }
+
+            var items = (await _classroomRepository.GetAllAsync(tenantId, orgId, cancellationToken)).ToList();
+            _allClassroomsCache = (tenantId, orgId, DateTimeOffset.UtcNow.AddSeconds(10), items);
+            return items;
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
     }
 
     public async Task<IEnumerable<Classroom>> GetClassroomsAsync(Guid branchId, CancellationToken cancellationToken = default)
@@ -85,7 +116,9 @@ public class ClassroomService : IClassroomService
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        return await _classroomRepository.AddAsync(classroom, cancellationToken);
+        var created = await _classroomRepository.AddAsync(classroom, cancellationToken);
+        _allClassroomsCache = null;
+        return created;
     }
 
     public async Task<Classroom> CreateClassroomAsync(Classroom classroom, CancellationToken cancellationToken = default)
@@ -118,7 +151,9 @@ public class ClassroomService : IClassroomService
         classroom.CreatedAt = DateTimeOffset.UtcNow;
         classroom.UpdatedAt = DateTimeOffset.UtcNow;
 
-        return await _classroomRepository.AddAsync(classroom, cancellationToken);
+        var created = await _classroomRepository.AddAsync(classroom, cancellationToken);
+        _allClassroomsCache = null;
+        return created;
     }
 
     public async Task UpdateClassroomAsync(Classroom classroom, CancellationToken cancellationToken = default)
@@ -130,6 +165,7 @@ public class ClassroomService : IClassroomService
 
         classroom.UpdatedAt = DateTimeOffset.UtcNow;
         await _classroomRepository.UpdateAsync(classroom, cancellationToken);
+        _allClassroomsCache = null;
     }
 
     public async Task DeleteClassroomAsync(Guid id, CancellationToken cancellationToken = default)
@@ -137,5 +173,6 @@ public class ClassroomService : IClassroomService
         if (!_userContext.HasPermission("classroom.manage")) throw new UnauthorizedAccessException("Requires classroom.manage permission.");
         var tenantId = _tenantContext.TenantId;
         await _classroomRepository.DeleteAsync(tenantId, id, cancellationToken);
+        _allClassroomsCache = null;
     }
 }

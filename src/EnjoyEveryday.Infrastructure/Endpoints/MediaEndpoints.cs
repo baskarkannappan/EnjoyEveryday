@@ -3,12 +3,14 @@ using System.IO;
 using System.Threading.Tasks;
 using EnjoyEveryday.Application.Services;
 using EnjoyEveryday.Domain.Entities;
+using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Auth;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EnjoyEveryday.Infrastructure.Endpoints;
 
@@ -47,6 +49,19 @@ public static class MediaEndpoints
 
                 bool isSameOrg = effectiveTenantId != Guid.Empty && 
                     (asset.TenantId == effectiveTenantId || (asset.OrganizationId.HasValue && asset.OrganizationId.Value == effectiveTenantId));
+
+                // Parents may have a default login TenantId claim (e.g. 10000000-...) while their enrolled child lives in the daycare's TenantId
+                if (!isSameOrg && userContext.UserId != Guid.Empty)
+                {
+                    var parentRepo = context.RequestServices.GetService<IParentRepository>();
+                    if (parentRepo != null)
+                    {
+                        var authorizedChildren = await parentRepo.GetAuthorizedChildrenAsync(effectiveTenantId, userContext.UserId, context.RequestAborted);
+                        isSameOrg = authorizedChildren.Any(c =>
+                            c.TenantId == asset.TenantId &&
+                            (!asset.ChildId.HasValue || c.ChildId == asset.ChildId.Value));
+                    }
+                }
 
                 // Public marketing assets (facility profile logo & campus photo gallery) can be viewed publicly
                 bool isPublicMarketingAsset = string.Equals(asset.EntityType, "FacilityProfile", StringComparison.OrdinalIgnoreCase) ||

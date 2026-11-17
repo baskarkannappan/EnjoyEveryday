@@ -144,8 +144,21 @@ tags:
     - Supports culture-specific zero-decimal rules (e.g., INR `₹12,500` with Indian lakh grouping, JPY `¥10,000`, USD `$150.00`).
     - Registered as a singleton in `UiSharedServiceRegistration.cs` across all portals.
 
+### 10. Organization Subscription Visibility, Plan History & Two-Way Plan Change Workflow
+* **Entities**: `organization_plan_history`, `organization_plan_change_requests`, `OrganizationSubscriptionOverview`.
+* **Services**: `IOrganizationSubscriptionService` / `OrganizationSubscriptionService`, `IOrganizationSubscriptionRepository` / `OrganizationSubscriptionRepository`, `IEmailNotificationService`.
+* **Org Admin Subscription Portal (`Daycare.Web`)**:
+  - **Route**: `/management/subscription` (`OrganizationSubscription.razor`), linked from `NavMenu.razor` and `OrganizationBillingView.razor`.
+  - **Capabilities**: Displays active plan, regional tariff rate/currency, live quota usage bars (Branches, Classrooms, Children, AI inclusion), available plan comparison cards, and chronological **Plan History** (past and current plans from `organization_plan_history`).
+* **Two-Way Upgrade / Downgrade Approval State Machine**:
+  1. **Request (`PendingPlatformReview`)**: Org Admin selects a target plan and submits an upgrade/downgrade request. Sends `PlanChangeRequested` email (`SendPlanChangeRequestedAsync`) to Platform Admin (CC Org Admin) and publishes a `PlanChangeRequested` event to the Platform Admin notification bell.
+  2. **Proposal (`PendingOrgAcceptance`)**: Platform Admin reviews the request in `Admin.Web` (`/plan-requests`, `PlanChangeRequestsPage.razor`), configures the proposed plan, regional tariff, rate, and effective date, and sends it for Org Admin acceptance via `SendPlanChangeProposalForAcceptanceAsync`.
+  3. **Acceptance (`Accepted` / `DeclinedByOrg`)**: Org Admin reviews the proposal banner on `/management/subscription` and clicks **Accept & Activate Plan** (or **Decline**). On acceptance, `sp_assign_organization_regional_plan` atomically updates `organizations` quotas, closes the previous `organization_plan_history` row (`effective_to`), inserts the new history row, and dispatches `SendPlanChangeDecisionConfirmationAsync` to both Org Admin and Platform Admin.
 
-
+### 11. Platform Admin Bank Account & Payment QR Configuration
+* **Entities & Services**: `platform_payment_settings` (`PlatformPaymentSettings`), `IPlatformPaymentSettingsService` / `PlatformPaymentSettingsService`, `QrCodeService`.
+* **Platform Admin UI**: `💳 Payment & QR Settings` modal on `Admin.Web` (`/billing`, `BillingPage.razor`) allows Platform Admins to configure `upi_id`, `payee_name`, `bank_name`, `account_number`, `ifsc_code`, or upload a custom static bank QR image (`use_custom_qr_image`, `custom_qr_data_uri`) with live QR preview.
+* **Invoice & Email Integration**: `QrCodeService.BuildInvoicePaymentPayload` and `InvoiceDetailsModal.razor` read the active settings dynamically so all generated invoice previews and email QR codes immediately reflect the Platform Admin's updated bank/UPI account.
 
 
 

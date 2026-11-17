@@ -11,6 +11,9 @@
               Title="Billing &amp; Invoices"
               Subtitle="Administer daycare organization invoices, configure manual vs. automatic billing modes, record payments, and manage ledgers.">
         <RightContent>
+            <button class="btn secondary" @onclick="OpenQrSettingsModalAsync" title="Configure Platform Bank Account & UPI QR Code">
+                💳 Payment &amp; QR Settings
+            </button>
             <button class="btn secondary" @onclick="RunScheduledBillingAsync" title="Run scheduled automatic billing for eligible organizations">
                 ⚡ Run Platform Billing
             </button>
@@ -213,7 +216,7 @@
                 {
                     <div class="form-group">
                         <label>Target Daycare Organization *</label>
-                        <select class="form-input" @bind="_invoiceOrgId">
+                        <select class="form-input" value="@_invoiceOrgId" @onchange="OnInvoiceOrgChanged">
                             <option value="">-- Select Daycare Organization --</option>
                             @foreach (var org in _organizations)
                             {
@@ -624,6 +627,81 @@
         <span style="font-size: 16px;">@(_toastIsError ? "⚠️" : "✨")</span>
         <span style="line-height: 1.4; flex: 1;">@_toastMessage</span>
         <button type="button" @onclick="() => _toastMessage = null" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px; margin-left: 12px; opacity: 0.8;" title="Dismiss">✕</button>
+    </div>
+}
+
+<!-- ========================================== -->
+<!-- PLATFORM PAYMENT & QR CODE SETTINGS MODAL -->
+<!-- ========================================== -->
+@if (_showQrSettingsModal)
+{
+    <div class="modal-backdrop" @onclick="CloseModals">
+        <div class="modal-card" style="max-width: 640px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div>
+                    <div class="modal-eyebrow">PLATFORM REMITTANCE CONFIGURATION</div>
+                    <h3 class="modal-title">Bank Account &amp; Payment QR Settings</h3>
+                </div>
+                <button class="modal-close" @onclick="CloseModals">✕</button>
+            </div>
+            <div class="modal-body" style="display: grid; grid-template-columns: 1.25fr 0.85fr; gap: 20px; align-items: start;">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label>Platform UPI ID (VPA) *</label>
+                        <input class="form-input" @bind="_qrSettings.UpiId" @bind:event="oninput" placeholder="e.g. enjoyeveryday@okicici" />
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Payee / Account Holder Name *</label>
+                        <input class="form-input" @bind="_qrSettings.PayeeName" @bind:event="oninput" placeholder="e.g. EnjoyEveryday Technologies Pvt Ltd" />
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Bank Name</label>
+                        <input class="form-input" @bind="_qrSettings.BankName" placeholder="e.g. ICICI Bank" />
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div class="form-group" style="margin: 0;">
+                            <label>Account Number</label>
+                            <input class="form-input" @bind="_qrSettings.AccountNumber" placeholder="Optional" />
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label>IFSC Code</label>
+                            <input class="form-input" @bind="_qrSettings.IfscCode" placeholder="e.g. ICIC0001234" />
+                        </div>
+                    </div>
+
+                    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 4px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">
+                            <input type="checkbox" @bind="_qrSettings.UseCustomQrImage" />
+                            <span>Use Custom Uploaded Bank QR Image</span>
+                        </label>
+                        <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                            When unchecked, EnjoyEveryday automatically generates an NPCI UPI QR code with the exact invoice amount.
+                        </div>
+                        @if (_qrSettings.UseCustomQrImage)
+                        {
+                            <div style="margin-top: 10px;">
+                                <Microsoft.AspNetCore.Components.Forms.InputFile OnChange="HandleQrImageUploadAsync" accept="image/png,image/jpeg,image/webp" />
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 14px; padding: 16px; text-align: center;">
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 10px;">
+                        LIVE QR PREVIEW
+                    </div>
+                    <img src="@GetPreviewQrDataUri()" alt="Platform Payment QR Preview" style="width: 170px; height: 170px; object-fit: contain; background: #fff; padding: 8px; border: 1px solid var(--border); border-radius: 10px;" />
+                    <div style="font-size: 12px; font-weight: 700; margin-top: 10px; color: var(--text);">@_qrSettings.PayeeName</div>
+                    <div style="font-size: 11.5px; color: var(--muted); word-break: break-all;">@_qrSettings.UpiId</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" @onclick="CloseModals">Cancel</button>
+                <button class="btn primary" disabled="@_isSavingQrSettings" @onclick="SaveQrSettingsAsync">
+                    @(_isSavingQrSettings ? "Saving..." : "Save Payment & QR Settings")
+                </button>
+            </div>
+        </div>
     </div>
 }
 

@@ -91,6 +91,7 @@ public class SecurePickupService : ISecurePickupService
     private readonly IUserContext? _userContext;
     private readonly IAuditService _auditService;
     private readonly IEndOfDayService? _endOfDayService;
+    private readonly IChildJourneyRepository? _journeyRepository;
 
     public SecurePickupService(
         ISecurePickupRepository pickupRepository,
@@ -98,7 +99,8 @@ public class SecurePickupService : ISecurePickupService
         ITenantContext tenantContext,
         IUserContext? userContext = null,
         IAuditService? auditService = null,
-        IEndOfDayService? endOfDayService = null)
+        IEndOfDayService? endOfDayService = null,
+        IChildJourneyRepository? journeyRepository = null)
     {
         _pickupRepository = pickupRepository;
         _attendanceRepository = attendanceRepository;
@@ -106,6 +108,7 @@ public class SecurePickupService : ISecurePickupService
         _userContext = userContext;
         _auditService = auditService ?? new NullAuditService();
         _endOfDayService = endOfDayService;
+        _journeyRepository = journeyRepository;
     }
 
     public async Task<ChildPickupSecurityProfile?> GetChildPickupSecurityProfileAsync(Guid childId, DateTime? date = null, CancellationToken ct = default)
@@ -279,6 +282,38 @@ public class SecurePickupService : ISecurePickupService
         attendanceRecord.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _attendanceRepository.RecordChildAttendanceAsync(attendanceRecord, ct);
+
+        // 2b. Record check-out in Child Journey so it is visible in both Daycare Journey and Parent Portal Journey
+        if (_journeyRepository != null)
+        {
+            try
+            {
+                var departureDateTime = DateTime.Today.Add(departureTime);
+                var pickupLabel = !string.IsNullOrWhiteSpace(request.PickupPersonName)
+                    ? $"{request.PickupPersonName} ({request.PickupPersonRelationship ?? "Authorized Pickup"})"
+                    : "Authorized Pickup";
+                var entry = new ChildJourneyEntry
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = _tenantContext.TenantId,
+                    ChildId = request.ChildId,
+                    ClassroomId = attendanceRecord.ClassroomId,
+                    JourneyType = "Attendance",
+                    Title = "Classroom Departure / Check-Out",
+                    Observation = $"Checked out at {departureDateTime:h:mm tt}. Picked up by {pickupLabel}. Handover verified.",
+                    ObservationDate = DateTime.UtcNow,
+                    ParticipationType = "Departure",
+                    IsParentVisible = true,
+                    ParentVisibilityStatus = "Approved",
+                    CreatedBy = _userContext?.UserId
+                };
+                await _journeyRepository.CreateJourneyEntryAsync(entry, ct);
+            }
+            catch
+            {
+                // Non-blocking: attendance check-out already succeeded
+            }
+        }
 
         // 3. Audit trail
         await _auditService.LogAsync(new AuditEntry

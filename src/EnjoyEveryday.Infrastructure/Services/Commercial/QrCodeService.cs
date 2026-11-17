@@ -13,6 +13,13 @@ namespace EnjoyEveryday.Infrastructure.Services.Commercial;
 /// </summary>
 public class QrCodeService : IQrCodeService
 {
+    private readonly IPlatformPaymentSettingsService? _paymentSettingsService;
+
+    public QrCodeService(IPlatformPaymentSettingsService? paymentSettingsService = null)
+    {
+        _paymentSettingsService = paymentSettingsService;
+    }
+
     public string GenerateSvg(string content, int border = 2)
     {
         if (string.IsNullOrEmpty(content)) content = " ";
@@ -37,11 +44,15 @@ public class QrCodeService : IQrCodeService
     {
         if (string.Equals(currency, "INR", StringComparison.OrdinalIgnoreCase))
         {
+            var settings = _paymentSettingsService?.GetCachedSettings();
+            var upiId = !string.IsNullOrWhiteSpace(settings?.UpiId) ? settings.UpiId.Trim() : "billing@enjoyeveryday";
+            var payeeName = !string.IsNullOrWhiteSpace(settings?.PayeeName) ? settings.PayeeName.Trim() : "EnjoyEveryday Platform";
+
             // Standard NPCI UPI Intent Format: instantly recognized by GPay, PhonePe, Paytm, BHIM
             var formattedAmt = amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
             var note = Uri.EscapeDataString($"Invoice {invoiceNumber}");
-            var payee = Uri.EscapeDataString("EnjoyEveryday Platform");
-            return $"upi://pay?pa=billing@enjoyeveryday&pn={payee}&am={formattedAmt}&cu=INR&tn={note}&tr={invoiceId}";
+            var payee = Uri.EscapeDataString(payeeName);
+            return $"upi://pay?pa={Uri.EscapeDataString(upiId)}&pn={payee}&am={formattedAmt}&cu=INR&tn={note}&tr={invoiceId}";
         }
 
         // Universal web payment URL for international cards, Apple Pay, Google Pay

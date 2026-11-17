@@ -71,3 +71,16 @@ For local source builds in Docker Desktop without pulling from GHCR:
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
+---
+
+## 4. Automatic Pipeline Deploy to Local Docker Desktop
+
+[`.github/workflows/local-dev-deploy.yml`](../.github/workflows/local-dev-deploy.yml) automatically deploys newly built GHCR images to your local Docker Desktop whenever `AI Service CI (FastAPI)`, `API CI (.NET ASP.NET Core)`, or `UI CI (.NET Blazor Portals)` succeeds on `master` (or via manual `workflow_dispatch`).
+
+Because GitHub cloud runners cannot reach your local machine directly, register a **GitHub Actions Self-Hosted Runner** once on your Windows machine:
+
+1. In GitHub: **Settings → Actions → Runners → New self-hosted runner → Windows (x64)**.
+2. Run the 3 PowerShell commands GitHub shows you (download, `./config.cmd`, and `./run.cmd` or install as a Windows service).
+3. Ensure `.env` exists in the repo root (copied from `.env.compose.example`) with your local `GEMINI_API_KEY`.
+
+

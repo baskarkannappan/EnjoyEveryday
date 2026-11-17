@@ -36,7 +36,7 @@ public class AzureCommunicationEmailService : IEmailNotificationService
         _qrCodeService = qrCodeService ?? new EnjoyEveryday.Infrastructure.Services.Commercial.QrCodeService();
     }
 
-    public async Task<EmailNotificationResult> SendEmailAsync(
+    public Task<EmailNotificationResult> SendEmailAsync(
         string toAddress,
         string subject,
         string htmlBody,
@@ -45,6 +45,18 @@ public class AzureCommunicationEmailService : IEmailNotificationService
         object? metadata = null,
         string? ccAddress = null,
         CancellationToken ct = default)
+        => SendEmailInternalAsync(toAddress, subject, htmlBody, notificationType, tenantId, metadata, ccAddress, attachments: null, ct);
+
+    private async Task<EmailNotificationResult> SendEmailInternalAsync(
+        string toAddress,
+        string subject,
+        string htmlBody,
+        string notificationType,
+        Guid? tenantId,
+        object? metadata,
+        string? ccAddress,
+        IReadOnlyList<EmailAttachment>? attachments,
+        CancellationToken ct)
     {
         var effectiveTenantId = tenantId ?? _tenantContext.TenantId;
         if (effectiveTenantId == Guid.Empty)
@@ -102,6 +114,14 @@ public class AzureCommunicationEmailService : IEmailNotificationService
             if (!string.IsNullOrWhiteSpace(globalAdminCc) && !string.Equals(globalAdminCc.Trim(), ccAddress?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
                 emailMessage.Recipients.CC.Add(new EmailAddress(globalAdminCc.Trim()));
+            }
+
+            if (attachments != null)
+            {
+                foreach (var attachment in attachments)
+                {
+                    emailMessage.Attachments.Add(attachment);
+                }
             }
 
             var operation = await emailClient.SendAsync(WaitUntil.Started, emailMessage, ct);
@@ -260,6 +280,104 @@ public class AzureCommunicationEmailService : IEmailNotificationService
         );
 
         return await SendEmailAsync(recipientEmail, subject, body, $"Onboarding_{stage}", tenantId, new { childName, stage, daycareName }, orgAdminCcEmail, ct);
+    }
+
+    public async Task<EmailNotificationResult> SendTourCalendarInviteAsync(
+        string recipientEmail,
+        string parentName,
+        string childName,
+        Guid applicationId,
+        DateTime tourDateTime,
+        bool isReschedule,
+        string daycareName,
+        string location,
+        string? notes,
+        string orgAdminCcEmail,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var senderAddress = _configuration["AzureCommunicationServices:SenderAddress"]
+            ?? Environment.GetEnvironmentVariable("AzureCommunicationServices__SenderAddress")
+            ?? Environment.GetEnvironmentVariable("AZURE_COMMUNICATION_SERVICES_SENDER_ADDRESS")
+            ?? "DoNotReply@e86634f3-653b-48cc-a7f6-37cc501c0604.azurecomm.net";
+
+        var actionWord = isReschedule ? "Rescheduled" : "Scheduled";
+        var subject = $"Campus Tour {actionWord}: {childName} — {tourDateTime:MMM dd, yyyy @ h:mm tt} ({daycareName})";
+
+        var safeLocation = string.IsNullOrWhiteSpace(location) ? $"{daycareName} Campus" : location.Trim();
+        var notesHtml = !string.IsNullOrWhiteSpace(notes)
+            ? $"<div style='margin-top: 8px;'><strong>Notes:</strong> {System.Net.WebUtility.HtmlEncode(notes.Trim())}</div>"
+            : string.Empty;
+
+        var detailsContent = $@"
+            <div style='margin-bottom: 8px;'><strong>Child:</strong> {System.Net.WebUtility.HtmlEncode(childName)}</div>
+            <div style='margin-bottom: 8px;'><strong>Status:</strong> <span style='color: #31523c; font-weight: 700;'>Tour {actionWord}</span></div>
+            <div style='margin-bottom: 8px;'><strong>Date:</strong> {tourDateTime:dddd, MMMM dd, yyyy}</div>
+            <div style='margin-bottom: 8px;'><strong>Time:</strong> {tourDateTime:h:mm tt} (45 mins)</div>
+            <div><strong>Location:</strong> {System.Net.WebUtility.HtmlEncode(safeLocation)}</div>
+            {notesHtml}";
+
+        var body = BuildBrandedEmailTemplate(
+            headerEyebrow: isReschedule ? "CAMPUS TOUR RESCHEDULED" : "CAMPUS TOUR INVITATION",
+            headerTitle: $"Your Campus Tour is {actionWord}",
+            greeting: $"Dear {System.Net.WebUtility.HtmlEncode(parentName)},",
+            introParagraph: isReschedule
+                ? $"Your campus tour for <strong>{System.Net.WebUtility.HtmlEncode(childName)}</strong> at <strong>{System.Net.WebUtility.HtmlEncode(daycareName)}</strong> has been rescheduled. Please find the updated calendar invitation attached."
+                : $"We look forward to welcoming you and <strong>{System.Net.WebUtility.HtmlEncode(childName)}</strong> for a tour of <strong>{System.Net.WebUtility.HtmlEncode(daycareName)}</strong>. A calendar invitation is attached to this email.",
+            detailsBox: detailsContent,
+            ctaButtonText: string.Empty,
+            ctaUrl: string.Empty,
+            footerNote: "Open the attached campus-tour.ics file to add or update this event on your calendar. Organization administration has been CC'd on this notice."
+        );
+
+        var startUtc = tourDateTime.Kind == DateTimeKind.Utc
+            ? tourDateTime
+            : DateTime.SpecifyKind(tourDateTime, DateTimeKind.Local).ToUniversalTime();
+        var endUtc = startUtc.AddMinutes(45);
+        var sequence = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var escapedNotes = string.IsNullOrWhiteSpace(notes)
+            ? $"Campus tour for {childName} at {daycareName}."
+            : $"Campus tour for {childName} at {daycareName}. Notes: {notes.Replace("\r", " ").Replace("\n", " ")}";
+
+        var ics = string.Join("\r\n", new[]
+        {
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//EnjoyEveryday//Admissions//EN",
+            "CALSCALE:GREGORIAN",
+            "METHOD:REQUEST",
+            "BEGIN:VEVENT",
+            $"UID:tour-{applicationId}@enjoyeveryday.app",
+            $"SEQUENCE:{sequence}",
+            $"DTSTAMP:{DateTime.UtcNow:yyyyMMddTHHmmssZ}",
+            $"DTSTART:{startUtc:yyyyMMddTHHmmssZ}",
+            $"DTEND:{endUtc:yyyyMMddTHHmmssZ}",
+            $"SUMMARY:{(isReschedule ? "Rescheduled: " : "")}Daycare Campus Tour - {childName}",
+            $"DESCRIPTION:{escapedNotes}",
+            $"LOCATION:{safeLocation}",
+            $"ORGANIZER;CN={daycareName}:MAILTO:{senderAddress}",
+            $"ATTENDEE;CN={parentName};RSVP=TRUE:MAILTO:{recipientEmail}",
+            "STATUS:CONFIRMED",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            string.Empty
+        });
+
+        var attachment = new EmailAttachment(
+            name: "campus-tour.ics",
+            contentType: "text/calendar; method=REQUEST; charset=UTF-8",
+            content: BinaryData.FromString(ics));
+
+        return await SendEmailInternalAsync(
+            recipientEmail,
+            subject,
+            body,
+            isReschedule ? "TourRescheduled" : "TourScheduled",
+            tenantId,
+            new { applicationId, childName, tourDateTime, isReschedule, daycareName },
+            orgAdminCcEmail,
+            new[] { attachment },
+            ct);
     }
 
     public async Task<EmailNotificationResult> SendConsentSubmittedConfirmationAsync(
@@ -627,6 +745,15 @@ public class AzureCommunicationEmailService : IEmailNotificationService
         string ctaUrl,
         string footerNote)
     {
+        var ctaBlock = !string.IsNullOrWhiteSpace(ctaButtonText) && !string.IsNullOrWhiteSpace(ctaUrl)
+            ? $@"<!-- ACTION BUTTON -->
+              <div style='text-align:center;margin:32px 0 24px;'>
+                <a href='{ctaUrl}' style='display:inline-block;background:#31523c;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:14px 32px;border-radius:9px;letter-spacing:0.2px;'>
+                  {ctaButtonText} &rarr;
+                </a>
+              </div>"
+            : string.Empty;
+
         return $@"<!DOCTYPE html>
 <html>
 <head>
@@ -659,12 +786,7 @@ public class AzureCommunicationEmailService : IEmailNotificationService
                 {detailsBox}
               </div>
 
-              <!-- ACTION BUTTON -->
-              <div style='text-align:center;margin:32px 0 24px;'>
-                <a href='{ctaUrl}' style='display:inline-block;background:#31523c;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:14px 32px;border-radius:9px;letter-spacing:0.2px;'>
-                  {ctaButtonText} &rarr;
-                </a>
-              </div>
+              {ctaBlock}
 
               <p style='margin:0;color:#6c7870;font-size:12.5px;line-height:1.5;text-align:center;'>
                 {footerNote}
@@ -686,6 +808,144 @@ public class AzureCommunicationEmailService : IEmailNotificationService
   </table>
 </body>
 </html>";
+    }
+
+    public async Task<EmailNotificationResult> SendPlanChangeRequestedAsync(
+        string platformAdminEmail,
+        string organizationName,
+        string orgAdminEmail,
+        string currentPlanName,
+        string requestedPlanName,
+        string requestType,
+        string? notes,
+        string adminPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Plan {requestType} Request — {organizationName} ({currentPlanName} → {requestedPlanName})";
+        var safeNotes = string.IsNullOrWhiteSpace(notes) ? "No additional notes provided." : System.Net.WebUtility.HtmlEncode(notes);
+        var detailsBox = $@"
+            <table width='100%' cellpadding='4' cellspacing='0' style='font-size:13.5px;'>
+                <tr><td style='color:#6c7870;width:160px;'>Organization</td><td style='font-weight:700;'>{System.Net.WebUtility.HtmlEncode(organizationName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Requested By</td><td>{System.Net.WebUtility.HtmlEncode(orgAdminEmail)}</td></tr>
+                <tr><td style='color:#6c7870;'>Request Type</td><td style='font-weight:700;color:#31523c;'>{System.Net.WebUtility.HtmlEncode(requestType)}</td></tr>
+                <tr><td style='color:#6c7870;'>Current Plan</td><td>{System.Net.WebUtility.HtmlEncode(currentPlanName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Requested Plan</td><td style='font-weight:700;'>{System.Net.WebUtility.HtmlEncode(requestedPlanName)}</td></tr>
+                <tr><td style='color:#6c7870;vertical-align:top;'>Org Admin Notes</td><td>{safeNotes}</td></tr>
+            </table>";
+
+        var html = BuildBrandedEmailTemplate(
+            headerTitle: $"Subscription {requestType} Request",
+            headerEyebrow: "PLATFORM COMMERCIAL WORKFLOW",
+            greeting: "Hello Platform Administrator,",
+            introParagraph: $"{System.Net.WebUtility.HtmlEncode(organizationName)} has submitted a request to {requestType.ToLowerInvariant()} their subscription plan. Review the request, configure the proposed tariff/rate, and send it back to the Organization Admin for acceptance.",
+            detailsBox: detailsBox,
+            ctaButtonText: "Review Plan Change Request",
+            ctaUrl: adminPortalUrl,
+            footerNote: "A copy of this notification has been logged in Platform Email Audit Logs.");
+
+        return await SendEmailAsync(
+            toAddress: platformAdminEmail,
+            subject: subject,
+            htmlBody: html,
+            notificationType: "PlanChangeRequested",
+            tenantId: tenantId,
+            metadata: new { organizationName, orgAdminEmail, currentPlanName, requestedPlanName, requestType },
+            ccAddress: orgAdminEmail,
+            ct: ct);
+    }
+
+    public async Task<EmailNotificationResult> SendPlanChangeProposalForAcceptanceAsync(
+        string orgAdminEmail,
+        string organizationName,
+        string currentPlanName,
+        string proposedPlanName,
+        string proposedTariffName,
+        string formattedRate,
+        string effectiveDateText,
+        string? platformNotes,
+        string subscriptionPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var subject = $"Action Required: Accept Updated Subscription Plan for {organizationName}";
+        var safeNotes = string.IsNullOrWhiteSpace(platformNotes) ? "Standard plan terms apply." : System.Net.WebUtility.HtmlEncode(platformNotes);
+        var detailsBox = $@"
+            <table width='100%' cellpadding='4' cellspacing='0' style='font-size:13.5px;'>
+                <tr><td style='color:#6c7870;width:160px;'>Organization</td><td style='font-weight:700;'>{System.Net.WebUtility.HtmlEncode(organizationName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Current Plan</td><td>{System.Net.WebUtility.HtmlEncode(currentPlanName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Proposed Plan</td><td style='font-weight:700;color:#31523c;'>{System.Net.WebUtility.HtmlEncode(proposedPlanName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Billing Schedule</td><td>{System.Net.WebUtility.HtmlEncode(proposedTariffName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Rate</td><td style='font-weight:700;'>{System.Net.WebUtility.HtmlEncode(formattedRate)}</td></tr>
+                <tr><td style='color:#6c7870;'>Effective Date</td><td>{System.Net.WebUtility.HtmlEncode(effectiveDateText)}</td></tr>
+                <tr><td style='color:#6c7870;vertical-align:top;'>Platform Notes</td><td>{safeNotes}</td></tr>
+            </table>";
+
+        var html = BuildBrandedEmailTemplate(
+            headerTitle: "Subscription Plan Proposal Ready",
+            headerEyebrow: "ORGANIZATION SUBSCRIPTION",
+            greeting: $"Hello {System.Net.WebUtility.HtmlEncode(organizationName)} Team,",
+            introParagraph: "Our platform administration team has prepared your updated subscription plan details. Please review the new plan limits and pricing below, and click the button to accept and activate your subscription.",
+            detailsBox: detailsBox,
+            ctaButtonText: "Review & Accept Plan",
+            ctaUrl: subscriptionPortalUrl,
+            footerNote: "Your current plan remains active until you review and accept this proposal.");
+
+        return await SendEmailAsync(
+            toAddress: orgAdminEmail,
+            subject: subject,
+            htmlBody: html,
+            notificationType: "PlanChangeProposalForAcceptance",
+            tenantId: tenantId,
+            metadata: new { organizationName, currentPlanName, proposedPlanName, proposedTariffName, formattedRate, effectiveDateText },
+            ct: ct);
+    }
+
+    public async Task<EmailNotificationResult> SendPlanChangeDecisionConfirmationAsync(
+        string orgAdminEmail,
+        string platformAdminEmail,
+        string organizationName,
+        string planName,
+        bool accepted,
+        string? decisionNotes,
+        string subscriptionPortalUrl,
+        Guid? tenantId = null,
+        CancellationToken ct = default)
+    {
+        var decisionWord = accepted ? "Accepted & Activated" : "Declined";
+        var subject = $"Subscription Plan {decisionWord} — {organizationName} ({planName})";
+        var safeNotes = string.IsNullOrWhiteSpace(decisionNotes) ? "None" : System.Net.WebUtility.HtmlEncode(decisionNotes);
+        var detailsBox = $@"
+            <table width='100%' cellpadding='4' cellspacing='0' style='font-size:13.5px;'>
+                <tr><td style='color:#6c7870;width:160px;'>Organization</td><td style='font-weight:700;'>{System.Net.WebUtility.HtmlEncode(organizationName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Plan</td><td style='font-weight:700;color:#31523c;'>{System.Net.WebUtility.HtmlEncode(planName)}</td></tr>
+                <tr><td style='color:#6c7870;'>Decision</td><td style='font-weight:700;'>{decisionWord}</td></tr>
+                <tr><td style='color:#6c7870;vertical-align:top;'>Notes</td><td>{safeNotes}</td></tr>
+            </table>";
+
+        var intro = accepted
+            ? $"The subscription plan change to {System.Net.WebUtility.HtmlEncode(planName)} for {System.Net.WebUtility.HtmlEncode(organizationName)} has been accepted and is now active. Your organization quotas and billing history have been updated."
+            : $"The proposed subscription plan change to {System.Net.WebUtility.HtmlEncode(planName)} for {System.Net.WebUtility.HtmlEncode(organizationName)} was declined. Your existing subscription remains unchanged.";
+
+        var html = BuildBrandedEmailTemplate(
+            headerTitle: $"Subscription Plan {decisionWord}",
+            headerEyebrow: "SUBSCRIPTION CONFIRMATION",
+            greeting: $"Hello {System.Net.WebUtility.HtmlEncode(organizationName)} Team,",
+            introParagraph: intro,
+            detailsBox: detailsBox,
+            ctaButtonText: "View Subscription & History",
+            ctaUrl: subscriptionPortalUrl,
+            footerNote: "You can view your complete plan history anytime under Management → Subscription & Plans.");
+
+        return await SendEmailAsync(
+            toAddress: orgAdminEmail,
+            subject: subject,
+            htmlBody: html,
+            notificationType: accepted ? "PlanChangeAccepted" : "PlanChangeDeclined",
+            tenantId: tenantId,
+            metadata: new { organizationName, planName, accepted },
+            ccAddress: platformAdminEmail,
+            ct: ct);
     }
 }
 

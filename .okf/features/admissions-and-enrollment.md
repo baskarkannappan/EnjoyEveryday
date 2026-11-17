@@ -115,7 +115,11 @@ To eliminate redundant data entry when onboarding and managing children:
      - Allows free navigation (`maxAllowedStep = 10`) across all 10 wizard steps without requiring the user to click step-by-step.
      - Provides one-click action buttons (`📋 Use Parent / Guardian Info`) in Emergency Contacts (Step 4) and Authorized Pickups (Step 8) to instantly reuse guardian details without re-typing.
 
-## 4. UI Architecture & Responsive Wizard Pattern (`WizardSidebar`)
+## 4. Tour Scheduling & Calendar Invites (`.ics`)
+* When a tour is scheduled or rescheduled in `EnrollmentPipeline.razor` -> `ScheduleTourModal`, `EnrollmentPipelineService.UpdateStageAsync` detects whether the application is already in `TourScheduled` (reschedule) vs. new booking.
+* Dispatches `IEmailNotificationService.SendTourCalendarInviteAsync` (`AzureCommunicationEmailService`), which sends a branded email with tour date, time, location, and notes, plus an RFC 5545 `campus-tour.ics` (`text/calendar; method=REQUEST`) attachment using a deterministic `UID` (`tour-{applicationId}@enjoyeveryday.app`) and incrementing `SEQUENCE` so calendar clients update the existing event on reschedule.
+
+## 5. UI Architecture & Responsive Wizard Pattern (`WizardSidebar`)
 * **Components**: `src/EnjoyEveryday.UI.Shared/Components/WizardSidebar/WizardSidebar.razor` & `src/EnjoyEveryday.UI.Shared/Components/Admissions/ChildEnrollmentWizard.razor`.
 * **Desktop UX**:
   - Soft Scandinavian sage card layout (`--surface: #ffffff`, `--radius: 18px`, `--shadow: 0 8px 30px rgba(40, 55, 47, .06)`).

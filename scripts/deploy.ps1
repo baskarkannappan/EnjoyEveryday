@@ -10,7 +10,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet("ai-service", "api", "web", "admin-web", "parent-web")]
+    [ValidateSet("ai-service", "api", "web", "admin-web", "parent-web", "all")]
     [string]$Service,
 
     [string]$Tag,
@@ -123,6 +123,37 @@ try {
 
     if (-not $Service) {
         throw "Specify -Service <name> with -Tag <tag> or -Rollback, or use -Status / -Verify."
+    }
+
+    if ($Service -eq "all") {
+        if ($Rollback) {
+            throw "Specify an individual service when using -Rollback."
+        }
+        $targetTag = if ([string]::IsNullOrWhiteSpace($Tag)) { "latest" } else { $Tag }
+        Write-Host "==> Ensuring PostgreSQL (db) is running and healthy..." -ForegroundColor Cyan
+        docker compose up -d db
+        if (-not (Wait-ServiceHealthy -Svc "db" -TimeoutSec $HealthTimeoutSeconds)) {
+            throw "PostgreSQL (db) failed health check."
+        }
+        foreach ($svc in @("ai-service", "api", "web", "admin-web", "parent-web")) {
+            $var = $ServiceTagVars[$svc]
+            Set-EnvTag -VarName $var -Value $targetTag
+            Write-Host "==> Deploying '$svc' ($targetTag)..." -ForegroundColor Cyan
+            docker compose pull $svc
+            docker compose up -d --no-deps $svc
+            if (-not (Wait-ServiceHealthy -Svc $svc -TimeoutSec $HealthTimeoutSeconds)) {
+                throw "Deployment of '$svc' ($targetTag) failed health check."
+            }
+            $prev = if ($history.ContainsKey($svc)) { $history[$svc].current } else { "latest" }
+            $history[$svc] = @{
+                current   = $targetTag
+                previous  = $prev
+                updatedAt = (Get-Date).ToString("o")
+            }
+        }
+        Save-DeployHistory $history
+        Write-Host "Full stack deployment succeeded on tag '$targetTag'." -ForegroundColor Green
+        exit 0
     }
 
     $tagVar = $ServiceTagVars[$Service]

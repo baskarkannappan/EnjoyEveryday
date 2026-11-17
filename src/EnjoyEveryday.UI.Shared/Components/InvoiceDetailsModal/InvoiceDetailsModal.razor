@@ -2,6 +2,7 @@
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.UI.Shared.Services
 @inject EnjoyEveryday.Application.Services.IQrCodeService QrCodeService
+@inject EnjoyEveryday.Application.Services.IPlatformPaymentSettingsService PaymentSettingsService
 
 @if (IsOpen && Invoice != null)
 {
@@ -253,6 +254,12 @@
     private string GetQrCodeDataUri()
     {
         if (Invoice == null) return string.Empty;
+        var settings = PaymentSettingsService.GetCachedSettings();
+        if (settings.UseCustomQrImage && !string.IsNullOrWhiteSpace(settings.CustomQrDataUri))
+        {
+            return settings.CustomQrDataUri;
+        }
+
         var payload = QrCodeService.BuildInvoicePaymentPayload(
             Invoice.InvoiceNumber,
             Invoice.BalanceDue,

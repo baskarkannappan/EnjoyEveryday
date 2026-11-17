@@ -1,0 +1,102 @@
+name: Local Docker Desktop Dev Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - "AI Service CI (FastAPI)"
+      - "API CI (.NET ASP.NET Core)"
+      - "UI CI (.NET Blazor Portals)"
+    types:
+      - completed
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy to local Docker Desktop'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - ai-service
+          - api
+          - ui
+      image_tag:
+        description: 'Image tag (Git SHA or latest)'
+        required: true
+        default: 'latest'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy-to-docker-desktop:
+    name: Deploy to Local Docker Desktop
+    # Requires a GitHub Actions self-hosted runner on your Windows machine
+    runs-on: [self-hosted, Windows]
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Ensure runtime .env exists
+        run: |
+          if (-not (Test-Path ".env")) {
+            Copy-Item ".env.compose.example" ".env"
+            Write-Host "Created .env from .env.compose.example"
+          }
+
+      - name: Resolve target service and tag
+        id: target
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $svc = "${{ inputs.service }}"
+            $tag = "${{ inputs.image_tag }}"
+          } else {
+            $tag = "${{ github.event.workflow_run.head_sha }}"
+            $wf = "${{ github.event.workflow_run.name }}"
+            if ($wf -like "*AI Service*") { $svc = "ai-service" }
+            elseif ($wf -like "*API CI*") { $svc = "api" }
+            elseif ($wf -like "*UI CI*") { $svc = "ui" }
+            else { $svc = "all" }
+          }
+          "service=$svc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Deploying service='$svc' tag='$tag' to Docker Desktop..."
+
+      - name: Ensure PostgreSQL is running
+        run: |
+          docker compose up -d db
+
+      - name: Deploy updated service(s) with healthcheck & auto-rollback
+        run: |
+          $svc = "${{ steps.target.outputs.service }}"
+          $tag = "${{ steps.target.outputs.tag }}"
+          if ($svc -eq "ui") {
+            .\scripts\deploy.ps1 -Service web -Tag $tag
+            .\scripts\deploy.ps1 -Service admin-web -Tag $tag
+            .\scripts\deploy.ps1 -Service parent-web -Tag $tag
+          } else {
+            .\scripts\deploy.ps1 -Service $svc -Tag $tag
+          }
+
+      - name: Verify Docker Desktop stack
+        run: |
+          .\scripts\deploy.ps1 -Status
+          if ("${{ steps.target.outputs.service }}" -in @("ai-service", "all")) {
+            .\scripts\deploy.ps1 -Verify
+          }
+
