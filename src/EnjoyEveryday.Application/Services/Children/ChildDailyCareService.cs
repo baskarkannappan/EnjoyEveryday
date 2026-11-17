@@ -812,7 +812,7 @@ public class ChildDailyCareService : IChildDailyCareService
         }
         else
         {
-            reassurance = $"{name} had a calm and engaging day at Little Stars. " +
+            reassurance = $"{name} had a calm and engaging day today. " +
                 (diaperCount > 0 ? $"{name} had {diaperCount} routine diaper checks. " : "") +
                 (lunchEvent != null ? $"{lunchEvent.Description} " : "") +
                 (totalRest > 0 ? $"{name} rested well ({totalRest / 60}h {totalRest % 60}m of sleep)." : "");

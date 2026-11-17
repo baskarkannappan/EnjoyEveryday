@@ -205,7 +205,7 @@ public class ConsentService : IConsentService
 
         var docId = Guid.NewGuid();
         var snapshotText = $"{template.TemplateContent}\n\nIssued for {child.FirstName} {child.LastName}.\n" +
-            $"This is an official document of Little Stars Daycare. Version {template.Version}.";
+            $"This is an official document of EnjoyEveryday Daycare. Version {template.Version}.";
 
         var document = new ChildConsentDocument
         {
