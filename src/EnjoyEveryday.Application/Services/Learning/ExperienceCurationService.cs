@@ -15,6 +15,7 @@ public class ExperienceCurationService
 {
     private readonly IExperienceMarketplaceRepository _marketplaceRepo;
     private readonly IExperienceRepository _experienceRepo;
+    private readonly IOrganizationRepository? _orgRepo;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
 
@@ -22,12 +23,14 @@ public class ExperienceCurationService
         IExperienceMarketplaceRepository marketplaceRepo,
         IExperienceRepository experienceRepo,
         ITenantContext tenantContext,
-        IUserContext userContext)
+        IUserContext userContext,
+        IOrganizationRepository? orgRepo = null)
     {
         _marketplaceRepo = marketplaceRepo;
         _experienceRepo = experienceRepo;
         _tenantContext = tenantContext;
         _userContext = userContext;
+        _orgRepo = orgRepo;
     }
 
     private bool IsPlatformAdmin() =>
@@ -107,12 +110,15 @@ public class ExperienceCurationService
         Guid experienceId,
         string licenseType = "CommercialRoyalty",
         string grantScope = "Curate, Reproduce, Distribute, Modify and Monetize",
+        Guid? sourceTenantId = null,
         CancellationToken ct = default)
     {
         if (!IsPlatformAdmin())
             throw new UnauthorizedAccessException("Platform Admin role required to initiate administrative harvesting.");
 
-        var exp = await _experienceRepo.GetByIdAsync(_tenantContext.TenantId, experienceId, ct);
+        // The experience lives in the source organization's tenant, not the platform admin's tenant.
+        var sourceTenant = sourceTenantId ?? _tenantContext.TenantId;
+        var exp = await _experienceRepo.GetByIdAsync(sourceTenant, experienceId, ct);
         if (exp == null)
             throw new InvalidOperationException("Experience not found.");
 
@@ -134,7 +140,7 @@ public class ExperienceCurationService
         var request = new ExperienceHarvestRequest
         {
             Id = Guid.NewGuid(),
-            TenantId = _tenantContext.TenantId,
+            TenantId = sourceTenant,
             OrganizationId = organizationId,
             SourceExperienceId = experienceId,
             SourceVersionNumber = 1,
@@ -247,8 +253,64 @@ public class ExperienceCurationService
         if (source == null)
             throw new InvalidOperationException("Source experience not found.");
 
-        // Cleanse & sanitize activity DNA (strip any potential child/family/session references)
+        // Cleanse & sanitize activity DNA (strip personal child/family data while preserving instructional content, materials, photos, and storybook assets)
         var sanitizedDna = SanitizePayloadForPlatform(source.DnaPayload);
+
+        // Extract curriculum fields from DNA payload
+        int? ageMinMonths = null;
+        int? ageMaxMonths = null;
+        int? durationMinutes = null;
+        string? learningObjectivesJson = null;
+        string? materialsJson = null;
+        string? instructions = null;
+        string? safetyNotes = null;
+
+        try
+        {
+            var parsedDna = JsonSerializer.Deserialize<ExperienceDna>(source.DnaPayload, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (parsedDna != null)
+            {
+                if (parsedDna.AgeMin > 0) ageMinMonths = parsedDna.AgeMin * 12;
+                if (parsedDna.AgeMax > 0) ageMaxMonths = parsedDna.AgeMax * 12;
+                if (parsedDna.ExecutionGuide?.SuggestedDurationMinutes > 0)
+                    durationMinutes = parsedDna.ExecutionGuide.SuggestedDurationMinutes;
+
+                if (parsedDna.DevelopmentalGoals?.Count > 0)
+                    learningObjectivesJson = JsonSerializer.Serialize(parsedDna.DevelopmentalGoals);
+
+                if (parsedDna.Materials?.Count > 0)
+                    materialsJson = JsonSerializer.Serialize(parsedDna.Materials);
+
+                instructions = !string.IsNullOrWhiteSpace(parsedDna.TeacherGuidance)
+                    ? parsedDna.TeacherGuidance
+                    : parsedDna.ExecutionGuide?.TeacherIntroduction;
+
+                if (parsedDna.ExecutionGuide?.Safety?.Count > 0)
+                    safetyNotes = string.Join("\n• ", parsedDna.ExecutionGuide.Safety);
+            }
+        }
+        catch
+        {
+            // Fallback gracefully if custom JSON structure
+        }
+
+        // Resolve source organization attribution
+        string? creatorAttribution = null;
+        if (_orgRepo != null && source.OrganizationId.HasValue)
+        {
+            try
+            {
+                var org = await _orgRepo.GetByIdAsync(source.OrganizationId.Value, ct);
+                if (org != null && !string.IsNullOrWhiteSpace(org.Name))
+                {
+                    creatorAttribution = org.Name;
+                }
+            }
+            catch
+            {
+                // Fallback gracefully
+            }
+        }
 
         // Create independent PlatformExperience copy with its own UUID
         var platformExp = new PlatformExperience
@@ -257,6 +319,14 @@ public class ExperienceCurationService
             Title = source.Title,
             Description = source.Description,
             Category = "Early Childhood",
+            AgeRangeMinMonths = ageMinMonths,
+            AgeRangeMaxMonths = ageMaxMonths,
+            DurationMinutes = durationMinutes,
+            LearningObjectives = learningObjectivesJson,
+            RequiredMaterials = materialsJson,
+            Instructions = instructions,
+            SafetyNotes = safetyNotes,
+            CreatorAttribution = creatorAttribution,
             DnaPayload = sanitizedDna,
             PublicationStatus = PlatformPublicationStatus.Draft,
             OwnershipType = "CuratedLicensed",
@@ -273,6 +343,9 @@ public class ExperienceCurationService
         };
 
         var createdPlatformExp = await _marketplaceRepo.CreatePlatformExperienceAsync(platformExp, ct);
+
+        // Copy storybook/cover image and static artifacts from source experience if present
+        TryCopyStorybookAssets(source.Id, createdPlatformExp.Id);
 
         // Record initial immutable PlatformExperienceVersion
         await _marketplaceRepo.AddPlatformVersionAsync(new PlatformExperienceVersion
@@ -381,10 +454,12 @@ public class ExperienceCurationService
 
             foreach (var prop in root.EnumerateObject())
             {
-                // Exclude any child, family, teacher personal data, feedback, or private session fields
+                // Exclude personal identifying information (PII) of individual children, families, or private session feedback.
+                // Do NOT exclude curriculum instructional media, activity photos, illustrations, or storybook assets.
                 var key = prop.Name.ToLowerInvariant();
-                if (key.Contains("child") || key.Contains("family") || key.Contains("session") ||
-                    key.Contains("attendance") || key.Contains("photo") || key.Contains("student"))
+                if (key.Contains("childname") || key.Contains("studentname") || key.Contains("childid") ||
+                    key.Contains("familyname") || key.Contains("sessionfeedback") || key.Contains("attendanceid") ||
+                    key.Contains("attendancelog") || key.Contains("privateobservation"))
                 {
                     continue;
                 }
@@ -396,6 +471,46 @@ public class ExperienceCurationService
         catch
         {
             return "{}";
+        }
+    }
+
+    private static void TryCopyStorybookAssets(Guid sourceExperienceId, Guid targetPlatformExperienceId)
+    {
+        try
+        {
+            // Discover Storybooks folder in common application paths
+            var candidates = new[]
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "App_Data", "Storybooks"),
+                Path.Combine(Directory.GetCurrentDirectory(), "src", "EnjoyEveryday.Daycare.Web", "App_Data", "Storybooks"),
+                Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "Storybooks")
+            };
+
+            var storageDir = candidates.FirstOrDefault(Directory.Exists);
+            if (storageDir == null) return;
+
+            // Copy grid image (.png or .jpg)
+            var srcPng = Path.Combine(storageDir, $"{sourceExperienceId}_grid.png");
+            var srcJpg = Path.Combine(storageDir, $"{sourceExperienceId}_grid.jpg");
+            var srcHtml = Path.Combine(storageDir, $"{sourceExperienceId}.html");
+
+            if (File.Exists(srcPng))
+            {
+                File.Copy(srcPng, Path.Combine(storageDir, $"{targetPlatformExperienceId}_grid.png"), overwrite: true);
+            }
+            else if (File.Exists(srcJpg))
+            {
+                File.Copy(srcJpg, Path.Combine(storageDir, $"{targetPlatformExperienceId}_grid.jpg"), overwrite: true);
+            }
+
+            if (File.Exists(srcHtml))
+            {
+                File.Copy(srcHtml, Path.Combine(storageDir, $"{targetPlatformExperienceId}.html"), overwrite: true);
+            }
+        }
+        catch
+        {
+            // Best effort asset copy; does not fail transaction
         }
     }
 }

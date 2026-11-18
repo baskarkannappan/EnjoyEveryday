@@ -319,6 +319,9 @@ public class ExperienceMarketplaceService
             throw new InvalidOperationException($"The experience \"{platformExp.Title}\" is already in your organization's library.", ex);
         }
 
+        // Copy storybook/cover image assets from PlatformExperience to the imported experience
+        TryCopyStorybookAssets(platformExp.Id, created.Id, platformExp.SourceExperienceId);
+
         await _marketplaceRepo.LogAuditEventAsync(new ExperienceAuditEvent
         {
             Id = Guid.NewGuid(),
@@ -385,6 +388,62 @@ public class ExperienceMarketplaceService
         catch
         {
             return dna;
+        }
+    }
+
+    private static void TryCopyStorybookAssets(Guid platformExpId, Guid importedExperienceId, Guid? sourceExperienceId)
+    {
+        try
+        {
+            var candidates = new[]
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "App_Data", "Storybooks"),
+                Path.Combine(Directory.GetCurrentDirectory(), "src", "EnjoyEveryday.Daycare.Web", "App_Data", "Storybooks"),
+                Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "Storybooks")
+            };
+
+            var storageDir = candidates.FirstOrDefault(Directory.Exists);
+            if (storageDir == null) return;
+
+            // Priority 1: Check platform experience files
+            var platPng = Path.Combine(storageDir, $"{platformExpId}_grid.png");
+            var platJpg = Path.Combine(storageDir, $"{platformExpId}_grid.jpg");
+            var platHtml = Path.Combine(storageDir, $"{platformExpId}.html");
+
+            // Priority 2: Check original source experience files
+            var srcPng = sourceExperienceId.HasValue ? Path.Combine(storageDir, $"{sourceExperienceId.Value}_grid.png") : null;
+            var srcJpg = sourceExperienceId.HasValue ? Path.Combine(storageDir, $"{sourceExperienceId.Value}_grid.jpg") : null;
+            var srcHtml = sourceExperienceId.HasValue ? Path.Combine(storageDir, $"{sourceExperienceId.Value}.html") : null;
+
+            if (File.Exists(platPng))
+            {
+                File.Copy(platPng, Path.Combine(storageDir, $"{importedExperienceId}_grid.png"), overwrite: true);
+            }
+            else if (File.Exists(platJpg))
+            {
+                File.Copy(platJpg, Path.Combine(storageDir, $"{importedExperienceId}_grid.jpg"), overwrite: true);
+            }
+            else if (srcPng != null && File.Exists(srcPng))
+            {
+                File.Copy(srcPng, Path.Combine(storageDir, $"{importedExperienceId}_grid.png"), overwrite: true);
+            }
+            else if (srcJpg != null && File.Exists(srcJpg))
+            {
+                File.Copy(srcJpg, Path.Combine(storageDir, $"{importedExperienceId}_grid.jpg"), overwrite: true);
+            }
+
+            if (File.Exists(platHtml))
+            {
+                File.Copy(platHtml, Path.Combine(storageDir, $"{importedExperienceId}.html"), overwrite: true);
+            }
+            else if (srcHtml != null && File.Exists(srcHtml))
+            {
+                File.Copy(srcHtml, Path.Combine(storageDir, $"{importedExperienceId}.html"), overwrite: true);
+            }
+        }
+        catch
+        {
+            // Non-blocking best effort asset copy
         }
     }
 }

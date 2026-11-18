@@ -6,7 +6,7 @@
 @using EnjoyEveryday.UI.Shared.Components
 @inject ExperienceCurationService CurationService
 @inject EnjoyEveryday.Domain.Repositories.IExperienceRepository ExperienceRepo
-@inject EnjoyEveryday.Domain.Repositories.IOrganizationRepository OrgRepo
+@inject EnjoyEveryday.Domain.Repositories.IPlatformAdminRepository PlatformAdminRepo
 @inject ITenantContext TenantContext
 @inject IUserContext UserContext
 
@@ -231,7 +231,7 @@
 
 @code {
     private List<ExperienceHarvestRequest> requests = new();
-    private List<Organization> organizations = new();
+    private List<EnjoyEveryday.Domain.Repositories.PlatformDbOrganizationRecord> organizations = new();
     private List<Experience> orgExperiences = new();
     private string selectedTab = "All";
     private bool isLoading = true;
@@ -256,10 +256,14 @@
         await LoadRequestsAsync();
         try
         {
-            var orgs = await OrgRepo.GetAllAsync(TenantContext.TenantId);
-            organizations = orgs.ToList();
+            // Platform admin spans all tenants: every organization owns its own tenant.
+            var orgs = await PlatformAdminRepo.GetOrganizationsOverviewAsync();
+            organizations = orgs.Where(o => o.IsActive).OrderBy(o => o.Name).ToList();
         }
-        catch {}
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not load organizations: {ex.Message}";
+        }
     }
 
     private void OpenInitiateHarvestModal()
@@ -281,7 +285,9 @@
             isLoadingOrgExperiences = true;
             try
             {
-                var exps = await ExperienceRepo.GetAllAsync(TenantContext.TenantId, orgId);
+                var org = organizations.FirstOrDefault(o => o.Id == orgId);
+                var sourceTenantId = org?.TenantId ?? TenantContext.TenantId;
+                var exps = await ExperienceRepo.GetAllAsync(sourceTenantId, orgId);
                 orgExperiences = exps.ToList();
             }
             finally
@@ -302,7 +308,8 @@
 
         try
         {
-            var req = await CurationService.InitiatePlatformHarvestAsync(selectedOrgId.Value, selectedExperienceId.Value, initiateLicenseType);
+            var sourceTenantId = organizations.FirstOrDefault(o => o.Id == selectedOrgId.Value)?.TenantId;
+            var req = await CurationService.InitiatePlatformHarvestAsync(selectedOrgId.Value, selectedExperienceId.Value, initiateLicenseType, sourceTenantId: sourceTenantId);
             showInitiateModal = false;
             await LoadRequestsAsync();
             OpenReviewModal(req);

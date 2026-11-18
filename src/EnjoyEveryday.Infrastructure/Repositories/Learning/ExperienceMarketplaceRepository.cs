@@ -27,6 +27,15 @@ public class ExperienceMarketplaceRepository : IExperienceMarketplaceRepository
         "CreatorAttribution", "CreatedAt", "UpdatedAt"
     ];
 
+    private static readonly string[] SubmitHarvestRequestParams =
+    [
+        "Id", "TenantId", "OrganizationId", "SourceExperienceId", "SourceVersionNumber",
+        "LicenseId", "SubmittedByUserId", "SubmittedAt", "Status", "ReviewNotes",
+        "ReviewedByUserId", "ReviewedAt", "SafetySuitabilityVerified",
+        "LearningObjectivesVerified", "InstructionsVerified", "MaterialsVerified",
+        "MediaRightsVerified", "CommercialRightsVerified"
+    ];
+
     private static readonly string[] UpdateHarvestRequestParams =
     [
         "Id", "Status", "ReviewNotes", "ReviewedByUserId", "ReviewedAt",
@@ -72,6 +81,7 @@ public class ExperienceMarketplaceRepository : IExperienceMarketplaceRepository
         var created = await connection.QuerySingleFunctionAsync<ExperienceHarvestRequest>(
             "fn_submit_experience_harvest_request",
             request,
+            parameterNames: SubmitHarvestRequestParams,
             cancellationToken: ct);
         return created ?? request;
     }
