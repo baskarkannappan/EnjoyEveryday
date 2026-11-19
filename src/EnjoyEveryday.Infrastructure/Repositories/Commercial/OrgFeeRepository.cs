@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Dapper;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
@@ -9,6 +10,7 @@ namespace EnjoyEveryday.Infrastructure.Repositories;
 
 public class OrgFeeRepository : IOrgFeeRepository
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly IDbConnectionFactory _connectionFactory;
 
     public OrgFeeRepository(IDbConnectionFactory connectionFactory)
@@ -607,6 +609,57 @@ public class OrgFeeRepository : IOrgFeeRepository
                 },
                 cancellationToken: ct));
         return (row.Success, row.Message, row.PaymentId);
+    }
+
+    public async Task<List<ChildFeeSettlementReportItem>> GetFeeSettlementReportAsync(
+        Guid tenantId,
+        Guid organizationId,
+        Guid? branchId = null,
+        Guid? classroomId = null,
+        Guid? childId = null,
+        string? billingPeriod = null,
+        string? status = null,
+        string? search = null,
+        CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateConnectionAsync(ct);
+        var rows = (await conn.QueryFunctionAsync<ChildFeeSettlementReportItem>(
+            "fn_get_org_fee_settlement_report",
+            new
+            {
+                p_tenant_id = tenantId,
+                p_organization_id = organizationId,
+                p_branch_id = branchId,
+                p_classroom_id = classroomId,
+                p_child_id = childId,
+                p_billing_period = string.IsNullOrWhiteSpace(billingPeriod) ? null : billingPeriod.Trim(),
+                p_status = string.IsNullOrWhiteSpace(status) ? null : status.Trim(),
+                p_search = string.IsNullOrWhiteSpace(search) ? null : search.Trim()
+            },
+            cancellationToken: ct)).ToList();
+
+        foreach (var item in rows)
+        {
+            if (!string.IsNullOrWhiteSpace(item.InvoicesJson) && item.InvoicesJson != "[]")
+            {
+                try
+                {
+                    item.Invoices = JsonSerializer.Deserialize<List<FeeReportInvoiceDto>>(item.InvoicesJson, JsonOptions) ?? new();
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.PaymentsJson) && item.PaymentsJson != "[]")
+            {
+                try
+                {
+                    item.Payments = JsonSerializer.Deserialize<List<FeeReportPaymentDto>>(item.PaymentsJson, JsonOptions) ?? new();
+                }
+                catch { }
+            }
+        }
+
+        return rows;
     }
 
     private sealed class RecordRazorpayRow

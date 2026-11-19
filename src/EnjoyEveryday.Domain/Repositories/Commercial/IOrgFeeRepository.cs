@@ -68,5 +68,17 @@ public interface IOrgFeeRepository
     Task<OrgPaymentGatewaySettings?> GetPaymentGatewaySettingsAsync(Guid tenantId, Guid organizationId, CancellationToken ct = default);
     Task<OrgPaymentGatewaySettings> UpsertPaymentGatewaySettingsAsync(OrgPaymentGatewaySettings settings, CancellationToken ct = default);
     Task<(bool Success, string Message, Guid? PaymentId)> RecordOrgRazorpayPaymentAsync(Payment payment, CancellationToken ct = default);
+
+    // Fee Settlement & Reporting
+    Task<List<ChildFeeSettlementReportItem>> GetFeeSettlementReportAsync(
+        Guid tenantId,
+        Guid organizationId,
+        Guid? branchId = null,
+        Guid? classroomId = null,
+        Guid? childId = null,
+        string? billingPeriod = null,
+        string? status = null,
+        string? search = null,
+        CancellationToken ct = default);
 }
 

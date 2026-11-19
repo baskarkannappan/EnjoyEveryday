@@ -216,5 +216,15 @@ public interface IOrgFeeManagementService
     Task<OrgRazorpayOrderResponse> CreateParentRazorpayOrderAsync(Guid childId, Guid invoiceId, decimal? requestedAmount = null, CancellationToken ct = default);
     Task<RazorpayVerificationResult> VerifyParentRazorpayPaymentAsync(VerifyParentRazorpayPaymentRequest request, CancellationToken ct = default);
     Task<bool> ProcessOrgRazorpayWebhookAsync(Guid organizationId, string rawBody, string signatureHeader, CancellationToken ct = default);
+
+    // Fee Settlement & Payment Status Reporting
+    Task<FeeSettlementReportSummary> GetFeeSettlementReportAsync(
+        Guid? branchId = null,
+        Guid? classroomId = null,
+        Guid? childId = null,
+        string? billingPeriod = null,
+        string? status = null,
+        string? search = null,
+        CancellationToken ct = default);
 }
 

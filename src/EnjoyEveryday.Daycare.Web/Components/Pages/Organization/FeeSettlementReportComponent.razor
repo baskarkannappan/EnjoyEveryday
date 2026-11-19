@@ -1,0 +1,721 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.Shared.Auth
+@using EnjoyEveryday.UI.Shared.Services
+@using Microsoft.JSInterop
+@inject IOrgFeeManagementService FeeService
+@inject IBranchRepository BranchRepo
+@inject ClassroomService ClassroomService
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject ICurrencyService CurrencyService
+@inject IJSRuntime JS
+
+<div class="ee-report-container">
+    @if (!string.IsNullOrWhiteSpace(_bannerMessage))
+    {
+        <div class="ee-report-banner @(_bannerSuccess ? "ee-banner-ok" : "ee-banner-err")">
+            <span>@_bannerMessage</span>
+            <button class="ee-close-btn" @onclick="() => _bannerMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- FILTERS TOOLBAR -->
+    <div class="ee-filter-card">
+        <div class="ee-filter-grid">
+            <!-- Branch Filter -->
+            <div class="ee-filter-item">
+                <label class="ee-filter-label">Branch</label>
+                <select class="ee-filter-select" value="@(_selectedBranchId?.ToString() ?? "")" @onchange="OnBranchChangedAsync">
+                    @if (_isOrgAdmin)
+                    {
+                        <option value="">All Branches (Org-wide)</option>
+                    }
+                    @foreach (var b in _availableBranches)
+                    {
+                        <option value="@b.Id">@b.Name</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Classroom Filter -->
+            <div class="ee-filter-item">
+                <label class="ee-filter-label">Classroom</label>
+                <select class="ee-filter-select" value="@(_selectedClassroomId?.ToString() ?? "")" @onchange="OnClassroomChangedAsync">
+                    <option value="">All Classrooms</option>
+                    @foreach (var cl in _filteredClassrooms)
+                    {
+                        <option value="@cl.Id">@cl.Name</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Billing Period -->
+            <div class="ee-filter-item">
+                <label class="ee-filter-label">Billing Period</label>
+                <select class="ee-filter-select" value="@_selectedBillingPeriod" @onchange="OnPeriodChangedAsync">
+                    <option value="">All Periods</option>
+                    @foreach (var p in _availablePeriods)
+                    {
+                        <option value="@p">@p</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Settlement Status -->
+            <div class="ee-filter-item">
+                <label class="ee-filter-label">Payment Status</label>
+                <select class="ee-filter-select" value="@_selectedStatus" @onchange="OnStatusChangedAsync">
+                    <option value="@SettlementStatuses.All">All Statuses</option>
+                    <option value="@SettlementStatuses.Paid">Paid (Fully Settled)</option>
+                    <option value="@SettlementStatuses.PartiallyPaid">Partially Paid</option>
+                    <option value="@SettlementStatuses.Unpaid">Unpaid (Outstanding)</option>
+                    <option value="@SettlementStatuses.Overdue">Overdue Only</option>
+                    <option value="@SettlementStatuses.PendingVerification">Pending Verification</option>
+                    <option value="@SettlementStatuses.NotInvoiced">Not Invoiced</option>
+                </select>
+            </div>
+
+            <!-- Child Search -->
+            <div class="ee-filter-item" style="grid-column: span 2;">
+                <label class="ee-filter-label">Search Child</label>
+                <div style="display: flex; gap: 6px;">
+                    <input class="ee-filter-input" placeholder="Search by child name..." value="@_searchQuery" @oninput="OnSearchInputAsync" />
+                    @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                    {
+                        <button class="secondary" style="padding: 4px 8px; font-size: 11px;" @onclick="ClearSearchAsync">Clear</button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="ee-filter-footer">
+            <!-- Status quick pills -->
+            <div class="ee-pill-group">
+                <button type="button" class="ee-status-pill @(_selectedStatus == SettlementStatuses.All ? "active" : "")" @onclick='() => SetStatusQuick(SettlementStatuses.All)'>
+                    All (@_summary.TotalChildrenCount)
+                </button>
+                <button type="button" class="ee-status-pill pill-paid @(_selectedStatus == SettlementStatuses.Paid ? "active" : "")" @onclick='() => SetStatusQuick(SettlementStatuses.Paid)'>
+                    Paid (@_summary.FullySettledCount)
+                </button>
+                <button type="button" class="ee-status-pill pill-partial @(_selectedStatus == SettlementStatuses.PartiallyPaid ? "active" : "")" @onclick='() => SetStatusQuick(SettlementStatuses.PartiallyPaid)'>
+                    Partial (@_summary.PartiallySettledCount)
+                </button>
+                <button type="button" class="ee-status-pill pill-unpaid @(_selectedStatus == SettlementStatuses.Unpaid ? "active" : "")" @onclick='() => SetStatusQuick(SettlementStatuses.Unpaid)'>
+                    Unpaid (@_summary.UnpaidCount)
+                </button>
+                <button type="button" class="ee-status-pill pill-overdue @(_selectedStatus == SettlementStatuses.Overdue ? "active" : "")" @onclick='() => SetStatusQuick(SettlementStatuses.Overdue)'>
+                    Overdue (@_summary.OverdueCount)
+                </button>
+                <button type="button" class="ee-status-pill pill-pending @(_selectedStatus == SettlementStatuses.PendingVerification ? "active" : "")" @onclick='() => SetStatusQuick(SettlementStatuses.PendingVerification)'>
+                    Pending Verif (@_summary.PendingVerificationCount)
+                </button>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+                <button class="secondary" @onclick="LoadReportAsync" disabled="@_isLoading">
+                    @(_isLoading ? "Refreshing..." : "↻ Refresh")
+                </button>
+                <button class="secondary" @onclick="ExportCsvAsync" disabled="@(!_summary.Items.Any())">
+                    ↓ Export CSV
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI SUMMARY CARDS -->
+    <div class="ee-kpi-grid">
+        <div class="ee-kpi-card">
+            <span class="ee-kpi-label">TOTAL INVOICED</span>
+            <div class="ee-kpi-val" style="color: var(--text, #26332d);">@CurrencyService.Format(_summary.TotalInvoiced, _currency)</div>
+            <span class="ee-kpi-sub">@_summary.TotalChildrenCount child record(s)</span>
+        </div>
+        <div class="ee-kpi-card">
+            <span class="ee-kpi-label">TOTAL COLLECTED (PAID)</span>
+            <div class="ee-kpi-val" style="color: #2e7d32;">@CurrencyService.Format(_summary.TotalCollected, _currency)</div>
+            <span class="ee-kpi-sub">@(_summary.TotalInvoiced > 0 ? $"{Math.Round((_summary.TotalCollected / _summary.TotalInvoiced) * 100, 1)}% collection rate" : "0% rate")</span>
+        </div>
+        <div class="ee-kpi-card">
+            <span class="ee-kpi-label">OUTSTANDING BALANCE</span>
+            <div class="ee-kpi-val" style="color: #c62828;">@CurrencyService.Format(_summary.TotalOutstanding, _currency)</div>
+            <span class="ee-kpi-sub">@_summary.UnpaidCount unpaid / @_summary.OverdueCount overdue</span>
+        </div>
+        <div class="ee-kpi-card">
+            <span class="ee-kpi-label">PENDING VERIFICATION</span>
+            <div class="ee-kpi-val" style="color: #b7791f;">@CurrencyService.Format(_summary.TotalPendingVerification, _currency)</div>
+            <span class="ee-kpi-sub">@_summary.PendingVerificationCount submission(s) awaiting review</span>
+        </div>
+    </div>
+
+    <!-- NESTED GRID TABLE -->
+    <div class="ee-grid-card">
+        @if (_isLoading)
+        {
+            <div style="padding: 40px; text-align: center; color: var(--muted, #6c7870);">
+                <strong>Loading settlement report...</strong>
+            </div>
+        }
+        else if (!_summary.Items.Any())
+        {
+            <div style="padding: 40px; text-align: center; color: var(--muted, #6c7870);">
+                <h4>No fee records found</h4>
+                <p>No child tuition records match the selected branch, classroom, period, or status filters.</p>
+            </div>
+        }
+        else
+        {
+            <div class="ee-table-wrapper">
+                <table class="ee-nested-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th>Child</th>
+                            <th>Classroom / Branch</th>
+                            <th style="text-align: right;">Invoiced</th>
+                            <th style="text-align: right;">Paid</th>
+                            <th style="text-align: right;">Balance</th>
+                            <th style="text-align: center;">Status</th>
+                            <th style="text-align: right; width: 100px;">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _summary.Items)
+                        {
+                            var isExpanded = _expandedChildIds.Contains(item.ChildId);
+                            var curr = string.IsNullOrWhiteSpace(item.Currency) ? _currency : item.Currency;
+                            <tr class="ee-master-row @(isExpanded ? "expanded" : "")" @onclick="() => ToggleExpand(item.ChildId)">
+                                <td style="text-align: center;">
+                                    <span class="ee-chevron">@(isExpanded ? "▼" : "▶")</span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <div class="ee-avatar">
+                                            @GetInitials(item.ChildName)
+                                        </div>
+                                        <div>
+                                            <strong style="color: var(--text, #26332d); font-size: 13.5px;">@item.ChildName</strong>
+                                            @if (item.PendingVerificationAmount > 0)
+                                            {
+                                                <span class="ee-badge-amber" title="Has pending verification payments">⏳ @CurrencyService.Format(item.PendingVerificationAmount, curr) pending</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="ee-sub-pill">@item.ClassroomName</span>
+                                    <span class="ee-sub-pill" style="opacity: 0.85;">@item.BranchName</span>
+                                </td>
+                                <td style="text-align: right; font-weight: 600;">
+                                    @CurrencyService.Format(item.TotalInvoiced, curr)
+                                </td>
+                                <td style="text-align: right; color: #2e7d32; font-weight: 600;">
+                                    @CurrencyService.Format(item.TotalPaid, curr)
+                                </td>
+                                <td style="text-align: right; font-weight: 700; color: @(item.BalanceDue > 0 ? "#c62828" : "var(--text, #26332d)");">
+                                    @CurrencyService.Format(item.BalanceDue, curr)
+                                </td>
+                                <td style="text-align: center;">
+                                    @RenderStatusBadge(item.SettlementStatus)
+                                </td>
+                                <td style="text-align: right;">
+                                    <button class="secondary" style="padding: 3px 8px; font-size: 11px;" @onclick:stopPropagation="true" @onclick="() => ToggleExpand(item.ChildId)">
+                                        @(isExpanded ? "Hide" : "Breakdown")
+                                    </button>
+                                </td>
+                            </tr>
+
+                            @if (isExpanded)
+                            {
+                                <tr class="ee-detail-row">
+                                    <td colspan="8">
+                                        <div class="ee-detail-card">
+                                            <!-- Invoices Sub-Section -->
+                                            <div class="ee-sub-section">
+                                                <div class="ee-sub-header">
+                                                    <h5>Tuition Invoices (@item.Invoices.Count)</h5>
+                                                </div>
+                                                @if (!item.Invoices.Any())
+                                                {
+                                                    <div style="font-size: 12px; color: var(--muted); padding: 8px;">No tuition invoices issued for this period.</div>
+                                                }
+                                                else
+                                                {
+                                                    <table class="ee-sub-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Invoice #</th>
+                                                                <th>Period</th>
+                                                                <th>Fee Method</th>
+                                                                <th>Issue Date</th>
+                                                                <th>Due Date</th>
+                                                                <th style="text-align: right;">Amount</th>
+                                                                <th style="text-align: right;">Paid</th>
+                                                                <th style="text-align: right;">Balance</th>
+                                                                <th style="text-align: center;">Status</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var inv in item.Invoices)
+                                                            {
+                                                                <tr>
+                                                                    <td><strong>#@inv.InvoiceNumber</strong></td>
+                                                                    <td>@inv.BillingPeriod</td>
+                                                                    <td><span class="ee-sub-pill">@inv.FeeMethod</span></td>
+                                                                    <td>@inv.IssueDate.ToString("d MMM yyyy")</td>
+                                                                    <td>@inv.DueDate.ToString("d MMM yyyy")</td>
+                                                                    <td style="text-align: right;">@CurrencyService.Format(inv.EffectivePayable, curr)</td>
+                                                                    <td style="text-align: right; color: #2e7d32;">@CurrencyService.Format(inv.AmountPaid, curr)</td>
+                                                                    <td style="text-align: right; font-weight: 700; color: @(inv.BalanceDue > 0 ? "#c62828" : "inherit");">
+                                                                        @CurrencyService.Format(inv.BalanceDue, curr)
+                                                                    </td>
+                                                                    <td style="text-align: center;">@RenderInvoiceStatusBadge(inv.Status)</td>
+                                                                </tr>
+                                                                @if (inv.Installments?.Any() == true)
+                                                                {
+                                                                    <tr>
+                                                                        <td colspan="9" style="background: #fafbfa; padding: 6px 14px; font-size: 11.5px;">
+                                                                            <strong style="color: var(--muted);">Installment Schedule:</strong>
+                                                                            @foreach (var inst in inv.Installments)
+                                                                            {
+                                                                                <span class="ee-inst-pill">
+                                                                                    #@inst.InstallmentNumber: @CurrencyService.Format(inst.AmountDue, curr) (Due: @inst.DueDate)
+                                                                                </span>
+                                                                            }
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            }
+                                                        </tbody>
+                                                    </table>
+                                                }
+                                            </div>
+
+                                            <!-- Payments Sub-Section -->
+                                            <div class="ee-sub-section" style="margin-top: 14px;">
+                                                <div class="ee-sub-header">
+                                                    <h5>Payment Transactions &amp; Verification History (@item.Payments.Count)</h5>
+                                                </div>
+                                                @if (!item.Payments.Any())
+                                                {
+                                                    <div style="font-size: 12px; color: var(--muted); padding: 8px;">No payments recorded for this child.</div>
+                                                }
+                                                else
+                                                {
+                                                    <table class="ee-sub-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Date</th>
+                                                                <th>Method</th>
+                                                                <th>Invoice #</th>
+                                                                <th>Reference / Txn ID</th>
+                                                                <th style="text-align: right;">Amount</th>
+                                                                <th style="text-align: center;">Verification</th>
+                                                                <th>Verified By / Notes</th>
+                                                                <th style="text-align: right; width: 140px;">Action</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var p in item.Payments)
+                                                            {
+                                                                <tr>
+                                                                    <td>@p.PaymentDate.ToString("d MMM yyyy HH:mm")</td>
+                                                                    <td><span class="ee-sub-pill">@p.Method</span></td>
+                                                                    <td>@(string.IsNullOrWhiteSpace(p.InvoiceNumber) ? "-" : $"#{p.InvoiceNumber}")</td>
+                                                                    <td>@(p.TransactionId ?? p.PaymentReference ?? "-")</td>
+                                                                    <td style="text-align: right; font-weight: 700; color: #2e7d32;">@CurrencyService.Format(p.Amount, curr)</td>
+                                                                    <td style="text-align: center;">
+                                                                        @if (p.Status == "Completed" && p.IsVerified)
+                                                                        {
+                                                                            <span class="ee-badge-green">Verified</span>
+                                                                        }
+                                                                        else if (p.Status == "PendingVerification")
+                                                                        {
+                                                                            <span class="ee-badge-amber">Pending Verification</span>
+                                                                        }
+                                                                        else if (p.Status == "Rejected")
+                                                                        {
+                                                                            <span class="ee-badge-red">Rejected</span>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <span class="ee-sub-pill">@p.Status</span>
+                                                                        }
+                                                                    </td>
+                                                                    <td style="font-size: 11.5px; color: var(--muted);">
+                                                                        @(p.VerifiedBy ?? p.Notes ?? "-")
+                                                                    </td>
+                                                                    <td style="text-align: right;">
+                                                                        @if (p.Status == "PendingVerification")
+                                                                        {
+                                                                            <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                                                                                <button class="primary" style="padding: 2px 7px; font-size: 11px;" @onclick="() => VerifyPaymentInlineAsync(p.Id)">
+                                                                                    Verify
+                                                                                </button>
+                                                                                <button class="secondary" style="padding: 2px 7px; font-size: 11px; color: #9b2c2c;" @onclick="() => RejectPaymentInlineAsync(p.Id)">
+                                                                                    Reject
+                                                                                </button>
+                                                                            </div>
+                                                                        }
+                                                                    </td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </table>
+                                                }
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .ee-report-container { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+    .ee-report-banner { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-size: 13px; border-radius: 8px; }
+    .ee-banner-ok { background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #31523c); }
+    .ee-banner-err { background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; }
+    .ee-close-btn { background: none; border: none; cursor: pointer; font-size: 14px; color: inherit; }
+
+    .ee-filter-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 16px; }
+    .ee-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .ee-filter-item { display: flex; flex-direction: column; gap: 4px; }
+    .ee-filter-label { font-size: 11.5px; font-weight: 700; color: var(--muted, #6c7870); }
+    .ee-filter-select, .ee-filter-input { padding: 7px 10px; border: 1px solid var(--border, #e4e7df); background: var(--surface-soft, #f8f9f5); color: var(--text, #26332d); font-size: 13px; border-radius: 6px; width: 100%; }
+    .ee-filter-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--border, #e4e7df); padding-top: 12px; }
+
+    .ee-pill-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .ee-status-pill { border: 1px solid var(--border, #e4e7df); background: var(--surface, #fff); color: var(--text, #26332d); padding: 4px 10px; font-size: 11.5px; font-weight: 600; border-radius: 20px; cursor: pointer; }
+    .ee-status-pill.active { background: var(--accent-dark, #31523c); color: #fff; border-color: var(--accent-dark, #31523c); }
+    .ee-status-pill.pill-paid.active { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+    .ee-status-pill.pill-partial.active { background: #e65100; border-color: #e65100; color: #fff; }
+    .ee-status-pill.pill-unpaid.active { background: #c62828; border-color: #c62828; color: #fff; }
+    .ee-status-pill.pill-overdue.active { background: #880e4f; border-color: #880e4f; color: #fff; }
+    .ee-status-pill.pill-pending.active { background: #b7791f; border-color: #b7791f; color: #fff; }
+
+    .ee-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+    .ee-kpi-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 16px; }
+    .ee-kpi-label { font-size: 10.5px; font-weight: 750; color: var(--muted, #6c7870); letter-spacing: 0.5px; }
+    .ee-kpi-val { font-size: 22px; font-weight: 800; margin: 4px 0 2px; }
+    .ee-kpi-sub { font-size: 12px; color: var(--muted, #6c7870); }
+
+    .ee-grid-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); overflow: hidden; }
+    .ee-table-wrapper { width: 100%; overflow-x: auto; }
+    .ee-nested-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .ee-nested-table th { background: var(--surface-soft, #f8f9f5); color: var(--muted, #6c7870); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e4e7df); }
+    .ee-master-row { cursor: pointer; border-bottom: 1px solid var(--border, #e4e7df); transition: background 0.15s ease; }
+    .ee-master-row:hover { background: #fbfcfb; }
+    .ee-master-row.expanded { background: #f5f8f6; }
+    .ee-master-row td { padding: 12px 14px; }
+
+    .ee-chevron { display: inline-block; font-size: 10px; color: var(--muted); transition: transform 0.15s; }
+    .ee-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+    .ee-sub-pill { display: inline-block; padding: 2px 6px; font-size: 11px; font-weight: 600; border-radius: 4px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); margin-right: 4px; }
+    .ee-inst-pill { display: inline-block; padding: 2px 7px; font-size: 11px; background: #fff; border: 1px solid var(--border, #e4e7df); border-radius: 4px; margin: 2px 4px; }
+
+    .ee-badge-green { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+    .ee-badge-amber { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #fff8e1; color: #b7791f; border: 1px solid #ffe082; }
+    .ee-badge-orange { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+    .ee-badge-red { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+    .ee-badge-gray { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 600; border-radius: 6px; background: #f5f5f5; color: #616161; border: 1px solid #e0e0e0; }
+
+    .ee-detail-row td { padding: 0 !important; border-bottom: 2px solid var(--border, #e4e7df); }
+    .ee-detail-card { background: #fafcfa; padding: 16px 20px 20px 44px; border-left: 3px solid var(--accent-dark, #31523c); }
+    .ee-sub-section { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: 10px; padding: 12px; }
+    .ee-sub-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .ee-sub-header h5 { margin: 0; font-size: 12.5px; font-weight: 750; color: var(--text, #26332d); }
+    .ee-sub-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .ee-sub-table th { background: var(--surface-soft, #f8f9f5); padding: 6px 10px; font-size: 10.5px; font-weight: 700; color: var(--muted); text-align: left; border-bottom: 1px solid var(--border); }
+    .ee-sub-table td { padding: 7px 10px; border-bottom: 1px dashed var(--border); }
+</style>
+
+@code {
+    [Parameter] public Guid? InitialBranchId { get; set; }
+
+    private bool _isLoading = true;
+    private bool _isOrgAdmin;
+    private string _currency = "INR";
+    private string? _bannerMessage;
+    private bool _bannerSuccess = true;
+
+    private Guid? _selectedBranchId;
+    private Guid? _selectedClassroomId;
+    private string? _selectedBillingPeriod;
+    private string _selectedStatus = SettlementStatuses.All;
+    private string _searchQuery = string.Empty;
+
+    private List<Branch> _availableBranches = new();
+    private List<Classroom> _allClassrooms = new();
+    private List<Classroom> _filteredClassrooms = new();
+    private List<string> _availablePeriods = new();
+    private HashSet<Guid> _expandedChildIds = new();
+
+    private FeeSettlementReportSummary _summary = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _selectedBranchId = InitialBranchId;
+        BuildAvailablePeriods();
+        await InitializeScopeAndFiltersAsync();
+        await LoadReportAsync();
+    }
+
+    private void BuildAvailablePeriods()
+    {
+        var periods = new List<string>();
+        var now = DateTime.Today;
+        for (int i = 0; i < 12; i++)
+        {
+            periods.Add(now.AddMonths(-i).ToString("yyyy-MM"));
+        }
+        _availablePeriods = periods;
+        // Default to current month
+        _selectedBillingPeriod = periods.FirstOrDefault();
+    }
+
+    private async Task InitializeScopeAndFiltersAsync()
+    {
+        try
+        {
+            var scope = await FeeService.GetCurrentFinancialScopeAsync();
+            _isOrgAdmin = scope.IsOrgAdmin;
+
+            var tenantId = TenantContext.TenantId;
+            var orgId = UserContext.OrganizationId ?? Guid.Empty;
+            if (orgId != Guid.Empty)
+            {
+                var branches = (await BranchRepo.GetByOrganizationIdAsync(tenantId, orgId)).ToList();
+                _availableBranches = _isOrgAdmin
+                    ? branches
+                    : branches.Where(b => scope.AllowedBranchIds.Contains(b.Id)).ToList();
+
+                if (!_isOrgAdmin && !_selectedBranchId.HasValue && _availableBranches.Any())
+                {
+                    _selectedBranchId = _availableBranches[0].Id;
+                }
+
+                _allClassrooms = (await ClassroomService.GetClassroomsByOrganizationAsync(orgId)).ToList();
+                FilterClassrooms();
+            }
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+    }
+
+    private void FilterClassrooms()
+    {
+        if (_selectedBranchId.HasValue)
+        {
+            _filteredClassrooms = _allClassrooms.Where(c => c.BranchId == _selectedBranchId.Value).ToList();
+            if (_selectedClassroomId.HasValue && !_filteredClassrooms.Any(c => c.Id == _selectedClassroomId.Value))
+            {
+                _selectedClassroomId = null;
+            }
+        }
+        else
+        {
+            _filteredClassrooms = _allClassrooms.ToList();
+        }
+    }
+
+    private async Task OnBranchChangedAsync(ChangeEventArgs e)
+    {
+        _selectedBranchId = Guid.TryParse(e.Value?.ToString(), out var bid) ? bid : null;
+        FilterClassrooms();
+        await LoadReportAsync();
+    }
+
+    private async Task OnClassroomChangedAsync(ChangeEventArgs e)
+    {
+        _selectedClassroomId = Guid.TryParse(e.Value?.ToString(), out var cid) ? cid : null;
+        await LoadReportAsync();
+    }
+
+    private async Task OnPeriodChangedAsync(ChangeEventArgs e)
+    {
+        _selectedBillingPeriod = e.Value?.ToString();
+        await LoadReportAsync();
+    }
+
+    private async Task OnStatusChangedAsync(ChangeEventArgs e)
+    {
+        _selectedStatus = e.Value?.ToString() ?? SettlementStatuses.All;
+        await LoadReportAsync();
+    }
+
+    private async Task SetStatusQuick(string status)
+    {
+        _selectedStatus = status;
+        await LoadReportAsync();
+    }
+
+    private async Task OnSearchInputAsync(ChangeEventArgs e)
+    {
+        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        await LoadReportAsync();
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        _searchQuery = string.Empty;
+        await LoadReportAsync();
+    }
+
+    private void ToggleExpand(Guid childId)
+    {
+        if (_expandedChildIds.Contains(childId))
+            _expandedChildIds.Remove(childId);
+        else
+            _expandedChildIds.Add(childId);
+    }
+
+    private async Task LoadReportAsync()
+    {
+        _isLoading = true;
+        _bannerMessage = null;
+        try
+        {
+            _summary = await FeeService.GetFeeSettlementReportAsync(
+                _selectedBranchId,
+                _selectedClassroomId,
+                null,
+                _selectedBillingPeriod,
+                _selectedStatus,
+                _searchQuery);
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task VerifyPaymentInlineAsync(Guid paymentId)
+    {
+        try
+        {
+            var res = await FeeService.VerifyPaymentAsync(paymentId, "Verified via settlement report");
+            _bannerSuccess = res.Success;
+            _bannerMessage = res.Message;
+            await LoadReportAsync();
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+    }
+
+    private async Task RejectPaymentInlineAsync(Guid paymentId)
+    {
+        try
+        {
+            var res = await FeeService.RejectPaymentAsync(paymentId, "Rejected via settlement report");
+            _bannerSuccess = res.Success;
+            _bannerMessage = res.Message;
+            await LoadReportAsync();
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Child Name,Classroom,Branch,Settlement Status,Invoiced Amount,Paid Amount,Balance Due,Pending Amount,Currency");
+            foreach (var item in _summary.Items)
+            {
+                var cleanName = EscapeCsv(item.ChildName);
+                var cleanRoom = EscapeCsv(item.ClassroomName);
+                var cleanBranch = EscapeCsv(item.BranchName);
+                sb.AppendLine($"{cleanName},{cleanRoom},{cleanBranch},{item.SettlementStatus},{item.TotalInvoiced},{item.TotalPaid},{item.BalanceDue},{item.PendingVerificationAmount},{item.Currency}");
+            }
+
+            var csvData = sb.ToString();
+            var fileName = $"Fee_Settlement_Report_{DateTime.Today:yyyyMMdd}.csv";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(csvData);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("eval", $"var a = document.createElement('a'); a.href = 'data:text/csv;base64,{base64}'; a.download = '{fileName}'; document.body.appendChild(a); a.click(); document.body.removeChild(a);");
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    private static string EscapeCsv(string val)
+    {
+        if (string.IsNullOrWhiteSpace(val)) return "\"\"";
+        return $"\"{val.Replace("\"", "\"\"")}\"";
+    }
+
+    private static string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "C";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][0].ToString().ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+
+    private RenderFragment RenderStatusBadge(string status) => builder =>
+    {
+        var css = status switch
+        {
+            SettlementStatuses.Paid => "ee-badge-green",
+            SettlementStatuses.PartiallyPaid => "ee-badge-orange",
+            SettlementStatuses.PendingVerification => "ee-badge-amber",
+            SettlementStatuses.Overdue => "ee-badge-red",
+            SettlementStatuses.Unpaid => "ee-badge-red",
+            _ => "ee-badge-gray"
+        };
+        var label = status switch
+        {
+            SettlementStatuses.Paid => "Paid",
+            SettlementStatuses.PartiallyPaid => "Partially Paid",
+            SettlementStatuses.PendingVerification => "Pending Verif",
+            SettlementStatuses.Overdue => "Overdue",
+            SettlementStatuses.Unpaid => "Unpaid",
+            SettlementStatuses.NotInvoiced => "Not Invoiced",
+            _ => status
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, label);
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderInvoiceStatusBadge(string status) => builder =>
+    {
+        var css = status switch
+        {
+            "Paid" => "ee-badge-green",
+            "PartiallyPaid" => "ee-badge-orange",
+            "Issued" or "Overdue" => "ee-badge-red",
+            _ => "ee-sub-pill"
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", css);
+        builder.AddContent(2, status);
+        builder.CloseElement();
+    };
+}

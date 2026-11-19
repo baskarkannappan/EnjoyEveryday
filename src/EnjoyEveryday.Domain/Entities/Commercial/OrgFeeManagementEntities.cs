@@ -246,4 +246,114 @@ public class OrgRazorpayOrderResponse
     public string PrefillEmail { get; set; } = string.Empty;
 }
 
+public static class SettlementStatuses
+{
+    public const string All = "All";
+    public const string Paid = "Paid";
+    public const string PartiallyPaid = "PartiallyPaid";
+    public const string Unpaid = "Unpaid";
+    public const string Overdue = "Overdue";
+    public const string PendingVerification = "PendingVerification";
+    public const string NotInvoiced = "NotInvoiced";
+}
+
+public class ChildFeeSettlementReportItem
+{
+    public Guid ChildId { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string ChildName => $"{FirstName} {LastName}".Trim();
+    public string? PhotoUrl { get; set; }
+    public Guid? ClassroomId { get; set; }
+    public string ClassroomName { get; set; } = string.Empty;
+    public Guid? BranchId { get; set; }
+    public string BranchName { get; set; } = string.Empty;
+    public string Currency { get; set; } = "INR";
+    public int InvoiceCount { get; set; }
+    public decimal TotalInvoiced { get; set; }
+    public decimal TotalPaid { get; set; }
+    public decimal BalanceDue { get; set; }
+    public decimal PendingVerificationAmount { get; set; }
+    public int PendingVerificationCount { get; set; }
+    public string SettlementStatus { get; set; } = SettlementStatuses.Unpaid;
+    public string InvoicesJson { get; set; } = "[]";
+    public string PaymentsJson { get; set; } = "[]";
+
+    public List<FeeReportInvoiceDto> Invoices { get; set; } = new();
+    public List<FeeReportPaymentDto> Payments { get; set; } = new();
+}
+
+public class FeeReportInvoiceDto
+{
+    public Guid Id { get; set; }
+    public Guid? ChildId { get; set; }
+    public string InvoiceNumber { get; set; } = string.Empty;
+    public string? BillingPeriod { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal AdjustmentAmount { get; set; }
+    public decimal EffectivePayable { get; set; }
+    public decimal AmountPaid { get; set; }
+    public decimal BalanceDue { get; set; }
+    public decimal PendingVerificationAmount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public string Status { get; set; } = string.Empty;
+    public string? FeeMethod { get; set; }
+    public string? FeePlanName { get; set; }
+    public DateTimeOffset IssueDate { get; set; }
+    public DateTimeOffset DueDate { get; set; }
+    public DateTimeOffset? PaidAt { get; set; }
+    public string? Description { get; set; }
+    public List<FeeReportInstallmentDto> Installments { get; set; } = new();
+}
+
+public class FeeReportInstallmentDto
+{
+    public Guid Id { get; set; }
+    public int InstallmentNumber { get; set; }
+    public string? DueDate { get; set; }
+    public decimal AmountDue { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class FeeReportPaymentDto
+{
+    public Guid Id { get; set; }
+    public Guid? ChildId { get; set; }
+    public Guid? InvoiceId { get; set; }
+    public string? InvoiceNumber { get; set; }
+    public string? PaymentReference { get; set; }
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "INR";
+    public string Method { get; set; } = string.Empty;
+    public bool IsVerified { get; set; }
+    public string? VerifiedBy { get; set; }
+    public DateTimeOffset? VerifiedAt { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? TransactionId { get; set; }
+    public string? Notes { get; set; }
+    public string? SubmissionSource { get; set; }
+    public string? ProofStorageKey { get; set; }
+    public DateTimeOffset PaymentDate { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public class FeeSettlementReportSummary
+{
+    public decimal TotalInvoiced { get; set; }
+    public decimal TotalCollected { get; set; }
+    public decimal TotalOutstanding { get; set; }
+    public decimal TotalPendingVerification { get; set; }
+    public int TotalChildrenCount { get; set; }
+    public int FullySettledCount { get; set; }
+    public int PartiallySettledCount { get; set; }
+    public int UnpaidCount { get; set; }
+    public int OverdueCount { get; set; }
+    public int PendingVerificationCount { get; set; }
+    public int NotInvoicedCount { get; set; }
+    public List<ChildFeeSettlementReportItem> Items { get; set; } = new();
+}
+
 

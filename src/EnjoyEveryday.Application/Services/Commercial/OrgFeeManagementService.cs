@@ -1106,6 +1106,59 @@ public class OrgFeeManagementService : IOrgFeeManagementService
         return await _feeRepository.GetDashboardSummaryAsync(tenantId, orgId, branchId, ct);
     }
 
+    public async Task<FeeSettlementReportSummary> GetFeeSettlementReportAsync(
+        Guid? branchId = null,
+        Guid? classroomId = null,
+        Guid? childId = null,
+        string? billingPeriod = null,
+        string? status = null,
+        string? search = null,
+        CancellationToken ct = default)
+    {
+        var (tenantId, orgId, isOrgAdmin, isBranchAdmin, allowedBranches) = await RequireStaffFinancialScopeAsync(branchId, ct);
+
+        if (!isOrgAdmin && branchId.HasValue && !allowedBranches.Contains(branchId.Value))
+            throw new UnauthorizedAccessException("You are not authorized to view financial reports for this branch.");
+
+        var effectiveBranchId = branchId;
+        if (!isOrgAdmin && !branchId.HasValue && allowedBranches.Count == 1)
+        {
+            effectiveBranchId = allowedBranches[0];
+        }
+
+        var items = await _feeRepository.GetFeeSettlementReportAsync(
+            tenantId,
+            orgId,
+            effectiveBranchId,
+            classroomId,
+            childId,
+            billingPeriod,
+            status,
+            search,
+            ct);
+
+        if (!isOrgAdmin && !effectiveBranchId.HasValue)
+        {
+            items = items.Where(i => i.BranchId.HasValue && allowedBranches.Contains(i.BranchId.Value)).ToList();
+        }
+
+        return new FeeSettlementReportSummary
+        {
+            TotalInvoiced = items.Sum(i => i.TotalInvoiced),
+            TotalCollected = items.Sum(i => i.TotalPaid),
+            TotalOutstanding = items.Sum(i => i.BalanceDue),
+            TotalPendingVerification = items.Sum(i => i.PendingVerificationAmount),
+            TotalChildrenCount = items.Count,
+            FullySettledCount = items.Count(i => i.SettlementStatus == SettlementStatuses.Paid),
+            PartiallySettledCount = items.Count(i => i.SettlementStatus == SettlementStatuses.PartiallyPaid),
+            UnpaidCount = items.Count(i => i.SettlementStatus == SettlementStatuses.Unpaid),
+            OverdueCount = items.Count(i => i.SettlementStatus == SettlementStatuses.Overdue),
+            PendingVerificationCount = items.Count(i => i.SettlementStatus == SettlementStatuses.PendingVerification || i.PendingVerificationCount > 0),
+            NotInvoicedCount = items.Count(i => i.SettlementStatus == SettlementStatuses.NotInvoiced),
+            Items = items
+        };
+    }
+
     public async Task<OrgPaymentGatewayPublicStatusDto> GetPaymentGatewayStatusAsync(CancellationToken ct = default)
     {
         var (tenantId, orgId, isOrgAdmin, _, _) = await RequireStaffFinancialScopeAsync(null, ct);

@@ -174,7 +174,7 @@ tags:
 * **Invoice & Email Integration**: `QrCodeService.BuildInvoicePaymentPayload` and `InvoiceDetailsModal.razor` read the active settings dynamically so all generated invoice previews and email QR codes immediately reflect the Platform Admin's updated bank/UPI account.
 
 ### 12. Organization Fee Management, Tariff Plans, Flat-Rate Fees, Partial Payments & Manual Verification
-* **Migrations**: `131_org_fee_management_invoicing_partial_payments.sql`, `132_org_fee_crud_routines.sql`, `133_publish_tuition_invoice.sql`.
+* **Migrations**: `131_org_fee_management_invoicing_partial_payments.sql`, `132_org_fee_crud_routines.sql`, `133_publish_tuition_invoice.sql`, `137_fix_fn_verify_submitted_payment_ambiguous_column.sql`.
 * **Entities & Repositories**: `OrgFeePlan`, `OrgTariffRule`, `ResolvedTariffResult`, `ChildFeeAdjustment`, `InvoiceInstallment`, `OrgBankAccount`, `OrgPaymentQrCode` (up to 3 slots), `OrgFeeDashboardSummary`; `IOrgFeeRepository` / `OrgFeeRepository`.
 * **Service**: `IOrgFeeManagementService` / `OrgFeeManagementService` (registered in `ApplicationServiceRegistration.cs`) enforcing strict server-side `OrganizationAdmin` / `BranchAdmin` (assigned branch scope via `IAccessScopeRepository`) and `Parent` (linked child scope via `IParentRepository`) isolation. Only `OrganizationAdmin` can define tariff layer plans and prices; both `OrganizationAdmin` and authorized `BranchAdmin` can save Draft invoices and publish them (`PublishTuitionInvoiceAsync` -> `fn_publish_tuition_invoice`).
 * **Fee Assignment Methods & Precedence**:
@@ -202,6 +202,26 @@ tags:
   - **Parent Portal Integration**:
     - Dedicated `/billing` (`My Billing & Invoices` in `EnjoyEveryday.Parent.Web`) provides child selection, summary cards, monthly billing history, payment history, and **Pay Now** (uses the invoice-owning organization's active Razorpay credentials via `CreateParentRazorpayOrderAsync` / `VerifyParentRazorpayPaymentAsync`, or falls back to manual QR / Bank Transfer / Cash when Razorpay is not configured/disabled).
     - Org-scoped Razorpay webhook endpoint: `POST /api/billing/razorpay/org/{orgId:guid}/webhook` in `Daycare.Web/Endpoints/BillingEndpoints.cs` with idempotent `razorpay_webhook_events` tracking.
+
+### 14. Fee Settlement & Payment Status Reporting Ledger
+* **Migration**: `138_fn_get_org_fee_settlement_report.sql`.
+* **Stored Function**: `fn_get_org_fee_settlement_report(p_tenant_id, p_organization_id, p_branch_id, p_classroom_id, p_child_id, p_billing_period, p_status, p_search)` returns child-level settlement aggregates, status badges, and nested `invoices_json` and `payments_json`.
+* **Entities & DTOs**: `ChildFeeSettlementReportItem`, `FeeReportInvoiceDto`, `FeeReportInstallmentDto`, `FeeReportPaymentDto`, `FeeSettlementReportSummary`, `SettlementStatuses`.
+* **Routes & UI Components**:
+  - `/management/fee-reports` (`FeeSettlementReportPage.razor` & `<FeeSettlementReportComponent />`).
+  - Embedded inside `/management/billing` under `Overview & Reports` tab (`OrgFeeManagementBoard.razor`).
+  - NavMenu link under `Business & Settings`: `Fee & Payment Reports`.
+* **Security & Scoping**:
+  - Enforces strict tenant and organization boundary (`organization_id = @OrganizationId AND billing_domain = 'OrgToParent'`).
+  - Branch Admins are strictly scoped to `allowedBranches` from `IAccessScopeRepository` / `GetCurrentFinancialScopeAsync()`. Org Admins have full organization visibility.
+* **Hierarchical Nested Grid Features**:
+  - **Dynamic KPI Summary**: Total Invoiced, Total Collected, Outstanding Balance, Pending Verification Amount & collection rate.
+  - **Filter Bar**: Cascading Branch -> Classroom dropdowns, Child search, Billing Period selector, Status pills (`All`, `Paid`, `Partially Paid`, `Unpaid`, `Overdue`, `Pending Verification`, `Not Invoiced`), and CSV Export.
+  - **Expandable Master Row**: Displays child avatar, classroom/branch, invoiced, paid, balance, and settlement badge.
+  - **Nested Sub-Tables**:
+    - **Invoices**: Breakdown of invoice numbers, billing period, issue/due dates, total, adjustment, paid, balance, status, and installment schedules.
+    - **Payments**: Transaction timeline with payment method, amount, reference/transaction ID, verification status, notes, and direct inline `Verify` / `Reject` action buttons for pending submissions.
+
 
 
 
