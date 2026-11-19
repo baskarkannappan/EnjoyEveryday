@@ -109,6 +109,12 @@ public class FinalizeEnrollmentContractRequest
     public DateTime StartDate { get; set; } = DateTime.UtcNow.Date;
     public bool CreateInitialTuitionInvoice { get; set; } = true;
     public string? ParentNotes { get; set; }
+    public string FeeMethod { get; set; } = FeeMethods.TariffBased;
+    public Guid? FeePlanId { get; set; }
+    public Guid? TariffRuleId { get; set; }
+    public string FeePeriod { get; set; } = FeeBillingFrequencies.Monthly;
+    public string PaymentArrangement { get; set; } = PaymentArrangements.PartialAllowed;
+    public string? Remarks { get; set; }
 }
 
 public interface IEnrollmentPipelineService
@@ -134,6 +140,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
     private readonly IChildRepository? _childRepository;
     private readonly IEmailNotificationService? _emailService;
     private readonly IPlatformBusinessEventService? _eventService;
+    private readonly IOrgFeeRepository? _orgFeeRepository;
 
     public EnrollmentPipelineService(
         IEnrollmentPipelineRepository repository,
@@ -143,7 +150,8 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         IClassroomReadinessService? readinessService = null,
         IChildRepository? childRepository = null,
         IEmailNotificationService? emailService = null,
-        IPlatformBusinessEventService? eventService = null)
+        IPlatformBusinessEventService? eventService = null,
+        IOrgFeeRepository? orgFeeRepository = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
@@ -153,6 +161,7 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         _childRepository = childRepository;
         _emailService = emailService;
         _eventService = eventService;
+        _orgFeeRepository = orgFeeRepository;
     }
 
     public async Task<PipelineOverviewDto> GetPipelineOverviewAsync(Guid? branchId = null, CancellationToken ct = default)
@@ -517,40 +526,111 @@ public class EnrollmentPipelineService : IEnrollmentPipelineService
         {
             Id = contractId,
             TenantId = tenantId,
+            OrganizationId = organizationId,
             BranchId = branchId,
             ApplicationId = app.Id,
             ChildId = childId,
             ParentName = app.ParentGuardianName ?? "Parent Guardian",
             ParentEmail = app.ParentEmail ?? string.Empty,
             ScheduleType = request.ScheduleType ?? "FullTime",
-            BillingCycle = request.BillingCycle,
+            BillingCycle = string.IsNullOrWhiteSpace(request.FeePeriod) ? request.BillingCycle : request.FeePeriod,
             BaseRate = request.BaseMonthlyRate,
             DiscountPercent = request.SiblingDiscountPercent,
             EffectiveRate = effectiveRate,
             DepositHeld = request.DepositHeld,
             Status = "Active",
             StartDate = request.StartDate,
-            AutoInvoice = true
+            AutoInvoice = !string.Equals(request.FeePeriod, FeeBillingFrequencies.OneTime, StringComparison.OrdinalIgnoreCase),
+            FeeMethod = string.IsNullOrWhiteSpace(request.FeeMethod) ? FeeMethods.TariffBased : request.FeeMethod,
+            FeePlanId = request.FeePlanId,
+            TariffRuleId = request.FeeMethod == FeeMethods.FlatRate ? null : request.TariffRuleId,
+            FeePeriod = string.IsNullOrWhiteSpace(request.FeePeriod) ? request.BillingCycle : request.FeePeriod,
+            PaymentArrangement = string.IsNullOrWhiteSpace(request.PaymentArrangement) ? PaymentArrangements.PartialAllowed : request.PaymentArrangement,
+            Currency = "INR",
+            Remarks = request.Remarks
         };
 
-        await _repository.CreateFamilyBillingContractAsync(contract, ct);
+        if (_orgFeeRepository != null)
+        {
+            await _orgFeeRepository.UpsertFamilyContractAsync(contract, ct);
+        }
+        else
+        {
+            await _repository.CreateFamilyBillingContractAsync(contract, ct);
+        }
 
-        // 4. Optional: Create initial invoice in invoices table for registration + deposit
+        // 4. Optional: Create initial invoice in invoices table
         if (request.CreateInitialTuitionInvoice)
         {
             var invoiceId = Guid.NewGuid();
             var invoiceNum = $"INV-ENR-{DateTime.UtcNow:yyMM}-{new Random().Next(1000, 9999)}";
-            var totalInvoiceAmount = app.RegistrationFee + request.DepositHeld;
+            var totalInvoiceAmount = request.FeeMethod == FeeMethods.FlatRate
+                ? effectiveRate + request.DepositHeld
+                : app.RegistrationFee + request.DepositHeld;
 
-            await _repository.CreateInitialTuitionInvoiceAsync(
-                invoiceId,
-                tenantId,
-                organizationId,
-                invoiceNum,
-                totalInvoiceAmount,
-                $"Admissions Enrollment Packet for {app.ChildFullName}",
-                $"Registration Fee: {app.RegistrationFee:C2}, Held Tuition Deposit: {request.DepositHeld:C2}. Primary Guardian: {app.ParentGuardianName}",
-                ct);
+            if (_orgFeeRepository != null && totalInvoiceAmount > 0)
+            {
+                var bank = await _orgFeeRepository.GetBankAccountAsync(tenantId, organizationId, ct);
+                var qrs = (await _orgFeeRepository.GetQrCodesAsync(tenantId, organizationId, ct)).Where(q => q.IsActive).ToList();
+                var snapJson = System.Text.Json.JsonSerializer.Serialize(new PaymentInstructionsSnapshotDto
+                {
+                    BankAccount = bank,
+                    QrCodes = qrs,
+                    SnapshottedAt = DateTimeOffset.UtcNow
+                }, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+
+                await _orgFeeRepository.CreateTuitionInvoiceAsync(new Invoice
+                {
+                    Id = invoiceId,
+                    TenantId = tenantId,
+                    OrganizationId = organizationId,
+                    BranchId = branchId,
+                    ChildId = childId,
+                    ContractId = contractId,
+                    InvoiceNumber = invoiceNum,
+                    BillingPeriod = request.StartDate.ToString("yyyy-MM"),
+                    Subtotal = totalInvoiceAmount,
+                    TotalAmount = totalInvoiceAmount,
+                    Currency = contract.Currency,
+                    Status = InvoiceStatus.Issued,
+                    FeeMethod = contract.FeeMethod,
+                    FeePlanName = contract.FeeMethod == FeeMethods.FlatRate ? $"Flat-Rate ({contract.FeePeriod})" : "Tariff-Based Tuition",
+                    IssueDate = DateTimeOffset.UtcNow,
+                    DueDate = DateTimeOffset.UtcNow.AddDays(14),
+                    CreatedBy = "Enrollment Pipeline",
+                    Description = $"Admissions Fee ({contract.FeeMethod}) — {app.ChildFullName}",
+                    Notes = contract.Remarks ?? $"Registration & Enrollment Fee for {app.ChildFullName}",
+                    PaymentInstructions = bank?.AdditionalInstructions,
+                    PaymentInstructionsSnapshot = snapJson,
+                    BillingContactEmail = app.ParentEmail,
+                    LineItems = new List<InvoiceLineItem>
+                    {
+                        new()
+                        {
+                            Id = Guid.NewGuid(),
+                            LineNumber = 1,
+                            Description = contract.FeeMethod == FeeMethods.FlatRate
+                                ? $"Agreed Flat-Rate Fee ({contract.FeePeriod}) — {app.ChildFullName}"
+                                : $"Admissions Enrollment Packet — {app.ChildFullName}",
+                            Quantity = 1,
+                            UnitPrice = totalInvoiceAmount,
+                            Category = contract.FeeMethod == FeeMethods.FlatRate ? "FlatRateFee" : "Tuition"
+                        }
+                    }
+                }, null, ct);
+            }
+            else
+            {
+                await _repository.CreateInitialTuitionInvoiceAsync(
+                    invoiceId,
+                    tenantId,
+                    organizationId,
+                    invoiceNum,
+                    totalInvoiceAmount,
+                    $"Admissions Enrollment Packet for {app.ChildFullName}",
+                    $"Registration Fee: {app.RegistrationFee:C2}, Held Tuition Deposit: {request.DepositHeld:C2}. Primary Guardian: {app.ParentGuardianName}",
+                    ct);
+            }
         }
 
         // 4. Mark application as Enrolled

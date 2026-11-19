@@ -161,6 +161,24 @@ public class ExperienceMarketplaceRepository : IExperienceMarketplaceRepository
             cancellationToken: ct);
     }
 
+    public async Task<(bool Deleted, string? BlockingReason)> DeletePlatformExperienceAsync(Guid id, CancellationToken ct = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(ct);
+        var result = await connection.QuerySingleFunctionAsync<DeletePlatformExperienceResult>(
+            "fn_delete_platform_experience",
+            new { Id = id },
+            cancellationToken: ct);
+        return result == null
+            ? (false, "Unable to delete platform experience.")
+            : (result.Deleted, result.BlockingReason);
+    }
+
+    private sealed class DeletePlatformExperienceResult
+    {
+        public bool Deleted { get; set; }
+        public string? BlockingReason { get; set; }
+    }
+
     public async Task<PlatformExperienceVersion> AddPlatformVersionAsync(PlatformExperienceVersion version, CancellationToken ct = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(ct);

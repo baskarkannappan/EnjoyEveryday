@@ -525,6 +525,18 @@ public class ExperienceMarketplaceAndHarvestingTests
             return Task.CompletedTask;
         }
 
+        public Task<(bool Deleted, string? BlockingReason)> DeletePlatformExperienceAsync(Guid id, CancellationToken ct = default)
+        {
+            if (!PlatformExperiences.ContainsKey(id))
+                return Task.FromResult<(bool, string?)>((false, "Platform experience not found."));
+
+            if (Orders.Any(o => o.PlatformExperienceId == id) || Entitlements.Values.Any(e => e.PlatformExperienceId == id))
+                return Task.FromResult<(bool, string?)>((false, "This experience has existing organization orders or entitlements and cannot be deleted. Use Discontinue instead."));
+
+            PlatformExperiences.Remove(id);
+            return Task.FromResult<(bool, string?)>((true, null));
+        }
+
         public Task<PlatformExperienceVersion> AddPlatformVersionAsync(PlatformExperienceVersion version, CancellationToken ct = default)
         {
             Versions.Add(version);

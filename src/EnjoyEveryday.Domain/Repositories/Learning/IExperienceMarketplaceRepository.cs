@@ -24,6 +24,7 @@ public interface IExperienceMarketplaceRepository
     Task<IEnumerable<PlatformExperience>> GetMarketplaceCatalogAsync(string? category = null, string? pricingModel = null, string? searchQuery = null, CancellationToken ct = default);
     Task<IEnumerable<PlatformExperience>> GetAllPlatformExperiencesAsync(CancellationToken ct = default);
     Task UpdatePlatformExperienceAsync(PlatformExperience experience, CancellationToken ct = default);
+    Task<(bool Deleted, string? BlockingReason)> DeletePlatformExperienceAsync(Guid id, CancellationToken ct = default);
 
     // Platform Versions
     Task<PlatformExperienceVersion> AddPlatformVersionAsync(PlatformExperienceVersion version, CancellationToken ct = default);

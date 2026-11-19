@@ -15,6 +15,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IBranchOperationalStatusService, BranchOperationalStatusService>();
         services.AddScoped<SystemProvisioningService>();
         services.AddScoped<ClassroomService>();
+        services.AddScoped<IClassroomService>(sp => sp.GetRequiredService<ClassroomService>());
         services.AddScoped<UserService>();
         services.AddScoped<ChildService>();
         services.AddScoped<ExperienceService>();
@@ -109,6 +110,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<EnjoyEveryday.Application.Services.PlatformAdmin.PlatformHealthCheckService>();
         services.AddScoped<IBillingService, BillingService>();
         services.AddScoped<BillingService>();
+        services.AddScoped<IOrgFeeManagementService, OrgFeeManagementService>();
+        services.AddScoped<OrgFeeManagementService>();
         services.AddScoped<IMaterialMarketplaceService, MaterialMarketplaceService>();
         services.AddScoped<MaterialMarketplaceService>();
         services.AddScoped<IAccountBookService, AccountBookService>();

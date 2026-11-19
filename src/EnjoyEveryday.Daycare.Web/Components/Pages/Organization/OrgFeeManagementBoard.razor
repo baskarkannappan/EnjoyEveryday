@@ -1,0 +1,1004 @@
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.Shared.Tenancy
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
+@using Microsoft.AspNetCore.Components.Forms
+
+@inject IOrgFeeManagementService FeeService
+@inject IBranchRepository BranchRepo
+@inject ClassroomService ClassroomService
+@inject IChildRepository ChildRepo
+@inject ITenantContext TenantContext
+@inject IUserContext UserContext
+@inject ICurrencyService CurrencyService
+
+<div class="ee-fee-board">
+    <PageHero Eyebrow="FINANCE &amp; FEE MANAGEMENT"
+              Title="Fee Plans, Tariffs &amp; Parent Invoicing"
+              Subtitle="Configure organization tariff rules, assign flat-rate agreements, issue child invoices with installment schedules, and verify parent payments.">
+        <RightContent>
+            @if (_branches.Any())
+            {
+                <select class="ee-select" value="@(_selectedBranchId?.ToString() ?? "")" @onchange="OnBranchFilterChanged">
+                    @if (_isOrgAdmin)
+                    {
+                        <option value="">All Branches (Organization Wide)</option>
+                    }
+                    @foreach (var b in _branches)
+                    {
+                        <option value="@b.Id">@b.Name</option>
+                    }
+                </select>
+            }
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_bannerMessage))
+    {
+        <div class="ee-banner @(_bannerSuccess ? "ee-banner-ok" : "ee-banner-err")">
+            <span>@(_bannerSuccess ? "✓" : "⚠️") @_bannerMessage</span>
+            <button type="button" class="ee-close-btn" @onclick="() => _bannerMessage = null">✕</button>
+        </div>
+    }
+
+    <div class="ee-tabs">
+        <button class="ee-tab @(_activeTab == "Overview" ? "active" : "")" @onclick='() => _activeTab = "Overview"'>Overview &amp; Reports</button>
+        <button class="ee-tab @(_activeTab == "Plans" ? "active" : "")" @onclick='() => _activeTab = "Plans"'>Fee Plans &amp; Tariffs</button>
+        <button class="ee-tab @(_activeTab == "ChildFees" ? "active" : "")" @onclick='() => _activeTab = "ChildFees"'>Child Fees &amp; Flat-Rate</button>
+        <button class="ee-tab @(_activeTab == "Invoices" ? "active" : "")" @onclick='() => _activeTab = "Invoices"'>Invoices &amp; Installments</button>
+        <button class="ee-tab @(_activeTab == "Verify" ? "active" : "")" @onclick='() => _activeTab = "Verify"'>
+            Verification Queue (@_paymentsQueue.Count(p => p.Status == PaymentStatus.PendingVerification))
+        </button>
+        @if (_isOrgAdmin)
+        {
+            <button class="ee-tab @(_activeTab == "BankQr" ? "active" : "")" @onclick='() => _activeTab = "BankQr"'>Bank &amp; QR Settings</button>
+        }
+    </div>
+
+    @if (_isLoading)
+    {
+        <LoadingState Message="Loading financial workspace..." />
+    }
+    else if (_activeTab == "Overview")
+    {
+        <div class="ee-kpi-grid">
+            <div class="ee-card">
+                <span class="ee-kpi-label">TOTAL INVOICED</span>
+                <div class="ee-kpi-val">@CurrencyService.Format(_dashboard.TotalInvoiced, "INR")</div>
+            </div>
+            <div class="ee-card">
+                <span class="ee-kpi-label">VERIFIED COLLECTIONS</span>
+                <div class="ee-kpi-val" style="color: var(--accent-dark, #31523c);">@CurrencyService.Format(_dashboard.TotalVerifiedCollections, "INR")</div>
+            </div>
+            <div class="ee-card">
+                <span class="ee-kpi-label">OUTSTANDING BALANCE</span>
+                <div class="ee-kpi-val">@CurrencyService.Format(_dashboard.TotalOutstanding, "INR")</div>
+            </div>
+            <div class="ee-card">
+                <span class="ee-kpi-label">AWAITING VERIFICATION</span>
+                <div class="ee-kpi-val" style="color: #b7791f;">@CurrencyService.Format(_dashboard.TotalPendingVerification, "INR")</div>
+                <span class="ee-muted">@_dashboard.AwaitingVerificationCount submission(s)</span>
+            </div>
+        </div>
+
+        <div class="ee-two-col">
+            <div class="ee-card">
+                <h4 class="ee-section-title">Fee Method Summary</h4>
+                <div class="ee-stat-row"><span>Tariff-Based Invoiced</span><strong>@CurrencyService.Format(_dashboard.TariffBasedInvoiced, "INR")</strong></div>
+                <div class="ee-stat-row"><span>Flat-Rate Invoiced</span><strong>@CurrencyService.Format(_dashboard.FlatRateInvoiced, "INR")</strong></div>
+                <div class="ee-stat-row"><span>Partially Paid Invoices</span><strong>@_dashboard.PartiallyPaidCount</strong></div>
+                <div class="ee-stat-row"><span>Overdue Invoices</span><strong style="color: #9b2c2c;">@_dashboard.OverdueCount</strong></div>
+            </div>
+            <div class="ee-card">
+                <h4 class="ee-section-title">Verified Collections by Payment Method</h4>
+                <div class="ee-stat-row"><span>QR Code Payments</span><strong>@CurrencyService.Format(_dashboard.QrCollected, "INR")</strong></div>
+                <div class="ee-stat-row"><span>Bank Transfers</span><strong>@CurrencyService.Format(_dashboard.BankTransferCollected, "INR")</strong></div>
+                <div class="ee-stat-row"><span>Cash Payments</span><strong>@CurrencyService.Format(_dashboard.CashCollected, "INR")</strong></div>
+            </div>
+        </div>
+    }
+    else if (_activeTab == "Plans")
+    {
+        <div class="ee-two-col">
+            <div class="ee-card">
+                <h4 class="ee-section-title">Organization Fee Plans</h4>
+                @if (_isOrgAdmin)
+                {
+                    <div class="ee-form-stack">
+                        <input class="ee-input" placeholder="Plan Name (e.g., Standard Daycare Tuition)" @bind="_planForm.Name" />
+                        <div class="ee-row-2">
+                            <input class="ee-input" placeholder="Category (Tuition, Transport, Meals)" @bind="_planForm.FeeCategory" />
+                            <select class="ee-select" @bind="_planForm.BillingFrequency">
+                                <option value="@FeeBillingFrequencies.Monthly">Monthly</option>
+                                <option value="@FeeBillingFrequencies.Quarterly">Quarterly</option>
+                                <option value="@FeeBillingFrequencies.HalfYearly">Half-Yearly</option>
+                                <option value="@FeeBillingFrequencies.Yearly">Yearly</option>
+                                <option value="@FeeBillingFrequencies.OneTime">One-Time</option>
+                            </select>
+                        </div>
+                        <input class="ee-input" placeholder="Description" @bind="_planForm.Description" />
+                        <div class="ee-row-2">
+                            <label class="ee-check"><input type="checkbox" @bind="_planForm.AllowPartialPayment" /> Allow Partial Payment</label>
+                            <label class="ee-check"><input type="checkbox" @bind="_planForm.AllowParentCashDeclaration" /> Allow Cash Declaration</label>
+                        </div>
+                        <button class="primary" @onclick="SaveFeePlanAsync">+ Save Fee Plan</button>
+                    </div>
+                }
+
+                <div class="ee-list">
+                    @foreach (var p in _feePlans)
+                    {
+                        <div class="ee-list-item">
+                            <div>
+                                <strong>@p.Name</strong> <span class="ee-badge">@p.BillingFrequency • @p.FeeCategory</span>
+                                <div class="ee-muted">@p.Description</div>
+                            </div>
+                            @if (_isOrgAdmin)
+                            {
+                                <button class="secondary" @onclick="() => ToggleFeePlanAsync(p)">@(p.IsActive ? "Deactivate" : "Activate")</button>
+                            }
+                        </div>
+                    }
+                </div>
+                }
+            </div>
+
+            <div class="ee-card">
+                <h4 class="ee-section-title">Tariff Rules (Precedence: Child &gt; Classroom &gt; Branch &gt; Location Tier &gt; Org Default)</h4>
+                @if (_isOrgAdmin)
+                {
+                <div class="ee-form-stack">
+                    <select class="ee-select" @bind="_ruleForm.FeePlanId">
+                        <option value="@Guid.Empty">Select Fee Plan *</option>
+                        @foreach (var p in _feePlans.Where(x => x.IsActive))
+                        {
+                            <option value="@p.Id">@p.Name (@p.BillingFrequency)</option>
+                        }
+                    </select>
+                    <div class="ee-row-2">
+                        <select class="ee-select" @bind="_ruleForm.ScopeType">
+                            <option value="@TariffScopeTypes.OrgDefault">5. Organization Default</option>
+                            <option value="@TariffScopeTypes.LocationTier">4. Location Tier (Tier 1/2/3)</option>
+                            <option value="@TariffScopeTypes.Branch">3. Branch Specific</option>
+                            <option value="@TariffScopeTypes.Classroom">2. Classroom Specific</option>
+                            <option value="@TariffScopeTypes.Child">1. Child Specific Agreement</option>
+                        </select>
+                        <input type="number" step="0.01" class="ee-input" placeholder="Amount *" @bind="_ruleForm.Amount" />
+                    </div>
+                    @if (_ruleForm.ScopeType == TariffScopeTypes.LocationTier)
+                    {
+                        <input class="ee-input" placeholder="Location Tier (e.g., Tier 1, Tier 2, Tier 3)" @bind="_ruleForm.LocationTier" />
+                    }
+                    @if (_ruleForm.ScopeType is TariffScopeTypes.Branch or TariffScopeTypes.Classroom)
+                    {
+                        <select class="ee-select" @bind="_ruleForm.BranchId">
+                            <option value="">Select Branch</option>
+                            @foreach (var b in _branches)
+                            {
+                                <option value="@b.Id">@b.Name</option>
+                            }
+                        </select>
+                    }
+                    @if (_ruleForm.ScopeType == TariffScopeTypes.Classroom)
+                    {
+                        <select class="ee-select" @bind="_ruleForm.ClassroomId">
+                            <option value="">Select Classroom</option>
+                            @foreach (var c in _classrooms)
+                            {
+                                <option value="@c.Id">@c.Name</option>
+                            }
+                        </select>
+                    }
+                    @if (_ruleForm.ScopeType == TariffScopeTypes.Child)
+                    {
+                        <select class="ee-select" @bind="_ruleForm.ChildId">
+                            <option value="">Select Child</option>
+                            @foreach (var ch in _children)
+                            {
+                                <option value="@ch.Id">@ch.FirstName @ch.LastName</option>
+                            }
+                        </select>
+                    }
+                    <div class="ee-row-2">
+                        <input type="date" class="ee-input" @bind="_ruleForm.EffectiveDate" />
+                        <input type="date" class="ee-input" @bind="_ruleForm.ExpiryDate" />
+                    </div>
+                    <button class="primary" @onclick="SaveTariffRuleAsync">+ Add Tariff Rule</button>
+                </div>
+                }
+                else
+                {
+                    <p class="ee-muted" style="margin-bottom: 10px;">Read-only view: Only Organization Admins can define tariff layer plans and prices.</p>
+                }
+
+                <div class="ee-list">
+                    @foreach (var r in _tariffRules)
+                    {
+                        <div class="ee-list-item">
+                            <div>
+                                <strong>@r.PlanName</strong> — @CurrencyService.Format(r.Amount, r.Currency)
+                                <span class="ee-badge">@r.ScopeType</span>
+                                <div class="ee-muted">
+                                    @(!string.IsNullOrWhiteSpace(r.LocationTier) ? $"Tier: {r.LocationTier} • " : "")
+                                    @(!string.IsNullOrWhiteSpace(r.BranchName) ? $"Branch: {r.BranchName} • " : "")
+                                    @(!string.IsNullOrWhiteSpace(r.ClassroomName) ? $"Room: {r.ClassroomName} • " : "")
+                                    @(!string.IsNullOrWhiteSpace(r.ChildName) ? $"Child: {r.ChildName} • " : "")
+                                    Effective @r.EffectiveDate.ToString("d MMM yyyy")
+                                </div>
+                            </div>
+                            @if (_isOrgAdmin)
+                            {
+                                <button class="secondary" @onclick="() => ToggleTariffRuleAsync(r)">@(r.IsActive ? "Disable" : "Enable")</button>
+                            }
+                        </div>
+                    }
+                </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_activeTab == "ChildFees")
+    {
+        <div class="ee-two-col">
+            <div class="ee-card">
+                <h4 class="ee-section-title">Assign Child Fee (Tariff-Based or Flat-Rate)</h4>
+                <div class="ee-form-stack">
+                    <select class="ee-select" value="@_assignForm.ChildId" @onchange="OnAssignChildSelectedAsync">
+                        <option value="@Guid.Empty">Select Child *</option>
+                        @foreach (var ch in _children)
+                        {
+                            <option value="@ch.Id">@ch.FirstName @ch.LastName</option>
+                        }
+                    </select>
+                    <div class="ee-row-2">
+                        <select class="ee-select" @bind="_assignForm.FeeMethod">
+                            <option value="@FeeMethods.TariffBased">Tariff-Based Fee</option>
+                            <option value="@FeeMethods.FlatRate">Flat-Rate Fee (Agreed Amount)</option>
+                        </select>
+                        <select class="ee-select" @bind="_assignForm.FeePeriod">
+                            <option value="@FeeBillingFrequencies.Monthly">Monthly</option>
+                            <option value="@FeeBillingFrequencies.Quarterly">Quarterly</option>
+                            <option value="@FeeBillingFrequencies.HalfYearly">Half-Yearly</option>
+                            <option value="@FeeBillingFrequencies.Yearly">Yearly</option>
+                            <option value="@FeeBillingFrequencies.OneTime">One-Time</option>
+                        </select>
+                    </div>
+                    <div class="ee-row-2">
+                        <input type="number" step="0.01" class="ee-input" placeholder="Agreed / Calculated Amount *" @bind="_assignForm.AgreedAmount" />
+                        <select class="ee-select" @bind="_assignForm.PaymentArrangement">
+                            <option value="@PaymentArrangements.Full">Full Payment</option>
+                            <option value="@PaymentArrangements.PartialAllowed">Partial Payment Allowed</option>
+                            <option value="@PaymentArrangements.Installments">Installment Arrangement</option>
+                        </select>
+                    </div>
+                    <input class="ee-input" placeholder="Remarks / Agreement Notes" @bind="_assignForm.Remarks" />
+                    <div class="ee-row-2">
+                        <button type="button" class="secondary" @onclick="PreviewChildTariffAsync">Resolve Tariff Rule</button>
+                        <button type="button" class="primary" @onclick="AssignChildFeeAsync">Save Fee Assignment</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ee-card">
+                <h4 class="ee-section-title">Child Fee Contracts &amp; Adjustment Audit History</h4>
+                @if (_selectedChildContracts.Any())
+                {
+                    @foreach (var c in _selectedChildContracts)
+                    {
+                        <div class="ee-list-item" style="flex-direction: column; align-items: stretch; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <strong>@c.FeeMethod (@c.FeePeriod) — @CurrencyService.Format(c.EffectiveRate, c.Currency)</strong>
+                                <span class="ee-badge">@c.PaymentArrangement</span>
+                            </div>
+                            <div class="ee-muted">@c.Remarks</div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="number" step="0.01" class="ee-input" style="max-width: 140px;" placeholder="New Flat Rate" @bind="_adjustAmount" />
+                                <input class="ee-input" placeholder="Reason for adjustment *" @bind="_adjustReason" />
+                                <button class="secondary" @onclick="() => AdjustFlatRateAsync(c.Id)">Adjust</button>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="ee-muted">Select a child on the left to inspect contracts and fee adjustment history.</p>
+                }
+
+                @if (_selectedChildAdjustments.Any())
+                {
+                    <h5 style="margin: 12px 0 6px;">Audit Trail</h5>
+                    @foreach (var adj in _selectedChildAdjustments)
+                    {
+                        <div class="ee-stat-row">
+                            <span>@adj.EffectiveDate.ToString("d MMM yyyy"): @CurrencyService.Format(adj.PreviousAmount, "INR") → @CurrencyService.Format(adj.NewAmount, "INR") (@adj.Reason)</span>
+                            <span class="ee-muted">@adj.AdjustedByEmail</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+    else if (_activeTab == "Invoices")
+    {
+        <div class="ee-two-col">
+            <div class="ee-card">
+                <h4 class="ee-section-title">Generate Child Invoice</h4>
+                <div class="ee-form-stack">
+                    <div>
+                        <label class="ee-muted">Child *</label>
+                        <select class="ee-select" value="@_invoiceForm.ChildId" @onchange="OnInvoiceChildSelectedAsync">
+                            <option value="@Guid.Empty">Select Child *</option>
+                            @foreach (var ch in _children)
+                            {
+                                <option value="@ch.Id">@ch.FirstName @ch.LastName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="ee-row-2">
+                        <div>
+                            <label class="ee-muted">Fee Method</label>
+                            <select class="ee-select" @bind="_invoiceForm.FeeMethod">
+                                <option value="@FeeMethods.TariffBased">Tariff-Based</option>
+                                <option value="@FeeMethods.FlatRate">Flat-Rate</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="ee-muted">Invoice Amount *</label>
+                            <input type="number" step="0.01" class="ee-input" placeholder="Amount" @bind="_invoiceForm.Amount" />
+                        </div>
+                    </div>
+                    <div class="ee-row-2">
+                        <div>
+                            <label class="ee-muted">Billing Period</label>
+                            <input class="ee-input" placeholder="e.g., 2026-11" @bind="_invoiceForm.BillingPeriod" />
+                        </div>
+                        <div>
+                            <label class="ee-muted">Invoice Due Date *</label>
+                            <input type="date" class="ee-input" @bind="_invoiceDueDate" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="ee-muted">Description</label>
+                        <input class="ee-input" placeholder="Description (e.g., Monthly Tuition)" @bind="_invoiceForm.Description" />
+                    </div>
+
+                    <div style="padding: 10px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border); border-radius: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <label class="ee-check">
+                                <input type="checkbox" @bind="_enableInstallments" @bind:after="RebuildInstallmentRows" />
+                                <strong>Configure Installment Schedule</strong>
+                            </label>
+                            @if (_enableInstallments)
+                            {
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span class="ee-muted">Count:</span>
+                                    <input type="number" min="2" max="12" class="ee-input" style="width: 68px; padding: 4px 6px;" @bind="_installmentCount" @bind:after="RebuildInstallmentRows" />
+                                </div>
+                            }
+                        </div>
+                        @if (_enableInstallments && _installmentRows.Any())
+                        {
+                            <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">
+                                @foreach (var row in _installmentRows)
+                                {
+                                    <div style="display: grid; grid-template-columns: 42px 1fr 1fr; gap: 6px; align-items: center;">
+                                        <span class="ee-badge">#@row.InstallmentNumber</span>
+                                        <input type="number" step="0.01" class="ee-input" @bind="row.AmountDue" />
+                                        <input type="date" class="ee-input" @bind="row.DueDate" />
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="ee-row-2">
+                        <button class="secondary" @onclick="() => GenerateInvoiceAsync(true)">Save as Draft</button>
+                        <button class="primary" @onclick="() => GenerateInvoiceAsync(false)">Publish Invoice</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ee-card">
+                <h4 class="ee-section-title">Child Tuition Invoices (@_tuitionInvoices.Count)</h4>
+                @if (!_tuitionInvoices.Any())
+                {
+                    <p class="ee-muted">No child tuition invoices generated yet. Select a child on the left to save a draft or publish an invoice.</p>
+                }
+                else
+                {
+                <div class="ee-list">
+                    @foreach (var inv in _tuitionInvoices)
+                    {
+                        <div class="ee-list-item" style="flex-direction: column; align-items: stretch; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <div>
+                                    <strong>#@inv.InvoiceNumber</strong> • @inv.ChildName
+                                    <span class="ee-badge">@inv.Status</span>
+                                </div>
+                                <strong>@CurrencyService.Format(inv.EffectivePayableAmount, inv.Currency)</strong>
+                            </div>
+                            <div class="ee-muted">
+                                @inv.BranchName • Paid: @CurrencyService.Format(inv.AmountPaid, inv.Currency) • Pending Verify: @CurrencyService.Format(inv.PendingVerificationAmount, inv.Currency) • Due: @CurrencyService.Format(inv.BalanceDue, inv.Currency)
+                            </div>
+                            @if (inv.Status == InvoiceStatus.Draft)
+                            {
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <button class="primary" @onclick="() => PublishInvoiceAsync(inv)">Publish Invoice</button>
+                                    <button class="secondary" style="color: #9b2c2c;" @onclick="() => CancelInvoiceAsync(inv)">Cancel Draft</button>
+                                </div>
+                            }
+                            else if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Cancelled && inv.Status != InvoiceStatus.Void)
+                            {
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <button class="secondary" @onclick="() => OpenCashModal(inv)">+ Record Cash</button>
+                                    <button class="secondary" @onclick="() => QuickWaiveAsync(inv)">Apply Waiver/Credit</button>
+                                    @if (inv.AmountPaid == 0)
+                                    {
+                                        <button class="secondary" style="color: #9b2c2c;" @onclick="() => CancelInvoiceAsync(inv)">Cancel</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_activeTab == "Verify")
+    {
+        <div class="ee-card">
+            <h4 class="ee-section-title">Manual Payment Verification Queue</h4>
+            @if (!_paymentsQueue.Any())
+            {
+                <p class="ee-muted">No payment submissions recorded yet.</p>
+            }
+            else
+            {
+                <div class="ee-list">
+                    @foreach (var p in _paymentsQueue)
+                    {
+                        <div class="ee-list-item" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong>@p.ChildName</strong> • Invoice #@p.InvoiceNumber • <span class="ee-badge">@p.Method</span>
+                                    <span class="ee-badge">@p.Status</span>
+                                </div>
+                                <strong style="font-size: 16px;">@CurrencyService.Format(p.Amount, p.Currency)</strong>
+                            </div>
+                            <div class="ee-muted">
+                                Parent: @p.ParentEmail • Branch: @p.BranchName • Txn ID: @(p.TransactionId ?? p.PaymentReference) • Date: @p.PaymentDate.ToString("d MMM yyyy")
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(p.Notes))
+                            {
+                                <div class="ee-muted">Notes: @p.Notes</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(p.ProofStorageKey))
+                            {
+                                <div>
+                                    <img src="@p.ProofStorageKey" alt="Payment Proof" style="max-height: 120px; border-radius: 8px; border: 1px solid var(--border);" />
+                                </div>
+                            }
+                            @if (p.Status == PaymentStatus.PendingVerification)
+                            {
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <input class="ee-input" placeholder="Verification remarks or rejection reason" @bind="_verifyRemarks" />
+                                    <button class="primary" @onclick="() => VerifyPaymentAsync(p.Id)">Verify Payment</button>
+                                    <button class="secondary" style="color: #9b2c2c;" @onclick="() => RejectPaymentAsync(p.Id)">Reject</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (_activeTab == "BankQr" && _isOrgAdmin)
+    {
+        <div class="ee-two-col">
+            <div class="ee-card">
+                <h4 class="ee-section-title">Organization Bank Account &amp; Payment Rules</h4>
+                <div class="ee-form-stack">
+                    <input class="ee-input" placeholder="Account Holder Name" @bind="_bankForm.AccountHolderName" />
+                    <div class="ee-row-2">
+                        <input class="ee-input" placeholder="Bank Name" @bind="_bankForm.BankName" />
+                        <input class="ee-input" placeholder="Branch Name" @bind="_bankForm.BranchName" />
+                    </div>
+                    <div class="ee-row-2">
+                        <input class="ee-input" placeholder="Account Number" @bind="_bankForm.AccountNumber" />
+                        <input class="ee-input" placeholder="IFSC Code" @bind="_bankForm.IfscCode" />
+                    </div>
+                    <div class="ee-row-2">
+                        <input class="ee-input" placeholder="MICR Code" @bind="_bankForm.MicrCode" />
+                        <input class="ee-input" placeholder="Account Type (Current/Savings)" @bind="_bankForm.AccountType" />
+                    </div>
+                    <input class="ee-input" placeholder="Additional Payment Instructions" @bind="_bankForm.AdditionalInstructions" />
+                    <div class="ee-row-2">
+                        <label class="ee-check"><input type="checkbox" @bind="_bankForm.AllowParentCashDeclaration" /> Allow Parent Cash Declaration</label>
+                        <label class="ee-check"><input type="checkbox" @bind="_bankForm.RequirePaymentProof" /> Require Payment Proof Screenshot</label>
+                    </div>
+                    <button class="primary" @onclick="SaveBankAccountAsync">Save Bank Settings</button>
+                </div>
+            </div>
+
+            <div class="ee-card">
+                <h4 class="ee-section-title">Organization Payment QR Codes (Up to 3 Slots)</h4>
+                <div class="ee-form-stack">
+                    <div class="ee-row-2">
+                        <select class="ee-select" @bind="_qrSlot">
+                            <option value="1">QR Slot 1</option>
+                            <option value="2">QR Slot 2</option>
+                            <option value="3">QR Slot 3</option>
+                        </select>
+                        <input class="ee-input" placeholder="Display Name (e.g., Main UPI QR)" @bind="_qrDisplayName" />
+                    </div>
+                    <input class="ee-input" placeholder="Payment Purpose (e.g., Tuition &amp; Admission Fees)" @bind="_qrPurpose" />
+                    <InputFile OnChange="OnQrFileSelectedAsync" accept="image/*" />
+                    <button class="primary" @onclick="SaveQrCodeAsync">Save QR Code to Slot @_qrSlot</button>
+                </div>
+
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px;">
+                    @foreach (var qr in _qrCodes)
+                    {
+                        <div style="border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; width: 155px;">
+                            <div class="ee-badge">Slot @qr.SlotIndex</div>
+                            <img src="@qr.QrImageDataUri" alt="@qr.DisplayName" style="width: 110px; height: 110px; object-fit: contain; margin: 6px 0;" />
+                            <div style="font-weight: 700; font-size: 12px;">@qr.DisplayName</div>
+                            <button class="secondary" style="margin-top: 6px; font-size: 11px;" @onclick="() => DeleteQrAsync(qr.SlotIndex)">Remove</button>
+                        </div>
+                    }
+                </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@if (_cashInvoice != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(38,51,45,0.45); display: flex; align-items: center; justify-content: center; z-index: 1200;">
+        <div class="ee-card" style="width: 420px; max-width: 92vw;">
+            <h4 class="ee-section-title">Record Direct Cash Payment — #@_cashInvoice.InvoiceNumber</h4>
+            <div class="ee-form-stack">
+                <input type="number" step="0.01" class="ee-input" @bind="_cashRequest.Amount" />
+                <input class="ee-input" placeholder="Receipt Number (auto if blank)" @bind="_cashRequest.ReceiptNumber" />
+                <input class="ee-input" placeholder="Remarks" @bind="_cashRequest.Remarks" />
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                    <button class="secondary" @onclick="() => _cashInvoice = null">Cancel</button>
+                    <button class="primary" @onclick="SubmitCashPaymentAsync">Confirm Cash Receipt</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .ee-fee-board { display: flex; flex-direction: column; gap: 16px; }
+    .ee-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--border, #e4e7df); padding-bottom: 8px; }
+    .ee-tab { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); padding: 8px 14px; cursor: pointer; font-weight: 600; color: var(--text, #26332d); }
+    .ee-tab.active { background: var(--accent-dark, #31523c); color: #fff; border-color: var(--accent-dark, #31523c); }
+    .ee-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+    .ee-two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+    .ee-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 18px; }
+    .ee-kpi-label { font-size: 11px; font-weight: 700; color: var(--muted, #6c7870); letter-spacing: 0.4px; }
+    .ee-kpi-val { font-size: 24px; font-weight: 800; color: var(--text, #26332d); margin-top: 4px; }
+    .ee-section-title { margin: 0 0 12px 0; font-size: 15px; font-weight: 750; color: var(--text, #26332d); }
+    .ee-stat-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--border, #e4e7df); font-size: 13px; }
+    .ee-form-stack { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .ee-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .ee-input, .ee-select { padding: 8px 10px; border: 1px solid var(--border, #e4e7df); background: var(--surface-soft, #f8f9f5); color: var(--text, #26332d); font-size: 13px; width: 100%; }
+    .ee-check { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text, #26332d); }
+    .ee-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
+    .ee-list-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 10px; }
+    .ee-badge { display: inline-block; padding: 2px 7px; font-size: 11px; font-weight: 700; border-radius: 6px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); border: 1px solid #c8dacd; }
+    .ee-muted { font-size: 12px; color: var(--muted, #6c7870); }
+    .ee-banner { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-size: 13px; }
+    .ee-banner-ok { background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #31523c); }
+    .ee-banner-err { background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; }
+    .ee-close-btn { background: none; border: none; cursor: pointer; font-size: 14px; }
+</style>
+
+@code {
+    private string _activeTab = "Overview";
+    private bool _isLoading = true;
+    private bool _isOrgAdmin;
+    private Guid? _selectedBranchId;
+    private string? _bannerMessage;
+    private bool _bannerSuccess = true;
+
+    private List<Branch> _branches = new();
+    private List<Classroom> _classrooms = new();
+    private List<Child> _children = new();
+    private OrgFeeDashboardSummary _dashboard = new();
+    private List<OrgFeePlan> _feePlans = new();
+    private List<OrgTariffRule> _tariffRules = new();
+    private List<Invoice> _tuitionInvoices = new();
+    private List<Payment> _paymentsQueue = new();
+
+    private UpsertFeePlanRequest _planForm = new();
+    private UpsertTariffRuleRequest _ruleForm = new();
+    private AssignChildFeeRequest _assignForm = new();
+    private List<FamilyBillingContract> _selectedChildContracts = new();
+    private List<ChildFeeAdjustment> _selectedChildAdjustments = new();
+    private decimal _adjustAmount;
+    private string _adjustReason = string.Empty;
+
+    private GenerateChildTuitionInvoiceRequest _invoiceForm = new() { BillingPeriod = DateTime.Today.ToString("yyyy-MM") };
+    private DateTime _invoiceDueDate = DateTime.Today.AddDays(14);
+    private bool _enableInstallments;
+    private int _installmentCount = 2;
+    private List<CreateInstallmentItemRequest> _installmentRows = new();
+
+    private string _verifyRemarks = string.Empty;
+    private Invoice? _cashInvoice;
+    private RecordDaycareCashPaymentRequest _cashRequest = new();
+
+    private OrgBankAccount _bankForm = new();
+    private List<OrgPaymentQrCode> _qrCodes = new();
+    private int _qrSlot = 1;
+    private string _qrDisplayName = string.Empty;
+    private string _qrPurpose = string.Empty;
+    private string _qrDataUri = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            var scope = await FeeService.GetCurrentFinancialScopeAsync();
+            _isOrgAdmin = scope.IsOrgAdmin;
+
+            var tenantId = TenantContext.TenantId;
+            var orgId = UserContext.OrganizationId ?? Guid.Empty;
+            if (orgId != Guid.Empty)
+            {
+                var allBranches = (await BranchRepo.GetByOrganizationIdAsync(tenantId, orgId)).ToList();
+                _branches = _isOrgAdmin ? allBranches : allBranches.Where(b => scope.AllowedBranchIds.Contains(b.Id)).ToList();
+                if (!_isOrgAdmin && !_selectedBranchId.HasValue && _branches.Any())
+                    _selectedBranchId = _branches[0].Id;
+
+                _classrooms = (await ClassroomService.GetClassroomsByOrganizationAsync(orgId)).ToList();
+                _children = (await ChildRepo.GetAllAsync(tenantId, orgId)).Where(c => c.IsActive).ToList();
+            }
+
+            _dashboard = await FeeService.GetDashboardSummaryAsync(_selectedBranchId);
+            _feePlans = await FeeService.GetFeePlansAsync();
+            _tariffRules = await FeeService.GetTariffRulesAsync();
+            _tuitionInvoices = await FeeService.GetOrgTuitionInvoicesAsync(_selectedBranchId);
+            _paymentsQueue = await FeeService.GetPaymentsQueueAsync(_selectedBranchId);
+
+            if (_isOrgAdmin)
+            {
+                _bankForm = await FeeService.GetBankAccountAsync() ?? new OrgBankAccount();
+                _qrCodes = await FeeService.GetQrCodesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            SetBanner(false, ex.Message);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task OnBranchFilterChanged(ChangeEventArgs e)
+    {
+        _selectedBranchId = Guid.TryParse(e.Value?.ToString(), out var bid) ? bid : null;
+        await LoadAllAsync();
+    }
+
+    private async Task SaveFeePlanAsync()
+    {
+        try
+        {
+            await FeeService.UpsertFeePlanAsync(_planForm);
+            _planForm = new();
+            _feePlans = await FeeService.GetFeePlansAsync();
+            SetBanner(true, "Fee plan saved.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task ToggleFeePlanAsync(OrgFeePlan p)
+    {
+        await FeeService.ToggleFeePlanActiveAsync(p.Id, !p.IsActive);
+        _feePlans = await FeeService.GetFeePlansAsync();
+    }
+
+    private async Task SaveTariffRuleAsync()
+    {
+        try
+        {
+            await FeeService.UpsertTariffRuleAsync(_ruleForm);
+            _ruleForm = new();
+            _tariffRules = await FeeService.GetTariffRulesAsync();
+            SetBanner(true, "Tariff rule saved.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task ToggleTariffRuleAsync(OrgTariffRule r)
+    {
+        await FeeService.ToggleTariffRuleActiveAsync(r.Id, !r.IsActive);
+        _tariffRules = await FeeService.GetTariffRulesAsync();
+    }
+
+    private async Task OnAssignChildSelectedAsync(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var cid))
+        {
+            _assignForm.ChildId = cid;
+            _selectedChildContracts = await FeeService.GetChildContractsAsync(cid);
+            _selectedChildAdjustments = await FeeService.GetChildFeeAdjustmentsAsync(cid);
+        }
+    }
+
+    private async Task PreviewChildTariffAsync()
+    {
+        try
+        {
+            var ch = _children.FirstOrDefault(x => x.Id == _assignForm.ChildId);
+            var branchId = _classrooms.FirstOrDefault(r => r.Id == ch?.ClassroomId)?.BranchId;
+            var res = await FeeService.ResolveChildTariffAsync(branchId, ch?.ClassroomId, ch?.Id, null, _assignForm.FeePeriod);
+            if (res == null)
+            {
+                SetBanner(false, "No matching tariff rule found for this child/branch/frequency.");
+                return;
+            }
+            _assignForm.AgreedAmount = res.Amount;
+            _assignForm.FeePlanId = res.FeePlanId;
+            _assignForm.TariffRuleId = res.RuleId;
+            SetBanner(true, $"Resolved tariff: {res.PlanName} ({res.ScopeType}) = {CurrencyService.Format(res.Amount, res.Currency)}");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task AssignChildFeeAsync()
+    {
+        try
+        {
+            await FeeService.AssignChildFeeAsync(_assignForm);
+            _selectedChildContracts = await FeeService.GetChildContractsAsync(_assignForm.ChildId);
+            SetBanner(true, "Child fee arrangement assigned.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task AdjustFlatRateAsync(Guid contractId)
+    {
+        try
+        {
+            await FeeService.AdjustChildFlatRateAsync(new AdjustChildFlatRateRequest
+            {
+                ContractId = contractId,
+                NewAmount = _adjustAmount,
+                Reason = _adjustReason
+            });
+            _adjustReason = string.Empty;
+            _selectedChildContracts = await FeeService.GetChildContractsAsync(_assignForm.ChildId);
+            _selectedChildAdjustments = await FeeService.GetChildFeeAdjustmentsAsync(_assignForm.ChildId);
+            SetBanner(true, "Flat-rate adjusted and logged in audit history.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task OnInvoiceChildSelectedAsync(ChangeEventArgs e)
+    {
+        if (!Guid.TryParse(e.Value?.ToString(), out var cid) || cid == Guid.Empty)
+        {
+            _invoiceForm.ChildId = Guid.Empty;
+            return;
+        }
+
+        _invoiceForm.ChildId = cid;
+        var ch = _children.FirstOrDefault(x => x.Id == cid);
+        var branchId = _classrooms.FirstOrDefault(r => r.Id == ch?.ClassroomId)?.BranchId;
+        _invoiceForm.BranchId = branchId;
+        if (string.IsNullOrWhiteSpace(_invoiceForm.BillingPeriod))
+            _invoiceForm.BillingPeriod = DateTime.Today.ToString("yyyy-MM");
+
+        var contracts = await FeeService.GetChildContractsAsync(cid);
+        var active = contracts.FirstOrDefault(c => string.Equals(c.Status, "Active", StringComparison.OrdinalIgnoreCase));
+        if (active != null)
+        {
+            _invoiceForm.ContractId = active.Id;
+            _invoiceForm.FeeMethod = active.FeeMethod;
+            _invoiceForm.Amount = active.EffectiveRate;
+            _invoiceForm.FeePlanName = $"{active.FeeMethod} ({active.FeePeriod})";
+            _invoiceForm.Description = $"{active.FeePeriod} Tuition — {ch?.FirstName} {ch?.LastName}".Trim();
+        }
+        else
+        {
+            var resolved = await FeeService.ResolveChildTariffAsync(branchId, ch?.ClassroomId, cid, null, null);
+            if (resolved != null)
+            {
+                _invoiceForm.ContractId = null;
+                _invoiceForm.FeeMethod = FeeMethods.TariffBased;
+                _invoiceForm.Amount = resolved.Amount;
+                _invoiceForm.FeePlanName = resolved.PlanName;
+                _invoiceForm.Description = $"{resolved.PlanName} ({resolved.BillingFrequency}) — {ch?.FirstName} {ch?.LastName}".Trim();
+            }
+        }
+
+        if (_enableInstallments) RebuildInstallmentRows();
+    }
+
+    private void RebuildInstallmentRows()
+    {
+        _installmentRows.Clear();
+        if (!_enableInstallments) return;
+
+        var count = Math.Clamp(_installmentCount, 2, 12);
+        var total = Math.Max(0m, _invoiceForm.Amount);
+        var per = count > 0 ? Math.Round(total / count, 2) : 0m;
+        decimal running = 0m;
+
+        for (int i = 1; i <= count; i++)
+        {
+            var amt = i == count ? Math.Max(0m, total - running) : per;
+            running += amt;
+            _installmentRows.Add(new CreateInstallmentItemRequest
+            {
+                InstallmentNumber = i,
+                AmountDue = amt,
+                DueDate = DateTime.Today.AddMonths(i - 1).AddDays(7)
+            });
+        }
+    }
+
+    private async Task GenerateInvoiceAsync(bool saveAsDraft)
+    {
+        try
+        {
+            _invoiceForm.SaveAsDraft = saveAsDraft;
+            _invoiceForm.DueDate = new DateTimeOffset(DateTime.SpecifyKind(_invoiceDueDate.Date, DateTimeKind.Utc), TimeSpan.Zero);
+            _invoiceForm.Installments = _enableInstallments
+                ? _installmentRows.Where(r => r.AmountDue > 0).ToList()
+                : new List<CreateInstallmentItemRequest>();
+            await FeeService.GenerateChildTuitionInvoiceAsync(_invoiceForm);
+            _invoiceForm = new() { BillingPeriod = DateTime.Today.ToString("yyyy-MM") };
+            _installmentRows.Clear();
+            _enableInstallments = false;
+            await LoadAllAsync();
+            SetBanner(true, saveAsDraft ? "Invoice saved as Draft." : "Tuition invoice published with bank/QR snapshot.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task PublishInvoiceAsync(Invoice inv)
+    {
+        try
+        {
+            var ok = await FeeService.PublishTuitionInvoiceAsync(inv.Id);
+            await LoadAllAsync();
+            SetBanner(ok, ok ? $"Invoice #{inv.InvoiceNumber} published to Parent Portal." : "Could not publish invoice.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private void OpenCashModal(Invoice inv)
+    {
+        _cashInvoice = inv;
+        _cashRequest = new RecordDaycareCashPaymentRequest { InvoiceId = inv.Id, Amount = inv.BalanceDue };
+    }
+
+    private async Task SubmitCashPaymentAsync()
+    {
+        try
+        {
+            await FeeService.RecordDirectCashPaymentAsync(_cashRequest);
+            _cashInvoice = null;
+            await LoadAllAsync();
+            SetBanner(true, "Cash payment recorded and verified.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task QuickWaiveAsync(Invoice inv)
+    {
+        try
+        {
+            var waiveAmt = Math.Min(inv.BalanceDue, 500m);
+            await FeeService.ApplyInvoiceAdjustmentAsync(new ApplyInvoiceAdjustmentRequest
+            {
+                InvoiceId = inv.Id,
+                AdjustmentType = "Credit",
+                AdjustmentAmount = waiveAmt,
+                Reason = "Authorized administrative fee adjustment"
+            });
+            await LoadAllAsync();
+            SetBanner(true, $"Applied adjustment of {CurrencyService.Format(waiveAmt, inv.Currency)}.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task CancelInvoiceAsync(Invoice inv)
+    {
+        try
+        {
+            await FeeService.CancelTuitionInvoiceAsync(inv.Id, "Cancelled by administrator");
+            await LoadAllAsync();
+            SetBanner(true, $"Invoice #{inv.InvoiceNumber} cancelled.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task VerifyPaymentAsync(Guid paymentId)
+    {
+        var res = await FeeService.VerifyPaymentAsync(paymentId, _verifyRemarks);
+        _verifyRemarks = string.Empty;
+        await LoadAllAsync();
+        SetBanner(res.Success, res.Message);
+    }
+
+    private async Task RejectPaymentAsync(Guid paymentId)
+    {
+        try
+        {
+            var res = await FeeService.RejectPaymentAsync(paymentId, string.IsNullOrWhiteSpace(_verifyRemarks) ? "Unmatched transaction reference" : _verifyRemarks);
+            _verifyRemarks = string.Empty;
+            await LoadAllAsync();
+            SetBanner(res.Success, res.Message);
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task SaveBankAccountAsync()
+    {
+        try
+        {
+            _bankForm = await FeeService.UpsertBankAccountAsync(_bankForm);
+            SetBanner(true, "Organization bank details saved.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task OnQrFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        using var stream = file.OpenReadStream(2 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        _qrDataUri = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}";
+    }
+
+    private async Task SaveQrCodeAsync()
+    {
+        try
+        {
+            await FeeService.UpsertQrCodeAsync(new OrgPaymentQrCode
+            {
+                SlotIndex = _qrSlot,
+                DisplayName = _qrDisplayName,
+                PaymentPurpose = _qrPurpose,
+                QrImageDataUri = _qrDataUri,
+                IsActive = true
+            });
+            _qrCodes = await FeeService.GetQrCodesAsync();
+            SetBanner(true, $"QR code saved in slot {_qrSlot}.");
+        }
+        catch (Exception ex) { SetBanner(false, ex.Message); }
+    }
+
+    private async Task DeleteQrAsync(int slot)
+    {
+        await FeeService.DeleteQrCodeAsync(slot);
+        _qrCodes = await FeeService.GetQrCodesAsync();
+    }
+
+    private void SetBanner(bool ok, string msg)
+    {
+        _bannerSuccess = ok;
+        _bannerMessage = msg;
+    }
+}

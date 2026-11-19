@@ -2,6 +2,7 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @inject IClassroomReadinessService ReadinessService
+@inject IOrgFeeManagementService FeeService
 @inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
 
 @if (IsOpen && Application != null)
@@ -68,6 +69,31 @@
                     </div>
                 </div>
 
+                <div class="form-row-2" style="margin-top: 8px; padding: 12px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 10px;">
+                    <div class="form-group">
+                        <label>Fee Assignment Method *</label>
+                        <select class="input-field" value="@EnrollContract.FeeMethod" @onchange="OnFeeMethodChanged">
+                            <option value="@FeeMethods.TariffBased">Tariff-Based Fee (Auto-Calculated)</option>
+                            <option value="@FeeMethods.FlatRate">Flat-Rate Fee (Directly Agreed Amount)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Payment Arrangement</label>
+                        <select class="input-field" @bind="EnrollContract.PaymentArrangement">
+                            <option value="@PaymentArrangements.Full">Full Payment</option>
+                            <option value="@PaymentArrangements.PartialAllowed">Partial Payment Allowed</option>
+                            <option value="@PaymentArrangements.Installments">Installment Arrangement</option>
+                        </select>
+                    </div>
+                </div>
+
+                @if (_resolvedTariff != null && EnrollContract.FeeMethod == FeeMethods.TariffBased)
+                {
+                    <div style="background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 12px; color: var(--accent-dark, #31523c);">
+                        <strong>Matched Tariff Rule:</strong> @_resolvedTariff.PlanName (@_resolvedTariff.ScopeType precedence #@_resolvedTariff.PrecedenceRank) — @_resolvedTariff.Currency @_resolvedTariff.Amount.ToString("N2") / @_resolvedTariff.BillingFrequency
+                    </div>
+                }
+
                 <div class="form-row-2">
                     <div class="form-group">
                         <label>Schedule Contract</label>
@@ -79,25 +105,35 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Billing Frequency</label>
-                        <select class="input-field" @bind="EnrollContract.BillingCycle">
-                            <option value="Monthly">Monthly</option>
-                            <option value="BiWeekly">Bi-Weekly</option>
-                            <option value="Weekly">Weekly</option>
+                        <label>Fee Period / Billing Frequency</label>
+                        <select class="input-field" value="@EnrollContract.FeePeriod" @onchange="OnFeePeriodChanged">
+                            <option value="@FeeBillingFrequencies.Monthly">Monthly</option>
+                            <option value="@FeeBillingFrequencies.Quarterly">Quarterly</option>
+                            <option value="@FeeBillingFrequencies.HalfYearly">Half-Yearly</option>
+                            <option value="@FeeBillingFrequencies.Yearly">Yearly</option>
+                            <option value="@FeeBillingFrequencies.OneTime">One-Time / Full Period</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="form-row-2">
                     <div class="form-group">
-                        <label>Base Monthly Tuition Rate ($)</label>
+                        <label>@(EnrollContract.FeeMethod == FeeMethods.FlatRate ? "Agreed Flat-Rate Amount *" : "Calculated Tariff Rate")</label>
                         <input type="number" step="10" class="input-field" @bind="EnrollContract.BaseMonthlyRate" />
                     </div>
                     <div class="form-group">
-                        <label>Sibling Discount (%)</label>
+                        <label>Discount (%)</label>
                         <input type="number" step="1" class="input-field" @bind="EnrollContract.SiblingDiscountPercent" />
                     </div>
                 </div>
+
+                @if (EnrollContract.FeeMethod == FeeMethods.FlatRate)
+                {
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <label>Flat-Rate Agreement Remarks</label>
+                        <input type="text" class="input-field" placeholder="e.g., Agreed annual admission fee of ₹10,000" @bind="EnrollContract.Remarks" />
+                    </div>
+                }
 
                 <div class="form-row-2">
                     <div class="form-group">
@@ -143,6 +179,7 @@
     [Parameter] public EventCallback OnConfirm { get; set; }
 
     private ClassroomReadinessCheckResult? _readinessResult;
+    private ResolvedTariffResult? _resolvedTariff;
     private Guid _lastCheckedClassroomId = Guid.Empty;
     private bool _isClassroomReady = true;
 
@@ -151,6 +188,58 @@
         if (IsOpen && EnrollContract.ClassroomId != Guid.Empty && EnrollContract.ClassroomId != _lastCheckedClassroomId)
         {
             await CheckReadinessAsync(EnrollContract.ClassroomId);
+            await TryResolveTariffAsync();
+        }
+    }
+
+    private async Task OnFeeMethodChanged(ChangeEventArgs e)
+    {
+        EnrollContract.FeeMethod = e.Value?.ToString() ?? FeeMethods.TariffBased;
+        if (EnrollContract.FeeMethod == FeeMethods.TariffBased)
+        {
+            await TryResolveTariffAsync();
+        }
+        else
+        {
+            _resolvedTariff = null;
+            EnrollContract.FeePlanId = null;
+            EnrollContract.TariffRuleId = null;
+        }
+    }
+
+    private async Task OnFeePeriodChanged(ChangeEventArgs e)
+    {
+        EnrollContract.FeePeriod = e.Value?.ToString() ?? FeeBillingFrequencies.Monthly;
+        EnrollContract.BillingCycle = EnrollContract.FeePeriod;
+        if (EnrollContract.FeeMethod == FeeMethods.TariffBased)
+        {
+            await TryResolveTariffAsync();
+        }
+    }
+
+    private async Task TryResolveTariffAsync()
+    {
+        if (EnrollContract.FeeMethod != FeeMethods.TariffBased) return;
+        try
+        {
+            var selectedRoom = Classrooms.FirstOrDefault(c => c.Id == EnrollContract.ClassroomId);
+            var branchId = selectedRoom?.BranchId ?? Application?.BranchId;
+            _resolvedTariff = await FeeService.ResolveChildTariffAsync(
+                branchId,
+                EnrollContract.ClassroomId != Guid.Empty ? EnrollContract.ClassroomId : null,
+                childId: null,
+                locationTier: null,
+                billingFrequency: EnrollContract.FeePeriod);
+            if (_resolvedTariff != null)
+            {
+                EnrollContract.BaseMonthlyRate = _resolvedTariff.Amount;
+                EnrollContract.FeePlanId = _resolvedTariff.FeePlanId;
+                EnrollContract.TariffRuleId = _resolvedTariff.RuleId;
+            }
+        }
+        catch
+        {
+            _resolvedTariff = null;
         }
     }
 

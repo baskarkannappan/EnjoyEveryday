@@ -142,6 +142,7 @@ public class ParentService : IParentService
     private readonly IConsentService? _consentService;
     private readonly IRealtimeNotificationService? _realtimeNotificationService;
     private readonly IRazorpayGateway? _razorpayGateway;
+    private readonly IOrgFeeRepository? _orgFeeRepository;
 
     public ParentService(
         IParentRepository parentRepository,
@@ -157,7 +158,8 @@ public class ParentService : IParentService
         IBillingService? billingService = null,
         IConsentService? consentService = null,
         IRealtimeNotificationService? realtimeNotificationService = null,
-        IRazorpayGateway? razorpayGateway = null)
+        IRazorpayGateway? razorpayGateway = null,
+        IOrgFeeRepository? orgFeeRepository = null)
     {
         _parentRepository = parentRepository;
         _scheduleRepository = scheduleRepository;
@@ -170,6 +172,7 @@ public class ParentService : IParentService
         _consentService = consentService;
         _realtimeNotificationService = realtimeNotificationService;
         _razorpayGateway = razorpayGateway;
+        _orgFeeRepository = orgFeeRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
         _auditService = auditService;
@@ -913,9 +916,16 @@ public class ParentService : IParentService
     public async Task<List<Invoice>> GetChildInvoicesAsync(Guid childId, CancellationToken cancellationToken = default)
     {
         await ValidateAccessOrThrow(childId, cancellationToken);
+        if (_orgFeeRepository != null)
+        {
+            var children = await _parentRepository.GetAuthorizedChildrenAsync(_tenantContext.TenantId, _userContext.UserId, cancellationToken);
+            var child = children.FirstOrDefault(c => c.ChildId == childId);
+            var effectiveTenantId = child?.TenantId != null && child.TenantId != Guid.Empty ? child.TenantId : _tenantContext.TenantId;
+            return await _orgFeeRepository.GetChildInvoicesAsync(effectiveTenantId, childId, cancellationToken);
+        }
         if (_billingService == null) return new List<Invoice>();
         var allInvoices = await _billingService.GetAllInvoicesAsync(ct: cancellationToken);
-        return allInvoices;
+        return allInvoices.Where(i => i.ChildId == childId).ToList();
     }
 
     public async Task<ParentPaymentOrderDto> CreateInvoicePaymentOrderAsync(Guid childId, Guid invoiceId, CancellationToken ct = default)

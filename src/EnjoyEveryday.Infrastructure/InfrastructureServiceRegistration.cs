@@ -88,6 +88,7 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IParentCommunicationRepository, ParentCommunicationRepository>();
         services.AddScoped<IOrganizationIntelligenceRepository, OrganizationIntelligenceRepository>();
         services.AddScoped<IBillingRepository, BillingRepository>();
+        services.AddScoped<IOrgFeeRepository, OrgFeeRepository>();
         services.AddScoped<IMaterialMarketplaceRepository, MaterialMarketplaceRepository>();
         services.AddScoped<IMemoryRepository, MemoryRepository>();
         services.AddScoped<IDashboardRepository, DashboardRepository>();
@@ -105,6 +106,8 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IDaycareAnnouncementRepository, DaycareAnnouncementRepository>();
 
         // Razorpay Payment Gateway
+        services.AddDataProtection();
+        services.AddSingleton<EnjoyEveryday.Application.Services.ICredentialProtector, EnjoyEveryday.Infrastructure.Services.DataProtectionCredentialProtector>();
         services.Configure<EnjoyEveryday.Application.Services.RazorpaySettings>(
             configuration.GetSection(EnjoyEveryday.Application.Services.RazorpaySettings.SectionName));
         services.AddHttpClient<EnjoyEveryday.Application.Services.IRazorpayGateway, EnjoyEveryday.Infrastructure.Services.RazorpayGateway>();

@@ -24,10 +24,13 @@ public enum FinancialStatus
 public enum InvoiceStatus
 {
     Draft,
+    Issued,
     Unpaid,
     PartiallyPaid,
     Paid,
     Overdue,
+    Cancelled,
+    Adjusted,
     Void
 }
 
@@ -151,24 +154,36 @@ public class Invoice
     public Guid Id { get; set; }
     public Guid TenantId { get; set; }
     public Guid OrganizationId { get; set; }
+    public Guid? BranchId { get; set; }
+    public Guid? ChildId { get; set; }
+    public Guid? ContractId { get; set; }
+    public string? ChildName { get; set; }
+    public string? BranchName { get; set; }
     public string InvoiceNumber { get; set; } = string.Empty;
     public string? BillingPeriod { get; set; } // e.g. "2026-10" for duplicate prevention in scheduled billing
     public decimal Subtotal { get; set; }
     public decimal DiscountAmount { get; set; }
     public decimal TaxAmount { get; set; }
     public decimal TotalAmount { get; set; }
+    public decimal AdjustmentAmount { get; set; }
     public decimal AmountPaid { get; set; }
-    public decimal BalanceDue => Math.Max(0, TotalAmount - AmountPaid);
+    public decimal PendingVerificationAmount { get; set; }
+    public decimal EffectivePayableAmount => Math.Max(0, TotalAmount - AdjustmentAmount);
+    public decimal BalanceDue => Math.Max(0, EffectivePayableAmount - AmountPaid);
     public string Currency { get; set; } = "INR";
+    public string? FeeMethod { get; set; } // TariffBased, FlatRate
+    public string? FeePlanName { get; set; }
+    public string? PaymentInstructionsSnapshot { get; set; }
 
     private InvoiceStatus _status = InvoiceStatus.Draft;
     public InvoiceStatus Status
     {
         get
         {
-            // Derived Overdue status: if due date passed, has balance due, and not draft/void/paid
+            // Derived Overdue status: if due date passed, has balance due, and not draft/void/cancelled/paid
             if (_status != InvoiceStatus.Draft &&
                 _status != InvoiceStatus.Void &&
+                _status != InvoiceStatus.Cancelled &&
                 _status != InvoiceStatus.Paid &&
                 BalanceDue > 0 &&
                 DueDate < DateTimeOffset.UtcNow)
@@ -183,11 +198,14 @@ public class Invoice
     public FinancialStatus FinancialStatus => Status switch
     {
         InvoiceStatus.Draft => FinancialStatus.Unbilled,
+        InvoiceStatus.Issued => FinancialStatus.InvoiceDue,
         InvoiceStatus.Unpaid => FinancialStatus.InvoiceDue,
         InvoiceStatus.PartiallyPaid => FinancialStatus.PartiallyPaid,
         InvoiceStatus.Paid => FinancialStatus.Reconciled,
         InvoiceStatus.Overdue => FinancialStatus.Overdue,
+        InvoiceStatus.Cancelled => FinancialStatus.Disputed,
         InvoiceStatus.Void => FinancialStatus.Disputed,
+        InvoiceStatus.Adjusted => FinancialStatus.InvoiceDue,
         _ => FinancialStatus.InvoiceDue
     };
 
@@ -216,13 +234,16 @@ public static class PaymentMethods
     public const string Razorpay = "Razorpay";
     public const string Cash = "Cash";
     public const string BankTransfer = "BankTransfer";
+    public const string QrCode = "QrCode";
     public const string Check = "Check";
 }
 
 public static class PaymentStatus
 {
     public const string Completed = "Completed";
+    public const string PendingVerification = "PendingVerification";
     public const string Pending = "Pending";
+    public const string Rejected = "Rejected";
     public const string Failed = "Failed";
     public const string Reversed = "Reversed";
 }
@@ -232,19 +253,29 @@ public class Payment
     public Guid Id { get; set; }
     public Guid TenantId { get; set; }
     public Guid OrganizationId { get; set; }
+    public Guid? BranchId { get; set; }
+    public Guid? ChildId { get; set; }
+    public string? ChildName { get; set; }
+    public string? BranchName { get; set; }
+    public string? ParentEmail { get; set; }
     public Guid? InvoiceId { get; set; }
     public string? InvoiceNumber { get; set; }
     public string PaymentReference { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "INR";
-    public string Method { get; set; } = PaymentMethods.BankTransfer; // Razorpay, Cash, BankTransfer, Check
+    public string Method { get; set; } = PaymentMethods.BankTransfer; // QrCode, BankTransfer, Cash, Razorpay, Check
     public string PaymentMethod { get => Method; set => Method = value; }
     public bool IsVerified { get; set; }
     public string? VerifiedBy { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }
-    public string Status { get; set; } = PaymentStatus.Completed; // Completed, Pending, Failed, Reversed
+    public string Status { get; set; } = PaymentStatus.Completed; // PendingVerification, Completed, Rejected, Reversed
     public string? TransactionId { get; set; }
     public string? Notes { get; set; }
+    public string SubmissionSource { get; set; } = "Staff"; // ParentPortal, DaycareStaff, PlatformAdmin
+    public string? ProofStorageKey { get; set; }
+    public string? RejectionReason { get; set; }
+    public string? RejectedBy { get; set; }
+    public DateTimeOffset? RejectedAt { get; set; }
 
     // Razorpay Integration references
     public string? ProviderOrderId { get; set; }

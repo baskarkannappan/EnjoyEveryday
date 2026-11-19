@@ -1,0 +1,229 @@
+@page "/management/payment-gateway"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.UI.Shared.Components
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "PlatformAdmin,OrganizationOwner,OrganizationAdmin")]
+@inject IOrgFeeManagementService FeeService
+@rendermode InteractiveServer
+
+<PageTitle>Organization Settings — Payment Gateway (Razorpay)</PageTitle>
+
+<div class="content">
+    <PageHero Eyebrow="ORGANIZATION SETTINGS"
+              Title="Payment Gateway (Razorpay)"
+              Subtitle="Configure your organization's own Razorpay credentials to collect parent childcare fees online. Secrets are encrypted server-side and never shared with the platform billing ledger.">
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_bannerMessage))
+    {
+        <div style="padding: 12px 16px; margin-bottom: 16px; border: 1px solid @(_bannerSuccess ? "#c8dacd" : "#fed7d7"); background: @(_bannerSuccess ? "var(--accent-light, #e6eee9)" : "#fff5f5"); color: @(_bannerSuccess ? "var(--accent-dark, #31523c)" : "#9b2c2c"); display: flex; justify-content: space-between; align-items: center;">
+            <span>@(_bannerSuccess ? "✓" : "⚠️") @_bannerMessage</span>
+            <button style="background: none; border: none; cursor: pointer;" @onclick="() => _bannerMessage = null">✕</button>
+        </div>
+    }
+
+    @if (_isLoading)
+    {
+        <LoadingState Message="Loading payment gateway configuration..." />
+    }
+    else
+    {
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px;">
+            <div style="background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 20px;">
+                <h4 style="margin-top: 0;">Do you have your own Razorpay payment gateway?</h4>
+                <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="radio" name="hasRazorpay" checked="@_form.HasRazorpayAccount" @onchange="() => _form.HasRazorpayAccount = true" />
+                        <span><strong>Yes</strong>, I have a Razorpay account</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                        <input type="radio" name="hasRazorpay" checked="@(!_form.HasRazorpayAccount)" @onchange="() => _form.HasRazorpayAccount = false" />
+                        <span><strong>No</strong>, use manual payment methods only</span>
+                    </label>
+                </div>
+
+                @if (_form.HasRazorpayAccount)
+                {
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div>
+                            <label style="font-size: 12px; font-weight: 700;">Razorpay Key ID *</label>
+                            <input class="ee-input" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface-soft);" placeholder="rzp_test_... or rzp_live_..." @bind="_form.KeyId" />
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; font-weight: 700;">Razorpay Key Secret @(_status.HasStoredKeySecret ? "(Stored securely — leave blank to keep existing)" : "*")</label>
+                            <input type="password" class="ee-input" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface-soft);" placeholder="@(_status.HasStoredKeySecret ? "•••••••••••• (encrypted)" : "Enter Key Secret")" @bind="_form.KeySecret" />
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; font-weight: 700;">Webhook Secret @(_status.HasStoredWebhookSecret ? "(Stored securely — leave blank to keep existing)" : "(Optional)")</label>
+                            <input type="password" class="ee-input" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface-soft);" placeholder="@(_status.HasStoredWebhookSecret ? "•••••••••••• (encrypted)" : "Enter Webhook Secret")" @bind="_form.WebhookSecret" />
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; font-weight: 700;">Environment</label>
+                            <select style="width: 100%; padding: 8px 10px; border: 1px solid var(--border); background: var(--surface-soft);" @bind="_form.Environment">
+                                <option value="Test">Test Mode</option>
+                                <option value="Live">Live Mode</option>
+                            </select>
+                        </div>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px;">
+                            <input type="checkbox" @bind="_form.IsActive" />
+                            <span>Enable Online Parent Payments via this Gateway</span>
+                        </label>
+                    </div>
+                }
+                else
+                {
+                    <div style="background: var(--warm, #f4eee1); padding: 12px; border-radius: 10px; font-size: 13px; color: var(--text);">
+                        Parents will continue paying via your configured Bank Transfer details, QR Codes, and Cash declarations with manual staff verification.
+                    </div>
+                }
+
+                <div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
+                    <button class="primary" @onclick="SaveAsync" disabled="@_isBusy">Save Configuration</button>
+                    @if (_form.HasRazorpayAccount && _status.HasStoredKeySecret)
+                    {
+                        <button class="secondary" @onclick="ValidateAsync" disabled="@_isBusy">Validate &amp; Test Connection</button>
+                        @if (_status.IsActive)
+                        {
+                            <button class="secondary" style="color: #9b2c2c;" @onclick="DisableAsync" disabled="@_isBusy">Disable Gateway</button>
+                        }
+                    }
+                </div>
+            </div>
+
+            <div style="background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 20px;">
+                <h4 style="margin-top: 0;">Gateway Status &amp; Readiness</h4>
+                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border);">
+                        <span>Status</span>
+                        <strong>@_status.Status</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border);">
+                        <span>Accepting Online Parent Payments</span>
+                        <strong style="color: @(_status.CanAcceptOnlinePayments ? "var(--accent-dark, #31523c)" : "var(--muted)");">@(_status.CanAcceptOnlinePayments ? "Yes (Active)" : "No (Fallback to Manual)")</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border);">
+                        <span>Environment</span>
+                        <strong>@_status.Environment</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border);">
+                        <span>Last Validated</span>
+                        <span>@(_status.LastValidatedAt?.ToString("g") ?? "Never")</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border);">
+                        <span>Configured By</span>
+                        <span>@(_status.ConfiguredBy ?? "—")</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_status.ValidationMessage))
+                    {
+                        <div style="margin-top: 8px; padding: 10px; border-radius: 8px; background: var(--surface-soft); font-size: 12.5px;">
+                            @_status.ValidationMessage
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private string? _bannerMessage;
+    private bool _bannerSuccess = true;
+    private OrgPaymentGatewayPublicStatusDto _status = new();
+    private SaveOrgPaymentGatewayRequest _form = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _status = await FeeService.GetPaymentGatewayStatusAsync();
+            _form = new SaveOrgPaymentGatewayRequest
+            {
+                HasRazorpayAccount = _status.HasRazorpayAccount,
+                KeyId = _status.KeyId,
+                Environment = _status.Environment,
+                IsActive = _status.IsActive
+            };
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            _status = await FeeService.SavePaymentGatewaySettingsAsync(_form);
+            _form.KeySecret = null;
+            _form.WebhookSecret = null;
+            _bannerSuccess = true;
+            _bannerMessage = "Payment gateway configuration saved securely.";
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task ValidateAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            _status = await FeeService.ValidatePaymentGatewayAsync();
+            _bannerSuccess = _status.CanAcceptOnlinePayments;
+            _bannerMessage = _status.ValidationMessage ?? "Validation complete.";
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DisableAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            _status = await FeeService.DisablePaymentGatewayAsync();
+            _form.IsActive = false;
+            _bannerSuccess = true;
+            _bannerMessage = "Razorpay gateway disabled. Parents will use manual payment methods.";
+        }
+        catch (Exception ex)
+        {
+            _bannerSuccess = false;
+            _bannerMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}
+

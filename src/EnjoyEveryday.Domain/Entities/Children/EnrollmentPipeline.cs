@@ -51,6 +51,16 @@ public class FamilyBillingContract
     public DateTime StartDate { get; set; }
     public DateTime? EndDate { get; set; }
     public bool AutoInvoice { get; set; } = true;
+    public Guid? OrganizationId { get; set; }
+    public string FeeMethod { get; set; } = "TariffBased"; // TariffBased, FlatRate
+    public Guid? FeePlanId { get; set; }
+    public Guid? TariffRuleId { get; set; }
+    public string FeePeriod { get; set; } = "Monthly"; // Monthly, Quarterly, HalfYearly, Yearly, OneTime
+    public string PaymentArrangement { get; set; } = "Full"; // Full, PartialAllowed, Installments
+    public string Currency { get; set; } = "INR";
+    public string? Remarks { get; set; }
+    public bool AllowParentCashDeclaration { get; set; }
+    public decimal? MinimumPartialPayment { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

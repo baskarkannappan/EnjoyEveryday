@@ -26,4 +26,20 @@ public interface IRazorpayGateway
     Task<RazorpayGatewayOrderResult> CreateOrderAsync(long amountInPaise, string currency, string receipt, Dictionary<string, string>? notes = null, CancellationToken ct = default);
     bool VerifyPaymentSignature(string orderId, string paymentId, string signature);
     bool VerifyWebhookSignature(string rawRequestBody, string signatureHeader);
+
+    Task<RazorpayGatewayOrderResult> CreateOrderWithCredentialsAsync(
+        string keyId,
+        string keySecret,
+        long amountInPaise,
+        string currency,
+        string receipt,
+        Dictionary<string, string>? notes = null,
+        CancellationToken ct = default)
+        => CreateOrderAsync(amountInPaise, currency, receipt, notes, ct);
+
+    bool VerifyPaymentSignatureWithSecret(string orderId, string paymentId, string signature, string keyId, string keySecret)
+        => VerifyPaymentSignature(orderId, paymentId, signature);
+
+    bool VerifyWebhookSignatureWithSecret(string rawRequestBody, string signatureHeader, string webhookSecret)
+        => VerifyWebhookSignature(rawRequestBody, signatureHeader);
 }

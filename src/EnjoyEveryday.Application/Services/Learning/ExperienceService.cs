@@ -10,13 +10,20 @@ public class ExperienceService
     private readonly IExperienceFeedbackRepository _feedbackRepository;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext _userContext;
+    private readonly IAccessScopeRepository? _accessScopeRepository;
 
-    public ExperienceService(IExperienceRepository experienceRepository, IExperienceFeedbackRepository feedbackRepository, ITenantContext tenantContext, IUserContext userContext)
+    public ExperienceService(
+        IExperienceRepository experienceRepository,
+        IExperienceFeedbackRepository feedbackRepository,
+        ITenantContext tenantContext,
+        IUserContext userContext,
+        IAccessScopeRepository? accessScopeRepository = null)
     {
         _experienceRepository = experienceRepository;
         _feedbackRepository = feedbackRepository;
         _tenantContext = tenantContext;
         _userContext = userContext;
+        _accessScopeRepository = accessScopeRepository;
     }
 
     public async Task<IEnumerable<Experience>> GetExperiencesAsync(CancellationToken cancellationToken = default)
@@ -216,6 +223,47 @@ public class ExperienceService
             r.Equals("Superadmin", StringComparison.OrdinalIgnoreCase));
     }
 
+    private async Task<bool> CanDeleteExperiencesAsync(CancellationToken cancellationToken)
+    {
+        if (_userContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.OrganizationManage) ||
+            _userContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.BranchManage))
+        {
+            return true;
+        }
+
+        var roles = new HashSet<string>(_userContext.Roles ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+
+        if (_accessScopeRepository != null &&
+            _tenantContext.TenantId != Guid.Empty &&
+            _userContext.OrganizationId.HasValue &&
+            _userContext.OrganizationId.Value != Guid.Empty &&
+            _userContext.UserId != Guid.Empty)
+        {
+            var orgRoles = await _accessScopeRepository.GetOrganizationRoleNamesAsync(
+                _tenantContext.TenantId,
+                _userContext.OrganizationId.Value,
+                _userContext.UserId,
+                cancellationToken);
+            foreach (var role in orgRoles)
+            {
+                roles.Add(role);
+            }
+        }
+
+        return roles.Any(r =>
+            r.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Superadmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationOwner", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrganizationAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Org Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Daycare Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("BranchAdmin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Branch Admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("Branch Director", StringComparison.OrdinalIgnoreCase));
+    }
+
     public async Task<Experience> CreateExperienceAsync(string title, string description, string dnaPayload, Guid createdByUserId, string? status = null, CancellationToken cancellationToken = default)
     {
         if (!CanManageExperiences()) 
@@ -262,8 +310,8 @@ public class ExperienceService
 
     public async Task DeleteExperienceAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        if (!CanManageExperiences()) 
-            throw new UnauthorizedAccessException("Requires experience.create permission.");
+        if (!await CanDeleteExperiencesAsync(cancellationToken))
+            throw new UnauthorizedAccessException("Only Organization Admins and Branch Admins can delete or discard experiences.");
         var experience = await _experienceRepository.GetByIdAsync(_tenantContext.TenantId, id, cancellationToken);
         if (experience != null && _userContext.OrganizationId.HasValue && experience.OrganizationId.HasValue && experience.OrganizationId.Value != _userContext.OrganizationId.Value)
         {

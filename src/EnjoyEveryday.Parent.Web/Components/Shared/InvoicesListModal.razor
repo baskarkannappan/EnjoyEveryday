@@ -1,12 +1,12 @@
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.UI.Shared.Services
+@using Microsoft.AspNetCore.Components.Forms
 @inject IParentService ParentService
+@inject IOrgFeeManagementService FeeService
 @inject ParentLocalizationService Localization
 @inject ICurrencyService CurrencyService
 @inject ParentSessionState SessionState
-@inject IJSRuntime JS
-@implements IDisposable
 
 @if (IsOpen)
 {
@@ -46,41 +46,183 @@
                     <div class="invoices-list">
                         @foreach (var inv in invoices)
                         {
-                            <div class="invoice-item-card">
-                                <div class="invoice-info">
-                                    <div class="invoice-num">#@inv.InvoiceNumber</div>
-                                    <div class="invoice-desc">@(string.IsNullOrWhiteSpace(inv.Description) ? "Daycare Monthly Tuition" : inv.Description)</div>
-                                    <div class="invoice-date">Due: @inv.DueDate.ToString("d MMM yyyy")</div>
+                            var curr = !string.IsNullOrWhiteSpace(inv.Currency) ? inv.Currency : SessionState.SelectedChild?.Currency;
+                            <div class="invoice-item-card" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                                    <div class="invoice-info">
+                                        <div class="invoice-num">#@inv.InvoiceNumber @if (!string.IsNullOrWhiteSpace(inv.FeeMethod)) { <span style="font-size: 11px; padding: 2px 7px; border-radius: 6px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); margin-left: 6px;">@(inv.FeeMethod == FeeMethods.FlatRate ? "Flat-Rate" : "Tariff")</span> }</div>
+                                        <div class="invoice-desc">@(string.IsNullOrWhiteSpace(inv.Description) ? "Daycare Tuition Statement" : inv.Description)</div>
+                                        <div class="invoice-date">Due: @inv.DueDate.ToString("d MMM yyyy")</div>
+                                    </div>
+                                    <div class="invoice-amount-block">
+                                        <div class="amount">@CurrencyService.Format(inv.EffectivePayableAmount, curr)</div>
+                                        @if (inv.Status == InvoiceStatus.Paid)
+                                        {
+                                            <span class="status-badge paid">Paid</span>
+                                        }
+                                        else if (inv.Status == InvoiceStatus.PartiallyPaid)
+                                        {
+                                            <span class="status-badge partial">Outstanding: @CurrencyService.Format(inv.BalanceDue, curr)</span>
+                                        }
+                                        else if (inv.Status == InvoiceStatus.Overdue)
+                                        {
+                                            <span class="status-badge overdue">Overdue</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge unpaid">@inv.Status</span>
+                                        }
+                                    </div>
                                 </div>
-                                <div class="invoice-amount-block">
-                                    <div class="amount">@CurrencyService.Format(inv.TotalAmount, !string.IsNullOrWhiteSpace(inv.Currency) ? inv.Currency : SessionState.SelectedChild?.Currency)</div>
-                                    @if (inv.Status == InvoiceStatus.Paid)
-                                    {
-                                        <span class="status-badge paid">Paid</span>
-                                    }
-                                    else if (inv.Status == InvoiceStatus.PartiallyPaid)
-                                    {
-                                        <span class="status-badge partial">Bal: @CurrencyService.Format(inv.BalanceDue, !string.IsNullOrWhiteSpace(inv.Currency) ? inv.Currency : SessionState.SelectedChild?.Currency)</span>
-                                    }
-                                    else if (inv.Status == InvoiceStatus.Overdue)
-                                    {
-                                        <span class="status-badge overdue">Overdue</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="status-badge unpaid">Due</span>
-                                    }
 
-                                    @if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Paid)
-                                    {
-                                        <button type="button" 
-                                                class="btn-pay-now" 
-                                                @onclick="() => InitiatePaymentAsync(inv)"
-                                                disabled="@_isProcessingPayment">
-                                            @(_isProcessingPayment && _processingInvoiceId == inv.Id ? "Opening..." : $"Pay {CurrencyService.Format(inv.BalanceDue, SessionState.SelectedChild?.Currency)}")
-                                        </button>
-                                    }
+                                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 10px; background: var(--surface-soft, #f8f9f5); border-radius: 8px; font-size: 11.5px;">
+                                    <div><span style="color: var(--muted);">Total Fee:</span><br /><strong>@CurrencyService.Format(inv.EffectivePayableAmount, curr)</strong></div>
+                                    <div><span style="color: var(--muted);">Verified Paid:</span><br /><strong style="color: var(--accent-dark, #31523c);">@CurrencyService.Format(inv.AmountPaid, curr)</strong></div>
+                                    <div><span style="color: var(--muted);">Awaiting Verify:</span><br /><strong style="color: #b7791f;">@CurrencyService.Format(inv.PendingVerificationAmount, curr)</strong></div>
+                                    <div><span style="color: var(--muted);">Balance Due:</span><br /><strong>@CurrencyService.Format(inv.BalanceDue, curr)</strong></div>
                                 </div>
+
+                                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                                    <button type="button" class="btn-pay-now" style="background: var(--surface, #fff); color: var(--accent-dark, #31523c); border: 1px solid var(--border, #e4e7df);" @onclick="() => ToggleInvoiceDetailsAsync(inv)">
+                                        @(_expandedInvoiceId == inv.Id ? "Hide Details" : (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Paid ? "Pay / View Details" : "View History"))
+                                    </button>
+                                </div>
+
+                                @if (_expandedInvoiceId == inv.Id)
+                                {
+                                    <div style="border-top: 1px solid var(--border, #e4e7df); padding-top: 12px; display: flex; flex-direction: column; gap: 12px;">
+                                        @if (_activeSnapshot?.BankAccount != null)
+                                        {
+                                            <div style="background: var(--warm, #f4eee1); padding: 10px 12px; border-radius: 8px; font-size: 12px;">
+                                                <strong>Bank Transfer Details</strong>
+                                                <div style="margin-top: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                                                    <span>Account Holder: @_activeSnapshot.BankAccount.AccountHolderName</span>
+                                                    <span>Bank: @_activeSnapshot.BankAccount.BankName (@_activeSnapshot.BankAccount.BranchName)</span>
+                                                    <span>Account #: @_activeSnapshot.BankAccount.AccountNumber</span>
+                                                    <span>IFSC / MICR: @_activeSnapshot.BankAccount.IfscCode @(!string.IsNullOrWhiteSpace(_activeSnapshot.BankAccount.MicrCode) ? $"/ {_activeSnapshot.BankAccount.MicrCode}" : "")</span>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(_activeSnapshot.BankAccount.AdditionalInstructions))
+                                                {
+                                                    <div style="margin-top: 4px; color: var(--muted);">@_activeSnapshot.BankAccount.AdditionalInstructions</div>
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (_activeSnapshot?.QrCodes?.Any(q => q.IsActive) == true)
+                                        {
+                                            <div>
+                                                <strong style="font-size: 12px;">Scan QR Code to Pay</strong>
+                                                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;">
+                                                    @foreach (var qr in _activeSnapshot.QrCodes.Where(q => q.IsActive))
+                                                    {
+                                                        <div style="border: 1px solid var(--border, #e4e7df); border-radius: 8px; padding: 8px; text-align: center; background: #fff; width: 145px;">
+                                                            <img src="@qr.QrImageDataUri" alt="@qr.DisplayName" style="width: 110px; height: 110px; object-fit: contain;" />
+                                                            <div style="font-size: 11.5px; font-weight: 700; margin-top: 4px;">@qr.DisplayName</div>
+                                                            @if (!string.IsNullOrWhiteSpace(qr.PaymentPurpose))
+                                                            {
+                                                                <div style="font-size: 10.5px; color: var(--muted);">@qr.PaymentPurpose</div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (_activeInstallments.Any())
+                                        {
+                                            <div style="font-size: 12px;">
+                                                <strong>Planned Installment Schedule</strong>
+                                                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
+                                                    @foreach (var inst in _activeInstallments)
+                                                    {
+                                                        <span style="padding: 4px 8px; border-radius: 6px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df);">
+                                                            #@inst.InstallmentNumber: @CurrencyService.Format(inst.AmountDue, curr) (Due @inst.DueDate.ToString("d MMM"))
+                                                        </span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (_activePayments.Any())
+                                        {
+                                            <div style="font-size: 12px;">
+                                                <strong>Payment History</strong>
+                                                @foreach (var p in _activePayments)
+                                                {
+                                                    <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed var(--border, #e4e7df);">
+                                                        <span>@p.PaymentDate.ToString("d MMM yyyy") • @p.Method • Ref: @(p.TransactionId ?? p.PaymentReference)</span>
+                                                        <span>
+                                                            <strong>@CurrencyService.Format(p.Amount, curr)</strong>
+                                                            @if (p.Status == PaymentStatus.Completed && p.IsVerified)
+                                                            {
+                                                                <span class="status-badge paid" style="margin-left: 6px;">Verified</span>
+                                                            }
+                                                            else if (p.Status == PaymentStatus.PendingVerification)
+                                                            {
+                                                                <span class="status-badge partial" style="margin-left: 6px;">Awaiting Verification</span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="status-badge overdue" style="margin-left: 6px;">@p.Status</span>
+                                                            }
+                                                        </span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (inv.BalanceDue > 0 && inv.Status != InvoiceStatus.Paid && inv.Status != InvoiceStatus.Cancelled && inv.Status != InvoiceStatus.Void)
+                                        {
+                                            <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                                                <strong style="font-size: 13px;">Submit Payment (Full or Partial)</strong>
+                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                                    <div>
+                                                        <label style="font-size: 11px; color: var(--muted);">Amount Paid *</label>
+                                                        <input type="number" step="0.01" max="@inv.BalanceDue" @bind="_submitRequest.Amount" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;" />
+                                                    </div>
+                                                    <div>
+                                                        <label style="font-size: 11px; color: var(--muted);">Payment Method *</label>
+                                                        <select @bind="_submitRequest.Method" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;">
+                                                            <option value="@PaymentMethods.QrCode">QR Code Payment</option>
+                                                            <option value="@PaymentMethods.BankTransfer">Bank Transfer</option>
+                                                            @if (_activeSnapshot?.BankAccount?.AllowParentCashDeclaration == true)
+                                                            {
+                                                                <option value="@PaymentMethods.Cash">Cash (Daycare Verification Required)</option>
+                                                            }
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                                    <div>
+                                                        <label style="font-size: 11px; color: var(--muted);">Transaction ID / Reference</label>
+                                                        <input type="text" @bind="_submitRequest.TransactionId" placeholder="UPI / UTR / Ref #" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;" />
+                                                    </div>
+                                                    <div>
+                                                        <label style="font-size: 11px; color: var(--muted);">Payment Date</label>
+                                                        <input type="date" @bind="_submitPaymentDate" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;" />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label style="font-size: 11px; color: var(--muted);">Remarks (Optional)</label>
+                                                    <input type="text" @bind="_submitRequest.Remarks" placeholder="Optional note for daycare staff" style="width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;" />
+                                                </div>
+                                                <div>
+                                                    <label style="font-size: 11px; color: var(--muted);">Payment Proof / Screenshot @(_activeSnapshot?.BankAccount?.RequirePaymentProof == true ? "(Required)" : "(Optional)")</label>
+                                                    <InputFile OnChange="OnProofFileSelectedAsync" accept="image/*,.pdf" />
+                                                    @if (!string.IsNullOrWhiteSpace(_proofFileName))
+                                                    {
+                                                        <span style="font-size: 11px; color: var(--accent-dark);">Attached: @_proofFileName</span>
+                                                    }
+                                                </div>
+                                                <div style="display: flex; justify-content: flex-end;">
+                                                    <button type="button" class="btn-pay-now" @onclick="() => SubmitParentPaymentAsync(inv)" disabled="@_isProcessingPayment">
+                                                        @(_isProcessingPayment ? "Submitting..." : "Submit Payment for Verification")
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
                             </div>
                         }
                     </div>
@@ -88,7 +230,7 @@
             </div>
 
             <div class="modal-footer">
-                <span class="footer-note">Online payments via UPI, Debit/Credit Cards &amp; NetBanking are processed securely through Razorpay.</span>
+                <span class="footer-note">Payments submitted via QR, Bank Transfer, or Cash are manually verified by your daycare team.</span>
                 <button class="primary" @onclick="Close">@Localization.T("Action.Close")</button>
             </div>
         </div>
@@ -102,16 +244,16 @@
 
     private bool isLoading = true;
     private bool _isProcessingPayment = false;
-    private Guid? _processingInvoiceId;
+    private Guid? _expandedInvoiceId;
     private string? _statusMessage;
     private bool _isSuccess = true;
     private List<Invoice> invoices = new();
-    private DotNetObjectReference<InvoicesListModal>? _dotNetRef;
-
-    protected override void OnInitialized()
-    {
-        _dotNetRef = DotNetObjectReference.Create(this);
-    }
+    private PaymentInstructionsSnapshotDto? _activeSnapshot;
+    private List<InvoiceInstallment> _activeInstallments = new();
+    private List<Payment> _activePayments = new();
+    private SubmitParentPaymentRequest _submitRequest = new();
+    private DateTime _submitPaymentDate = DateTime.Today;
+    private string? _proofFileName;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -126,7 +268,7 @@
         isLoading = true;
         try
         {
-            invoices = await ParentService.GetChildInvoicesAsync(ChildId);
+            invoices = await FeeService.GetParentChildInvoicesAsync(ChildId);
         }
         catch
         {
@@ -138,161 +280,82 @@
         }
     }
 
-    private async Task InitiatePaymentAsync(Invoice invoice)
+    private async Task ToggleInvoiceDetailsAsync(Invoice inv)
     {
-        _isProcessingPayment = true;
-        _processingInvoiceId = invoice.Id;
-        _statusMessage = null;
+        if (_expandedInvoiceId == inv.Id)
+        {
+            _expandedInvoiceId = null;
+            return;
+        }
+
+        _expandedInvoiceId = inv.Id;
+        _submitRequest = new SubmitParentPaymentRequest
+        {
+            ChildId = ChildId,
+            InvoiceId = inv.Id,
+            Amount = inv.BalanceDue,
+            Method = PaymentMethods.QrCode
+        };
+        _submitPaymentDate = DateTime.Today;
+        _proofFileName = null;
 
         try
         {
-            var order = await ParentService.CreateInvoicePaymentOrderAsync(ChildId, invoice.Id);
-
-            var options = new
-            {
-                key = order.KeyId,
-                amount = order.AmountInPaise,
-                currency = order.Currency,
-                name = order.OrganizationName,
-                description = $"Tuition #{order.InvoiceNumber}",
-                orderId = order.OrderId,
-                invoiceNumber = order.InvoiceNumber,
-                invoiceId = invoice.Id.ToString(),
-                childId = ChildId.ToString(),
-                prefillName = order.PrefillName,
-                prefillEmail = order.PrefillEmail,
-                prefillContact = order.PrefillContact
-            };
-
-            await JS.InvokeVoidAsync("initiateRazorpayPayment", options, _dotNetRef);
+            _activeSnapshot = await FeeService.GetInvoicePaymentInstructionsAsync(inv.Id);
+            _activeInstallments = await FeeService.GetInvoiceInstallmentsAsync(inv.Id);
+            _activePayments = await FeeService.GetParentChildInvoicePaymentsAsync(ChildId, inv.Id);
         }
-        catch (Exception ex)
+        catch
         {
-            _isSuccess = false;
-            _statusMessage = $"Unable to initiate payment: {ex.Message}";
-            _isProcessingPayment = false;
-            _processingInvoiceId = null;
+            _activeSnapshot = null;
+            _activeInstallments = new();
+            _activePayments = new();
         }
     }
 
-    [JSInvokable]
-    public async Task OnRazorpaySuccess(RazorpayCallbackResponse response)
+    private async Task OnProofFileSelectedAsync(InputFileChangeEventArgs e)
     {
-        if (!_processingInvoiceId.HasValue) return;
+        var file = e.File;
+        if (file == null) return;
+        const long maxBytes = 2 * 1024 * 1024;
+        using var stream = file.OpenReadStream(maxBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        _submitRequest.ProofStorageKey = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}";
+        _proofFileName = file.Name;
+    }
 
+    private async Task SubmitParentPaymentAsync(Invoice inv)
+    {
+        _isProcessingPayment = true;
+        _statusMessage = null;
         try
         {
-            var result = await ParentService.VerifyAndApplyPaymentAsync(
-                ChildId,
-                _processingInvoiceId.Value,
-                response.OrderId,
-                response.PaymentId,
-                response.Signature);
+            _submitRequest.ChildId = ChildId;
+            _submitRequest.InvoiceId = inv.Id;
+            _submitRequest.PaymentDate = new DateTimeOffset(DateTime.SpecifyKind(_submitPaymentDate.Date, DateTimeKind.Utc), TimeSpan.Zero);
+            await FeeService.SubmitParentPaymentAsync(_submitRequest);
 
-            if (result.Success)
-            {
-                _isSuccess = true;
-                _statusMessage = $"Payment of {CurrencyService.Format(result.AmountPaid, SessionState.SelectedChild?.Currency)} successfully applied (Ref: {response.PaymentId}).";
-                await LoadInvoicesAsync();
-            }
-            else
-            {
-                _isSuccess = false;
-                _statusMessage = result.ErrorMessage ?? "Payment verification failed.";
-            }
+            _isSuccess = true;
+            _statusMessage = "Payment Submitted – Waiting for Daycare Verification.";
+            await LoadInvoicesAsync();
+            _activePayments = await FeeService.GetParentChildInvoicePaymentsAsync(ChildId, inv.Id);
         }
         catch (Exception ex)
         {
             _isSuccess = false;
-            _statusMessage = $"Error recording payment confirmation: {ex.Message}";
+            _statusMessage = ex.Message;
         }
         finally
         {
             _isProcessingPayment = false;
-            _processingInvoiceId = null;
-            StateHasChanged();
         }
-    }
-
-    [JSInvokable]
-    public Task OnRazorpayFailed(RazorpayErrorResponse error)
-    {
-        _isSuccess = false;
-        _statusMessage = $"Payment failed ({error.Code}): {error.Description}";
-        _isProcessingPayment = false;
-        _processingInvoiceId = null;
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
-
-    [JSInvokable]
-    public Task OnRazorpayDismiss()
-    {
-        _isProcessingPayment = false;
-        _processingInvoiceId = null;
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
-
-    [JSInvokable]
-    public async Task OnRazorpayError(string message)
-    {
-        _isSuccess = false;
-        _statusMessage = message;
-
-        // If in test/simulation mode with placeholder keys, offer instant simulation
-        if (_processingInvoiceId.HasValue && (message.Contains("blocking") || message.Contains("Simulation")))
-        {
-            try
-            {
-                var mockPaymentId = $"pay_sim_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}_{Guid.NewGuid().ToString("N")[..6]}";
-                var mockOrderId = $"order_sim_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
-                var mockSig = "sim_sig_ok";
-
-                var result = await ParentService.VerifyAndApplyPaymentAsync(ChildId, _processingInvoiceId.Value, mockOrderId, mockPaymentId, mockSig);
-                if (result.Success)
-                {
-                    _isSuccess = true;
-                    _statusMessage = $"Test simulation payment of {CurrencyService.Format(result.AmountPaid, SessionState.SelectedChild?.Currency)} successfully verified and credited!";
-                    await LoadInvoicesAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                _statusMessage = $"Simulation fallback failed: {ex.Message}";
-            }
-        }
-
-        _isProcessingPayment = false;
-        _processingInvoiceId = null;
-        StateHasChanged();
     }
 
     private async Task Close()
     {
         IsOpen = false;
         await IsOpenChanged.InvokeAsync(false);
-    }
-
-    public void Dispose()
-    {
-        _dotNetRef?.Dispose();
-    }
-
-    public class RazorpayCallbackResponse
-    {
-        public string OrderId { get; set; } = string.Empty;
-        public string PaymentId { get; set; } = string.Empty;
-        public string Signature { get; set; } = string.Empty;
-    }
-
-    public class RazorpayErrorResponse
-    {
-        public string Code { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string Source { get; set; } = string.Empty;
-        public string Step { get; set; } = string.Empty;
-        public string Reason { get; set; } = string.Empty;
     }
 }
 

@@ -1157,18 +1157,32 @@ public class BillingService : IBillingService
                     lineDesc = $"Monthly Tuition ({periodKey}) - {contract.ScheduleType}";
                 }
 
+                if (string.Equals(contract.FeeMethod, FeeMethods.FlatRate, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(contract.BillingCycle, "Monthly", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // Flat-rate agreements are not auto-divided into monthly invoices
+                }
+
                 if (tuitionAmount <= 0) continue;
 
-                var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+                var orgId = contract.OrganizationId
+                    ?? _userContext.OrganizationId
+                    ?? Guid.Parse("20000000-0000-0000-0000-000000000001");
                 var invoiceNum = $"INV-TUIT-{asOfDate:yyMM}-{new Random().Next(1000, 9999)}";
                 var tenantOrg = await _organizationRepository.GetByIdAsync(orgId, ct);
-                var tuitionCurrency = !string.IsNullOrWhiteSpace(tenantOrg?.Currency) ? tenantOrg.Currency.ToUpperInvariant() : "INR";
+                var tuitionCurrency = !string.IsNullOrWhiteSpace(contract.Currency)
+                    ? contract.Currency.ToUpperInvariant()
+                    : (!string.IsNullOrWhiteSpace(tenantOrg?.Currency) ? tenantOrg.Currency.ToUpperInvariant() : "INR");
 
                 var invoice = new Invoice
                 {
                     Id = Guid.NewGuid(),
                     TenantId = tenantId,
                     OrganizationId = orgId,
+                    BranchId = contract.BranchId,
+                    ChildId = contract.ChildId,
+                    ContractId = contract.Id,
+                    FeeMethod = contract.FeeMethod,
                     InvoiceNumber = invoiceNum,
                     Currency = tuitionCurrency,
                     IssueDate = asOfDate,

@@ -31,11 +31,9 @@ Hosted in `src/EnjoyEveryday.Parent.Web` (port `7005`). Designed specifically fo
 * **Native Consent Signing (`/consent/sign/{Token}`, `/consent/document/{DocumentId}`)**:
   - Embedded electronic signature pad with drawn or typed signatures, legal consent declarations, and automatic PDF audit copy generation.
   - Documents transition from `SentToParent` → `Opened` → `Signed` with cryptographic verification.
-* **Tuition Billing & Razorpay Online Payments**:
-  - Modal: `src/EnjoyEveryday.Parent.Web/Components/Shared/InvoicesListModal.razor`.
-  - Service: `ParentService.CreateInvoicePaymentOrderAsync` and `VerifyAndApplyPaymentAsync`.
-  - JS Interop: `wwwroot/js/razorpayCheckout.js` launches standard Razorpay checkout modal for UPI, debit/credit cards, and net banking.
-  - Verification: Enforces HMAC-SHA256 signature verification via `IRazorpayGateway` before recording payment in `payments` and marking `invoices` balance. Supports simulation mode for local development.
+* **My Billing & Invoices (`/billing`)**:
+  - Dedicated page (`src/EnjoyEveryday.Parent.Web/Components/Pages/Billing.razor`) and modal (`src/EnjoyEveryday.Parent.Web/Components/Shared/InvoicesListModal.razor`) strictly scoped to `OrgToParent` childcare invoices for the selected child (`fn_get_child_invoices`).
+  - Displays child selector, summary KPIs, month-by-month billing history, payment history, snapshotted bank/QR instructions, and **Pay Now** (uses the invoice-owning organization's active Razorpay gateway when configured, or falls back to manual QR / Bank Transfer / Cash submission with staff verification).
 
 ## Mobile Layout Standards
 * Bottom navigation bar (`ParentMobileNav.razor`) provides quick access to Today, Journey, Memories, Messages, and Family.

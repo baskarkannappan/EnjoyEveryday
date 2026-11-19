@@ -173,5 +173,37 @@ tags:
 * **Platform Admin UI**: `💳 Payment & QR Settings` modal on `Admin.Web` (`/billing`, `BillingPage.razor`) allows Platform Admins to configure `upi_id`, `payee_name`, `bank_name`, `account_number`, `ifsc_code`, or upload a custom static bank QR image (`use_custom_qr_image`, `custom_qr_data_uri`) with live QR preview.
 * **Invoice & Email Integration**: `QrCodeService.BuildInvoicePaymentPayload` and `InvoiceDetailsModal.razor` read the active settings dynamically so all generated invoice previews and email QR codes immediately reflect the Platform Admin's updated bank/UPI account.
 
+### 12. Organization Fee Management, Tariff Plans, Flat-Rate Fees, Partial Payments & Manual Verification
+* **Migrations**: `131_org_fee_management_invoicing_partial_payments.sql`, `132_org_fee_crud_routines.sql`, `133_publish_tuition_invoice.sql`.
+* **Entities & Repositories**: `OrgFeePlan`, `OrgTariffRule`, `ResolvedTariffResult`, `ChildFeeAdjustment`, `InvoiceInstallment`, `OrgBankAccount`, `OrgPaymentQrCode` (up to 3 slots), `OrgFeeDashboardSummary`; `IOrgFeeRepository` / `OrgFeeRepository`.
+* **Service**: `IOrgFeeManagementService` / `OrgFeeManagementService` (registered in `ApplicationServiceRegistration.cs`) enforcing strict server-side `OrganizationAdmin` / `BranchAdmin` (assigned branch scope via `IAccessScopeRepository`) and `Parent` (linked child scope via `IParentRepository`) isolation. Only `OrganizationAdmin` can define tariff layer plans and prices; both `OrganizationAdmin` and authorized `BranchAdmin` can save Draft invoices and publish them (`PublishTuitionInvoiceAsync` -> `fn_publish_tuition_invoice`).
+* **Fee Assignment Methods & Precedence**:
+  - **Tariff-Based Fee**: Resolves via `fn_resolve_child_tariff` in precedence order `Child > Classroom > Branch > LocationTier > OrgDefault`.
+  - **Flat-Rate Fee**: Directly agreed amount per child admission (`FeeMethods.FlatRate`) with explicit fee period (`Monthly`, `Quarterly`, `HalfYearly`, `Yearly`, `OneTime`), independent of tariffs (not auto-split monthly), with audited adjustments in `child_fee_adjustments`.
+* **Invoicing, Snapshots & Partial Payments**:
+  - `sp_insert_tuition_invoice` stamps `branch_id`, `child_id`, `contract_id`, `fee_method`, and `payment_instructions_snapshot` (bank + active QR codes at issue time).
+  - Supports `Draft`, `Issued`, `PartiallyPaid`, `Paid`, `Overdue`, `Cancelled`, `Adjusted`, `Void`, plus planned `invoice_installments` and unplanned partial payments.
+  - `sp_recalculate_invoice_balance` credits **only** `status = 'Completed' AND is_verified = TRUE AND is_reversed = FALSE` payments; `PendingVerification` submissions are tracked separately in `pending_verification_amount`.
+* **Parent Portal & Manual Verification**:
+  - `ParentService.GetChildInvoicesAsync` and `InvoicesListModal.razor` strictly scope invoices to the selected child (`fn_get_child_invoices`), display snapshotted bank details & QR codes, and submit partial/full `QrCode`, `BankTransfer`, or permitted `Cash` payments as `PendingVerification`.
+  - Cross-tenant Parent and Daycare staff invoice operations resolve invoices by global ID (`Guid.Empty` passed to `_billingRepository.GetInvoiceByIdAsync` / `fn_get_invoice_by_id`) before validating `invoice.ChildId == childId` (parent security check) or `invoice.OrganizationId == orgId` (staff security check) and retrieving payment instruction snapshots or executing payments.
+### 13. Strict Separation of Platform Billing vs. Organization-to-Parent Billing & Org-Owned Razorpay
+* **Migration**: `134_separate_platform_and_org_billing_razorpay.sql`.
+* **Data & Process Separation**:
+  - `invoices.billing_domain` and `payments.billing_domain` enforce `'PlatformSubscription'` (for Platform-to-Org SaaS billing via `fn_get_all_invoices`, `fn_get_invoices_for_organization`, `fn_get_payments_for_organization`) vs. `'OrgToParent'` (for Org-to-Parent childcare billing via `sp_insert_tuition_invoice`, `sp_submit_parent_payment`, `fn_get_child_invoices`, `fn_get_org_tuition_invoices`, `fn_get_org_payments_queue`, `fn_get_org_fee_dashboard`).
+  - **Daycare Routes & Permissions**:
+    - `/management/billing` (`OrganizationBilling.razor` -> `<OrgFeeManagementBoard />`): Exclusively Organization-to-Parent Billing (`OrganizationAdmin`, `OrganizationOwner`, `BranchAdmin` scoped to authorized branches).
+    - `/management/platform-billing` (`PlatformSubscriptionBilling.razor` -> `<OrganizationBillingView />`): Exclusively Platform Subscription Billing (`PlatformAdmin`, `OrganizationOwner`, `OrganizationAdmin` — Branch Admins excluded).
+    - `/management/payment-gateway` (`OrgPaymentGatewaySettings.razor`): Org Admin-only configuration for organization-owned Razorpay credentials.
+* **Organization-Owned Razorpay Gateway**:
+  - Table `org_payment_gateway_settings` stores encrypted `KeySecret` and `WebhookSecret` via `ICredentialProtector` (`DataProtectionCredentialProtector` / ASP.NET Core `IDataProtectionProvider`). Secrets are never returned to browsers or logged in audit entries.
+  - Statuses: `NotConfigured`, `ConfigurationPending`, `TestActive`, `LiveActive`, `ValidationFailed`, `Disabled`.
+  - `IRazorpayGateway` / `RazorpayGateway` supports per-org credential execution (`CreateOrderWithCredentialsAsync`, `VerifyPaymentSignatureWithSecret`, `VerifyWebhookSignatureWithSecret`).
+  - **Parent Portal Integration**:
+    - Dedicated `/billing` (`My Billing & Invoices` in `EnjoyEveryday.Parent.Web`) provides child selection, summary cards, monthly billing history, payment history, and **Pay Now** (uses the invoice-owning organization's active Razorpay credentials via `CreateParentRazorpayOrderAsync` / `VerifyParentRazorpayPaymentAsync`, or falls back to manual QR / Bank Transfer / Cash when Razorpay is not configured/disabled).
+    - Org-scoped Razorpay webhook endpoint: `POST /api/billing/razorpay/org/{orgId:guid}/webhook` in `Daycare.Web/Endpoints/BillingEndpoints.cs` with idempotent `razorpay_webhook_events` tracking.
+
+
+
 
 

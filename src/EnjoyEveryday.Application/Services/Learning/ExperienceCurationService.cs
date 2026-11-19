@@ -57,6 +57,8 @@ public class ExperienceCurationService
         if (exp.OrganizationId.HasValue && exp.OrganizationId.Value != orgId.Value)
             throw new UnauthorizedAccessException("Cannot submit an experience belonging to another organization.");
 
+        EnsureEligibleForHarvest(exp);
+
         // 1. Grant/Record License
         var license = new ExperienceLicense
         {
@@ -121,6 +123,8 @@ public class ExperienceCurationService
         var exp = await _experienceRepo.GetByIdAsync(sourceTenant, experienceId, ct);
         if (exp == null)
             throw new InvalidOperationException("Experience not found.");
+
+        EnsureEligibleForHarvest(exp);
 
         // Record content license
         var license = new ExperienceLicense
@@ -443,6 +447,75 @@ public class ExperienceCurationService
         }, ct);
     }
 
+    /// <summary>
+    /// Platform Admin permanently discontinues (retires) a marketplace experience while preserving existing org entitlements.
+    /// </summary>
+    public async Task RetireMarketplaceItemAsync(Guid platformExperienceId, string reason, CancellationToken ct = default)
+    {
+        if (!IsPlatformAdmin())
+            throw new UnauthorizedAccessException("Platform Admin role required to discontinue marketplace items.");
+
+        var exp = await _marketplaceRepo.GetPlatformExperienceByIdAsync(platformExperienceId, ct);
+        if (exp == null)
+            throw new InvalidOperationException("Platform experience not found.");
+
+        exp.PublicationStatus = PlatformPublicationStatus.Retired;
+        exp.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await _marketplaceRepo.UpdatePlatformExperienceAsync(exp, ct);
+
+        await _marketplaceRepo.LogAuditEventAsync(new ExperienceAuditEvent
+        {
+            Id = Guid.NewGuid(),
+            PlatformExperienceId = platformExperienceId,
+            Action = "Marketplace.Retired",
+            PerformedByUserId = _userContext.UserId,
+            Details = JsonSerializer.Serialize(new { Reason = reason }),
+            CreatedAt = DateTimeOffset.UtcNow
+        }, ct);
+    }
+
+    /// <summary>
+    /// Platform Admin discards/deletes a platform experience that has no organization orders or entitlements.
+    /// </summary>
+    public async Task DiscardPlatformExperienceAsync(Guid platformExperienceId, string reason, CancellationToken ct = default)
+    {
+        if (!IsPlatformAdmin())
+            throw new UnauthorizedAccessException("Platform Admin role required to discard platform experiences.");
+
+        var exp = await _marketplaceRepo.GetPlatformExperienceByIdAsync(platformExperienceId, ct);
+        if (exp == null)
+            throw new InvalidOperationException("Platform experience not found.");
+
+        var (deleted, blockingReason) = await _marketplaceRepo.DeletePlatformExperienceAsync(platformExperienceId, ct);
+        if (!deleted)
+            throw new InvalidOperationException(blockingReason ?? "Unable to delete platform experience.");
+
+        TryDeleteStorybookAssets(platformExperienceId);
+
+        await _marketplaceRepo.LogAuditEventAsync(new ExperienceAuditEvent
+        {
+            Id = Guid.NewGuid(),
+            PlatformExperienceId = platformExperienceId,
+            Action = "Marketplace.Discarded",
+            PerformedByUserId = _userContext.UserId,
+            Details = JsonSerializer.Serialize(new
+            {
+                exp.Title,
+                exp.SourceOrganizationId,
+                exp.SourceExperienceId,
+                Reason = reason
+            }),
+            CreatedAt = DateTimeOffset.UtcNow
+        }, ct);
+    }
+
+    private static void EnsureEligibleForHarvest(Experience exp)
+    {
+        if (exp.PlatformExperienceId.HasValue)
+            throw new InvalidOperationException("Experiences acquired from the Platform Marketplace cannot be harvested or re-acquired.");
+    }
+
     private static string SanitizePayloadForPlatform(string rawDna)
     {
         if (string.IsNullOrWhiteSpace(rawDna)) return "{}";
@@ -474,19 +547,23 @@ public class ExperienceCurationService
         }
     }
 
+    private static string? ResolveStorybooksDirectory()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "App_Data", "Storybooks"),
+            Path.Combine(Directory.GetCurrentDirectory(), "src", "EnjoyEveryday.Daycare.Web", "App_Data", "Storybooks"),
+            Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "Storybooks")
+        };
+
+        return candidates.FirstOrDefault(Directory.Exists);
+    }
+
     private static void TryCopyStorybookAssets(Guid sourceExperienceId, Guid targetPlatformExperienceId)
     {
         try
         {
-            // Discover Storybooks folder in common application paths
-            var candidates = new[]
-            {
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "App_Data", "Storybooks"),
-                Path.Combine(Directory.GetCurrentDirectory(), "src", "EnjoyEveryday.Daycare.Web", "App_Data", "Storybooks"),
-                Path.Combine(Directory.GetCurrentDirectory(), "App_Data", "Storybooks")
-            };
-
-            var storageDir = candidates.FirstOrDefault(Directory.Exists);
+            var storageDir = ResolveStorybooksDirectory();
             if (storageDir == null) return;
 
             // Copy grid image (.png or .jpg)
@@ -511,6 +588,32 @@ public class ExperienceCurationService
         catch
         {
             // Best effort asset copy; does not fail transaction
+        }
+    }
+
+    private static void TryDeleteStorybookAssets(Guid platformExperienceId)
+    {
+        try
+        {
+            var storageDir = ResolveStorybooksDirectory();
+            if (storageDir == null) return;
+
+            foreach (var file in new[]
+            {
+                Path.Combine(storageDir, $"{platformExperienceId}_grid.png"),
+                Path.Combine(storageDir, $"{platformExperienceId}_grid.jpg"),
+                Path.Combine(storageDir, $"{platformExperienceId}.html")
+            })
+            {
+                if (File.Exists(file))
+                {
+                    File.Delete(file);
+                }
+            }
+        }
+        catch
+        {
+            // Best effort asset cleanup
         }
     }
 }

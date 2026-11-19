@@ -34,11 +34,21 @@ public class RazorpayGateway : IRazorpayGateway
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
-    public async Task<RazorpayGatewayOrderResult> CreateOrderAsync(
-        long amountInPaise, 
-        string currency, 
-        string receipt, 
-        Dictionary<string, string>? notes = null, 
+    public Task<RazorpayGatewayOrderResult> CreateOrderAsync(
+        long amountInPaise,
+        string currency,
+        string receipt,
+        Dictionary<string, string>? notes = null,
+        CancellationToken ct = default)
+        => CreateOrderWithCredentialsAsync(_settings.KeyId, _settings.KeySecret, amountInPaise, currency, receipt, notes, ct);
+
+    public async Task<RazorpayGatewayOrderResult> CreateOrderWithCredentialsAsync(
+        string keyId,
+        string keySecret,
+        long amountInPaise,
+        string currency,
+        string receipt,
+        Dictionary<string, string>? notes = null,
         CancellationToken ct = default)
     {
         if (amountInPaise <= 0)
@@ -46,11 +56,15 @@ public class RazorpayGateway : IRazorpayGateway
             throw new ArgumentException("Amount in paise must be positive.", nameof(amountInPaise));
         }
 
-        // Mock / Offline Test Mode check
-        if (_settings.MockMode || 
-            string.IsNullOrWhiteSpace(_settings.KeySecret) || 
-            _settings.KeySecret.StartsWith("secret_enjoyeveryday_key", StringComparison.OrdinalIgnoreCase) ||
-            _settings.KeySecret.Contains("placeholder", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(keyId) || string.IsNullOrWhiteSpace(keySecret))
+        {
+            throw new InvalidOperationException("Razorpay payment gateway is not properly configured. Missing KeyId or KeySecret.");
+        }
+
+        // Mock / Offline Test Mode check for explicit placeholder keys
+        if (_settings.MockMode ||
+            keySecret.StartsWith("secret_enjoyeveryday_key", StringComparison.OrdinalIgnoreCase) ||
+            keySecret.Contains("placeholder", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("Creating Razorpay order in offline test mode for receipt {Receipt}, amount {Amount}", receipt, amountInPaise);
             return new RazorpayGatewayOrderResult
@@ -63,13 +77,7 @@ public class RazorpayGateway : IRazorpayGateway
             };
         }
 
-        if (string.IsNullOrWhiteSpace(_settings.KeyId) || string.IsNullOrWhiteSpace(_settings.KeySecret))
-        {
-            _logger.LogError("Razorpay live order creation requested but KeyId or KeySecret is missing or empty.");
-            throw new InvalidOperationException("Razorpay payment gateway is not properly configured. Missing required payment credentials.");
-        }
-
-        var authHeaderValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_settings.KeyId}:{_settings.KeySecret}"));
+        var authHeaderValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{keyId}:{keySecret}"));
         using var request = new HttpRequestMessage(HttpMethod.Post, "orders");
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authHeaderValue);
 
@@ -88,8 +96,8 @@ public class RazorpayGateway : IRazorpayGateway
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("Razorpay order creation failed with status {StatusCode}: {Response}", response.StatusCode, responseBody);
-            throw new InvalidOperationException($"Razorpay order creation failed (status {(int)response.StatusCode}). Check server logs.");
+            _logger.LogError("Razorpay order creation failed with status {StatusCode}", response.StatusCode);
+            throw new InvalidOperationException($"Razorpay order creation failed (status {(int)response.StatusCode}).");
         }
 
         using var doc = JsonDocument.Parse(responseBody);
@@ -106,9 +114,12 @@ public class RazorpayGateway : IRazorpayGateway
     }
 
     public bool VerifyPaymentSignature(string orderId, string paymentId, string signature)
+        => VerifyPaymentSignatureWithSecret(orderId, paymentId, signature, _settings.KeyId, _settings.KeySecret);
+
+    public bool VerifyPaymentSignatureWithSecret(string orderId, string paymentId, string signature, string keyId, string keySecret)
     {
-        if (string.IsNullOrWhiteSpace(orderId) || 
-            string.IsNullOrWhiteSpace(paymentId) || 
+        if (string.IsNullOrWhiteSpace(orderId) ||
+            string.IsNullOrWhiteSpace(paymentId) ||
             string.IsNullOrWhiteSpace(signature))
         {
             return false;
@@ -116,20 +127,19 @@ public class RazorpayGateway : IRazorpayGateway
 
         try
         {
-            // Offline mock test verification fallback: if running in mock mode or test key mode with test simulation signatures
-            if ((_settings.MockMode || _settings.KeyId.StartsWith("rzp_test_")) && 
-                (signature == "mock_sig_valid" || signature == "mock_signature_valid"))
+            if ((_settings.MockMode || (!string.IsNullOrWhiteSpace(keyId) && keyId.StartsWith("rzp_test_", StringComparison.OrdinalIgnoreCase))) &&
+                (signature == "mock_sig_valid" || signature == "mock_signature_valid" || signature == "sim_sig_ok"))
             {
                 return true;
             }
 
-            if (string.IsNullOrWhiteSpace(_settings.KeySecret))
+            if (string.IsNullOrWhiteSpace(keySecret))
             {
                 _logger.LogWarning("Razorpay payment signature verification requested but KeySecret is missing.");
                 return false;
             }
 
-            var secretBytes = Encoding.UTF8.GetBytes(_settings.KeySecret);
+            var secretBytes = Encoding.UTF8.GetBytes(keySecret);
             var payloadBytes = Encoding.UTF8.GetBytes($"{orderId.Trim()}|{paymentId.Trim()}");
 
             using var hmac = new HMACSHA256(secretBytes);
@@ -150,6 +160,12 @@ public class RazorpayGateway : IRazorpayGateway
 
     public bool VerifyWebhookSignature(string rawRequestBody, string signatureHeader)
     {
+        var secret = !string.IsNullOrWhiteSpace(_settings.WebhookSecret) ? _settings.WebhookSecret : _settings.KeySecret;
+        return VerifyWebhookSignatureWithSecret(rawRequestBody, signatureHeader, secret);
+    }
+
+    public bool VerifyWebhookSignatureWithSecret(string rawRequestBody, string signatureHeader, string webhookSecret)
+    {
         if (string.IsNullOrWhiteSpace(rawRequestBody) || string.IsNullOrWhiteSpace(signatureHeader))
         {
             return false;
@@ -162,14 +178,13 @@ public class RazorpayGateway : IRazorpayGateway
                 return true;
             }
 
-            var secret = !string.IsNullOrWhiteSpace(_settings.WebhookSecret) ? _settings.WebhookSecret : _settings.KeySecret;
-            if (string.IsNullOrWhiteSpace(secret))
+            if (string.IsNullOrWhiteSpace(webhookSecret))
             {
-                _logger.LogWarning("Razorpay webhook signature verification requested but WebhookSecret and KeySecret are missing.");
+                _logger.LogWarning("Razorpay webhook signature verification requested but WebhookSecret is missing.");
                 return false;
             }
 
-            var secretBytes = Encoding.UTF8.GetBytes(secret);
+            var secretBytes = Encoding.UTF8.GetBytes(webhookSecret);
             var bodyBytes = Encoding.UTF8.GetBytes(rawRequestBody);
 
             using var hmac = new HMACSHA256(secretBytes);

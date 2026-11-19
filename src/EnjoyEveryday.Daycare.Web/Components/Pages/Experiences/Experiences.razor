@@ -136,8 +136,10 @@
                     CreatedBy="Teacher"
                     CreatedDate="@exp.CreatedAt.ToString("MMM dd, yyyy")"
                     Id="@exp.Id.ToString()"
+                    CanDelete="@_canDeleteExperiences"
                     OnClick="() => OpenViewExperienceModal(exp)"
-                    OnDownloadStorybook="DownloadCardStorybookAsync" />
+                    OnDownloadStorybook="DownloadCardStorybookAsync"
+                    OnDelete="ConfirmDeleteCardExperience" />
             }
         }
         else if (_experiences != null)
@@ -199,11 +201,13 @@
     OnClose="CloseDialog"
     OnSaveDraft="SaveDraftAsync"
     OnSaveLibrary="SaveToLibraryAsync"
+    CanDelete="@_canDeleteExperiences"
     OnDelete="DeleteExperienceAsync" />
 
 <ExperienceViewModal 
     IsOpen="@_isViewModalOpen"
     CanManage="@_canManageExperiences"
+    CanDelete="@_canDeleteExperiences"
     Title="@(_currentExperience?.Title ?? "Experience")"
     Mission="@(_currentExperience?.Description ?? "No description available.")"
     Discover="@(_parsedDna?.Create ?? "")"
@@ -245,11 +249,43 @@
     OnClose="CloseScheduleModal"
     OnSave="SaveScheduleAsync" />
 
+@if (_deleteConfirmExpId.HasValue)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 20px;">
+        <div style="background: var(--surface, #ffffff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); width: 100%; max-width: 440px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text, #26332d);">Discard &amp; Delete Experience</h2>
+                <button type="button" class="secondary" style="padding: 4px 10px;" @onclick="CancelDeleteConfirmation">&times;</button>
+            </div>
+            <p style="font-size: 13.5px; color: var(--muted, #6c7870); line-height: 1.5; margin: 0 0 16px;">
+                Are you sure you want to remove <strong style="color: var(--text, #26332d);">@_deleteConfirmExpTitle</strong> from your organization's Experience Library?
+            </p>
+            @if (!string.IsNullOrEmpty(_deleteError))
+            {
+                <div style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; border-radius: 8px; padding: 10px; margin-bottom: 14px; font-size: 13px;">
+                    @_deleteError
+                </div>
+            }
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="secondary" @onclick="CancelDeleteConfirmation">Cancel</button>
+                <button type="button" class="primary" style="background: #9b2c2c; border-color: #9b2c2c;" @onclick="ExecuteDeleteExperienceAsync" disabled="@_isDeletingExperience">
+                    @(_isDeletingExperience ? "Removing..." : "Confirm Delete")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private IReadOnlyList<ExperienceCatalogItemDto>? _experiences;
     private bool _showCurationModal;
     private Experience? _curationExperience;
     private string? _curationStatus;
+    private bool _canDeleteExperiences;
+    private Guid? _deleteConfirmExpId;
+    private string _deleteConfirmExpTitle = string.Empty;
+    private string? _deleteError;
+    private bool _isDeletingExperience;
 
     private void OpenCurationModal(Guid id)
     {
@@ -696,6 +732,7 @@
         }
 
         var profile = await PageAuth.GetUserProfileAsync();
+        _canDeleteExperiences = profile.IsOrgAdmin || profile.IsBranchAdmin;
         _canManageExperiences = profile.IsOrgAdmin || profile.IsBranchAdmin || UserContext.HasPermission(EnjoyEveryday.Shared.Authorization.Permissions.ExperienceCreate);
 
         await LoadExperiencesAsync();
@@ -772,15 +809,56 @@
         CloseDialog();
     }
 
-    private async Task DeleteExperienceAsync()
+    private void ConfirmDeleteCardExperience(string idStr)
     {
-        if (!_canManageExperiences) return;
+        if (!_canDeleteExperiences) return;
+        if (Guid.TryParse(idStr, out var expId))
+        {
+            var item = _experiences?.FirstOrDefault(e => e.Id == expId);
+            _deleteConfirmExpId = expId;
+            _deleteConfirmExpTitle = item?.Title ?? "this experience";
+            _deleteError = null;
+        }
+    }
+
+    private Task DeleteExperienceAsync()
+    {
+        if (!_canDeleteExperiences) return Task.CompletedTask;
         if (_currentExperience.Id != Guid.Empty)
         {
-            await ExperienceService.DeleteExperienceAsync(_currentExperience.Id);
+            _deleteConfirmExpId = _currentExperience.Id;
+            _deleteConfirmExpTitle = _currentExperience.Title ?? "this experience";
+            _deleteError = null;
+        }
+        return Task.CompletedTask;
+    }
+
+    private void CancelDeleteConfirmation()
+    {
+        _deleteConfirmExpId = null;
+        _deleteError = null;
+    }
+
+    private async Task ExecuteDeleteExperienceAsync()
+    {
+        if (!_canDeleteExperiences || !_deleteConfirmExpId.HasValue) return;
+        _isDeletingExperience = true;
+        _deleteError = null;
+        try
+        {
+            await ExperienceService.DeleteExperienceAsync(_deleteConfirmExpId.Value);
+            _deleteConfirmExpId = null;
             await LoadExperiencesAsync();
             CloseDialog();
             CloseViewDialog();
+        }
+        catch (Exception ex)
+        {
+            _deleteError = ex.Message;
+        }
+        finally
+        {
+            _isDeletingExperience = false;
         }
     }
 }

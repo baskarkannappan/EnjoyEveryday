@@ -125,6 +125,31 @@ public static class BillingEndpoints
             return Results.Ok(new { status = "received" });
         });
 
+        // 4b. ORGANIZATION-OWNED RAZORPAY WEBHOOK (Org-to-Parent Billing)
+        endpoints.MapPost("/api/billing/razorpay/org/{orgId:guid}/webhook", async (
+            Guid orgId,
+            HttpRequest request,
+            IOrgFeeManagementService feeService,
+            CancellationToken ct) =>
+        {
+            var signatureHeader = request.Headers["X-Razorpay-Signature"].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(signatureHeader))
+            {
+                return Results.BadRequest(new { error = "Missing X-Razorpay-Signature header." });
+            }
+
+            using var reader = new StreamReader(request.Body, Encoding.UTF8);
+            var rawBody = await reader.ReadToEndAsync(ct);
+
+            var processed = await feeService.ProcessOrgRazorpayWebhookAsync(orgId, rawBody, signatureHeader, ct);
+            if (!processed)
+            {
+                return Results.BadRequest(new { error = "Invalid organization webhook signature or payload." });
+            }
+
+            return Results.Ok(new { status = "received" });
+        });
+
         // 5. STREAM PAYMENT RECEIPT (CASH OR ONLINE)
         endpoints.MapGet("/api/billing/payments/{id:guid}/receipt", async (
             Guid id,

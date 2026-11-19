@@ -553,14 +553,21 @@ public class BillingRepository : IBillingRepository
             Id = row.Id,
             TenantId = row.TenantId,
             OrganizationId = row.OrganizationId,
+            BranchId = row.BranchId,
+            ChildId = row.ChildId,
+            ContractId = row.ContractId,
             InvoiceNumber = row.InvoiceNumber,
             BillingPeriod = row.BillingPeriod,
             Subtotal = row.Subtotal,
             DiscountAmount = row.DiscountAmount,
             TaxAmount = row.TaxAmount,
             TotalAmount = row.TotalAmount,
+            AdjustmentAmount = row.AdjustmentAmount,
             AmountPaid = row.AmountPaid,
+            PendingVerificationAmount = row.PendingVerificationAmount,
             Currency = row.Currency,
+            FeeMethod = row.FeeMethod,
+            FeePlanName = row.FeePlanName,
             IssueDate = row.IssueDate,
             DueDate = row.DueDate,
             PaidAt = row.PaidAt,
@@ -573,6 +580,7 @@ public class BillingRepository : IBillingRepository
             Description = row.Description,
             Notes = row.Notes,
             PaymentInstructions = row.PaymentInstructions,
+            PaymentInstructionsSnapshot = row.PaymentInstructionsSnapshot,
             BillingContactEmail = row.BillingContactEmail,
             DocumentStorageKey = row.DocumentStorageKey,
             CreatedAt = row.CreatedAt,
@@ -592,15 +600,22 @@ public class BillingRepository : IBillingRepository
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }
         public Guid OrganizationId { get; set; }
+        public Guid? BranchId { get; set; }
+        public Guid? ChildId { get; set; }
+        public Guid? ContractId { get; set; }
         public string InvoiceNumber { get; set; } = string.Empty;
         public string? BillingPeriod { get; set; }
         public decimal Subtotal { get; set; }
         public decimal DiscountAmount { get; set; }
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }
+        public decimal AdjustmentAmount { get; set; }
         public decimal AmountPaid { get; set; }
+        public decimal PendingVerificationAmount { get; set; }
         public string Currency { get; set; } = "INR";
         public string Status { get; set; } = "Draft";
+        public string? FeeMethod { get; set; }
+        public string? FeePlanName { get; set; }
         public DateTimeOffset IssueDate { get; set; }
         public DateTimeOffset DueDate { get; set; }
         public DateTimeOffset? PaidAt { get; set; }
@@ -613,6 +628,7 @@ public class BillingRepository : IBillingRepository
         public string? Description { get; set; }
         public string? Notes { get; set; }
         public string? PaymentInstructions { get; set; }
+        public string? PaymentInstructionsSnapshot { get; set; }
         public string? BillingContactEmail { get; set; }
         public string? DocumentStorageKey { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
