@@ -201,12 +201,19 @@ tags:
   - `IRazorpayGateway` / `RazorpayGateway` supports per-org credential execution (`CreateOrderWithCredentialsAsync`, `VerifyPaymentSignatureWithSecret`, `VerifyWebhookSignatureWithSecret`).
   - **Parent Portal Integration**:
     - Dedicated `/billing` (`My Billing & Invoices` in `EnjoyEveryday.Parent.Web`) provides child selection, summary cards, monthly billing history, payment history, and **Pay Now** (uses the invoice-owning organization's active Razorpay credentials via `CreateParentRazorpayOrderAsync` / `VerifyParentRazorpayPaymentAsync`, or falls back to manual QR / Bank Transfer / Cash when Razorpay is not configured/disabled).
+    - **Installment Schedule Visibility & Selection**:
+      - `GetParentChildInvoiceInstallmentsAsync` validates parent-child ownership before returning planned installment schedules (`fn_get_invoice_installments`).
+      - Invoices with scheduled installments display an installment indicator in the Monthly Billing History table showing installment count and next due amount/date.
+      - Expanding an invoice renders the **Planned Installment Schedule** grid detailing installment number, due date, amount, cumulative paid tracking, and status badges (`Paid`, `Current Due`, `Upcoming`, `Overdue`).
+      - When installments exist, default payment amount automatically aligns to the **Next Due Installment** rather than forcing full balance. Quick payment pills allow parents to switch between specific installments, full balance, or custom amounts across both online Razorpay and manual submission.
     - Org-scoped Razorpay webhook endpoint: `POST /api/billing/razorpay/org/{orgId:guid}/webhook` in `Daycare.Web/Endpoints/BillingEndpoints.cs` with idempotent `razorpay_webhook_events` tracking.
 
 ### 14. Fee Settlement & Payment Status Reporting Ledger
 * **Migration**: `138_fn_get_org_fee_settlement_report.sql`.
 * **Stored Function**: `fn_get_org_fee_settlement_report(p_tenant_id, p_organization_id, p_branch_id, p_classroom_id, p_child_id, p_billing_period, p_status, p_search)` returns child-level settlement aggregates, status badges, and nested `invoices_json` and `payments_json`.
 * **Entities & DTOs**: `ChildFeeSettlementReportItem`, `FeeReportInvoiceDto`, `FeeReportInstallmentDto`, `FeeReportPaymentDto`, `FeeSettlementReportSummary`, `SettlementStatuses`.
+  - Properties explicitly decorated with `[JsonPropertyName("...")]` to map Postgres snake_case attributes (`invoice_number`, `billing_period`, `effective_payable`, `amount_paid`, `balance_due`, `due_date`, `issue_date`, `payment_date`, `transaction_id`, `payment_reference`, `verified_by`) into C# DTOs.
+  - Deserialized using `JsonSerializerOptions` with `PropertyNameCaseInsensitive = true` and `PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower`.
 * **Routes & UI Components**:
   - `/management/fee-reports` (`FeeSettlementReportPage.razor` & `<FeeSettlementReportComponent />`).
   - Embedded inside `/management/billing` under `Overview & Reports` tab (`OrgFeeManagementBoard.razor`).
@@ -215,12 +222,16 @@ tags:
   - Enforces strict tenant and organization boundary (`organization_id = @OrganizationId AND billing_domain = 'OrgToParent'`).
   - Branch Admins are strictly scoped to `allowedBranches` from `IAccessScopeRepository` / `GetCurrentFinancialScopeAsync()`. Org Admins have full organization visibility.
 * **Hierarchical Nested Grid Features**:
-  - **Dynamic KPI Summary**: Total Invoiced, Total Collected, Outstanding Balance, Pending Verification Amount & collection rate.
-  - **Filter Bar**: Cascading Branch -> Classroom dropdowns, Child search, Billing Period selector, Status pills (`All`, `Paid`, `Partially Paid`, `Unpaid`, `Overdue`, `Pending Verification`, `Not Invoiced`), and CSV Export.
+  - **Dynamic KPI Summary**: Total Invoiced, Total Collected, Outstanding Balance, Pending Verification Amount & collection rate with tabular number alignment.
+  - **Filter Bar**: Cascading Branch -> Classroom dropdowns, Child search, Billing Period selector (defaults to `All Periods (Cumulative)` to prevent period filtering mismatches while supporting individual month drill-downs), Status pills (`All`, `Paid`, `Partially Paid`, `Unpaid`, `Overdue`, `Pending Verification`, `Not Invoiced`), and CSV Export.
   - **Expandable Master Row**: Displays child avatar, classroom/branch, invoiced, paid, balance, and settlement badge.
   - **Nested Sub-Tables**:
-    - **Invoices**: Breakdown of invoice numbers, billing period, issue/due dates, total, adjustment, paid, balance, status, and installment schedules.
-    - **Payments**: Transaction timeline with payment method, amount, reference/transaction ID, verification status, notes, and direct inline `Verify` / `Reject` action buttons for pending submissions.
+    - **Invoices**: Breakdown of invoice numbers (`#INV-FEE-...`), billing period, fee method, formatted issue/due dates, total, paid, balance, status, and installment schedules.
+    - **Payments**: Transaction timeline with payment method, amount, reference/transaction ID, verification status badge, notes/verified-by details, and direct inline `Verify` / `Reject` action buttons for pending submissions.
+  - **Theme & Design System Alignment**:
+    - Adheres to EnjoyEveryday design tokens (`--ee-font`, `--surface`, `--surface-soft`, `--border`, `--text`, `--muted`, `--accent`, `--accent-light`, `--accent-dark`, `--shadow`, `--radius: 18px`).
+    - Tabular numeric alignment with `font-variant-numeric: tabular-nums` and `CurrencyService.Format(..., forceDecimals: true)`.
+    - Date safeguarding (`FormatDate`) preventing default `0001-01-01` displays.
 
 
 

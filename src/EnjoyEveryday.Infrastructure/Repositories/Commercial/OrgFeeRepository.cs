@@ -10,7 +10,11 @@ namespace EnjoyEveryday.Infrastructure.Repositories;
 
 public class OrgFeeRepository : IOrgFeeRepository
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
     private readonly IDbConnectionFactory _connectionFactory;
 
     public OrgFeeRepository(IDbConnectionFactory connectionFactory)

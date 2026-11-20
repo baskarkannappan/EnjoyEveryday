@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EnjoyEveryday.Domain.Entities;
 
 public static class FeeMethods
@@ -285,59 +287,59 @@ public class ChildFeeSettlementReportItem
 
 public class FeeReportInvoiceDto
 {
-    public Guid Id { get; set; }
-    public Guid? ChildId { get; set; }
-    public string InvoiceNumber { get; set; } = string.Empty;
-    public string? BillingPeriod { get; set; }
-    public decimal Subtotal { get; set; }
-    public decimal DiscountAmount { get; set; }
-    public decimal TaxAmount { get; set; }
-    public decimal TotalAmount { get; set; }
-    public decimal AdjustmentAmount { get; set; }
-    public decimal EffectivePayable { get; set; }
-    public decimal AmountPaid { get; set; }
-    public decimal BalanceDue { get; set; }
-    public decimal PendingVerificationAmount { get; set; }
-    public string Currency { get; set; } = "INR";
-    public string Status { get; set; } = string.Empty;
-    public string? FeeMethod { get; set; }
-    public string? FeePlanName { get; set; }
-    public DateTimeOffset IssueDate { get; set; }
-    public DateTimeOffset DueDate { get; set; }
-    public DateTimeOffset? PaidAt { get; set; }
-    public string? Description { get; set; }
-    public List<FeeReportInstallmentDto> Installments { get; set; } = new();
+    [JsonPropertyName("id")] public Guid Id { get; set; }
+    [JsonPropertyName("child_id")] public Guid? ChildId { get; set; }
+    [JsonPropertyName("invoice_number")] public string InvoiceNumber { get; set; } = string.Empty;
+    [JsonPropertyName("billing_period")] public string? BillingPeriod { get; set; }
+    [JsonPropertyName("subtotal")] public decimal Subtotal { get; set; }
+    [JsonPropertyName("discount_amount")] public decimal DiscountAmount { get; set; }
+    [JsonPropertyName("tax_amount")] public decimal TaxAmount { get; set; }
+    [JsonPropertyName("total_amount")] public decimal TotalAmount { get; set; }
+    [JsonPropertyName("adjustment_amount")] public decimal AdjustmentAmount { get; set; }
+    [JsonPropertyName("effective_payable")] public decimal EffectivePayable { get; set; }
+    [JsonPropertyName("amount_paid")] public decimal AmountPaid { get; set; }
+    [JsonPropertyName("balance_due")] public decimal BalanceDue { get; set; }
+    [JsonPropertyName("pending_verification_amount")] public decimal PendingVerificationAmount { get; set; }
+    [JsonPropertyName("currency")] public string Currency { get; set; } = "INR";
+    [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("fee_method")] public string? FeeMethod { get; set; }
+    [JsonPropertyName("fee_plan_name")] public string? FeePlanName { get; set; }
+    [JsonPropertyName("issue_date")] public DateTimeOffset IssueDate { get; set; }
+    [JsonPropertyName("due_date")] public DateTimeOffset DueDate { get; set; }
+    [JsonPropertyName("paid_at")] public DateTimeOffset? PaidAt { get; set; }
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("installments")] public List<FeeReportInstallmentDto> Installments { get; set; } = new();
 }
 
 public class FeeReportInstallmentDto
 {
-    public Guid Id { get; set; }
-    public int InstallmentNumber { get; set; }
-    public string? DueDate { get; set; }
-    public decimal AmountDue { get; set; }
-    public string? Notes { get; set; }
+    [JsonPropertyName("id")] public Guid Id { get; set; }
+    [JsonPropertyName("installment_number")] public int InstallmentNumber { get; set; }
+    [JsonPropertyName("due_date")] public string? DueDate { get; set; }
+    [JsonPropertyName("amount_due")] public decimal AmountDue { get; set; }
+    [JsonPropertyName("notes")] public string? Notes { get; set; }
 }
 
 public class FeeReportPaymentDto
 {
-    public Guid Id { get; set; }
-    public Guid? ChildId { get; set; }
-    public Guid? InvoiceId { get; set; }
-    public string? InvoiceNumber { get; set; }
-    public string? PaymentReference { get; set; }
-    public decimal Amount { get; set; }
-    public string Currency { get; set; } = "INR";
-    public string Method { get; set; } = string.Empty;
-    public bool IsVerified { get; set; }
-    public string? VerifiedBy { get; set; }
-    public DateTimeOffset? VerifiedAt { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public string? TransactionId { get; set; }
-    public string? Notes { get; set; }
-    public string? SubmissionSource { get; set; }
-    public string? ProofStorageKey { get; set; }
-    public DateTimeOffset PaymentDate { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
+    [JsonPropertyName("id")] public Guid Id { get; set; }
+    [JsonPropertyName("child_id")] public Guid? ChildId { get; set; }
+    [JsonPropertyName("invoice_id")] public Guid? InvoiceId { get; set; }
+    [JsonPropertyName("invoice_number")] public string? InvoiceNumber { get; set; }
+    [JsonPropertyName("payment_reference")] public string? PaymentReference { get; set; }
+    [JsonPropertyName("amount")] public decimal Amount { get; set; }
+    [JsonPropertyName("currency")] public string Currency { get; set; } = "INR";
+    [JsonPropertyName("method")] public string Method { get; set; } = string.Empty;
+    [JsonPropertyName("is_verified")] public bool IsVerified { get; set; }
+    [JsonPropertyName("verified_by")] public string? VerifiedBy { get; set; }
+    [JsonPropertyName("verified_at")] public DateTimeOffset? VerifiedAt { get; set; }
+    [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("transaction_id")] public string? TransactionId { get; set; }
+    [JsonPropertyName("notes")] public string? Notes { get; set; }
+    [JsonPropertyName("submission_source")] public string? SubmissionSource { get; set; }
+    [JsonPropertyName("proof_storage_key")] public string? ProofStorageKey { get; set; }
+    [JsonPropertyName("payment_date")] public DateTimeOffset PaymentDate { get; set; }
+    [JsonPropertyName("created_at")] public DateTimeOffset CreatedAt { get; set; }
 }
 
 public class FeeSettlementReportSummary

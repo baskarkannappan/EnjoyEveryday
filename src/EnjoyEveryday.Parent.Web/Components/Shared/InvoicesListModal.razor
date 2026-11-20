@@ -130,14 +130,34 @@
 
                                         @if (_activeInstallments.Any())
                                         {
-                                            <div style="font-size: 12px;">
-                                                <strong>Planned Installment Schedule</strong>
-                                                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
-                                                    @foreach (var inst in _activeInstallments)
+                                            var instDisplayList = CalculateInstallmentItems(inv.AmountPaid, _activeInstallments);
+                                            <div style="font-size: 12px; background: #ffffff; padding: 10px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 8px;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                    <strong>Planned Installment Schedule (@_activeInstallments.Count)</strong>
+                                                    <span style="font-size: 11px; color: var(--muted);">Click an installment to pay</span>
+                                                </div>
+                                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                                    @foreach (var inst in instDisplayList)
                                                     {
-                                                        <span style="padding: 4px 8px; border-radius: 6px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df);">
-                                                            #@inst.InstallmentNumber: @CurrencyService.Format(inst.AmountDue, curr) (Due @inst.DueDate.ToString("d MMM"))
-                                                        </span>
+                                                        var isChosen = _submitRequest.Amount == inst.RemainingAmountOnThisInstallment && !inst.IsPaid;
+                                                        <button type="button"
+                                                                style="padding: 6px 10px; border-radius: 6px; font-size: 11.5px; border: 1px solid @(isChosen ? "var(--accent-dark, #31523c)" : "var(--border, #e4e7df)"); background: @(inst.IsPaid ? "#f8faf8" : isChosen ? "var(--accent-light, #e6eee9)" : "#fff"); color: var(--text, #26332d); cursor: @(inst.IsPaid ? "default" : "pointer");"
+                                                                @onclick="() => { if (!inst.IsPaid) SelectInstallmentAmount(inst); }">
+                                                            <strong>#@inst.Installment.InstallmentNumber:</strong> @CurrencyService.Format(inst.Installment.AmountDue, curr)
+                                                            <span style="color: var(--muted); font-size: 10.5px;">(Due @inst.Installment.DueDate.ToString("d MMM"))</span>
+                                                            @if (inst.IsPaid)
+                                                            {
+                                                                <span style="margin-left: 4px; color: #2e7d32; font-weight: 700;">✓ Paid</span>
+                                                            }
+                                                            else if (inst.IsOverdue)
+                                                            {
+                                                                <span style="margin-left: 4px; color: #c62828; font-weight: 700;">⚠️ Overdue</span>
+                                                            }
+                                                            else if (inst.IsNextDue)
+                                                            {
+                                                                <span style="margin-left: 4px; color: #2e7d32; font-weight: 700;">🔔 Due Now</span>
+                                                            }
+                                                        </button>
                                                     }
                                                 </div>
                                             </div>
@@ -302,8 +322,19 @@
         try
         {
             _activeSnapshot = await FeeService.GetInvoicePaymentInstructionsAsync(inv.Id);
-            _activeInstallments = await FeeService.GetInvoiceInstallmentsAsync(inv.Id);
+            _activeInstallments = await FeeService.GetParentChildInvoiceInstallmentsAsync(ChildId, inv.Id);
             _activePayments = await FeeService.GetParentChildInvoicePaymentsAsync(ChildId, inv.Id);
+
+            if (_activeInstallments.Any())
+            {
+                var items = CalculateInstallmentItems(inv.AmountPaid, _activeInstallments);
+                var nextDue = items.FirstOrDefault(i => i.IsNextDue);
+                if (nextDue != null && nextDue.RemainingAmountOnThisInstallment > 0)
+                {
+                    _submitRequest.Amount = nextDue.RemainingAmountOnThisInstallment;
+                    _submitRequest.Remarks = $"Installment #{nextDue.Installment.InstallmentNumber}";
+                }
+            }
         }
         catch
         {
@@ -311,6 +342,73 @@
             _activeInstallments = new();
             _activePayments = new();
         }
+    }
+
+    private void SelectInstallmentAmount(InstallmentDisplayItem inst)
+    {
+        _submitRequest.Amount = inst.RemainingAmountOnThisInstallment > 0 ? inst.RemainingAmountOnThisInstallment : inst.Installment.AmountDue;
+        _submitRequest.Remarks = $"Installment #{inst.Installment.InstallmentNumber}";
+    }
+
+    private static List<InstallmentDisplayItem> CalculateInstallmentItems(decimal totalAmountPaid, List<InvoiceInstallment> installments)
+    {
+        var list = new List<InstallmentDisplayItem>();
+        decimal cumulativePrev = 0m;
+        bool nextDueAssigned = false;
+
+        var sorted = installments.OrderBy(i => i.InstallmentNumber).ToList();
+        foreach (var inst in sorted)
+        {
+            var cumCurrent = cumulativePrev + inst.AmountDue;
+            decimal paidOnThis = 0m;
+            decimal remainingOnThis = inst.AmountDue;
+
+            if (totalAmountPaid >= cumCurrent)
+            {
+                paidOnThis = inst.AmountDue;
+                remainingOnThis = 0m;
+            }
+            else if (totalAmountPaid > cumulativePrev)
+            {
+                paidOnThis = totalAmountPaid - cumulativePrev;
+                remainingOnThis = inst.AmountDue - paidOnThis;
+            }
+            else
+            {
+                paidOnThis = 0m;
+                remainingOnThis = inst.AmountDue;
+            }
+
+            var item = new InstallmentDisplayItem
+            {
+                Installment = inst,
+                CumulativeRequired = cumCurrent,
+                PaidAmountOnThisInstallment = paidOnThis,
+                RemainingAmountOnThisInstallment = remainingOnThis
+            };
+
+            if (!item.IsPaid && !nextDueAssigned)
+            {
+                item.IsNextDue = true;
+                nextDueAssigned = true;
+            }
+
+            list.Add(item);
+            cumulativePrev = cumCurrent;
+        }
+
+        return list;
+    }
+
+    public class InstallmentDisplayItem
+    {
+        public InvoiceInstallment Installment { get; set; } = null!;
+        public decimal CumulativeRequired { get; set; }
+        public decimal PaidAmountOnThisInstallment { get; set; }
+        public decimal RemainingAmountOnThisInstallment { get; set; }
+        public bool IsPaid => RemainingAmountOnThisInstallment <= 0;
+        public bool IsNextDue { get; set; }
+        public bool IsOverdue => !IsPaid && Installment.DueDate < DateTime.Today;
     }
 
     private async Task OnProofFileSelectedAsync(InputFileChangeEventArgs e)

@@ -194,6 +194,7 @@ public interface IOrgFeeManagementService
     // Parent Invoices & Submissions (Parent-scoped)
     Task<List<Invoice>> GetParentChildInvoicesAsync(Guid childId, CancellationToken ct = default);
     Task<List<Payment>> GetParentChildInvoicePaymentsAsync(Guid childId, Guid invoiceId, CancellationToken ct = default);
+    Task<List<InvoiceInstallment>> GetParentChildInvoiceInstallmentsAsync(Guid childId, Guid invoiceId, CancellationToken ct = default);
     Task<PaymentInstructionsSnapshotDto> GetInvoicePaymentInstructionsAsync(Guid invoiceId, CancellationToken ct = default);
     Task<Payment> SubmitParentPaymentAsync(SubmitParentPaymentRequest request, CancellationToken ct = default);
 

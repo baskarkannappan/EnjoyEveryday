@@ -847,6 +847,18 @@ public class OrgFeeManagementService : IOrgFeeManagementService
         return await _billingRepository.GetPaymentsForInvoiceAsync(invoiceId, ct);
     }
 
+    public async Task<List<InvoiceInstallment>> GetParentChildInvoiceInstallmentsAsync(Guid childId, Guid invoiceId, CancellationToken ct = default)
+    {
+        var effectiveTenantId = await ValidateParentChildAccessAsync(childId, ct);
+        var invoice = await _billingRepository.GetInvoiceByIdAsync(Guid.Empty, invoiceId, ct)
+            ?? throw new KeyNotFoundException("Invoice not found.");
+
+        if (invoice.ChildId != childId)
+            throw new UnauthorizedAccessException("Invoice does not belong to the selected child.");
+
+        return await _feeRepository.GetInvoiceInstallmentsAsync(invoiceId, ct);
+    }
+
     public async Task<PaymentInstructionsSnapshotDto> GetInvoicePaymentInstructionsAsync(Guid invoiceId, CancellationToken ct = default)
     {
         var invoice = await _billingRepository.GetInvoiceByIdAsync(Guid.Empty, invoiceId, ct)

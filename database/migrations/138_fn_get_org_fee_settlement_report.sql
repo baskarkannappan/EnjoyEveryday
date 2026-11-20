@@ -101,9 +101,9 @@ AS $function$
             (
                 SELECT COALESCE(json_agg(json_build_object(
                     'id', ii.id,
-                    'installmentNumber', ii.installment_number,
-                    'dueDate', ii.due_date,
-                    'amountDue', ii.amount_due,
+                    'installment_number', ii.installment_number,
+                    'due_date', ii.due_date,
+                    'amount_due', ii.amount_due,
                     'notes', ii.notes
                 ) ORDER BY ii.installment_number), '[]'::json)
                 FROM invoice_installments ii
@@ -141,7 +141,7 @@ AS $function$
           AND p.billing_domain = 'OrgToParent'
           AND p.is_reversed = FALSE
           AND (
-              p.child_id IN (SELECT c_child_id FROM org_children)
+              (NULLIF(TRIM(p_billing_period), '') IS NULL AND p.child_id IN (SELECT c_child_id FROM org_children))
               OR p.invoice_id IN (SELECT id FROM child_invoices)
           )
     ),

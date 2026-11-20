@@ -17,8 +17,11 @@
     @if (!string.IsNullOrWhiteSpace(_bannerMessage))
     {
         <div class="ee-report-banner @(_bannerSuccess ? "ee-banner-ok" : "ee-banner-err")">
-            <span>@_bannerMessage</span>
-            <button class="ee-close-btn" @onclick="() => _bannerMessage = null">✕</button>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span>@(_bannerSuccess ? "✓" : "⚠")</span>
+                <span>@_bannerMessage</span>
+            </div>
+            <button class="ee-close-btn" @onclick="() => _bannerMessage = null" title="Dismiss">✕</button>
         </div>
     }
 
@@ -31,7 +34,7 @@
                 <select class="ee-filter-select" value="@(_selectedBranchId?.ToString() ?? "")" @onchange="OnBranchChangedAsync">
                     @if (_isOrgAdmin)
                     {
-                        <option value="">All Branches (Org-wide)</option>
+                        <option value="">All Branches (Organization Wide)</option>
                     }
                     @foreach (var b in _availableBranches)
                     {
@@ -56,7 +59,7 @@
             <div class="ee-filter-item">
                 <label class="ee-filter-label">Billing Period</label>
                 <select class="ee-filter-select" value="@_selectedBillingPeriod" @onchange="OnPeriodChangedAsync">
-                    <option value="">All Periods</option>
+                    <option value="">All Periods (Cumulative)</option>
                     @foreach (var p in _availablePeriods)
                     {
                         <option value="@p">@p</option>
@@ -81,11 +84,11 @@
             <!-- Child Search -->
             <div class="ee-filter-item" style="grid-column: span 2;">
                 <label class="ee-filter-label">Search Child</label>
-                <div style="display: flex; gap: 6px;">
+                <div style="display: flex; gap: 8px;">
                     <input class="ee-filter-input" placeholder="Search by child name..." value="@_searchQuery" @oninput="OnSearchInputAsync" />
                     @if (!string.IsNullOrWhiteSpace(_searchQuery))
                     {
-                        <button class="secondary" style="padding: 4px 8px; font-size: 11px;" @onclick="ClearSearchAsync">Clear</button>
+                        <button class="secondary ee-btn-xs" @onclick="ClearSearchAsync">Clear</button>
                     }
                 </div>
             </div>
@@ -129,22 +132,22 @@
     <div class="ee-kpi-grid">
         <div class="ee-kpi-card">
             <span class="ee-kpi-label">TOTAL INVOICED</span>
-            <div class="ee-kpi-val" style="color: var(--text, #26332d);">@CurrencyService.Format(_summary.TotalInvoiced, _currency)</div>
+            <div class="ee-kpi-val ee-tnum" style="color: var(--text, #26332d);">@FormatMoney(_summary.TotalInvoiced, _currency)</div>
             <span class="ee-kpi-sub">@_summary.TotalChildrenCount child record(s)</span>
         </div>
         <div class="ee-kpi-card">
             <span class="ee-kpi-label">TOTAL COLLECTED (PAID)</span>
-            <div class="ee-kpi-val" style="color: #2e7d32;">@CurrencyService.Format(_summary.TotalCollected, _currency)</div>
-            <span class="ee-kpi-sub">@(_summary.TotalInvoiced > 0 ? $"{Math.Round((_summary.TotalCollected / _summary.TotalInvoiced) * 100, 1)}% collection rate" : "0% rate")</span>
+            <div class="ee-kpi-val ee-tnum" style="color: #2e7d32;">@FormatMoney(_summary.TotalCollected, _currency)</div>
+            <span class="ee-kpi-sub">@(_summary.TotalInvoiced > 0 ? $"{Math.Round((_summary.TotalCollected / _summary.TotalInvoiced) * 100, 1)}% collection rate" : "0.0% collection rate")</span>
         </div>
         <div class="ee-kpi-card">
             <span class="ee-kpi-label">OUTSTANDING BALANCE</span>
-            <div class="ee-kpi-val" style="color: #c62828;">@CurrencyService.Format(_summary.TotalOutstanding, _currency)</div>
+            <div class="ee-kpi-val ee-tnum" style="color: #c62828;">@FormatMoney(_summary.TotalOutstanding, _currency)</div>
             <span class="ee-kpi-sub">@_summary.UnpaidCount unpaid / @_summary.OverdueCount overdue</span>
         </div>
         <div class="ee-kpi-card">
             <span class="ee-kpi-label">PENDING VERIFICATION</span>
-            <div class="ee-kpi-val" style="color: #b7791f;">@CurrencyService.Format(_summary.TotalPendingVerification, _currency)</div>
+            <div class="ee-kpi-val ee-tnum" style="color: #b7791f;">@FormatMoney(_summary.TotalPendingVerification, _currency)</div>
             <span class="ee-kpi-sub">@_summary.PendingVerificationCount submission(s) awaiting review</span>
         </div>
     </div>
@@ -153,15 +156,17 @@
     <div class="ee-grid-card">
         @if (_isLoading)
         {
-            <div style="padding: 40px; text-align: center; color: var(--muted, #6c7870);">
-                <strong>Loading settlement report...</strong>
+            <div style="padding: 48px; text-align: center; color: var(--muted, #6c7870);">
+                <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
+                <strong style="font-size: 14px;">Loading settlement &amp; payment reports...</strong>
             </div>
         }
         else if (!_summary.Items.Any())
         {
-            <div style="padding: 40px; text-align: center; color: var(--muted, #6c7870);">
-                <h4>No fee records found</h4>
-                <p>No child tuition records match the selected branch, classroom, period, or status filters.</p>
+            <div style="padding: 48px; text-align: center; color: var(--muted, #6c7870);">
+                <div style="font-size: 28px; margin-bottom: 8px;">📋</div>
+                <h4 style="margin: 0 0 6px 0; color: var(--text, #26332d); font-weight: 750;">No fee records found</h4>
+                <p style="margin: 0; font-size: 13.5px;">No child tuition records match the selected branch, classroom, period, or status filters.</p>
             </div>
         }
         else
@@ -170,14 +175,14 @@
                 <table class="ee-nested-table">
                     <thead>
                         <tr>
-                            <th style="width: 40px;"></th>
+                            <th style="width: 44px; text-align: center;"></th>
                             <th>Child</th>
                             <th>Classroom / Branch</th>
                             <th style="text-align: right;">Invoiced</th>
                             <th style="text-align: right;">Paid</th>
                             <th style="text-align: right;">Balance</th>
                             <th style="text-align: center;">Status</th>
-                            <th style="text-align: right; width: 100px;">Details</th>
+                            <th style="text-align: right; width: 110px;">Details</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -187,7 +192,7 @@
                             var curr = string.IsNullOrWhiteSpace(item.Currency) ? _currency : item.Currency;
                             <tr class="ee-master-row @(isExpanded ? "expanded" : "")" @onclick="() => ToggleExpand(item.ChildId)">
                                 <td style="text-align: center;">
-                                    <span class="ee-chevron">@(isExpanded ? "▼" : "▶")</span>
+                                    <span class="ee-chevron @(isExpanded ? "open" : "")">▶</span>
                                 </td>
                                 <td>
                                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -198,29 +203,31 @@
                                             <strong style="color: var(--text, #26332d); font-size: 13.5px;">@item.ChildName</strong>
                                             @if (item.PendingVerificationAmount > 0)
                                             {
-                                                <span class="ee-badge-amber" title="Has pending verification payments">⏳ @CurrencyService.Format(item.PendingVerificationAmount, curr) pending</span>
+                                                <span class="ee-badge-amber" style="margin-left: 6px; font-size: 11px;" title="Has pending verification payments">
+                                                    ⏳ @FormatMoney(item.PendingVerificationAmount, curr) pending
+                                                </span>
                                             }
                                         </div>
                                     </div>
                                 </td>
                                 <td>
                                     <span class="ee-sub-pill">@item.ClassroomName</span>
-                                    <span class="ee-sub-pill" style="opacity: 0.85;">@item.BranchName</span>
+                                    <span class="ee-sub-pill ee-sub-pill-muted">@item.BranchName</span>
                                 </td>
-                                <td style="text-align: right; font-weight: 600;">
-                                    @CurrencyService.Format(item.TotalInvoiced, curr)
+                                <td style="text-align: right; font-weight: 600;" class="ee-tnum">
+                                    @FormatMoney(item.TotalInvoiced, curr)
                                 </td>
-                                <td style="text-align: right; color: #2e7d32; font-weight: 600;">
-                                    @CurrencyService.Format(item.TotalPaid, curr)
+                                <td style="text-align: right; color: #2e7d32; font-weight: 600;" class="ee-tnum">
+                                    @FormatMoney(item.TotalPaid, curr)
                                 </td>
-                                <td style="text-align: right; font-weight: 700; color: @(item.BalanceDue > 0 ? "#c62828" : "var(--text, #26332d)");">
-                                    @CurrencyService.Format(item.BalanceDue, curr)
+                                <td style="text-align: right; font-weight: 700; color: @(item.BalanceDue > 0 ? "#c62828" : "var(--text, #26332d)");" class="ee-tnum">
+                                    @FormatMoney(item.BalanceDue, curr)
                                 </td>
                                 <td style="text-align: center;">
                                     @RenderStatusBadge(item.SettlementStatus)
                                 </td>
                                 <td style="text-align: right;">
-                                    <button class="secondary" style="padding: 3px 8px; font-size: 11px;" @onclick:stopPropagation="true" @onclick="() => ToggleExpand(item.ChildId)">
+                                    <button class="secondary ee-btn-xs" @onclick:stopPropagation="true" @onclick="() => ToggleExpand(item.ChildId)">
                                         @(isExpanded ? "Hide" : "Breakdown")
                                     </button>
                                 </td>
@@ -234,135 +241,210 @@
                                             <!-- Invoices Sub-Section -->
                                             <div class="ee-sub-section">
                                                 <div class="ee-sub-header">
-                                                    <h5>Tuition Invoices (@item.Invoices.Count)</h5>
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <span style="font-size: 14px;">📄</span>
+                                                        <h5>Tuition Invoices (@item.Invoices.Count)</h5>
+                                                    </div>
                                                 </div>
                                                 @if (!item.Invoices.Any())
                                                 {
-                                                    <div style="font-size: 12px; color: var(--muted); padding: 8px;">No tuition invoices issued for this period.</div>
+                                                    <div class="ee-empty-sub">No tuition invoices issued for this period.</div>
                                                 }
                                                 else
                                                 {
-                                                    <table class="ee-sub-table">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Invoice #</th>
-                                                                <th>Period</th>
-                                                                <th>Fee Method</th>
-                                                                <th>Issue Date</th>
-                                                                <th>Due Date</th>
-                                                                <th style="text-align: right;">Amount</th>
-                                                                <th style="text-align: right;">Paid</th>
-                                                                <th style="text-align: right;">Balance</th>
-                                                                <th style="text-align: center;">Status</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            @foreach (var inv in item.Invoices)
-                                                            {
+                                                    <div class="ee-sub-table-wrapper">
+                                                        <table class="ee-sub-table">
+                                                            <thead>
                                                                 <tr>
-                                                                    <td><strong>#@inv.InvoiceNumber</strong></td>
-                                                                    <td>@inv.BillingPeriod</td>
-                                                                    <td><span class="ee-sub-pill">@inv.FeeMethod</span></td>
-                                                                    <td>@inv.IssueDate.ToString("d MMM yyyy")</td>
-                                                                    <td>@inv.DueDate.ToString("d MMM yyyy")</td>
-                                                                    <td style="text-align: right;">@CurrencyService.Format(inv.EffectivePayable, curr)</td>
-                                                                    <td style="text-align: right; color: #2e7d32;">@CurrencyService.Format(inv.AmountPaid, curr)</td>
-                                                                    <td style="text-align: right; font-weight: 700; color: @(inv.BalanceDue > 0 ? "#c62828" : "inherit");">
-                                                                        @CurrencyService.Format(inv.BalanceDue, curr)
-                                                                    </td>
-                                                                    <td style="text-align: center;">@RenderInvoiceStatusBadge(inv.Status)</td>
+                                                                    <th>Invoice #</th>
+                                                                    <th>Period</th>
+                                                                    <th>Fee Method</th>
+                                                                    <th>Issue Date</th>
+                                                                    <th>Due Date</th>
+                                                                    <th style="text-align: right;">Amount</th>
+                                                                    <th style="text-align: right;">Paid</th>
+                                                                    <th style="text-align: right;">Balance</th>
+                                                                    <th style="text-align: center;">Status</th>
                                                                 </tr>
-                                                                @if (inv.Installments?.Any() == true)
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var inv in item.Invoices)
                                                                 {
+                                                                    var invCurr = string.IsNullOrWhiteSpace(inv.Currency) ? curr : inv.Currency;
                                                                     <tr>
-                                                                        <td colspan="9" style="background: #fafbfa; padding: 6px 14px; font-size: 11.5px;">
-                                                                            <strong style="color: var(--muted);">Installment Schedule:</strong>
-                                                                            @foreach (var inst in inv.Installments)
-                                                                            {
-                                                                                <span class="ee-inst-pill">
-                                                                                    #@inst.InstallmentNumber: @CurrencyService.Format(inst.AmountDue, curr) (Due: @inst.DueDate)
-                                                                                </span>
-                                                                            }
+                                                                        <td>
+                                                                            <strong style="color: var(--accent-dark, #31523c); font-family: monospace; font-size: 12px;">
+                                                                                @(string.IsNullOrWhiteSpace(inv.InvoiceNumber) ? "-" : $"#{inv.InvoiceNumber}")
+                                                                            </strong>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span class="ee-period-badge">@(string.IsNullOrWhiteSpace(inv.BillingPeriod) ? "-" : inv.BillingPeriod)</span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span class="ee-sub-pill">@(string.IsNullOrWhiteSpace(inv.FeeMethod) ? (inv.FeePlanName ?? "-") : inv.FeeMethod)</span>
+                                                                        </td>
+                                                                        <td>@FormatDate(inv.IssueDate)</td>
+                                                                        <td>@FormatDate(inv.DueDate)</td>
+                                                                        <td style="text-align: right; font-weight: 600;" class="ee-tnum">
+                                                                            @FormatMoney(inv.EffectivePayable, invCurr)
+                                                                        </td>
+                                                                        <td style="text-align: right; color: #2e7d32; font-weight: 600;" class="ee-tnum">
+                                                                            @FormatMoney(inv.AmountPaid, invCurr)
+                                                                        </td>
+                                                                        <td style="text-align: right; font-weight: 700; color: @(inv.BalanceDue > 0 ? "#c62828" : "inherit");" class="ee-tnum">
+                                                                            @FormatMoney(inv.BalanceDue, invCurr)
+                                                                        </td>
+                                                                        <td style="text-align: center;">
+                                                                            @RenderInvoiceStatusBadge(inv.Status)
                                                                         </td>
                                                                     </tr>
+                                                                    @if (inv.Installments?.Any() == true)
+                                                                    {
+                                                                        <tr>
+                                                                            <td colspan="9" class="ee-installment-row">
+                                                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                                                    <strong style="color: var(--muted, #6c7870); font-size: 11px;">Installment Schedule:</strong>
+                                                                                    @foreach (var inst in inv.Installments)
+                                                                                    {
+                                                                                        <span class="ee-inst-pill">
+                                                                                            <strong>#@inst.InstallmentNumber:</strong> @FormatMoney(inst.AmountDue, invCurr)
+                                                                                            <span class="ee-tiny-muted">(Due: @inst.DueDate)</span>
+                                                                                        </span>
+                                                                                    }
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    }
                                                                 }
-                                                            }
-                                                        </tbody>
-                                                    </table>
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
                                                 }
                                             </div>
 
                                             <!-- Payments Sub-Section -->
                                             <div class="ee-sub-section" style="margin-top: 14px;">
                                                 <div class="ee-sub-header">
-                                                    <h5>Payment Transactions &amp; Verification History (@item.Payments.Count)</h5>
+                                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                                        <span style="font-size: 14px;">💳</span>
+                                                        <h5>Payment Transactions &amp; Verification History (@item.Payments.Count)</h5>
+                                                    </div>
                                                 </div>
                                                 @if (!item.Payments.Any())
                                                 {
-                                                    <div style="font-size: 12px; color: var(--muted); padding: 8px;">No payments recorded for this child.</div>
+                                                    <div class="ee-empty-sub">No payments recorded for this child.</div>
                                                 }
                                                 else
                                                 {
-                                                    <table class="ee-sub-table">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Date</th>
-                                                                <th>Method</th>
-                                                                <th>Invoice #</th>
-                                                                <th>Reference / Txn ID</th>
-                                                                <th style="text-align: right;">Amount</th>
-                                                                <th style="text-align: center;">Verification</th>
-                                                                <th>Verified By / Notes</th>
-                                                                <th style="text-align: right; width: 140px;">Action</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            @foreach (var p in item.Payments)
-                                                            {
+                                                    <div class="ee-sub-table-wrapper">
+                                                        <table class="ee-sub-table">
+                                                            <thead>
                                                                 <tr>
-                                                                    <td>@p.PaymentDate.ToString("d MMM yyyy HH:mm")</td>
-                                                                    <td><span class="ee-sub-pill">@p.Method</span></td>
-                                                                    <td>@(string.IsNullOrWhiteSpace(p.InvoiceNumber) ? "-" : $"#{p.InvoiceNumber}")</td>
-                                                                    <td>@(p.TransactionId ?? p.PaymentReference ?? "-")</td>
-                                                                    <td style="text-align: right; font-weight: 700; color: #2e7d32;">@CurrencyService.Format(p.Amount, curr)</td>
-                                                                    <td style="text-align: center;">
-                                                                        @if (p.Status == "Completed" && p.IsVerified)
-                                                                        {
-                                                                            <span class="ee-badge-green">Verified</span>
-                                                                        }
-                                                                        else if (p.Status == "PendingVerification")
-                                                                        {
-                                                                            <span class="ee-badge-amber">Pending Verification</span>
-                                                                        }
-                                                                        else if (p.Status == "Rejected")
-                                                                        {
-                                                                            <span class="ee-badge-red">Rejected</span>
-                                                                        }
-                                                                        else
-                                                                        {
-                                                                            <span class="ee-sub-pill">@p.Status</span>
-                                                                        }
-                                                                    </td>
-                                                                    <td style="font-size: 11.5px; color: var(--muted);">
-                                                                        @(p.VerifiedBy ?? p.Notes ?? "-")
-                                                                    </td>
-                                                                    <td style="text-align: right;">
-                                                                        @if (p.Status == "PendingVerification")
-                                                                        {
-                                                                            <div style="display: flex; gap: 4px; justify-content: flex-end;">
-                                                                                <button class="primary" style="padding: 2px 7px; font-size: 11px;" @onclick="() => VerifyPaymentInlineAsync(p.Id)">
-                                                                                    Verify
-                                                                                </button>
-                                                                                <button class="secondary" style="padding: 2px 7px; font-size: 11px; color: #9b2c2c;" @onclick="() => RejectPaymentInlineAsync(p.Id)">
-                                                                                    Reject
-                                                                                </button>
-                                                                            </div>
-                                                                        }
-                                                                    </td>
+                                                                    <th>Date</th>
+                                                                    <th>Method</th>
+                                                                    <th>Invoice #</th>
+                                                                    <th>Reference / Txn ID</th>
+                                                                    <th style="text-align: right;">Amount</th>
+                                                                    <th style="text-align: center;">Verification</th>
+                                                                    <th>Verified By / Notes</th>
+                                                                    <th style="text-align: right; width: 140px;">Action</th>
                                                                 </tr>
-                                                            }
-                                                        </tbody>
-                                                    </table>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var p in item.Payments)
+                                                                {
+                                                                    var payCurr = string.IsNullOrWhiteSpace(p.Currency) ? curr : p.Currency;
+                                                                    <tr>
+                                                                        <td style="white-space: nowrap;">@FormatDate(p.PaymentDate, includeTime: true)</td>
+                                                                        <td><span class="ee-sub-pill">@p.Method</span></td>
+                                                                        <td>
+                                                                            <span style="font-family: monospace; font-size: 11.5px; color: var(--accent-dark, #31523c);">
+                                                                                @(string.IsNullOrWhiteSpace(p.InvoiceNumber) ? "-" : $"#{p.InvoiceNumber}")
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>
+                                                                            @if (!string.IsNullOrWhiteSpace(p.TransactionId))
+                                                                            {
+                                                                                <div style="font-weight: 600; font-family: monospace;">@p.TransactionId</div>
+                                                                                @if (!string.IsNullOrWhiteSpace(p.PaymentReference) && p.PaymentReference != p.TransactionId)
+                                                                                {
+                                                                                    <div class="ee-tiny-muted">Ref: @p.PaymentReference</div>
+                                                                                }
+                                                                            }
+                                                                            else if (!string.IsNullOrWhiteSpace(p.PaymentReference))
+                                                                            {
+                                                                                <div style="font-family: monospace;">@p.PaymentReference</div>
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                <span>-</span>
+                                                                            }
+                                                                        </td>
+                                                                        <td style="text-align: right; font-weight: 700; color: #2e7d32;" class="ee-tnum">
+                                                                            @FormatMoney(p.Amount, payCurr)
+                                                                        </td>
+                                                                        <td style="text-align: center;">
+                                                                            @if (p.Status == "Completed" && p.IsVerified)
+                                                                            {
+                                                                                <span class="ee-badge-green">Verified</span>
+                                                                            }
+                                                                            else if (p.Status == "PendingVerification")
+                                                                            {
+                                                                                <span class="ee-badge-amber">Pending Verification</span>
+                                                                            }
+                                                                            else if (p.Status == "Rejected")
+                                                                            {
+                                                                                <span class="ee-badge-red">Rejected</span>
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                <span class="ee-sub-pill">@p.Status</span>
+                                                                            }
+                                                                        </td>
+                                                                        <td>
+                                                                            @if (!string.IsNullOrWhiteSpace(p.VerifiedBy))
+                                                                            {
+                                                                                <div style="font-weight: 500; font-size: 11.5px;">@p.VerifiedBy</div>
+                                                                                @if (p.VerifiedAt.HasValue && p.VerifiedAt.Value.Year > 1)
+                                                                                {
+                                                                                    <div class="ee-tiny-muted">at @FormatDate(p.VerifiedAt.Value, includeTime: true)</div>
+                                                                                }
+                                                                                @if (!string.IsNullOrWhiteSpace(p.Notes))
+                                                                                {
+                                                                                    <div class="ee-tiny-muted">@p.Notes</div>
+                                                                                }
+                                                                            }
+                                                                            else if (!string.IsNullOrWhiteSpace(p.Notes))
+                                                                            {
+                                                                                <span style="font-size: 11.5px; color: var(--muted, #6c7870);">@p.Notes</span>
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                <span style="color: var(--muted, #6c7870);">-</span>
+                                                                            }
+                                                                        </td>
+                                                                        <td style="text-align: right;">
+                                                                            @if (p.Status == "PendingVerification")
+                                                                            {
+                                                                                <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                                                                                    <button class="primary ee-btn-xs" @onclick="() => VerifyPaymentInlineAsync(p.Id)" title="Verify this payment">
+                                                                                        Verify
+                                                                                    </button>
+                                                                                    <button class="secondary ee-btn-xs" style="color: #9b2c2c;" @onclick="() => RejectPaymentInlineAsync(p.Id)" title="Reject this payment">
+                                                                                        Reject
+                                                                                    </button>
+                                                                                </div>
+                                                                            }
+                                                                            else if (p.IsVerified)
+                                                                            {
+                                                                                <span style="color: #2e7d32; font-size: 11.5px; font-weight: 600;">✓ Confirmed</span>
+                                                                            }
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
                                                 }
                                             </div>
                                         </div>
@@ -378,62 +460,435 @@
 </div>
 
 <style>
-    .ee-report-container { display: flex; flex-direction: column; gap: 16px; width: 100%; }
-    .ee-report-banner { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-size: 13px; border-radius: 8px; }
-    .ee-banner-ok { background: var(--accent-light, #e6eee9); border: 1px solid #c8dacd; color: var(--accent-dark, #31523c); }
-    .ee-banner-err { background: #fff5f5; border: 1px solid #fed7d7; color: #9b2c2c; }
-    .ee-close-btn { background: none; border: none; cursor: pointer; font-size: 14px; color: inherit; }
+    .ee-report-container {
+        font-family: var(--ee-font, "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        width: 100%;
+        color: var(--text, #26332d);
+    }
 
-    .ee-filter-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 16px; }
-    .ee-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 12px; }
-    .ee-filter-item { display: flex; flex-direction: column; gap: 4px; }
-    .ee-filter-label { font-size: 11.5px; font-weight: 700; color: var(--muted, #6c7870); }
-    .ee-filter-select, .ee-filter-input { padding: 7px 10px; border: 1px solid var(--border, #e4e7df); background: var(--surface-soft, #f8f9f5); color: var(--text, #26332d); font-size: 13px; border-radius: 6px; width: 100%; }
-    .ee-filter-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--border, #e4e7df); padding-top: 12px; }
+    .ee-report-banner {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 16px;
+        font-size: 13px;
+        border-radius: 8px;
+    }
 
-    .ee-pill-group { display: flex; gap: 6px; flex-wrap: wrap; }
-    .ee-status-pill { border: 1px solid var(--border, #e4e7df); background: var(--surface, #fff); color: var(--text, #26332d); padding: 4px 10px; font-size: 11.5px; font-weight: 600; border-radius: 20px; cursor: pointer; }
-    .ee-status-pill.active { background: var(--accent-dark, #31523c); color: #fff; border-color: var(--accent-dark, #31523c); }
-    .ee-status-pill.pill-paid.active { background: #2e7d32; border-color: #2e7d32; color: #fff; }
-    .ee-status-pill.pill-partial.active { background: #e65100; border-color: #e65100; color: #fff; }
-    .ee-status-pill.pill-unpaid.active { background: #c62828; border-color: #c62828; color: #fff; }
-    .ee-status-pill.pill-overdue.active { background: #880e4f; border-color: #880e4f; color: #fff; }
-    .ee-status-pill.pill-pending.active { background: #b7791f; border-color: #b7791f; color: #fff; }
+    .ee-banner-ok {
+        background: var(--accent-light, #e6eee9);
+        border: 1px solid #c8dacd;
+        color: var(--accent-dark, #31523c);
+        font-weight: 500;
+    }
 
-    .ee-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
-    .ee-kpi-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 16px; }
-    .ee-kpi-label { font-size: 10.5px; font-weight: 750; color: var(--muted, #6c7870); letter-spacing: 0.5px; }
-    .ee-kpi-val { font-size: 22px; font-weight: 800; margin: 4px 0 2px; }
-    .ee-kpi-sub { font-size: 12px; color: var(--muted, #6c7870); }
+    .ee-banner-err {
+        background: #fff5f5;
+        border: 1px solid #fed7d7;
+        color: #9b2c2c;
+        font-weight: 500;
+    }
 
-    .ee-grid-card { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); overflow: hidden; }
-    .ee-table-wrapper { width: 100%; overflow-x: auto; }
-    .ee-nested-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .ee-nested-table th { background: var(--surface-soft, #f8f9f5); color: var(--muted, #6c7870); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e4e7df); }
-    .ee-master-row { cursor: pointer; border-bottom: 1px solid var(--border, #e4e7df); transition: background 0.15s ease; }
-    .ee-master-row:hover { background: #fbfcfb; }
-    .ee-master-row.expanded { background: #f5f8f6; }
-    .ee-master-row td { padding: 12px 14px; }
+    .ee-close-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        color: inherit;
+        opacity: 0.7;
+    }
+    .ee-close-btn:hover { opacity: 1; }
 
-    .ee-chevron { display: inline-block; font-size: 10px; color: var(--muted); transition: transform 0.15s; }
-    .ee-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; }
-    .ee-sub-pill { display: inline-block; padding: 2px 6px; font-size: 11px; font-weight: 600; border-radius: 4px; background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); margin-right: 4px; }
-    .ee-inst-pill { display: inline-block; padding: 2px 7px; font-size: 11px; background: #fff; border: 1px solid var(--border, #e4e7df); border-radius: 4px; margin: 2px 4px; }
+    /* FILTERS CARD */
+    .ee-filter-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06));
+        padding: 18px 20px;
+    }
 
-    .ee-badge-green { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
-    .ee-badge-amber { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #fff8e1; color: #b7791f; border: 1px solid #ffe082; }
-    .ee-badge-orange { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
-    .ee-badge-red { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 700; border-radius: 6px; background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
-    .ee-badge-gray { display: inline-block; padding: 2px 8px; font-size: 11px; font-weight: 600; border-radius: 6px; background: #f5f5f5; color: #616161; border: 1px solid #e0e0e0; }
+    .ee-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-bottom: 14px;
+    }
 
-    .ee-detail-row td { padding: 0 !important; border-bottom: 2px solid var(--border, #e4e7df); }
-    .ee-detail-card { background: #fafcfa; padding: 16px 20px 20px 44px; border-left: 3px solid var(--accent-dark, #31523c); }
-    .ee-sub-section { background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: 10px; padding: 12px; }
-    .ee-sub-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .ee-sub-header h5 { margin: 0; font-size: 12.5px; font-weight: 750; color: var(--text, #26332d); }
-    .ee-sub-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .ee-sub-table th { background: var(--surface-soft, #f8f9f5); padding: 6px 10px; font-size: 10.5px; font-weight: 700; color: var(--muted); text-align: left; border-bottom: 1px solid var(--border); }
-    .ee-sub-table td { padding: 7px 10px; border-bottom: 1px dashed var(--border); }
+    .ee-filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .ee-filter-label {
+        font-size: 11.5px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .ee-filter-select, .ee-filter-input {
+        padding: 8px 12px;
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--text, #26332d);
+        font-size: 13px;
+        font-family: inherit;
+        border-radius: 6px;
+        width: 100%;
+        transition: border-color 0.15s ease;
+    }
+    .ee-filter-select:focus, .ee-filter-input:focus {
+        border-color: var(--accent, #557c6c);
+        outline: none;
+        background: #ffffff;
+    }
+
+    .ee-filter-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        border-top: 1px solid var(--border, #e4e7df);
+        padding-top: 14px;
+    }
+
+    .ee-pill-group {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .ee-status-pill {
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface, #ffffff);
+        color: var(--text, #26332d);
+        padding: 4px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: inherit;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .ee-status-pill:hover {
+        background: var(--surface-soft, #f8f9f5);
+        border-color: #ccd3c7;
+    }
+    .ee-status-pill.active {
+        background: var(--accent-dark, #31523c);
+        color: #ffffff;
+        border-color: var(--accent-dark, #31523c);
+    }
+    .ee-status-pill.pill-paid.active { background: #2e7d32; border-color: #2e7d32; color: #ffffff; }
+    .ee-status-pill.pill-partial.active { background: #e65100; border-color: #e65100; color: #ffffff; }
+    .ee-status-pill.pill-unpaid.active { background: #c62828; border-color: #c62828; color: #ffffff; }
+    .ee-status-pill.pill-overdue.active { background: #880e4f; border-color: #880e4f; color: #ffffff; }
+    .ee-status-pill.pill-pending.active { background: #b7791f; border-color: #b7791f; color: #ffffff; }
+
+    /* KPI CARDS */
+    .ee-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+    }
+
+    .ee-kpi-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06));
+        padding: 18px 20px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .ee-kpi-label {
+        font-size: 11px;
+        font-weight: 750;
+        color: var(--muted, #6c7870);
+        letter-spacing: 0.6px;
+    }
+
+    .ee-kpi-val {
+        font-size: 24px;
+        font-weight: 800;
+        margin: 6px 0 3px;
+        line-height: 1.2;
+    }
+
+    .ee-kpi-sub {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+    }
+
+    /* NESTED GRID TABLE */
+    .ee-grid-card {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06));
+        overflow: hidden;
+    }
+
+    .ee-table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .ee-nested-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        text-align: left;
+    }
+
+    .ee-nested-table th {
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+
+    .ee-master-row {
+        cursor: pointer;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        transition: background 0.15s ease;
+    }
+    .ee-master-row:hover {
+        background: #fbfcfb;
+    }
+    .ee-master-row.expanded {
+        background: #f4f7f5;
+    }
+    .ee-master-row td {
+        padding: 13px 14px;
+        vertical-align: middle;
+    }
+
+    .ee-chevron {
+        display: inline-block;
+        font-size: 10px;
+        color: var(--muted, #6c7870);
+        transition: transform 0.2s ease;
+    }
+    .ee-chevron.open {
+        transform: rotate(90deg);
+        color: var(--accent-dark, #31523c);
+    }
+
+    .ee-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #31523c);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 750;
+        font-size: 12px;
+        flex-shrink: 0;
+    }
+
+    .ee-sub-pill {
+        display: inline-block;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 4px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        margin-right: 4px;
+        color: var(--text, #26332d);
+    }
+    .ee-sub-pill-muted {
+        color: var(--muted, #6c7870);
+        background: transparent;
+    }
+
+    .ee-period-badge {
+        display: inline-block;
+        padding: 2px 7px;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: monospace;
+        border-radius: 4px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+    }
+
+    .ee-inst-pill {
+        display: inline-block;
+        padding: 3px 8px;
+        font-size: 11px;
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 4px;
+        margin: 2px 4px 2px 0;
+    }
+
+    /* BADGES */
+    .ee-badge-green {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        background: var(--accent-light, #e6eee9);
+        color: var(--accent-dark, #31523c);
+        border: 1px solid #c8dacd;
+    }
+
+    .ee-badge-amber {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        background: #fff8e1;
+        color: #b7791f;
+        border: 1px solid #ffe082;
+    }
+
+    .ee-badge-orange {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        background: #fff3e0;
+        color: #e65100;
+        border: 1px solid #ffcc80;
+    }
+
+    .ee-badge-red {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        background: #fff5f5;
+        color: #9b2c2c;
+        border: 1px solid #fed7d7;
+    }
+
+    .ee-badge-gray {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 6px;
+        background: #f5f5f5;
+        color: #616161;
+        border: 1px solid #e0e0e0;
+    }
+
+    /* NESTED EXPANDED AREA */
+    .ee-detail-row td {
+        padding: 0 !important;
+        border-bottom: 2px solid var(--border, #e4e7df);
+    }
+
+    .ee-detail-card {
+        background: #f9fbf9;
+        padding: 16px 20px 20px 36px;
+        border-left: 4px solid var(--accent, #557c6c);
+    }
+
+    .ee-sub-section {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 10px;
+        padding: 14px 16px;
+        box-shadow: 0 2px 6px rgba(40,55,47,0.03);
+    }
+
+    .ee-sub-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        border-bottom: 1px solid var(--surface-soft, #f8f9f5);
+        padding-bottom: 6px;
+    }
+
+    .ee-sub-header h5 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 750;
+        color: var(--text, #26332d);
+    }
+
+    .ee-empty-sub {
+        font-size: 12.5px;
+        color: var(--muted, #6c7870);
+        padding: 12px;
+        text-align: center;
+        font-style: italic;
+    }
+
+    .ee-sub-table-wrapper {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .ee-sub-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    .ee-sub-table th {
+        background: var(--surface-soft, #f8f9f5);
+        padding: 8px 10px;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+        text-align: left;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .ee-sub-table td {
+        padding: 8px 10px;
+        border-bottom: 1px dashed var(--border, #e4e7df);
+        vertical-align: middle;
+    }
+
+    .ee-installment-row {
+        background: #fbfdfb;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+
+    .ee-tiny-muted {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .ee-btn-xs {
+        padding: 3px 8px !important;
+        font-size: 11.5px !important;
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+    }
+
+    .ee-tnum {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum";
+    }
 </style>
 
 @code {
@@ -476,8 +931,8 @@
             periods.Add(now.AddMonths(-i).ToString("yyyy-MM"));
         }
         _availablePeriods = periods;
-        // Default to current month
-        _selectedBillingPeriod = periods.FirstOrDefault();
+        // Default to All Periods (Cumulative) so admins see the complete financial standing, partial settlements, and open balances across all months
+        _selectedBillingPeriod = "";
     }
 
     private async Task InitializeScopeAndFiltersAsync()
@@ -634,6 +1089,19 @@
             _bannerSuccess = false;
             _bannerMessage = ex.Message;
         }
+    }
+
+    private string FormatMoney(decimal amount, string? currency = null)
+    {
+        var curr = string.IsNullOrWhiteSpace(currency) ? _currency : currency;
+        return CurrencyService.Format(amount, curr, forceDecimals: true);
+    }
+
+    private string FormatDate(DateTimeOffset date, bool includeTime = false)
+    {
+        if (date == default || date.Year <= 1) return "-";
+        var local = date.ToLocalTime();
+        return includeTime ? local.ToString("d MMM yyyy HH:mm") : local.ToString("d MMM yyyy");
     }
 
     private async Task ExportCsvAsync()
