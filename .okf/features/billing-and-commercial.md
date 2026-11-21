@@ -232,6 +232,12 @@ tags:
     - Adheres to EnjoyEveryday design tokens (`--ee-font`, `--surface`, `--surface-soft`, `--border`, `--text`, `--muted`, `--accent`, `--accent-light`, `--accent-dark`, `--shadow`, `--radius: 18px`).
     - Tabular numeric alignment with `font-variant-numeric: tabular-nums` and `CurrencyService.Format(..., forceDecimals: true)`.
     - Date safeguarding (`FormatDate`) preventing default `0001-01-01` displays.
+  - **Mobile Responsive Design**:
+    - **KPI Metrics**: Stacks dynamically into a 2x2 grid (`repeat(2, 1fr)`) on mobile viewports ($\le 768\text{px}$) with compact 18px font and reduced padding to prevent vertical stretching.
+    - **Filter Bar & Status Pills**: `.ee-filter-grid` wraps neatly to single-column inputs with full-width search; `.ee-pill-group` enables smooth horizontal touch scrolling (`overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none`).
+    - **Nested Grids & Sub-Tables**: Tables enforce minimum safe widths (`min-width: 680px` / `580px`) inside horizontal scrolling containers, preventing crushed text and column overlapping on mobile phones.
+    - **Parent Portal Responsive Billing (`Billing.razor`)**: Summary cards collapse into a 2-column grid (`repeat(2, 1fr)`), installment schedule cards expand to 1-column layout, and payment choice pills adapt to 100% width on narrow screens.
+
 
 
 

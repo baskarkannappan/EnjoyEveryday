@@ -35,11 +35,7 @@
 <PageTitle>Daycare Web — My Classroom</PageTitle>
 
 <div class="content teacher-workspace-page">
-    @if (_loading)
-    {
-        <LoadingState Text="Preparing today's teaching workspace and classroom rhythm..." />
-    }
-    else if (_teacherClassrooms.Count == 0)
+    @if (!_loading && _teacherClassrooms.Count == 0)
     {
         <!-- ================= EMPTY STATE: NO ASSIGNED CLASSROOM ================= -->
         <div class="teacher-empty-card">
@@ -435,6 +431,98 @@
             </div>
         }
 
+        <!-- ================= SECTION D0: SMART ROUTINE BAR (ZERO-CLICK / LAZY TEACHER) ================= -->
+        <div class="smart-routine-bar">
+            <div class="smart-routine-top">
+                <div class="smart-routine-info">
+                    <span class="smart-routine-badge">⚡ AUTO-ROUTINE</span>
+                    <strong class="smart-routine-name">@GetCurrentRoutineTitle()</strong>
+                    <span class="smart-routine-desc">@GetCurrentRoutineDescription()</span>
+                </div>
+                <div class="smart-routine-pills">
+                    <button type="button" class="routine-tab-pill @(_currentRoutineMode == ClassroomRoutineMode.Auto ? "active" : "")" @onclick="() => SetRoutineMode(ClassroomRoutineMode.Auto)" title="Follows current classroom clock automatically">🕒 Auto Clock</button>
+                    <button type="button" class="routine-tab-pill @(_currentRoutineMode == ClassroomRoutineMode.Arrival ? "active" : "")" @onclick="() => SetRoutineMode(ClassroomRoutineMode.Arrival)">🌅 Arrivals</button>
+                    <button type="button" class="routine-tab-pill @(_currentRoutineMode == ClassroomRoutineMode.Meal ? "active" : "")" @onclick="() => SetRoutineMode(ClassroomRoutineMode.Meal)">🍽️ Lunch</button>
+                    <button type="button" class="routine-tab-pill @(_currentRoutineMode == ClassroomRoutineMode.Rest ? "active" : "")" @onclick="() => SetRoutineMode(ClassroomRoutineMode.Rest)">😴 Nap Rest</button>
+                    <button type="button" class="routine-tab-pill @(_currentRoutineMode == ClassroomRoutineMode.Diaper ? "active" : "")" @onclick="() => SetRoutineMode(ClassroomRoutineMode.Diaper)">🧷 Diaper/Potty</button>
+                    <button type="button" class="routine-tab-pill @(_currentRoutineMode == ClassroomRoutineMode.Pickup ? "active" : "")" @onclick="() => SetRoutineMode(ClassroomRoutineMode.Pickup)">📋 Pickup</button>
+                </div>
+            </div>
+
+            <!-- Primary 1-Click Action for the Current Routine -->
+            <div class="smart-routine-banner">
+                @if (EffectiveRoutine == ClassroomRoutineMode.Arrival)
+                {
+                    <div class="smart-banner-content">
+                        <div>
+                            <strong>🌅 Morning Drop-off in Progress</strong>
+                            <p>@_classroomChildren.Count(c => c.IsCheckedIn) of @_classroomChildren.Count children checked in. Mark all expected arrivals with 1 tap.</p>
+                        </div>
+                        <button class="btn primary sm" @onclick="MarkAllScheduledPresentAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)">
+                            ✓ 1-Tap Check-In All Expected
+                        </button>
+                    </div>
+                }
+                else if (EffectiveRoutine == ClassroomRoutineMode.Meal)
+                {
+                    <div class="smart-banner-content">
+                        <div>
+                            <strong>🍽️ Midday Meal / Lunch Table</strong>
+                            <p>Record full lunch for all checked-in children at once, then tap exceptions.</p>
+                        </div>
+                        <button class="btn primary sm" @onclick="RecordWholeTableLunchAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)">
+                            🍽️ 1-Tap Record Whole Table Lunch
+                        </button>
+                    </div>
+                }
+                else if (EffectiveRoutine == ClassroomRoutineMode.Rest)
+                {
+                    var restingCount = _classroomChildren.Count(c => c.IsCheckedIn && c.ActiveNapSession != null);
+                    var awakeCount = _classroomChildren.Count(c => c.IsCheckedIn && c.ActiveNapSession == null);
+                    <div class="smart-banner-content">
+                        <div>
+                            <strong>😴 Nap &amp; Rest Time (@restingCount Resting · @awakeCount Awake)</strong>
+                            <p>Start sleep timers for all awake children with 1 tap. Wake children individually with 1 tap on their cot.</p>
+                        </div>
+                        @if (awakeCount > 0)
+                        {
+                            <button class="btn primary sm" @onclick="StartGroupNapAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)">
+                                😴 1-Tap Rest All Awake (@awakeCount)
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="all-resting-badge">✨ All checked-in children are resting</span>
+                        }
+                    </div>
+                }
+                else if (EffectiveRoutine == ClassroomRoutineMode.Diaper)
+                {
+                    <div class="smart-banner-content">
+                        <div>
+                            <strong>🧷 Diaper &amp; Potty Routine</strong>
+                            <p>Use the direct 1-tap chips below on each child card (Wet / BM / Dry) or open the rapid checklist.</p>
+                        </div>
+                        <button class="btn primary sm" @onclick="OpenPottyChecklistModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)">
+                            🧷 Open Rapid Potty Checklist
+                        </button>
+                    </div>
+                }
+                else if (EffectiveRoutine == ClassroomRoutineMode.Pickup)
+                {
+                    <div class="smart-banner-content">
+                        <div>
+                            <strong>📋 Evening Pickup &amp; Doorway Handoff</strong>
+                            <p>Tap "Cheat-Sheet" on any child at the door for an instant 15-second parent conversation briefing.</p>
+                        </div>
+                        <button class="btn secondary sm" @onclick="OpenClassroomCloseModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked)">
+                            🌙 Close Classroom (End of Day)
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+
         <!-- ================= SECTION D: CLASSROOM LIVE ACTION COCKPIT ================= -->
         <div class="cockpit-section">
             <div class="cockpit-header">
@@ -473,6 +561,10 @@
                     <button class="batch-btn" @onclick="OpenTimerModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" style="@((IsBranchClosed || IsClassroomOperationsLocked) ? "opacity: 0.5; cursor: not-allowed;" : "")" title="Open Gentle Classroom Transition Timer &amp; Chime">
                         <span>⏳</span>
                         <span>Timer</span>
+                    </button>
+                    <button class="batch-btn" @onclick="OpenGeneralMomentModalAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" title="Record voice observation hands-free">
+                        <span>🎙️</span>
+                        <span>Voice Note</span>
                     </button>
                     <button class="batch-btn" @onclick="ManualCoTeacherSyncAsync" title="Refresh live status from co-teachers">
                         <span>🔄</span>
@@ -608,6 +700,32 @@
                                         </div>
                                         <span class="routine-value">@(isSleeping ? "Resting (Wake)" : "Awake (Start)")</span>
                                     </button>
+                                </div>
+
+                                <!-- Rapid 1-Tap Care Strip (Zero Popovers / Lazy Teacher Mode) -->
+                                <div class="rapid-care-strip">
+                                    <span class="rapid-strip-label">1-TAP:</span>
+                                    <button type="button" class="rapid-chip chip-wet" 
+                                            @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Wet")' 
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" 
+                                            title="1-Tap Log Wet Diaper">💧 Wet</button>
+                                    <button type="button" class="rapid-chip chip-bm" 
+                                            @onclick='() => QuickRecordDiaperAsync(child.ChildId, "BM")' 
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" 
+                                            title="1-Tap Log Dirty/BM Diaper">💩 BM</button>
+                                    <button type="button" class="rapid-chip chip-dry" 
+                                            @onclick='() => QuickRecordDiaperAsync(child.ChildId, "Clean/Dry")' 
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" 
+                                            title="1-Tap Log Clean &amp; Dry Diaper">✨ Dry</button>
+                                    <span class="rapid-strip-sep"></span>
+                                    <button type="button" class="rapid-chip chip-meal" 
+                                            @onclick='() => QuickRecordMealAsync(child.ChildId, "All (100%)")' 
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" 
+                                            title="1-Tap Log Finished All Meal/Snack">🥣 Ate All</button>
+                                    <button type="button" class="rapid-chip chip-meal-half" 
+                                            @onclick='() => QuickRecordMealAsync(child.ChildId, "Half (50%)")' 
+                                            disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" 
+                                            title="1-Tap Log Ate Half">🥪 Half</button>
                                 </div>
 
                                 <!-- Quick Diaper Popover -->
@@ -1039,6 +1157,30 @@
         </div>
         }
     }
+
+    <!-- ================= FLOATING MOBILE THUMB BAR (STICKY BOTTOM ON <= 768px) ================= -->
+    <div class="ee-floating-thumb-bar" role="navigation" aria-label="Quick Mobile Actions">
+        <button type="button" class="thumb-btn" @onclick="MarkAllScheduledPresentAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" title="Check-In All">
+            <span class="thumb-icon">🌅</span>
+            <span class="thumb-txt">Check In</span>
+        </button>
+        <button type="button" class="thumb-btn" @onclick="RecordWholeTableLunchAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" title="Table Lunch">
+            <span class="thumb-icon">🍽️</span>
+            <span class="thumb-txt">Lunch All</span>
+        </button>
+        <button type="button" class="thumb-btn" @onclick="StartGroupNapAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" title="Group Rest">
+            <span class="thumb-icon">😴</span>
+            <span class="thumb-txt">Rest All</span>
+        </button>
+        <button type="button" class="thumb-btn" @onclick="OpenPottyChecklistModal" disabled="@(IsBranchClosed || IsClassroomOperationsLocked || _isDaycareClosed)" title="Potty Line">
+            <span class="thumb-icon">🧷</span>
+            <span class="thumb-txt">Potty Line</span>
+        </button>
+        <button type="button" class="thumb-btn thumb-btn-voice" @onclick="OpenGeneralMomentModalAsync" disabled="@(IsBranchClosed || IsClassroomOperationsLocked)" title="Voice Observation">
+            <span class="thumb-icon">🎙️</span>
+            <span class="thumb-txt">Voice Note</span>
+        </button>
+    </div>
 </div>
 
 @* ACTIVE SESSION MODAL *@
@@ -1386,6 +1528,60 @@
     private string _rosterFilter = "All";
     private Guid? _activeDiaperChildId;
     private Guid? _activeMealChildId;
+
+    // Feature 7: Zero-Click Adaptive Classroom Routine (Lazy Teacher Mode)
+    public enum ClassroomRoutineMode
+    {
+        Auto,
+        Arrival,
+        Meal,
+        Rest,
+        Diaper,
+        Pickup
+    }
+
+    private ClassroomRoutineMode _currentRoutineMode = ClassroomRoutineMode.Auto;
+
+    private ClassroomRoutineMode EffectiveRoutine
+    {
+        get
+        {
+            if (_currentRoutineMode != ClassroomRoutineMode.Auto)
+                return _currentRoutineMode;
+
+            var time = DateTime.Now.TimeOfDay;
+            if (time < new TimeSpan(10, 30, 0)) return ClassroomRoutineMode.Arrival;
+            if (time < new TimeSpan(12, 45, 0)) return ClassroomRoutineMode.Meal;
+            if (time < new TimeSpan(15, 0, 0)) return ClassroomRoutineMode.Rest;
+            if (time < new TimeSpan(16, 30, 0)) return ClassroomRoutineMode.Diaper;
+            return ClassroomRoutineMode.Pickup;
+        }
+    }
+
+    private string GetCurrentRoutineTitle() => EffectiveRoutine switch
+    {
+        ClassroomRoutineMode.Arrival => "Morning Arrival & Gate",
+        ClassroomRoutineMode.Meal => "Midday Meal & Table Lunch",
+        ClassroomRoutineMode.Rest => "Nap Time & Rest Sessions",
+        ClassroomRoutineMode.Diaper => "Diaper & Potty Routine",
+        ClassroomRoutineMode.Pickup => "Evening Pickup & Handoff",
+        _ => "Classroom Daily Flow"
+    };
+
+    private string GetCurrentRoutineDescription() => EffectiveRoutine switch
+    {
+        ClassroomRoutineMode.Arrival => "Tap 'Check-In All' or tap child cards to log morning arrivals.",
+        ClassroomRoutineMode.Meal => "1-Tap 'Record Whole Table Lunch' logs everyone, then tap any child who ate less.",
+        ClassroomRoutineMode.Rest => "1-Tap 'Rest All Awake' starts sleep timers. Tap resting cots to wake up.",
+        ClassroomRoutineMode.Diaper => "Use direct 1-tap chips below on each child card (Wet / BM / Dry).",
+        ClassroomRoutineMode.Pickup => "Tap 'Cheat-Sheet' for 15-second parent conversation briefings at the door.",
+        _ => "Contextual daily routine"
+    };
+
+    private void SetRoutineMode(ClassroomRoutineMode mode)
+    {
+        _currentRoutineMode = mode;
+    }
 
     // Daily Operational Gates State
     private ClassroomDailyStatusDto? _classroomOpsStatus;

@@ -26,14 +26,8 @@
 <PageTitle>Daycare Web — Organization Management</PageTitle>
 
 <div class="content org-admin-dashboard-page">
-    @if (_loading)
-    {
-        <LoadingState Text="Preparing organization management overview and operations rhythm..." />
-    }
-    else
-    {
-        <!-- ================= SECTION A: WELCOME & ORG CONTEXT (GEMINI.md PageHero) ================= -->
-        <PageHero Eyebrow="@($"ORGANIZATION OPERATIONS • {_board.OrganizationName}")"
+    <!-- ================= SECTION A: WELCOME & ORG CONTEXT (GEMINI.md PageHero) ================= -->
+    <PageHero Eyebrow="@($"ORGANIZATION OPERATIONS • {_board.OrganizationName}")"
                   Title="@($"{GetGreeting()}, {GetAdminDisplayName()}!")"
                   Subtitle="@($"{TimeProvider.GetLocalNow().ToString("dddd, MMMM d, yyyy")}{(!string.IsNullOrEmpty(_board.SelectedBranchName) ? " • " + _board.SelectedBranchName : "")}")">
             <RightContent>
@@ -609,7 +603,6 @@
                 </div>
             </div>
         </div>
-    }
 </div>
 
 @* PHOTO LIGHTBOX PREVIEW *@
@@ -655,7 +648,6 @@
     [Parameter] public IReadOnlyList<string> AvailableViews { get; set; } = Array.Empty<string>();
     [Parameter] public EventCallback<string> OnChangeView { get; set; }
 
-    private bool _loading = true;
     private OperationsBoardModel _board = new();
     private List<Branch> _branches = new();
     private string _selectedBranchId = "";
@@ -723,7 +715,6 @@
 
     private async Task RefreshBoardAsync()
     {
-        _loading = true;
         try
         {
             Guid? branchId = Guid.TryParse(_selectedBranchId, out var bId) ? bId : null;
@@ -762,7 +753,7 @@
         }
         finally
         {
-            _loading = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 

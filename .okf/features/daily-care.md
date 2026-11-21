@@ -78,6 +78,21 @@ tags:
    - Periodic 15-second background synchronization polling (`_coTeacherSyncTimer`) comparing care timestamps.
    - Prompts a 3.5-second gentle notification (`🔄 Co-Teacher Live Sync`) whenever a co-teacher logs a meal, diaper, or nap in the same room.
    - Includes a manual `🔄 Sync` button in the cockpit header for instant multi-device alignment.
+7. **Zero-Click Adaptive Classroom Routine Smart Bar**:
+   - Time-aware contextual bar mounted above the live cockpit dynamically resolving the active room rhythm:
+     - `Arrival` (07:00–10:30): Prominently surfaces `✓ 1-Tap Check-In All Expected`.
+     - `Meal` (10:30–12:45): Prominently surfaces `🍽️ 1-Tap Record Whole Table Lunch`.
+     - `Rest` (12:45–15:00): Prominently surfaces `😴 1-Tap Rest All Awake` with live resting vs awake counter (`X resting, Y awake`).
+     - `Diaper` (15:00–16:30): Surfaces direct diaper chips and `🧷 Open Rapid Potty Checklist`.
+     - `Pickup` (16:30–19:00): Surfaces doorway cheat-sheets and `🌙 Close Classroom (End of Day)`.
+   - Educators can run on automatic clock mode (`🕒 Auto Clock`) or override any routine with a single pill tap.
+8. **Direct 1-Tap Rapid Care Strip (Zero Popovers)**:
+   - Each checked-in child card includes a direct rapid-action strip: `[ 💧 Wet ]`, `[ 💩 BM ]`, `[ ✨ Dry ]`, `[ 🥣 Ate All ]`, `[ 🥪 Half ]`.
+   - Bypasses all modal dialogs and dropdown popovers, persisting care logs in a single tap and immediately updating child card badges.
+9. **Floating Mobile Thumb Bar (Thumb Zone Ergonomics)**:
+   - Fixed to the bottom of the viewport on mobile devices (`<= 768px`) with safe-area insets (`.ee-floating-thumb-bar`).
+   - Keeps 5 essential actions permanently in the one-handed thumb reach zone without vertical scrolling: `🌅 Check In`, `🍽️ Lunch All`, `😴 Rest All`, `🧷 Potty Line`, and `🎙️ Voice Note`.
+
 
 
 

@@ -17,48 +17,44 @@
 
 @implements IDisposable
 
-@if (_initializing)
+@if (_currentView == "LeadTeacher")
 {
-    <LoadingState Text="Resolving your authorized workspace and classroom context..." />
+    <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
+                      IsLeadTeacher="true"
+                      AvailableViews="_availableViews"
+                      OnChangeView="HandleViewChanged" />
+}
+else if (_currentView == "Teacher")
+{
+    <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
+                      IsLeadTeacher="false"
+                      AvailableViews="_availableViews"
+                      OnChangeView="HandleViewChanged" />
+}
+else if (_currentView == "BranchAdmin")
+{
+    <BranchAdminDashboard AssignedBranchIds="_assignedBranchIds"
+                          AvailableViews="_availableViews"
+                          OnChangeView="HandleViewChanged" />
 }
 else
 {
-    @if (_currentView == "LeadTeacher")
-    {
-        <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
-                          IsLeadTeacher="true"
-                          AvailableViews="_availableViews"
-                          OnChangeView="HandleViewChanged" />
-    }
-    else if (_currentView == "Teacher")
-    {
-        <TeacherWorkspace AssignedClassroomIds="_assignedClassroomIds"
-                          IsLeadTeacher="false"
-                          AvailableViews="_availableViews"
-                          OnChangeView="HandleViewChanged" />
-    }
-    else if (_currentView == "BranchAdmin")
-    {
-        <BranchAdminDashboard AssignedBranchIds="_assignedBranchIds"
-                              AvailableViews="_availableViews"
-                              OnChangeView="HandleViewChanged" />
-    }
-    else
-    {
-        <OrgAdminDashboard AvailableViews="_availableViews"
-                           OnChangeView="HandleViewChanged" />
-    }
+    <OrgAdminDashboard AvailableViews="_availableViews"
+                       OnChangeView="HandleViewChanged" />
 }
 
 @code {
-    private bool _initializing = true;
-    private string _currentView = "Teacher";
+    private string _currentView = "OrgAdmin";
     private List<string> _availableViews = new();
     private HashSet<Guid> _assignedClassroomIds = new();
     private HashSet<Guid> _assignedBranchIds = new();
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrEmpty(ViewPreference.CurrentView))
+        {
+            _currentView = ViewPreference.CurrentView;
+        }
         Navigation.LocationChanged += HandleLocationChanged;
         ViewPreference.OnViewChanged += HandlePreferenceChanged;
         await ResolveUserScopeAndDefaultViewAsync();
@@ -75,7 +71,6 @@ else
 
     private async Task ResolveUserScopeAndDefaultViewAsync()
     {
-        _initializing = true;
         try
         {
             var profile = await PageAuth.GetUserProfileAsync();
@@ -132,10 +127,6 @@ else
         {
             Console.WriteLine($"Error resolving dashboard scope: {ex.Message}");
             _currentView = "Teacher";
-        }
-        finally
-        {
-            _initializing = false;
         }
     }
 

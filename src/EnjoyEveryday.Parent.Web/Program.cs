@@ -5,6 +5,7 @@ using EnjoyEveryday.Shared.Data;
 using EnjoyEveryday.Parent.Web.Components;
 using Microsoft.FluentUI.AspNetCore.Components;
 using EnjoyEveryday.UI.Shared;
+using Microsoft.AspNetCore.ResponseCompression;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
@@ -27,6 +28,20 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<EnjoyEveryday.Parent.Web.Services.ParentSessionState>();
 builder.Services.AddScoped<EnjoyEveryday.Parent.Web.Services.ParentLocalizationService>();
 builder.Services.AddSingleton<EnjoyEveryday.Parent.Web.Services.ParentRealtimeNotificationCenter>();
+
+// Enable Brotli & Gzip Response Compression for fast asset transfers
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[]
+    {
+        "image/svg+xml",
+        "application/javascript",
+        "text/css"
+    });
+});
 
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
 {
@@ -91,12 +106,19 @@ if (app.Environment.IsDevelopment())
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
 app.UseAppObservability();
+app.UseResponseCompression();
 
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("X-Frame-Options", "DENY");
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
     context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+
+    var path = context.Request.Path.Value ?? "";
+    if (path.StartsWith("/_content/") || path.StartsWith("/css/") || path.StartsWith("/js/") || path.EndsWith(".css") || path.EndsWith(".js") || path.EndsWith(".woff2"))
+    {
+        context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    }
     await next();
 });
 
