@@ -28,6 +28,7 @@
 @inject NavigationManager Navigation
 @inject TimeProvider TimeProvider
 @inject Microsoft.Extensions.Logging.ILogger<TeacherWorkspace> Logger
+@inject IClassroomGiftingService GiftingService
 @inject IJSRuntime JS
 
 @implements IDisposable
@@ -923,6 +924,17 @@
                         <div class="action-subtitle">View planned routines</div>
                     </div>
                 </div>
+
+                <!-- 7. Classroom Gifts & Contributions -->
+                <div class="action-card" role="button" tabindex="0" @onclick="OpenClassroomGiftsModal">
+                    <div class="action-card-icon">
+                        <FluentIcon Value="@(new Icons.Regular.Size20.Gift())" Width="26px" Color="Color.Custom" CustomColor="#d97706" />
+                    </div>
+                    <div class="action-card-text">
+                        <div class="action-title">Classroom Gifts</div>
+                        <div class="action-subtitle">Arrivals &amp; Distribution</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1510,6 +1522,81 @@
     </div>
 }
 
+<!-- CLASSROOM GIFTS & CONTRIBUTIONS MODAL -->
+@if (_showClassroomGiftsModal)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 650px; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text);">Classroom Gifts &amp; Contributions</h3>
+                    <span style="font-size: 13px; color: var(--muted);">@(_activeClassroom?.Name ?? "My Classroom") · Physical Receipt &amp; Child Handover</span>
+                </div>
+                <button type="button" style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showClassroomGiftsModal = false">✕</button>
+            </div>
+
+            @if (_isLoadingClassroomGifts)
+            {
+                <div style="padding: 30px; text-align: center; color: var(--muted);">Loading classroom gifts...</div>
+            }
+            else if (!_classroomGifts.Any())
+            {
+                <div style="background: var(--surface-soft, #f8f9f5); padding: 30px; border-radius: 12px; text-align: center; color: var(--muted);">
+                    <span style="font-size: 32px; display: block; margin-bottom: 6px;">🎁</span>
+                    <p style="margin: 0; font-size: 13.5px;">No gift orders currently pending receipt or distribution for this classroom.</p>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    @foreach (var gift in _classroomGifts)
+                    {
+                        <div style="background: var(--surface-soft, #f8f9f5); border: 1px solid var(--border, #e4e7df); border-radius: 10px; padding: 14px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                                <div>
+                                    <strong style="font-size: 14px; color: var(--text);">
+                                        @(gift.RecipientType == GiftingRecipientTypes.BirthdayGift ? $"🎂 Birthday Gift for {gift.RecipientChildName}" : "📚 General Classroom Contribution")
+                                    </strong>
+                                    <div style="font-size: 12px; color: var(--muted);">Order: @gift.OrderNumber · Submitted by: @gift.ParentName</div>
+                                </div>
+                                <span style="font-size: 11px; font-weight: 700; background: white; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px;">
+                                    @gift.FulfilmentStatus
+                                </span>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(gift.GreetingMessage))
+                            {
+                                <div style="font-size: 12.5px; font-style: italic; color: #4b5e52; margin-bottom: 10px;">
+                                    " @gift.GreetingMessage "
+                                </div>
+                            }
+
+                            <div style="display: flex; gap: 8px; justify-content: flex-end; border-top: 1px dashed var(--border); padding-top: 8px;">
+                                @if (gift.FulfilmentStatus == GiftingFulfilmentStatuses.DispatchedOrHandedOver || gift.FulfilmentStatus == GiftingFulfilmentStatuses.ReadyForDelivery || gift.FulfilmentStatus == GiftingFulfilmentStatuses.Preparing)
+                                {
+                                    <button type="button" class="primary" style="font-size: 12px; padding: 6px 12px;" @onclick="() => ConfirmReceiptAtClassroomAsync(gift.Id)">
+                                        ✓ Confirm Physical Receipt
+                                    </button>
+                                }
+                                else if (gift.FulfilmentStatus == GiftingFulfilmentStatuses.ReceivedAtDestination)
+                                {
+                                    <button type="button" class="primary" style="font-size: 12px; padding: 6px 12px; background: #047857;" @onclick="() => ConfirmDistributionAsync(gift.Id)">
+                                        🎁 Record Distribution to Child / Class
+                                    </button>
+                                }
+                                else if (gift.FulfilmentStatus == GiftingFulfilmentStatuses.Distributed || gift.FulfilmentStatus == GiftingFulfilmentStatuses.Completed)
+                                {
+                                    <span style="font-size: 12px; color: #047857; font-weight: 700;">✓ Distributed &amp; Complete</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public IReadOnlySet<Guid> AssignedClassroomIds { get; set; } = new HashSet<Guid>();
     [Parameter] public IReadOnlyList<string> AvailableViews { get; set; } = Array.Empty<string>();
@@ -1528,6 +1615,63 @@
     private string _rosterFilter = "All";
     private Guid? _activeDiaperChildId;
     private Guid? _activeMealChildId;
+
+    // Classroom Gifting Modal State
+    private bool _showClassroomGiftsModal = false;
+    private bool _isLoadingClassroomGifts = false;
+    private List<ClassroomGiftingOrder> _classroomGifts = new();
+
+    private async Task OpenClassroomGiftsModal()
+    {
+        _showClassroomGiftsModal = true;
+        await LoadClassroomGiftsAsync();
+    }
+
+    private async Task LoadClassroomGiftsAsync()
+    {
+        if (!_selectedClassroomId.HasValue) return;
+        try
+        {
+            _isLoadingClassroomGifts = true;
+            var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+            _classroomGifts = await GiftingService.GetOrdersForAdminAsync(orgId, null, _selectedClassroomId.Value);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load classroom gifts");
+            _classroomGifts = new();
+        }
+        finally
+        {
+            _isLoadingClassroomGifts = false;
+        }
+    }
+
+    private async Task ConfirmReceiptAtClassroomAsync(Guid orderId)
+    {
+        try
+        {
+            await GiftingService.UpdateFulfilmentStatusAsync(orderId, GiftingFulfilmentStatuses.ReceivedAtDestination, "Physically received at classroom by educator");
+            await LoadClassroomGiftsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to confirm receipt");
+        }
+    }
+
+    private async Task ConfirmDistributionAsync(Guid orderId)
+    {
+        try
+        {
+            await GiftingService.UpdateFulfilmentStatusAsync(orderId, GiftingFulfilmentStatuses.Distributed, "Gift handed over to child / distributed for classroom learning");
+            await LoadClassroomGiftsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to confirm distribution");
+        }
+    }
 
     // Feature 7: Zero-Click Adaptive Classroom Routine (Lazy Teacher Mode)
     public enum ClassroomRoutineMode

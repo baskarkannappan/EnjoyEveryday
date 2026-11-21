@@ -1,0 +1,803 @@
+@page "/management/gifting-orders"
+@page "/gifting-operations"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "PlatformAdmin,OrganizationOwner,OrganizationAdmin,BranchAdmin")]
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
+@inject IClassroomGiftingService GiftingService
+@inject IBranchRepository BranchRepository
+@inject IClassroomRepository ClassroomRepository
+@inject ICurrencyService CurrencyService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Classroom Gifting Orders — Daycare Operations</PageTitle>
+
+<div class="content" style="max-width: 1400px; margin: 0 auto; padding: 24px 32px 60px; font-family: var(--ee-font, 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);">
+    <PageHero Eyebrow="COMMERCIAL OPERATIONS"
+              Title="Birthday Gifting &amp; Classroom Giving"
+              Subtitle="Review parent gift orders, approve submissions, verify UPI/cash payments, and track delivery to branches and classroom distribution.">
+        <RightContent>
+            <a href="/management/gifting-reports" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+                <span>📊</span>
+                <span>Financial Reconciliation</span>
+            </a>
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_bannerMessage))
+    {
+        <div style="padding: 12px 16px; margin-bottom: 16px; border: 1px solid @(_bannerSuccess ? "#c8dacd" : "#fed7d7"); background: @(_bannerSuccess ? "var(--accent-light, #e6eee9)" : "#fff5f5"); color: @(_bannerSuccess ? "var(--accent-dark, #31523c)" : "#9b2c2c"); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600;">@(_bannerSuccess ? "✓" : "⚠️") @_bannerMessage</span>
+            <button style="background: none; border: none; cursor: pointer; font-size: 14px;" @onclick="() => _bannerMessage = null">✕</button>
+        </div>
+    }
+
+    <!-- KPI STRIP -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 24px;">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;">TOTAL GIFT ORDERS</span>
+            <div style="font-size: 24px; font-weight: 800; color: var(--text); margin-top: 4px;" class="ee-tnum">@_orders.Count</div>
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;">PENDING DUAL-APPROVAL</span>
+            <div style="font-size: 24px; font-weight: 800; color: #b45309; margin-top: 4px;" class="ee-tnum">
+                @_orders.Count(o => o.ApprovalStatus == GiftingApprovalStatuses.PendingApproval)
+            </div>
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;">PAYMENT VERIFICATION PENDING</span>
+            <div style="font-size: 24px; font-weight: 800; color: #2563eb; margin-top: 4px;" class="ee-tnum">
+                @_orders.Count(o => o.PaymentStatus == GiftingPaymentStatuses.PaymentVerificationPending || o.PaymentStatus == GiftingPaymentStatuses.CashPaymentPending)
+            </div>
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;">AWAITING FULFILMENT</span>
+            <div style="font-size: 24px; font-weight: 800; color: #0284c7; margin-top: 4px;" class="ee-tnum">
+                @_orders.Count(o => o.PaymentStatus == GiftingPaymentStatuses.Paid && o.FulfilmentStatus != GiftingFulfilmentStatuses.Completed && o.FulfilmentStatus != GiftingFulfilmentStatuses.Distributed)
+            </div>
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+            <span style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase;">COMPLETED &amp; DISTRIBUTED</span>
+            <div style="font-size: 24px; font-weight: 800; color: var(--accent-dark); margin-top: 4px;" class="ee-tnum">
+                @_orders.Count(o => o.FulfilmentStatus == GiftingFulfilmentStatuses.Completed || o.FulfilmentStatus == GiftingFulfilmentStatuses.Distributed)
+            </div>
+        </div>
+    </div>
+
+    <!-- FILTER TOOLBAR -->
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 20px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+        <input type="text"
+               @bind="_searchQuery"
+               @bind:event="oninput"
+               placeholder="Search by order #, parent, recipient..."
+               style="flex: 1; min-width: 240px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;" />
+
+        <select @bind="_selectedBranchFilter" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: white;">
+            <option value="">All Branches</option>
+            @foreach (var br in _branches)
+            {
+                <option value="@br.Id">@br.Name</option>
+            }
+        </select>
+
+        <select @bind="_selectedTypeFilter" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: white;">
+            <option value="All">All Giving Types</option>
+            <option value="@GiftingRecipientTypes.BirthdayGift">Birthday Gifts</option>
+            <option value="@GiftingRecipientTypes.ClassroomContribution">General Classroom Contributions</option>
+        </select>
+
+        <select @bind="_selectedStatusFilter" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: white;">
+            <option value="All">All Statuses</option>
+            <option value="@GiftingApprovalStatuses.PendingApproval">⏳ Pending Approval</option>
+            <option value="@GiftingApprovalStatuses.Approved">✓ Approved</option>
+            <option value="@GiftingPaymentStatuses.PaymentVerificationPending">📱 Payment Verification Pending</option>
+            <option value="@GiftingPaymentStatuses.CashPaymentPending">💵 Cash Pending Handover</option>
+            <option value="@GiftingPaymentStatuses.Paid">💳 Paid</option>
+            <option value="@GiftingFulfilmentStatuses.Preparing">📦 Preparing</option>
+            <option value="@GiftingFulfilmentStatuses.ReceivedAtDestination">🏫 Received at Branch</option>
+            <option value="@GiftingFulfilmentStatuses.Distributed">🎁 Distributed</option>
+            <option value="@GiftingApprovalStatuses.Rejected">✕ Rejected</option>
+        </select>
+    </div>
+
+    <!-- ORDERS TABLE -->
+    @if (_isLoading)
+    {
+        <div style="padding: 60px; text-align: center; color: var(--muted);">
+            <div>🌿 Loading classroom gifting orders...</div>
+        </div>
+    }
+    else if (!FilteredOrders.Any())
+    {
+        <div style="background: white; border: 1px solid var(--border); border-radius: 16px; padding: 50px; text-align: center;">
+            <div style="font-size: 32px; margin-bottom: 10px;">📦</div>
+            <h3 style="margin: 0 0 6px; font-weight: 750;">No Orders Match Criteria</h3>
+            <p style="color: var(--muted); font-size: 13.5px; margin: 0;">Try clearing your search query or selecting a different status filter.</p>
+        </div>
+    }
+    else
+    {
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow-x: auto;">
+            <table style="width: 100%; min-width: 950px; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border); text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;">
+                        <th style="padding: 12px 16px;">Order #</th>
+                        <th style="padding: 12px 16px;">Date</th>
+                        <th style="padding: 12px 16px;">Parent / Donor</th>
+                        <th style="padding: 12px 16px;">Recipient / Target</th>
+                        <th style="padding: 12px 16px;">Confirmed Delivery Facility</th>
+                        <th style="padding: 12px 16px; text-align: right;">Amount</th>
+                        <th style="padding: 12px 16px; text-align: center;">Approval</th>
+                        <th style="padding: 12px 16px; text-align: center;">Payment</th>
+                        <th style="padding: 12px 16px; text-align: center;">Fulfilment</th>
+                        <th style="padding: 12px 16px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var order in FilteredOrders)
+                    {
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 14px 16px; font-weight: 750; color: var(--text);">
+                                @order.OrderNumber
+                            </td>
+                            <td style="padding: 14px 16px; color: var(--muted); white-space: nowrap;">
+                                @order.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy")
+                            </td>
+                            <td style="padding: 14px 16px;">
+                                <div style="font-weight: 600; color: var(--text);">@order.ParentName</div>
+                                <div style="font-size: 11.5px; color: var(--muted);">@order.ParentEmail</div>
+                            </td>
+                            <td style="padding: 14px 16px;">
+                                @if (order.RecipientType == GiftingRecipientTypes.BirthdayGift)
+                                {
+                                    <span style="font-weight: 600; color: var(--accent-dark);">🎂 @order.RecipientChildName</span>
+                                }
+                                else
+                                {
+                                    <span style="font-weight: 600; color: #0284c7;">📚 Classroom Contribution</span>
+                                }
+                            </td>
+                            <td style="padding: 14px 16px; max-width: 240px;">
+                                <div style="font-size: 12px; color: var(--text); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="@order.ConfirmedDeliveryAddress">
+                                    📍 @order.ConfirmedDeliveryAddress
+                                </div>
+                            </td>
+                            <td style="padding: 14px 16px; text-align: right; font-weight: 800; color: var(--accent-dark);" class="ee-tnum">
+                                @CurrencyService.Format(order.TotalAmount, order.Currency)
+                            </td>
+                            <td style="padding: 14px 16px; text-align: center;">
+                                @if (order.ApprovalStatus == GiftingApprovalStatuses.PendingApproval)
+                                {
+                                    <span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;">
+                                        ⏳ Review Needed
+                                    </span>
+                                }
+                                else if (order.ApprovalStatus == GiftingApprovalStatuses.Approved)
+                                {
+                                    <span style="background: var(--accent-light); color: var(--accent-dark); border: 1px solid #c8dacd; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;" title="Approved by @order.ApprovalDecidedByName">
+                                        ✓ Approved
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span style="background: #fff5f5; color: #9b2c2c; border: 1px solid #fed7d7; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;">
+                                        ✕ Rejected
+                                    </span>
+                                }
+                            </td>
+                            <td style="padding: 14px 16px; text-align: center;">
+                                @if (order.PaymentStatus == GiftingPaymentStatuses.Paid)
+                                {
+                                    <span style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;">
+                                        ✓ Paid (@order.PaymentMethod)
+                                    </span>
+                                }
+                                else if (order.PaymentStatus == GiftingPaymentStatuses.PaymentVerificationPending)
+                                {
+                                    <span style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;">
+                                        🔍 Verify UPI/Bank
+                                    </span>
+                                }
+                                else if (order.PaymentStatus == GiftingPaymentStatuses.CashPaymentPending)
+                                {
+                                    <span style="background: #fefce8; color: #854d0e; border: 1px solid #fef08a; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 750;">
+                                        💵 Awaiting Cash
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span style="color: var(--muted); font-size: 12px;">Unpaid</span>
+                                }
+                            </td>
+                            <td style="padding: 14px 16px; text-align: center;">
+                                <span style="font-size: 11.5px; font-weight: 600; color: var(--text); background: var(--surface-soft); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);">
+                                    @FormatFulfilment(order.FulfilmentStatus)
+                                </span>
+                            </td>
+                            <td style="padding: 14px 16px; text-align: right; white-space: nowrap;">
+                                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                    @if (order.ApprovalStatus == GiftingApprovalStatuses.PendingApproval)
+                                    {
+                                        <button type="button" class="primary" style="padding: 4px 10px; font-size: 12px;" @onclick="() => OpenApprovalModal(order)">
+                                            Review &amp; Decide
+                                        </button>
+                                    }
+                                    @if (order.PaymentStatus == GiftingPaymentStatuses.PaymentVerificationPending)
+                                    {
+                                        <button type="button" class="primary" style="padding: 4px 10px; font-size: 12px; background: #2563eb;" @onclick="() => OpenVerifyPaymentDrawer(order)">
+                                            Verify Payment
+                                        </button>
+                                    }
+                                    @if (order.PaymentStatus == GiftingPaymentStatuses.CashPaymentPending || (order.ApprovalStatus == GiftingApprovalStatuses.Approved && order.PaymentStatus != GiftingPaymentStatuses.Paid))
+                                    {
+                                        <button type="button" class="secondary" style="padding: 4px 8px; font-size: 12px;" @onclick="() => OpenRecordCashModal(order)">
+                                            💵 Record Cash
+                                        </button>
+                                    }
+                                    @if (order.PaymentStatus == GiftingPaymentStatuses.Paid)
+                                    {
+                                        <button type="button" class="secondary" style="padding: 4px 8px; font-size: 12px;" @onclick="() => OpenFulfilmentModal(order)">
+                                            📦 Fulfilment
+                                        </button>
+                                    }
+                                    <button type="button" class="secondary" style="padding: 4px 8px; font-size: 12px;" @onclick="() => OpenTimelineModal(order)" title="History & Audit">
+                                        📜
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<!-- DUAL-ADMIN APPROVAL MODAL -->
+@if (_selectedOrderForApproval != null && _showApprovalModal)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 550px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text);">Dual-Admin Order Review</h3>
+                <button type="button" style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showApprovalModal = false">✕</button>
+            </div>
+
+            <div style="background: var(--surface-soft); padding: 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;">
+                <div style="margin-bottom: 6px;"><strong>Order:</strong> @_selectedOrderForApproval.OrderNumber</div>
+                <div style="margin-bottom: 6px;"><strong>Parent:</strong> @_selectedOrderForApproval.ParentName (@_selectedOrderForApproval.ParentEmail)</div>
+                <div style="margin-bottom: 6px;"><strong>Recipient:</strong> @(_selectedOrderForApproval.RecipientType == GiftingRecipientTypes.BirthdayGift ? _selectedOrderForApproval.RecipientChildName : "Classroom")</div>
+                <div style="margin-bottom: 6px;"><strong>Confirmed Address:</strong> @_selectedOrderForApproval.ConfirmedDeliveryAddress</div>
+                <div><strong>Amount:</strong> @CurrencyService.Format(_selectedOrderForApproval.TotalAmount, _selectedOrderForApproval.Currency)</div>
+            </div>
+
+            <div style="font-size: 12.5px; color: var(--muted); margin-bottom: 16px;">
+                Either the authorized <strong>Branch Admin</strong> OR the <strong>Organization Admin</strong> can decide this order. The first decision recorded is authoritative.
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-size: 12px; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">
+                    Rejection Reason (Required only if rejecting)
+                </label>
+                <input type="text" @bind="_rejectionReason" placeholder="e.g. Ineligible product, classroom schedule conflict..." style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;" />
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="secondary" style="color: #9b2c2c;" disabled="@_isProcessingAction" @onclick='() => DecideOrderAsync("Rejected")'>
+                    Reject Order
+                </button>
+                <button type="button" class="primary" disabled="@_isProcessingAction" @onclick='() => DecideOrderAsync("Approved")'>
+                    Approve Order
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- VERIFY MANUAL PAYMENT DRAWER -->
+@if (_selectedOrderForVerifyPayment != null && _showVerifyPaymentDrawer)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 550px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text);">Verify Manual Payment</h3>
+                <button type="button" style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showVerifyPaymentDrawer = false">✕</button>
+            </div>
+
+            <div style="background: var(--surface-soft); padding: 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;">
+                <div style="margin-bottom: 6px;"><strong>Order Number:</strong> @_selectedOrderForVerifyPayment.OrderNumber</div>
+                <div style="margin-bottom: 6px;"><strong>Method:</strong> @_selectedOrderForVerifyPayment.PaymentMethod</div>
+                <div style="margin-bottom: 6px;"><strong>Expected Amount:</strong> @CurrencyService.Format(_selectedOrderForVerifyPayment.TotalAmount, _selectedOrderForVerifyPayment.Currency)</div>
+            </div>
+
+            @if (_pendingPayments.Any())
+            {
+                <div style="margin-bottom: 16px;">
+                    <strong style="font-size: 13px; display: block; margin-bottom: 8px;">Submitted Payment Declarations:</strong>
+                    @foreach (var p in _pendingPayments)
+                    {
+                        <div style="background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700;">
+                                <span>Ref/UTR: @(p.TransactionId ?? "None")</span>
+                                <span class="ee-tnum">@CurrencyService.Format(p.Amount, p.Currency)</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(p.Notes))
+                            {
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">Notes: @p.Notes</div>
+                            }
+                            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                                <button type="button" class="primary" style="padding: 6px 14px; font-size: 12px;" disabled="@_isProcessingAction" @onclick="() => VerifyPaymentAsync(p.Id)">
+                                    ✓ Confirm &amp; Mark Paid
+                                </button>
+                                <button type="button" class="secondary" style="padding: 6px 14px; font-size: 12px; color: #9b2c2c;" disabled="@_isProcessingAction" @onclick="() => RejectPaymentAsync(p.Id)">
+                                    ✕ Reject
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div style="color: var(--muted); font-size: 13px; margin-bottom: 16px;">
+                    No pending payment declarations found in queue.
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- RECORD CASH MODAL -->
+@if (_selectedOrderForCash != null && _showRecordCashModal)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text);">Record Physical Cash Received</h3>
+                <button type="button" style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showRecordCashModal = false">✕</button>
+            </div>
+
+            <div style="background: var(--surface-soft); padding: 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px;">
+                <div style="margin-bottom: 6px;"><strong>Order:</strong> @_selectedOrderForCash.OrderNumber</div>
+                <div style="margin-bottom: 6px;"><strong>Parent:</strong> @_selectedOrderForCash.ParentName</div>
+                <div><strong>Expected Amount:</strong> @CurrencyService.Format(_selectedOrderForCash.TotalAmount, _selectedOrderForCash.Currency)</div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; color: var(--text);">Actual Amount Received (₹) *</label>
+                    <input type="number" step="0.01" @bind="_cashAmountReceived" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-weight: 750;" />
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; color: var(--text);">Notes / Internal Reference</label>
+                    <input type="text" @bind="_cashNotes" placeholder="e.g. Received at reception counter" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;" />
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="secondary" @onclick="() => _showRecordCashModal = false">Cancel</button>
+                <button type="button" class="primary" disabled="@(_cashAmountReceived <= 0 || _isProcessingAction)" @onclick="RecordCashPaymentAsync">
+                    @(_isProcessingAction ? "Recording..." : "Record Cash & Generate Receipt")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- FULFILMENT STATUS MODAL -->
+@if (_selectedOrderForFulfilment != null && _showFulfilmentModal)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text);">Update Fulfilment Stage</h3>
+                <button type="button" style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _showFulfilmentModal = false">✕</button>
+            </div>
+
+            <div style="margin-bottom: 14px; font-size: 13px;">
+                <strong>Order @_selectedOrderForFulfilment.OrderNumber</strong> — Current Stage: <em>@_selectedOrderForFulfilment.FulfilmentStatus</em>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; color: var(--text);">Target Fulfilment Stage *</label>
+                    <select @bind="_targetFulfilmentStage" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: white;">
+                        <option value="@GiftingFulfilmentStatuses.Preparing">Preparing Gifts</option>
+                        <option value="@GiftingFulfilmentStatuses.ReadyForDelivery">Ready for Delivery</option>
+                        <option value="@GiftingFulfilmentStatuses.DispatchedOrHandedOver">Dispatched / In Transit</option>
+                        <option value="@GiftingFulfilmentStatuses.ReceivedAtDestination">Received at Branch Destination</option>
+                        <option value="@GiftingFulfilmentStatuses.Distributed">Distributed in Classroom</option>
+                        <option value="@GiftingFulfilmentStatuses.Completed">Order Completed</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 700; color: var(--text);">Notes / Handover Details</label>
+                    <input type="text" @bind="_fulfilmentNotes" placeholder="e.g. Received at Downtown campus by front desk" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;" />
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="secondary" @onclick="() => _showFulfilmentModal = false">Cancel</button>
+                <button type="button" class="primary" disabled="@_isProcessingAction" @onclick="UpdateFulfilmentAsync">
+                    Update Stage
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- AUDIT TIMELINE MODAL -->
+@if (_selectedOrderForTimeline != null)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 650px; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text);">Complete Action &amp; Audit History</h3>
+                <button type="button" style="background: none; border: none; font-size: 20px; cursor: pointer;" @onclick="() => _selectedOrderForTimeline = null">✕</button>
+            </div>
+
+            @if (_isLoadingTimeline)
+            {
+                <div style="padding: 24px; text-align: center; color: var(--muted);">Loading timeline...</div>
+            }
+            else if (!_timelineEvents.Any())
+            {
+                <div style="padding: 20px; text-align: center; color: var(--muted);">No audit events recorded yet.</div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 14px; position: relative; padding-left: 20px; border-left: 2px solid var(--accent-light);">
+                    @foreach (var ev in _timelineEvents)
+                    {
+                        <div style="position: relative;">
+                            <div style="position: absolute; left: -27px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent-dark); border: 2px solid white;"></div>
+                            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                                <strong style="font-size: 13.5px; color: var(--text);">@ev.Description</strong>
+                                <span style="font-size: 11.5px; color: var(--muted);">@ev.CreatedAt.ToLocalTime().ToString("d MMM yyyy, h:mm tt")</span>
+                            </div>
+                            <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                                By: @(ev.ActorName ?? "System") (@ev.ActorRole)
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(ev.Notes))
+                            {
+                                <div style="font-size: 12.5px; color: #4b5e52; background: var(--surface-soft); padding: 4px 8px; border-radius: 4px; margin-top: 4px;">
+                                    @ev.Notes
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<ClassroomGiftingOrder> _orders = new();
+    private List<Branch> _branches = new();
+    private bool _isLoading = true;
+    private string? _bannerMessage;
+    private bool _bannerSuccess;
+
+    private string _searchQuery = string.Empty;
+    private string _selectedBranchFilter = string.Empty;
+    private string _selectedTypeFilter = "All";
+    private string _selectedStatusFilter = "All";
+
+    // Modal states
+    private ClassroomGiftingOrder? _selectedOrderForApproval;
+    private bool _showApprovalModal;
+    private string? _rejectionReason;
+
+    private ClassroomGiftingOrder? _selectedOrderForVerifyPayment;
+    private bool _showVerifyPaymentDrawer;
+    private List<Payment> _pendingPayments = new();
+
+    private ClassroomGiftingOrder? _selectedOrderForCash;
+    private bool _showRecordCashModal;
+    private decimal _cashAmountReceived;
+    private string? _cashNotes;
+
+    private ClassroomGiftingOrder? _selectedOrderForFulfilment;
+    private bool _showFulfilmentModal;
+    private string _targetFulfilmentStage = GiftingFulfilmentStatuses.Preparing;
+    private string? _fulfilmentNotes;
+
+    private ClassroomGiftingOrder? _selectedOrderForTimeline;
+    private List<ClassroomGiftingAuditEvent> _timelineEvents = new();
+    private bool _isLoadingTimeline;
+
+    private bool _isProcessingAction = false;
+
+    private IEnumerable<ClassroomGiftingOrder> FilteredOrders => _orders.Where(o =>
+    {
+        if (!string.IsNullOrWhiteSpace(_selectedBranchFilter) && Guid.TryParse(_selectedBranchFilter, out var brId) && o.BranchId != brId)
+            return false;
+
+        if (_selectedTypeFilter != "All" && o.RecipientType != _selectedTypeFilter)
+            return false;
+
+        if (_selectedStatusFilter != "All")
+        {
+            if (o.ApprovalStatus != _selectedStatusFilter && o.PaymentStatus != _selectedStatusFilter && o.FulfilmentStatus != _selectedStatusFilter)
+                return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim().ToLowerInvariant();
+            return o.OrderNumber.ToLowerInvariant().Contains(q) ||
+                   (o.ParentName?.ToLowerInvariant().Contains(q) ?? false) ||
+                   (o.RecipientChildName?.ToLowerInvariant().Contains(q) ?? false) ||
+                   (o.ConfirmedDeliveryAddress?.ToLowerInvariant().Contains(q) ?? false);
+        }
+
+        return true;
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+            _branches = (await BranchRepository.GetByOrganizationIdAsync(TenantContext.TenantId, orgId)).ToList();
+            _orders = await GiftingService.GetOrdersForAdminAsync(orgId);
+        }
+        catch (Exception ex)
+        {
+            _bannerMessage = $"Failed to load orders: {ex.Message}";
+            _bannerSuccess = false;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void OpenApprovalModal(ClassroomGiftingOrder order)
+    {
+        _selectedOrderForApproval = order;
+        _rejectionReason = null;
+        _showApprovalModal = true;
+    }
+
+    private async Task DecideOrderAsync(string decision)
+    {
+        if (_selectedOrderForApproval == null) return;
+        if (decision == "Rejected" && string.IsNullOrWhiteSpace(_rejectionReason))
+        {
+            _bannerMessage = "Please provide a rejection reason.";
+            _bannerSuccess = false;
+            return;
+        }
+
+        try
+        {
+            _isProcessingAction = true;
+            var res = await GiftingService.ApproveOrRejectOrderAsync(_selectedOrderForApproval.Id, decision, _rejectionReason);
+            if (res.Success)
+            {
+                _bannerMessage = $"Order {_selectedOrderForApproval.OrderNumber} {decision.ToLowerInvariant()} successfully.";
+                _bannerSuccess = true;
+                _showApprovalModal = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                _bannerMessage = res.Message;
+                _bannerSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _bannerMessage = ex.Message;
+            _bannerSuccess = false;
+        }
+        finally
+        {
+            _isProcessingAction = false;
+        }
+    }
+
+    private async Task OpenVerifyPaymentDrawer(ClassroomGiftingOrder order)
+    {
+        _selectedOrderForVerifyPayment = order;
+        _showVerifyPaymentDrawer = true;
+        try
+        {
+            var fullOrder = await GiftingService.GetOrderDetailsAsync(order.Id);
+            _pendingPayments = fullOrder?.Payments.Where(p => !p.IsVerified).ToList() ?? new();
+        }
+        catch
+        {
+            _pendingPayments = new();
+        }
+    }
+
+    private async Task VerifyPaymentAsync(Guid paymentId)
+    {
+        try
+        {
+            _isProcessingAction = true;
+            var res = await GiftingService.VerifyManualPaymentAsync(paymentId);
+            if (res.Success)
+            {
+                _bannerMessage = "Payment verified successfully. Order status updated to Paid.";
+                _bannerSuccess = true;
+                _showVerifyPaymentDrawer = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                _bannerMessage = res.Message;
+                _bannerSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _bannerMessage = ex.Message;
+            _bannerSuccess = false;
+        }
+        finally
+        {
+            _isProcessingAction = false;
+        }
+    }
+
+    private async Task RejectPaymentAsync(Guid paymentId)
+    {
+        try
+        {
+            _isProcessingAction = true;
+            var res = await GiftingService.RejectManualPaymentAsync(paymentId, "Payment reference not found or unverified in bank statement.");
+            if (res.Success)
+            {
+                _bannerMessage = "Payment declaration rejected.";
+                _bannerSuccess = true;
+                _showVerifyPaymentDrawer = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                _bannerMessage = res.Message;
+                _bannerSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _bannerMessage = ex.Message;
+            _bannerSuccess = false;
+        }
+        finally
+        {
+            _isProcessingAction = false;
+        }
+    }
+
+    private void OpenRecordCashModal(ClassroomGiftingOrder order)
+    {
+        _selectedOrderForCash = order;
+        _cashAmountReceived = order.TotalAmount;
+        _cashNotes = null;
+        _showRecordCashModal = true;
+    }
+
+    private async Task RecordCashPaymentAsync()
+    {
+        if (_selectedOrderForCash == null || _cashAmountReceived <= 0) return;
+        try
+        {
+            _isProcessingAction = true;
+            var req = new RecordCashReceivedRequest
+            {
+                OrderId = _selectedOrderForCash.Id,
+                AmountReceived = _cashAmountReceived,
+                Notes = _cashNotes
+            };
+
+            var res = await GiftingService.RecordCashPaymentReceivedAsync(req);
+            if (res.Success)
+            {
+                _bannerMessage = $"Cash payment of ₹{_cashAmountReceived:N2} recorded successfully! Receipt #{res.ReceiptNumber} issued.";
+                _bannerSuccess = true;
+                _showRecordCashModal = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                _bannerMessage = res.Message;
+                _bannerSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _bannerMessage = ex.Message;
+            _bannerSuccess = false;
+        }
+        finally
+        {
+            _isProcessingAction = false;
+        }
+    }
+
+    private void OpenFulfilmentModal(ClassroomGiftingOrder order)
+    {
+        _selectedOrderForFulfilment = order;
+        _targetFulfilmentStage = order.FulfilmentStatus == GiftingFulfilmentStatuses.NotStarted ? GiftingFulfilmentStatuses.Preparing : order.FulfilmentStatus;
+        _fulfilmentNotes = null;
+        _showFulfilmentModal = true;
+    }
+
+    private async Task UpdateFulfilmentAsync()
+    {
+        if (_selectedOrderForFulfilment == null) return;
+        try
+        {
+            _isProcessingAction = true;
+            var res = await GiftingService.UpdateFulfilmentStatusAsync(_selectedOrderForFulfilment.Id, _targetFulfilmentStage, _fulfilmentNotes);
+            if (res.Success)
+            {
+                _bannerMessage = $"Fulfilment status updated to {_targetFulfilmentStage}.";
+                _bannerSuccess = true;
+                _showFulfilmentModal = false;
+                await LoadDataAsync();
+            }
+            else
+            {
+                _bannerMessage = res.Message;
+                _bannerSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _bannerMessage = ex.Message;
+            _bannerSuccess = false;
+        }
+        finally
+        {
+            _isProcessingAction = false;
+        }
+    }
+
+    private async Task OpenTimelineModal(ClassroomGiftingOrder order)
+    {
+        _selectedOrderForTimeline = order;
+        _isLoadingTimeline = true;
+        try
+        {
+            var fullOrder = await GiftingService.GetOrderDetailsAsync(order.Id);
+            _timelineEvents = fullOrder?.AuditEvents ?? new();
+        }
+        catch
+        {
+            _timelineEvents = new();
+        }
+        finally
+        {
+            _isLoadingTimeline = false;
+        }
+    }
+
+    private string FormatFulfilment(string status) => status switch
+    {
+        GiftingFulfilmentStatuses.NotStarted => "Not Started",
+        GiftingFulfilmentStatuses.Preparing => "Preparing Gifts",
+        GiftingFulfilmentStatuses.ReadyForDelivery => "Ready for Delivery",
+        GiftingFulfilmentStatuses.DispatchedOrHandedOver => "Dispatched / In Transit",
+        GiftingFulfilmentStatuses.ReceivedAtDestination => "Received at Campus",
+        GiftingFulfilmentStatuses.Distributed => "Distributed in Classroom",
+        GiftingFulfilmentStatuses.Completed => "Completed",
+        _ => status
+    };
+}

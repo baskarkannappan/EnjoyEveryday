@@ -130,6 +130,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<PlanQuotaService>();
         services.AddScoped<IOrganizationSubscriptionService, OrganizationSubscriptionService>();
         services.AddScoped<OrganizationSubscriptionService>();
+        services.AddScoped<IClassroomGiftingService, ClassroomGiftingService>();
+        services.AddScoped<ClassroomGiftingService>();
 
         // Register the dynamic IdentityContext for both abstractions
         services.AddScoped<AppIdentityContext>(sp => new AppIdentityContext(

@@ -7,6 +7,8 @@
 @inject ClassroomService ClassroomService
 @inject BranchService BranchService
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject EnjoyEveryday.Domain.Repositories.IOrganizationRepository OrganizationRepository
 @inject NavigationManager NavigationManager
 
 <PageTitle>Daycare Web — Materials Marketplace</PageTitle>
@@ -145,10 +147,56 @@
                     </div>
                 </div>
 
+                @{
+                    var stockBal = prod.StockBalance;
+                    var avail = stockBal?.AvailableStock ?? 0;
+                    var isOutOfStock = _orderMode == "Purchase" && avail <= 0;
+                    var isLowStock = _orderMode == "Purchase" && avail > 0 && avail <= 5;
+                }
+
+                <div style="margin-bottom: 16px; padding: 10px 14px; border-radius: 6px; font-size: 13px; @(isOutOfStock ? "background: #fee2e2; border: 1px solid #fecaca; color: #991b1b;" : (isLowStock ? "background: #fef3c7; border: 1px solid #fde68a; color: #92400e;" : "background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;"))">
+                    @if (isOutOfStock)
+                    {
+                        <div style="font-weight: 750;">✕ Out of Stock (0 available)</div>
+                        <div style="font-size: 11.5px; margin-top: 2px;">This product is completely sold out. Ordering more than 0 items is not permitted.</div>
+                    }
+                    else if (isLowStock)
+                    {
+                        <div style="font-weight: 750;">⚠️ Low Stock: Only @avail left in stock!</div>
+                        <div style="font-size: 11.5px; margin-top: 2px;">Remaining inventory is low. You cannot order more than @avail item(s).</div>
+                    }
+                    else if (_orderMode == "Purchase")
+                    {
+                        <div style="font-weight: 750;">✓ In Stock (@avail available)</div>
+                    }
+                    else
+                    {
+                        <div style="font-weight: 750;">📦 Borrowable Reusable Kit (@avail available in central hub)</div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_modalError))
+                {
+                    <div style="padding: 10px 14px; background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; border-radius: 6px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px;">
+                        ⚠️ @_modalError
+                    </div>
+                }
+
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px;">
                     <div>
                         <label class="form-label">Quantity</label>
-                        <input type="number" min="1" max="50" @bind="_orderQuantity" class="form-input" />
+                        <input type="number" 
+                               min="1" 
+                               max="@(_orderMode == "Purchase" ? (avail > 0 ? avail : 1) : 50)" 
+                               @bind="_orderQuantity" 
+                               class="form-input" 
+                               disabled="@isOutOfStock" />
+                        @if (_orderMode == "Purchase" && _orderQuantity > avail && avail > 0)
+                        {
+                            <span style="font-size: 11px; color: #dc2626; display: block; margin-top: 3px; font-weight: 600;">
+                                Max available to order is @avail.
+                            </span>
+                        }
                     </div>
 
                     @if (_orderMode == "Borrow")
@@ -193,7 +241,7 @@
 
             <div class="modal-footer">
                 <button class="btn secondary" @onclick="CloseOrderModal">Cancel</button>
-                <button class="primary" @onclick="AddToCart">Add to Cart</button>
+                <button class="primary" @onclick="AddToCart" disabled="@(isOutOfStock || (_orderMode == "Purchase" && _orderQuantity > avail))">Add to Cart</button>
             </div>
         </div>
     </div>
@@ -226,11 +274,23 @@
                                 </div>
                                 <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
                                     Qty: @item.Quantity
+                                    @if (item.FulfilmentMode == "Purchase")
+                                    {
+                                        <span style="margin-left: 6px; font-weight: 600; color: @(item.AvailableStock <= 5 ? "#b45309" : "#166534");">
+                                            (@item.AvailableStock in stock)
+                                        </span>
+                                    }
                                     @if (item.FulfilmentMode == "Borrow")
                                     {
                                         <span>· @item.LoanDurationDays days loan</span>
                                     }
                                 </div>
+                                @if (item.FulfilmentMode == "Purchase" && item.Quantity > item.AvailableStock)
+                                {
+                                    <div style="font-size: 11.5px; color: #dc2626; font-weight: 700; margin-top: 4px;">
+                                        ⚠️ Exceeds stock: Only @item.AvailableStock item(s) available!
+                                    </div>
+                                }
                             </div>
                             <div style="text-align: right;">
                                 <div style="font-weight: 750; font-size: 14px; color: var(--text);">₹@item.LineTotal.ToString("N2")</div>
@@ -338,6 +398,7 @@
     private string _orderNotes = "";
     private bool _isSubmitting = false;
     private string? _submitError;
+    private string? _modalError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -360,7 +421,7 @@
                 Console.WriteLine($"Error loading classrooms: {ex.Message}");
             }
 
-            var userOrgId = UserContext.OrganizationId ?? Guid.Empty;
+            var userOrgId = await ResolveOrganizationIdAsync();
             if (userOrgId != Guid.Empty)
             {
                 var orders = await MaterialService.GetOrdersForOrganizationAsync(userOrgId);
@@ -428,8 +489,10 @@
     {
         _selectedProduct = prod;
         _orderMode = prod.Offering?.AllowBorrow == true ? "Borrow" : "Purchase";
-        _orderQuantity = 1;
+        int avail = prod.StockBalance?.AvailableStock ?? 0;
+        _orderQuantity = avail > 0 ? 1 : 0;
         _orderDuration = prod.Offering?.DefaultLoanDurationDays ?? 14;
+        _modalError = null;
         _isOrderModalOpen = true;
     }
 
@@ -442,11 +505,13 @@
     {
         _isOrderModalOpen = false;
         _selectedProduct = null;
+        _modalError = null;
     }
 
     private void SetOrderMode(string mode)
     {
         _orderMode = mode;
+        _modalError = null;
     }
 
     private decimal CalculateItemSubtotal()
@@ -468,6 +533,22 @@
         if (_selectedProduct == null || _selectedProduct.Offering == null) return;
 
         var off = _selectedProduct.Offering;
+        int avail = _selectedProduct.StockBalance?.AvailableStock ?? 0;
+
+        if (_orderMode == "Purchase")
+        {
+            if (avail <= 0)
+            {
+                _modalError = $"{_selectedProduct.Name} is currently out of stock.";
+                return;
+            }
+            if (_orderQuantity > avail)
+            {
+                _modalError = $"Cannot order {_orderQuantity} items. Only {avail} item(s) are in stock for '{_selectedProduct.Name}'.";
+                return;
+            }
+        }
+
         decimal price = _orderMode == "Purchase" ? off.PurchasePrice : off.RentalFee;
         decimal deposit = _orderMode == "Borrow" ? off.RefundableDeposit : 0;
         decimal lineTotal = (price + deposit) * _orderQuantity;
@@ -478,6 +559,7 @@
             ProductName = _selectedProduct.Name,
             FulfilmentMode = _orderMode,
             Quantity = _orderQuantity,
+            AvailableStock = avail,
             UnitPrice = price,
             Deposit = deposit,
             LineTotal = lineTotal,
@@ -513,10 +595,29 @@
             return;
         }
 
+        // Live concurrency check before placing order
+        foreach (var item in _cartItems.Where(i => i.FulfilmentMode == "Purchase"))
+        {
+            var freshProduct = await MaterialService.GetProductDetailsAsync(item.ProductId);
+            var liveAvail = freshProduct?.StockBalance?.AvailableStock ?? 0;
+            if (liveAvail <= 0)
+            {
+                _submitError = $"Someone has already ordered '{item.ProductName}' and it is now out of stock. Please remove it from your cart.";
+                item.AvailableStock = 0;
+                return;
+            }
+            if (liveAvail < item.Quantity)
+            {
+                _submitError = $"Someone has already ordered '{item.ProductName}'. Only {liveAvail} item(s) remain in stock (you requested {item.Quantity}). Please adjust your cart quantity.";
+                item.AvailableStock = liveAvail;
+                return;
+            }
+        }
+
         _isSubmitting = true;
         try
         {
-            var orgId = UserContext.OrganizationId ?? Guid.Parse("00000000-0000-0000-0000-000000000001");
+            var orgId = await ResolveOrganizationIdAsync();
 
             var req = new CreateMaterialOrderRequest
             {
@@ -554,12 +655,35 @@
         }
     }
 
+    private async Task<Guid> ResolveOrganizationIdAsync()
+    {
+        if (UserContext.OrganizationId.HasValue && UserContext.OrganizationId.Value != Guid.Empty)
+            return UserContext.OrganizationId.Value;
+
+        try
+        {
+            var userOrgs = await OrganizationRepository.GetOrganizationsByUserIdAsync(UserContext.UserId);
+            var org = userOrgs.FirstOrDefault();
+            if (org != null) return org.Id;
+
+            var tenantOrgs = await OrganizationRepository.GetAllAsync(TenantContext.TenantId);
+            org = tenantOrgs.FirstOrDefault();
+            if (org != null) return org.Id;
+        }
+        catch
+        {
+        }
+
+        return Guid.Parse("20000000-0000-0000-0000-000000000001");
+    }
+
     private class CartItemModel
     {
         public Guid ProductId { get; set; }
         public string ProductName { get; set; } = string.Empty;
         public string FulfilmentMode { get; set; } = "Purchase";
         public int Quantity { get; set; } = 1;
+        public int AvailableStock { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal Deposit { get; set; }
         public decimal LineTotal { get; set; }

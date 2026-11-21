@@ -160,6 +160,31 @@ All PostgreSQL functions reside in `public` schema and enforce multi-tenant isol
 | `sp_create_agent_webhook(...)` | `PROCEDURE` | `AgentWebhookRepository.CreateSubscriptionAsync` | Registers a new webhook subscription. |
 | `sp_delete_agent_webhook(p_tenant_id uuid, p_subscription_id uuid)` | `PROCEDURE` | `AgentWebhookRepository.DeleteSubscriptionAsync` | Deletes a webhook subscription. |
 
+## 11. Classroom Gifting & Giving Operations
+
+| Function / Procedure Signature | Routine Type | Calling Repository / Service | Purpose |
+|:---|:---|:---|:---|
+| `fn_get_classroom_peers_for_gifting(p_tenant_id uuid, p_classroom_id uuid, p_exclude_child_id uuid)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.GetClassroomPeersForGiftingAsync` | Returns active classmates eligible for gifting with privacy consent filtering. |
+| `sp_submit_classroom_gifting_order(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.SubmitOrderAsync` | Atomically creates gifting order and line items; snapshots delivery address and sets status `PendingReview`. |
+| `sp_approve_or_reject_gifting_order(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.ApproveOrRejectOrderAsync` | Dual-admin review (Branch Admin or Org Admin). Serialized with `SELECT ... FOR UPDATE` row lock. |
+| `sp_record_gifting_cash_payment(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.RecordCashPaymentAsync` | Records cash payment in `payments` (`billing_domain = 'ClassroomGifting'`), generates `REC-` receipt, transitions order to `Paid`. |
+| `fn_verify_gifting_payment(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.VerifyPaymentAsync` | Admin verification of parent-submitted UPI UTR or Direct Bank Transfer reference. |
+| `fn_reject_gifting_payment(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.RejectPaymentAsync` | Rejection of invalid manual payment reference with reason and notification logging. |
+| `sp_update_gifting_fulfilment_status(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.UpdateFulfilmentStatusAsync` | Transitions fulfilment stage (`Preparation`, `Ready`, `DispatchedOrHandedOver`, `ReceivedAtDestination`, `ClassroomDelivered`, `Distributed`). |
+| `fn_get_gifting_orders_for_admin(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.GetOrdersForAdminAsync` | Multi-tenant administrative query supporting branch, classroom, and status filters. |
+| `fn_get_gifting_orders_for_parent(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.GetOrdersForParentAsync` | Scoped parent query returning order history and payment tracking. |
+| `fn_get_gifting_order_by_id(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.GetOrderByIdAsync` | Fetches full order header and populated `items_json` and `payments_json`. |
+| `fn_get_gifting_audit_events(p_order_id uuid)` | `FUNCTION` (returns `SETOF`) | `ClassroomGiftingRepository.GetAuditEventsAsync` | Retrieves immutable chronological timeline of state transitions and actor actions. |
+| `fn_get_gifting_financial_reconciliation(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.GetFinancialReconciliationAsync` | Aggregates order totals, paid amounts, revenue by payment method, and operational queues. |
+
+## 12. Inventory Stock & Concurrency Procedures (Migration 141)
+
+| Function / Procedure Signature | Routine Type | Calling Repository / Service | Purpose |
+|:---|:---|:---|:---|
+| `sp_submit_classroom_gifting_order(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.SubmitOrderAsync` | Validates stock under pessimistic row locks (`SELECT ... FOR UPDATE` on `inventory_balances`). Returns user-facing notification if an item was acquired concurrently. Atomically decrements `available_stock` and increments `reserved_stock`. |
+| `sp_approve_or_reject_gifting_order(...)` | `FUNCTION` (returns `TABLE`) | `ClassroomGiftingRepository.ApproveOrRejectOrderAsync` | Dual-admin review with row lock. Upon rejection, releases reserved stock back into `available_stock`. |
+
+
 
 
 

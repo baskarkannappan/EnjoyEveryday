@@ -34,6 +34,14 @@ Hosted in `src/EnjoyEveryday.Parent.Web` (port `7005`). Designed specifically fo
 * **My Billing & Invoices (`/billing`)**:
   - Dedicated page (`src/EnjoyEveryday.Parent.Web/Components/Pages/Billing.razor`) and modal (`src/EnjoyEveryday.Parent.Web/Components/Shared/InvoicesListModal.razor`) strictly scoped to `OrgToParent` childcare invoices for the selected child (`fn_get_child_invoices`).
   - Displays child selector, summary KPIs, month-by-month billing history, payment history, snapshotted bank/QR instructions, and **Pay Now** (uses the invoice-owning organization's active Razorpay gateway when configured, or falls back to manual QR / Bank Transfer / Cash submission with staff verification).
+* **Birthday Greeting & Classroom Giving (`/giving`, `/giving/orders`)**:
+  - **Birthday Greeting Banner**: Detected automatically on child's birthday on Today's Overview (`Today.razor`). Features a celebratory birthday greeting with quick CTA (`🎁 Send a Birthday Gift`) and one-tap dismissibility stored in session storage.
+  - **Classroom Giving Page (`/giving`)**: Two giving modes:
+    1. *Birthday Gift*: Select a celebrating classmate peer in the child's room (respecting privacy consent settings), add greeting message.
+    2. *General Classroom Contribution*: Contribute educational toys, art kits, books, or activity supplies for general classroom use.
+  - **Product Catalog Reuse**: Dynamically queries existing marketplace products (`material_products` and `material_offerings`) without duplicating the product catalog.
+  - **Mandatory Facility Destination**: Enforces delivery strictly to either the child's branch registered address or organization headquarters (pulled from `facility_profiles`). Home delivery is prohibited.
+  - **Giving Orders Tracker (`/giving/orders`)**: Real-time order progress timeline, approval status, payment modal supporting 4 payment methods (Cash, Org Razorpay, UPI QR with UTR submission, Direct Bank Transfer), official receipt modal, and immutable audit timeline drawer.
 
 ## Mobile Layout Standards
 * Bottom navigation bar (`ParentMobileNav.razor`) provides quick access to Today, Journey, Memories, Messages, and Family.

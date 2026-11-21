@@ -92,6 +92,11 @@ tags:
 9. **Floating Mobile Thumb Bar (Thumb Zone Ergonomics)**:
    - Fixed to the bottom of the viewport on mobile devices (`<= 768px`) with safe-area insets (`.ee-floating-thumb-bar`).
    - Keeps 5 essential actions permanently in the one-handed thumb reach zone without vertical scrolling: `🌅 Check In`, `🍽️ Lunch All`, `😴 Rest All`, `🧷 Potty Line`, and `🎙️ Voice Note`.
+10. **Classroom Gifting Arrivals & Child Distribution**:
+   - 7th action card in Teacher Workspace: `🎁 Classroom Gifts (Arrivals & Distribution)`.
+   - Teachers view pending and arrived gifts specifically assigned to their classroom.
+   - Teachers record physical arrival (`ReceivedAtDestination` / `ClassroomDelivered`) and confirm distribution to celebrating children or classroom use (`Distributed`) with distribution notes.
+   - Role-scoped privacy: Financial prices and parent payment methods are masked to preserve teacher focus on classroom care and distribution dignity.
 
 
 

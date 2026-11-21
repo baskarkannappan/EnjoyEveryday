@@ -1,0 +1,626 @@
+@page "/giving"
+@page "/classroom-giving"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Parent.Web.Services
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
+@inject IClassroomGiftingService GiftingService
+@inject ParentSessionState SessionState
+@inject ICurrencyService CurrencyService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Classroom Giving — Share a Little Happiness — EnjoyEveryday</PageTitle>
+
+<div class="content" style="max-width: 1200px; margin: 0 auto; font-family: var(--ee-font, 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);">
+    <PageHero Eyebrow="CLASSROOM GIVING"
+              Title="Share a Little Happiness"
+              Subtitle="Contribute educational kits, sensory toys, storybooks, or celebrate a classmate's birthday with thoughtful gifts delivered safely to the daycare center.">
+        <RightContent>
+            <a href="/giving/orders" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+                <span>📦</span>
+                <span>Track My Giving Orders</span>
+            </a>
+        </RightContent>
+    </PageHero>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div style="padding: 12px 16px; margin-bottom: 16px; border: 1px solid @(_isSuccess ? "#c8dacd" : "#fed7d7"); background: @(_isSuccess ? "var(--accent-light, #e6eee9)" : "#fff5f5"); color: @(_isSuccess ? "var(--accent-dark, #31523c)" : "#9b2c2c"); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600;">@(_isSuccess ? "✓" : "⚠️") @_statusMessage</span>
+            <button style="background: none; border: none; cursor: pointer; font-size: 14px;" @onclick="() => _statusMessage = null">✕</button>
+        </div>
+    }
+
+    @if (SessionState.SelectedChild == null)
+    {
+        <EmptyState Icon="🌱"
+                    Title="No Authorized Child Selected"
+                    Message="Please link and select your enrolled child to participate in Classroom Giving." />
+    }
+    else
+    {
+        <!-- GIVING MODE TABS -->
+        <div style="display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 2px solid var(--border, #e4e7df); padding-bottom: 8px;">
+            <button type="button" 
+                    style="padding: 10px 20px; font-weight: 750; font-size: 14px; border: none; border-bottom: 3px solid @(_selectedMode == GiftingRecipientTypes.BirthdayGift ? "var(--accent-dark, #31523c)" : "transparent"); background: @(_selectedMode == GiftingRecipientTypes.BirthdayGift ? "var(--surface, #fff)" : "transparent"); color: @(_selectedMode == GiftingRecipientTypes.BirthdayGift ? "var(--accent-dark, #31523c)" : "var(--muted, #6c7870)"); cursor: pointer; display: flex; align-items: center; gap: 8px; border-radius: 6px 6px 0 0;"
+                    @onclick="() => SetMode(GiftingRecipientTypes.BirthdayGift)">
+                <span>🎂</span>
+                <span>Birthday Gift for a Classmate</span>
+            </button>
+            <button type="button" 
+                    style="padding: 10px 20px; font-weight: 750; font-size: 14px; border: none; border-bottom: 3px solid @(_selectedMode == GiftingRecipientTypes.ClassroomContribution ? "var(--accent-dark, #31523c)" : "transparent"); background: @(_selectedMode == GiftingRecipientTypes.ClassroomContribution ? "var(--surface, #fff)" : "transparent"); color: @(_selectedMode == GiftingRecipientTypes.ClassroomContribution ? "var(--accent-dark, #31523c)" : "var(--muted, #6c7870)"); cursor: pointer; display: flex; align-items: center; gap: 8px; border-radius: 6px 6px 0 0;"
+                    @onclick="() => SetMode(GiftingRecipientTypes.ClassroomContribution)">
+                <span>📚</span>
+                <span>General Classroom Contribution</span>
+            </button>
+        </div>
+
+        <!-- RECIPIENT CONTEXT CARD -->
+        <div style="background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 20px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; color: var(--accent-dark, #31523c);">
+                        @(_selectedMode == GiftingRecipientTypes.BirthdayGift ? "GIFT RECIPIENT" : "TARGET CLASSROOM")
+                    </span>
+                    <h3 style="margin: 4px 0 0; font-size: 16px; font-weight: 750; color: var(--text, #26332d);">
+                        @(_selectedMode == GiftingRecipientTypes.BirthdayGift ? "Select Birthday Child in Classroom" : $"Contributing to {SessionState.SelectedChild.ClassroomName ?? "Classroom"}")
+                    </h3>
+                </div>
+                <div style="font-size: 13px; color: var(--muted, #6c7870); background: var(--surface-soft, #f8f9f5); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border, #e4e7df);">
+                    🏫 @(SessionState.SelectedChild.BranchName ?? "Campus") · @(SessionState.SelectedChild.OrganizationName ?? "Daycare")
+                </div>
+            </div>
+
+            @if (_selectedMode == GiftingRecipientTypes.BirthdayGift)
+            {
+                @if (_isLoadingPeers)
+                {
+                    <div style="padding: 16px; color: var(--muted); font-size: 13px;">Loading classroom peers...</div>
+                }
+                else if (!_peers.Any())
+                {
+                    <div style="background: var(--surface-soft, #f8f9f5); padding: 14px; border-radius: 8px; font-size: 13px; color: var(--muted);">
+                        No other enrolled children found in this classroom.
+                    </div>
+                }
+                else
+                {
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        @foreach (var peer in _peers)
+                        {
+                            <button type="button"
+                                    style="padding: 8px 14px; border-radius: 20px; border: 1px solid @(_selectedPeerChildId == peer.ChildId ? "var(--accent-dark, #31523c)" : "var(--border, #e4e7df)"); background: @(_selectedPeerChildId == peer.ChildId ? "var(--accent-light, #e6eee9)" : "#fff"); color: @(_selectedPeerChildId == peer.ChildId ? "var(--accent-dark, #31523c)" : "var(--text, #26332d)"); font-weight: @(_selectedPeerChildId == peer.ChildId ? "750" : "500"); font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px;"
+                                    @onclick="() => SelectPeer(peer)">
+                                <span>@(peer.IsBirthdayToday ? "🎂" : (peer.IsBirthdayThisMonth ? "🎈" : "🧒"))</span>
+                                <span>@peer.FullName</span>
+                                @if (peer.IsBirthdayToday)
+                                {
+                                    <span style="background: #f59e0b; color: white; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 800;">TODAY</span>
+                                }
+                                else if (peer.IsBirthdayThisMonth)
+                                {
+                                    <span style="background: var(--accent-light); color: var(--accent-dark); padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 700;">THIS MONTH</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div style="font-size: 13.5px; color: var(--text, #26332d); line-height: 1.5;">
+                    Your gift will be delivered directly to <strong>@SessionState.SelectedChild.ClassroomName</strong> at <strong>@SessionState.SelectedChild.BranchName</strong> for educator-led group activities, storytelling, and creative play for all children in the room.
+                </div>
+            }
+
+            <div style="margin-top: 14px;">
+                <label style="font-size: 12px; font-weight: 700; color: var(--muted, #6c7870); display: block; margin-bottom: 4px;">
+                    Personal Note / Greeting Message (Optional)
+                </label>
+                <textarea @bind="_greetingMessage"
+                          rows="2"
+                          placeholder="@(_selectedMode == GiftingRecipientTypes.BirthdayGift ? "Wishing you a wonderful birthday full of fun and laughter!" : "With warm wishes for our little learners!")"
+                          style="width: 100%; padding: 10px; border: 1px solid var(--border, #e4e7df); border-radius: 8px; font-size: 13px; background: var(--surface-soft, #f8f9f5); box-sizing: border-box;"></textarea>
+            </div>
+        </div>
+
+        <!-- PRODUCT SELECTION CATALOGUE -->
+        <div style="margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text, #26332d);">
+                        Select Gift Products from Catalogue
+                    </h3>
+                    <p style="margin: 2px 0 0; font-size: 13px; color: var(--muted, #6c7870);">
+                        Approved early-learning materials, Montessori sets, craft kits, and books.
+                    </p>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <input type="text"
+                           @bind="_searchQuery"
+                           @bind:event="oninput"
+                           placeholder="Search products..."
+                           style="padding: 8px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 6px; font-size: 13px; width: 180px;" />
+                    <select @bind="_selectedCategory" style="padding: 8px 12px; border: 1px solid var(--border, #e4e7df); border-radius: 6px; font-size: 13px; background: white;">
+                        <option value="All">All Categories</option>
+                        <option value="Sensory & Science">Sensory &amp; Science</option>
+                        <option value="Arts & Crafts">Arts &amp; Crafts</option>
+                        <option value="Montessori & Math">Montessori &amp; Math</option>
+                        <option value="Sensory & STEM">Sensory &amp; STEM</option>
+                    </select>
+                </div>
+            </div>
+
+            @if (_isLoadingProducts)
+            {
+                <div style="padding: 40px; text-align: center; color: var(--muted);">
+                    <div>🌿 Loading gift products...</div>
+                </div>
+            }
+            else if (!FilteredProducts.Any())
+            {
+                <div style="background: white; border: 1px solid var(--border); border-radius: 12px; padding: 40px; text-align: center;">
+                    <p style="color: var(--muted); font-size: 14px; margin: 0;">No products match your selected filter.</p>
+                </div>
+            }
+            else
+            {
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px;">
+                    @foreach (var prod in FilteredProducts)
+                    {
+                        var isSelected = _cart.ContainsKey(prod.Id);
+                        var qty = isSelected ? _cart[prod.Id] : 0;
+                        var price = prod.Offering?.PurchasePrice ?? 0m;
+
+                        <div style="background: var(--surface, #fff); border: 2px solid @(isSelected ? "var(--accent-dark, #31523c)" : "var(--border, #e4e7df)"); border-radius: var(--radius, 18px); overflow: hidden; display: flex; flex-direction: column; transition: all 0.2s ease;">
+                            <div style="height: 160px; background: #fafafa; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+                                @{
+                                    var img = !string.IsNullOrWhiteSpace(prod.ImageUrl) ? prod.ImageUrl : prod.ImageUrls.FirstOrDefault();
+                                }
+                                @if (!string.IsNullOrWhiteSpace(img))
+                                {
+                                    <img src="@img" alt="@prod.Name" style="width: 100%; height: 100%; object-fit: cover;" />
+                                }
+                                else
+                                {
+                                    <span style="font-size: 40px;">🎨</span>
+                                }
+                                <span style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; color: var(--text);">
+                                    @prod.Category
+                                </span>
+                            </div>
+
+                            <div style="padding: 16px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                                <div>
+                                    <h4 style="margin: 0 0 6px; font-size: 15px; font-weight: 750; color: var(--text, #26332d); line-height: 1.3;">
+                                        @prod.Name
+                                    </h4>
+                                    <p style="margin: 0 0 12px; font-size: 12.5px; color: var(--muted, #6c7870); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                                        @prod.Description
+                                    </p>
+                                </div>
+
+                                <div>
+                                    @{
+                                        var bal = prod.StockBalance;
+                                        var avail = bal?.AvailableStock ?? 0;
+                                        var isOutOfStock = avail <= 0;
+                                        var isLowStock = avail > 0 && avail <= 5;
+                                    }
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                        <span style="font-size: 16px; font-weight: 800; color: var(--accent-dark, #31523c);" class="ee-tnum">
+                                            @CurrencyService.Format(price, "INR")
+                                        </span>
+                                        @if (isOutOfStock)
+                                        {
+                                            <span style="font-size: 11px; color: #991b1b; font-weight: 700; background: #fee2e2; padding: 2px 7px; border-radius: 4px; border: 1px solid #fecaca;">
+                                                ✕ Out of Stock (0 in stock)
+                                            </span>
+                                        }
+                                        else if (isLowStock)
+                                        {
+                                            <span style="font-size: 11px; color: #92400e; font-weight: 700; background: #fef3c7; padding: 2px 7px; border-radius: 4px; border: 1px solid #fde68a;">
+                                                ⚠️ Low: Only @avail left!
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size: 11px; color: #15803d; font-weight: 600; background: #f0fdf4; padding: 2px 7px; border-radius: 4px; border: 1px solid #bbf7d0;">
+                                                ✓ In Stock (@avail available)
+                                            </span>
+                                        }
+                                    </div>
+
+                                    @if (isOutOfStock)
+                                    {
+                                        <button type="button" class="secondary" disabled style="width: 100%; padding: 8px; font-size: 13px; opacity: 0.55; cursor: not-allowed; font-weight: 600;">
+                                            ✕ Out of Stock
+                                        </button>
+                                    }
+                                    else if (!isSelected)
+                                    {
+                                        <button type="button" class="secondary" style="width: 100%; padding: 8px; font-size: 13px;" @onclick="() => AddToCart(prod)">
+                                            + Add to Gift
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <div style="display: flex; align-items: center; justify-content: space-between; background: var(--surface-soft, #f8f9f5); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);">
+                                            <button type="button" style="width: 28px; height: 28px; border: 1px solid var(--border); background: white; cursor: pointer; font-weight: 800; border-radius: 4px;" @onclick="() => DecrementCart(prod.Id)">-</button>
+                                            <span style="font-weight: 750; font-size: 14px;" class="ee-tnum">@qty</span>
+                                            <button type="button" style="width: 28px; height: 28px; border: 1px solid var(--border); background: white; cursor: pointer; font-weight: 800; border-radius: 4px;" disabled="@(qty >= avail)" @onclick="() => IncrementCart(prod.Id)">+</button>
+                                        </div>
+                                        @if (qty >= avail)
+                                        {
+                                            <div style="font-size: 11px; color: #b45309; text-align: center; margin-top: 4px; font-weight: 600;">
+                                                Max available (@avail) reached.
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- MANDATORY FACILITY DELIVERY DESTINATION SELECTOR -->
+        <div style="background: var(--surface, #fff); border: 1px solid var(--border, #e4e7df); border-radius: var(--radius, 18px); box-shadow: var(--shadow, 0 8px 30px rgba(40,55,47,.06)); padding: 22px; margin-bottom: 24px;">
+            <div style="margin-bottom: 14px;">
+                <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; color: #b45309;">
+                    MANDATORY FACILITY DELIVERY DESTINATION
+                </span>
+                <h3 style="margin: 4px 0 0; font-size: 16px; font-weight: 750; color: var(--text, #26332d);">
+                    Select Delivery Destination
+                </h3>
+                <p style="margin: 4px 0 0; font-size: 13px; color: var(--muted, #6c7870);">
+                    All gifts and contributions must be received and verified by authorized daycare staff. Home deliveries are not supported.
+                </p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-bottom: 16px;">
+                <!-- Option A: Branch Address -->
+                <div style="border: 2px solid @(_selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress ? "var(--accent-dark, #31523c)" : "var(--border, #e4e7df)"); background: @(_selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress ? "var(--accent-light, #e6eee9)" : "#fff"); border-radius: 12px; padding: 16px; cursor: pointer;"
+                     @onclick="() => SelectDestination(GiftingDeliveryDestinationTypes.BranchAddress)">
+                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                        <input type="radio" name="destType" checked="@(_selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress)" style="margin-top: 3px;" />
+                        <div>
+                            <strong style="font-size: 14px; color: var(--text);">Option A — Child's Branch Campus</strong>
+                            <div style="font-size: 13px; font-weight: 600; color: var(--accent-dark); margin: 4px 0 2px;">
+                                @_destOptions.BranchName
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--muted); line-height: 1.4;">
+                                @_destOptions.BranchFullAddress
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_destOptions.BranchContactPhone))
+                            {
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                                    📞 @_destOptions.BranchContactPhone
+                                </div>
+                            }
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Option B: Organization Address -->
+                <div style="border: 2px solid @(_selectedDestinationType == GiftingDeliveryDestinationTypes.OrganizationAddress ? "var(--accent-dark, #31523c)" : "var(--border, #e4e7df)"); background: @(_selectedDestinationType == GiftingDeliveryDestinationTypes.OrganizationAddress ? "var(--accent-light, #e6eee9)" : "#fff"); border-radius: 12px; padding: 16px; cursor: pointer;"
+                     @onclick="() => SelectDestination(GiftingDeliveryDestinationTypes.OrganizationAddress)">
+                    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                        <input type="radio" name="destType" checked="@(_selectedDestinationType == GiftingDeliveryDestinationTypes.OrganizationAddress)" style="margin-top: 3px;" />
+                        <div>
+                            <strong style="font-size: 14px; color: var(--text);">Option B — Organization Head Office</strong>
+                            <div style="font-size: 13px; font-weight: 600; color: var(--accent-dark); margin: 4px 0 2px;">
+                                @_destOptions.OrganizationName
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--muted); line-height: 1.4;">
+                                @_destOptions.OrganizationFullAddress
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_destOptions.OrganizationContactPhone))
+                            {
+                                <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+                                    📞 @_destOptions.OrganizationContactPhone
+                                </div>
+                            }
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Address Confirmation Checkbox -->
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text); padding-top: 8px; border-top: 1px dashed var(--border);">
+                <input type="checkbox" @bind="_isAddressConfirmed" />
+                <span><strong>I explicitly confirm</strong> this order will be delivered to the registered facility address above for staff verification and classroom distribution.</span>
+            </label>
+        </div>
+
+        <!-- ORDER SUMMARY & SUBMIT STRIP -->
+        @if (_cart.Any())
+        {
+            <div style="background: var(--surface, #fff); border: 2px solid var(--accent, #557c6c); border-radius: var(--radius, 18px); padding: 22px; box-shadow: var(--shadow); margin-bottom: 30px;">
+                @if (!string.IsNullOrWhiteSpace(_statusMessage))
+                {
+                    <div style="background: @(_isSuccess ? "#f0fdf4" : "#fef2f2"); border: 1px solid @(_isSuccess ? "#bbf7d0" : "#fecaca"); color: @(_isSuccess ? "#166534" : "#991b1b"); padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13.5px; font-weight: 650; display: flex; align-items: center; justify-content: space-between;">
+                        <span>@(_isSuccess ? "✓" : "⚠️") @_statusMessage</span>
+                        <button type="button" style="background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 700; color: inherit;" @onclick="() => _statusMessage = null">✕</button>
+                    </div>
+                }
+
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <div style="font-size: 12px; text-transform: uppercase; font-weight: 800; color: var(--accent-dark);">ORDER SUMMARY</div>
+                        <div style="font-size: 15px; font-weight: 750; color: var(--text); margin: 2px 0;">
+                            @_cart.Values.Sum() item(s) selected for @(_selectedMode == GiftingRecipientTypes.BirthdayGift ? (_selectedPeerChildName ?? "Classmate") : SessionState.SelectedChild.ClassroomName)
+                        </div>
+                        <div style="font-size: 12.5px; color: var(--muted);">
+                            Destination: @(_selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress ? _destOptions.BranchName : _destOptions.OrganizationName)
+                        </div>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 20px;">
+                        <div style="text-align: right;">
+                            <span style="font-size: 12px; color: var(--muted); display: block;">Total Amount</span>
+                            <strong style="font-size: 22px; color: var(--accent-dark);" class="ee-tnum">
+                                @CurrencyService.Format(GetCartTotal(), "INR")
+                            </strong>
+                        </div>
+
+                        <button type="button" 
+                                class="primary" 
+                                style="padding: 12px 28px; font-size: 14px;" 
+                                disabled="@(!CanSubmitOrder || _isSubmitting)" 
+                                @onclick="SubmitOrderAsync">
+                            @(_isSubmitting ? "Submitting..." : "Submit Gift Order for Approval →")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? InitialMode { get; set; }
+
+    private string _selectedMode = GiftingRecipientTypes.BirthdayGift;
+    private List<GiftingPeerChildDto> _peers = new();
+    private Guid? _selectedPeerChildId;
+    private string? _selectedPeerChildName;
+    private string? _greetingMessage;
+
+    private List<MaterialProduct> _catalogProducts = new();
+    private Dictionary<Guid, int> _cart = new();
+    private string _searchQuery = string.Empty;
+    private string _selectedCategory = "All";
+
+    private GiftingDeliveryDestinationOptions _destOptions = new();
+    private string _selectedDestinationType = GiftingDeliveryDestinationTypes.BranchAddress;
+    private bool _isAddressConfirmed = true;
+
+    private bool _isLoadingPeers = true;
+    private bool _isLoadingProducts = true;
+    private bool _isSubmitting = false;
+    private string? _statusMessage;
+    private bool _isSuccess;
+
+    private IEnumerable<MaterialProduct> FilteredProducts => _catalogProducts.Where(p =>
+    {
+        if (_selectedCategory != "All" && !string.Equals(p.Category, _selectedCategory, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            var q = _searchQuery.Trim().ToLowerInvariant();
+            return p.Name.ToLowerInvariant().Contains(q) || p.Description.ToLowerInvariant().Contains(q) || p.Sku.ToLowerInvariant().Contains(q);
+        }
+        return true;
+    });
+
+    private bool CanSubmitOrder =>
+        _cart.Any() &&
+        _isAddressConfirmed &&
+        (_selectedMode == GiftingRecipientTypes.ClassroomContribution || _selectedPeerChildId.HasValue) &&
+        _cart.All(c =>
+        {
+            var prod = _catalogProducts.FirstOrDefault(p => p.Id == c.Key);
+            return prod != null && (prod.StockBalance?.AvailableStock ?? 0) >= c.Value && c.Value > 0;
+        });
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(InitialMode) && InitialMode.Equals("classroom", StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedMode = GiftingRecipientTypes.ClassroomContribution;
+        }
+
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (SessionState.SelectedChild == null) return;
+
+        try
+        {
+            var branchId = SessionState.SelectedChild.BranchId ?? Guid.Empty;
+            var orgId = SessionState.SelectedChild.OrganizationId ?? Guid.Empty;
+            var classroomId = SessionState.SelectedChild.ClassroomId ?? Guid.Empty;
+
+            var peersTask = GiftingService.GetClassroomPeersForGiftingAsync(classroomId, SessionState.SelectedChild.ChildId);
+            var prodTask = GiftingService.GetGiftingCatalogProductsAsync();
+            var destTask = GiftingService.GetDeliveryDestinationsAsync(branchId, orgId);
+
+            await Task.WhenAll(peersTask, prodTask, destTask);
+
+            _peers = await peersTask;
+            _catalogProducts = await prodTask;
+            _destOptions = await destTask;
+
+            // Default peer if someone has birthday today
+            var birthdayPeer = _peers.FirstOrDefault(p => p.IsBirthdayToday) ?? _peers.FirstOrDefault(p => p.IsBirthdayThisMonth) ?? _peers.FirstOrDefault();
+            if (birthdayPeer != null)
+            {
+                SelectPeer(birthdayPeer);
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Failed to load data: {ex.Message}";
+            _isSuccess = false;
+        }
+        finally
+        {
+            _isLoadingPeers = false;
+            _isLoadingProducts = false;
+        }
+    }
+
+    private void SetMode(string mode)
+    {
+        _selectedMode = mode;
+    }
+
+    private void SelectPeer(GiftingPeerChildDto peer)
+    {
+        _selectedPeerChildId = peer.ChildId;
+        _selectedPeerChildName = peer.FullName;
+    }
+
+    private void SelectDestination(string destType)
+    {
+        _selectedDestinationType = destType;
+    }
+
+    private void AddToCart(MaterialProduct product)
+    {
+        var avail = product.StockBalance?.AvailableStock ?? 0;
+        if (avail <= 0)
+        {
+            _statusMessage = $"'{product.Name}' is out of stock and cannot be added.";
+            _isSuccess = false;
+            return;
+        }
+        _cart[product.Id] = 1;
+        _statusMessage = null;
+    }
+
+    private void IncrementCart(Guid productId)
+    {
+        if (_cart.ContainsKey(productId))
+        {
+            var prod = _catalogProducts.FirstOrDefault(p => p.Id == productId);
+            var avail = prod?.StockBalance?.AvailableStock ?? 0;
+            if (_cart[productId] >= avail)
+            {
+                _statusMessage = $"Cannot order more than available stock. Only {avail} item(s) are in stock for '{prod?.Name ?? "this item"}'.";
+                _isSuccess = false;
+                return;
+            }
+            _cart[productId]++;
+            _statusMessage = null;
+        }
+    }
+
+    private void DecrementCart(Guid productId)
+    {
+        if (_cart.ContainsKey(productId))
+        {
+            _cart[productId]--;
+            if (_cart[productId] <= 0)
+                _cart.Remove(productId);
+            _statusMessage = null;
+        }
+    }
+
+    private decimal GetCartTotal()
+    {
+        decimal total = 0m;
+        foreach (var kvp in _cart)
+        {
+            var prod = _catalogProducts.FirstOrDefault(p => p.Id == kvp.Key);
+            if (prod?.Offering != null)
+            {
+                total += prod.Offering.PurchasePrice * kvp.Value;
+            }
+        }
+        return total;
+    }
+
+    private async Task SubmitOrderAsync()
+    {
+        if (!CanSubmitOrder || SessionState.SelectedChild == null) return;
+
+        // Concurrency stock check before submitting
+        foreach (var kvp in _cart)
+        {
+            var prod = _catalogProducts.FirstOrDefault(p => p.Id == kvp.Key);
+            var avail = prod?.StockBalance?.AvailableStock ?? 0;
+            if (avail <= 0)
+            {
+                _statusMessage = $"Someone has already ordered '{prod?.Name ?? "an item"}' and it is now out of stock. Please remove it from your selection.";
+                _isSuccess = false;
+                return;
+            }
+            if (avail < kvp.Value)
+            {
+                _statusMessage = $"Someone has already ordered '{prod?.Name ?? "an item"}'. Only {avail} item(s) remain in stock (you requested {kvp.Value}). Please adjust your quantity.";
+                _isSuccess = false;
+                return;
+            }
+        }
+
+        try
+        {
+            _isSubmitting = true;
+            _statusMessage = null;
+
+            string confirmedAddress = _selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress
+                ? _destOptions.BranchFullAddress
+                : _destOptions.OrganizationFullAddress;
+
+            string contactPhone = _selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress
+                ? _destOptions.BranchContactPhone
+                : _destOptions.OrganizationContactPhone;
+
+            string contactName = _selectedDestinationType == GiftingDeliveryDestinationTypes.BranchAddress
+                ? _destOptions.BranchName
+                : _destOptions.OrganizationName;
+
+            var req = new SubmitGiftingOrderRequest
+            {
+                OrganizationId = SessionState.SelectedChild.OrganizationId ?? Guid.Empty,
+                BranchId = SessionState.SelectedChild.BranchId ?? Guid.Empty,
+                ClassroomId = SessionState.SelectedChild.ClassroomId ?? Guid.Empty,
+                ChildId = SessionState.SelectedChild.ChildId,
+                RecipientType = _selectedMode,
+                RecipientChildId = _selectedMode == GiftingRecipientTypes.BirthdayGift ? _selectedPeerChildId : null,
+                RecipientChildName = _selectedMode == GiftingRecipientTypes.BirthdayGift ? _selectedPeerChildName : null,
+                GreetingMessage = _greetingMessage,
+                DeliveryDestinationType = _selectedDestinationType,
+                ConfirmedDeliveryAddress = confirmedAddress,
+                ConfirmedContactName = contactName,
+                ConfirmedContactPhone = contactPhone,
+                Items = _cart.Select(c => new SubmitGiftingOrderItemDto
+                {
+                    MaterialProductId = c.Key,
+                    Quantity = c.Value
+                }).ToList()
+            };
+
+            var order = await GiftingService.SubmitOrderAsync(req);
+            Navigation.NavigateTo($"/giving/orders?orderNumber={order.OrderNumber}&submitted=true");
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = ex.Message;
+            _isSuccess = false;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

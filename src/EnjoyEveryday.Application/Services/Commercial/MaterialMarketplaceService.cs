@@ -298,7 +298,14 @@ public class MaterialMarketplaceService : IMaterialMarketplaceService
 
                 if (availableStock < reqItem.Quantity)
                 {
-                    requiresApproval = true; // Out of stock -> requires quotation / review
+                    if (availableStock <= 0)
+                    {
+                        throw new InvalidOperationException($"Someone has already ordered '{product.Name}' and it is now out of stock. Please remove it from your order.");
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Someone has already ordered '{product.Name}'. Only {availableStock} item(s) remain in stock (you requested {reqItem.Quantity}). Please adjust your order quantity.");
+                    }
                 }
 
                 orderItems.Add(new MaterialOrderItem

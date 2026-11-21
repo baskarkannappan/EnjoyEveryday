@@ -1,0 +1,205 @@
+@page "/management/gifting-reports"
+@page "/gifting-reports"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "PlatformAdmin,OrganizationOwner,OrganizationAdmin,BranchAdmin")]
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Domain.Repositories
+@using EnjoyEveryday.UI.Shared.Components
+@using EnjoyEveryday.UI.Shared.Services
+@inject IClassroomGiftingService GiftingService
+@inject IBranchRepository BranchRepository
+@inject ICurrencyService CurrencyService
+@inject EnjoyEveryday.Shared.Tenancy.ITenantContext TenantContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Classroom Gifting Financial Reconciliation — Daycare Operations</PageTitle>
+
+<div class="content" style="max-width: 1300px; margin: 0 auto; padding: 24px 32px 60px; font-family: var(--ee-font, 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);">
+    <PageHero Eyebrow="FINANCIAL AUDIT &amp; REPORTING"
+              Title="Gifting &amp; Contributions Reconciliation"
+              Subtitle="Reconcile expected vs received amounts across Cash, Razorpay, UPI QR, and Bank Transfers. Strictly separated from childcare tuition fee billing.">
+        <RightContent>
+            <a href="/management/gifting-orders" class="btn secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none;">
+                <span>📦</span>
+                <span>View Gifting Orders</span>
+            </a>
+        </RightContent>
+    </PageHero>
+
+    <!-- BRANCH SELECTOR & REFRESH -->
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-size: 13px; font-weight: 700; color: var(--text);">Branch Campus Scope:</label>
+            <select @bind="_selectedBranchFilter" @bind:after="LoadReportAsync" style="padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: white;">
+                <option value="">All Organization Branches</option>
+                @foreach (var br in _branches)
+                {
+                    <option value="@br.Id">@br.Name</option>
+                }
+            </select>
+        </div>
+
+        <button type="button" class="secondary" style="font-size: 13px; padding: 6px 14px;" @onclick="LoadReportAsync">
+            🔄 Refresh Metrics
+        </button>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div style="padding: 60px; text-align: center; color: var(--muted);">
+            <div>🌿 Loading reconciliation report...</div>
+        </div>
+    }
+    else
+    {
+        <!-- KPI METRICS GRID -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);">
+                <span style="font-size: 11.5px; font-weight: 800; color: var(--muted); text-transform: uppercase;">TOTAL VALUE COMMITTED</span>
+                <div style="font-size: 26px; font-weight: 850; color: var(--text); margin-top: 6px;" class="ee-tnum">
+                    @CurrencyService.Format(_report.TotalOrderAmount, "INR")
+                </div>
+                <span style="font-size: 12px; color: var(--muted);">Across @_report.TotalOrders gift order(s)</span>
+            </div>
+
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);">
+                <span style="font-size: 11.5px; font-weight: 800; color: #047857; text-transform: uppercase;">VERIFIED COLLECTED</span>
+                <div style="font-size: 26px; font-weight: 850; color: #047857; margin-top: 6px;" class="ee-tnum">
+                    @CurrencyService.Format(_report.TotalPaidAmount, "INR")
+                </div>
+                <span style="font-size: 12px; color: var(--muted);">Reconciled through verified gateways &amp; cash</span>
+            </div>
+
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);">
+                <span style="font-size: 11.5px; font-weight: 800; color: #b45309; text-transform: uppercase;">PENDING COLLECTION</span>
+                <div style="font-size: 26px; font-weight: 850; color: #b45309; margin-top: 6px;" class="ee-tnum">
+                    @CurrencyService.Format(_report.TotalPendingAmount, "INR")
+                </div>
+                <span style="font-size: 12px; color: var(--muted);">Awaiting payment / physical handover</span>
+            </div>
+
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);">
+                <span style="font-size: 11.5px; font-weight: 800; color: var(--accent-dark); text-transform: uppercase;">CLASSROOM DELIVERIES</span>
+                <div style="font-size: 26px; font-weight: 850; color: var(--accent-dark); margin-top: 6px;" class="ee-tnum">
+                    @_report.DeliveredOrDistributed
+                </div>
+                <span style="font-size: 12px; color: var(--muted);">Completed &amp; distributed in rooms</span>
+            </div>
+        </div>
+
+        <!-- REVENUE BREAKDOWN BY PAYMENT METHOD -->
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); margin-bottom: 24px;">
+            <h3 style="margin: 0 0 16px; font-size: 16px; font-weight: 800; color: var(--text);">
+                Collections Breakdown by Payment Method
+            </h3>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;">
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-weight: 750; font-size: 13.5px; color: var(--text);">💵 Physical Cash</span>
+                        <span style="font-size: 11px; background: #e5e7eb; padding: 1px 6px; border-radius: 4px;">Audited</span>
+                    </div>
+                    <div style="font-size: 20px; font-weight: 800; color: var(--text);" class="ee-tnum">
+                        @CurrencyService.Format(_report.CashCollected, "INR")
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">Received &amp; receipted by staff</span>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-weight: 750; font-size: 13.5px; color: var(--text);">💳 Online Razorpay</span>
+                        <span style="font-size: 11px; background: #ecfdf5; color: #047857; padding: 1px 6px; border-radius: 4px;">Instant</span>
+                    </div>
+                    <div style="font-size: 20px; font-weight: 800; color: var(--text);" class="ee-tnum">
+                        @CurrencyService.Format(_report.RazorpayCollected, "INR")
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">Direct gateway settlement</span>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-weight: 750; font-size: 13.5px; color: var(--text);">📱 Google Pay / UPI</span>
+                        <span style="font-size: 11px; background: #eff6ff; color: #1d4ed8; padding: 1px 6px; border-radius: 4px;">Verified</span>
+                    </div>
+                    <div style="font-size: 20px; font-weight: 800; color: var(--text);" class="ee-tnum">
+                        @CurrencyService.Format(_report.UpiCollected, "INR")
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">Matched with UTR reference</span>
+                </div>
+
+                <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; padding: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-weight: 750; font-size: 13.5px; color: var(--text);">🏛️ Direct Bank Transfer</span>
+                        <span style="font-size: 11px; background: #fdf4ff; color: #a21caf; padding: 1px 6px; border-radius: 4px;">Verified</span>
+                    </div>
+                    <div style="font-size: 20px; font-weight: 800; color: var(--text);" class="ee-tnum">
+                        @CurrencyService.Format(_report.BankCollected, "INR")
+                    </div>
+                    <span style="font-size: 12px; color: var(--muted);">Bank account deposits</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- OPERATIONAL STATUS QUEUES -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px;">
+                <h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 800; color: var(--text);">Admin Decision Queue</h4>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border);">
+                    <span>Orders Pending Approval</span>
+                    <strong style="color: #b45309;">@_report.PendingApprovals</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                    <span>Payments Pending Verification</span>
+                    <strong style="color: #2563eb;">@_report.PendingVerifications</strong>
+                </div>
+            </div>
+
+            <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px;">
+                <h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 800; color: var(--text);">Classroom Logistics Queue</h4>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border);">
+                    <span>Gifts in Preparation &amp; Transit</span>
+                    <strong style="color: #0284c7;">@_report.InPreparation</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+                    <span>Completed &amp; Distributed</span>
+                    <strong style="color: var(--accent-dark);">@_report.DeliveredOrDistributed</strong>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private GiftingFinancialReconciliationReport _report = new();
+    private List<Branch> _branches = new();
+    private string _selectedBranchFilter = string.Empty;
+    private bool _isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+            _branches = (await BranchRepository.GetByOrganizationIdAsync(TenantContext.TenantId, orgId)).ToList();
+        }
+        catch { }
+
+        await LoadReportAsync();
+    }
+
+    private async Task LoadReportAsync()
+    {
+        try
+        {
+            _isLoading = true;
+            var orgId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+            Guid? branchId = !string.IsNullOrWhiteSpace(_selectedBranchFilter) && Guid.TryParse(_selectedBranchFilter, out var bId) ? bId : null;
+            _report = await GiftingService.GetFinancialReconciliationAsync(orgId, branchId);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

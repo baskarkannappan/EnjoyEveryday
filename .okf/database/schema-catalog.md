@@ -1,8 +1,8 @@
 ---
 okf_version: "0.2.0"
 type: concept
-title: "Database Schema Catalog (135 Tables)"
-description: "Categorized dictionary of all 135 PostgreSQL database tables grouped by functional domain."
+title: "Database Schema Catalog (138 Tables)"
+description: "Categorized dictionary of all 138 PostgreSQL database tables grouped by functional domain."
 parent: "index.md"
 status: active
 generated: "2026-11-05"
@@ -13,7 +13,7 @@ tags:
   - dictionary
 ---
 
-# Database Schema Catalog (135 Tables)
+# Database Schema Catalog (138 Tables)
 
 All tables belong to the `public` schema and enforce multi-tenancy via `tenant_id UUID NOT NULL` indexed by `idx_<table>_tenant`.
 
@@ -68,8 +68,11 @@ All tables belong to the `public` schema and enforce multi-tenancy via `tenant_i
 * `child_journey_entries`, `child_journey_developments`, `child_journey_evidence`, `child_stories`: Parent timeline moments.
 * `activity_recommendation_requests`, `activity_recommendation_items`, `activity_recommendation_decisions`: ADK activity suggestions.
 
-## 7. Commercial, Billing & Marketplace (21 Tables)
-* `invoices`, `invoice_line_items`, `payments`, `family_billing_contracts`: Tuition billing.
+## 7. Commercial, Billing & Marketplace (24 Tables)
+* `invoices`, `invoice_line_items`, `payments`, `family_billing_contracts`: Tuition billing. Note: `payments.gifting_order_id UUID REFERENCES classroom_gifting_orders(id)` and `billing_domain = 'ClassroomGifting'` for isolated gifting records.
+* `classroom_gifting_orders`: Main order ledger for birthday gifts and general classroom giving with facility address snapshots, dual-admin approval status, payment status, and fulfilment stage (Migration 140).
+* `classroom_gifting_order_items`: Order line items referencing `material_products` with snapshotted prices, quantities, and line totals (Migration 140).
+* `classroom_gifting_audit_events`: Immutable chronological audit trail recording state transitions, actor ID, actor role, metadata, and timestamps (Migration 140).
 * `platform_payment_settings`: Platform Admin configurable bank account, UPI ID (`pa`), payee name (`pn`), and optional custom QR code image (Migration 124).
 * `organization_billing_settings`, `organization_entitlements`: Tenant plan tier and add-ons.
 * `organization_plan_history`: Immutable chronological audit trail of past and current subscription plans, tariffs, rates, and quotas per organization (Migration 123).

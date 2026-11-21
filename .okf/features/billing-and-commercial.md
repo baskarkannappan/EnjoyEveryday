@@ -241,6 +241,53 @@ tags:
     - **Nested Grids & Sub-Tables**: Tables enforce minimum safe widths (`min-width: 680px` / `580px`) inside horizontal scrolling containers, preventing crushed text and column overlapping on mobile phones.
     - **Parent Portal Responsive Billing (`Billing.razor`)**: Summary cards collapse into a 2-column grid (`repeat(2, 1fr)`), installment schedule cards expand to 1-column layout, and payment choice pills adapt to 100% width on narrow screens.
 
+### 15. Classroom Gifting & Giving Commercial Domain
+* **Migration**: `140_classroom_gifting_and_giving.sql`, `141_classroom_gifting_inventory_and_stock_concurrency.sql`.
+* **Database Tables**:
+  - `classroom_gifting_orders`: Order header capturing giving type (`BirthdayGift`, `GeneralClassroomContribution`), beneficiary child/classroom, delivery destination type (`BranchAddress`, `OrganizationAddress`), snapshotted delivery address, approval workflow status, payment status, and fulfilment stage.
+  - `classroom_gifting_order_items`: Order line items referencing existing marketplace catalog (`material_products`).
+  - `classroom_gifting_audit_events`: Immutable chronological audit trail recording state transitions, actor ID, actor role, metadata, and timestamps.
+* **Strict Financial Separation**:
+  - Gifting transactions are completely isolated from childcare tuition fees (`OrgToParent`) and platform SaaS subscription billing (`EnjoyEverydayBilling`).
+  - Uses `payments` table with `billing_domain = 'ClassroomGifting'` and `gifting_order_id UUID REFERENCES classroom_gifting_orders(id)`.
+  - Zero pollution of childcare fee ledgers or platform subscription accounts.
+* **Dual-Admin Approval Workflow**:
+  - Either Branch Admin OR Organization Admin can review and approve/reject orders.
+  - First valid decision wins; concurrency is guarded by pessimistic row-level locking (`SELECT ... FOR UPDATE` in `sp_approve_or_reject_gifting_order`).
+  - Parents cannot pay until order is approved.
+* **4-Method Payment Processing & Verification**:
+  1. *Cash*: Handed over at branch front office. Staff confirms actual cash received via `sp_record_gifting_cash_payment`, generating an official numbered receipt (`REC-YYYYMMDD-XXXX`).
+  2. *Razorpay*: Online gateway integration using organization-specific credentials with HMAC-SHA256 signature verification and webhook reconciliation.
+  3. *Google Pay / UPI QR*: Displays organization QR code (`org_payment_qr_codes` / `facility_profiles`). Parent inputs UTR reference; staff/admin verifies via `fn_verify_gifting_payment`.
+  4. *Direct Bank Transfer*: Displays organization bank details (`org_bank_accounts`). Parent inputs transaction reference; staff/admin verifies.
+* **10-Stage Fulfilment Pipeline**:
+  - `Submitted` → `PendingReview` → `OrderApproved` → `PaymentPending` → `Paid` → `Preparation` → `Ready` → `DispatchedOrHandedOver` → `ReceivedAtDestination` → `ClassroomDelivered` → `Distributed` / `Completed`.
+* **Administrative Operations & Reconciliation**:
+  - Admin Operations Console: `/management/gifting-orders` (`ClassroomGiftingOrdersPage.razor`).
+  - Financial Reconciliation Dashboard: `/management/gifting-reports` (`GiftingReportsPage.razor`) backed by `fn_get_gifting_financial_reconciliation`.
+  - RBAC Permissions: `gifting.order.create`, `gifting.order.approve`, `gifting.payment.verify`, `gifting.cash.receive`, `gifting.fulfilment.manage`, `gifting.distribution.confirm`, `gifting.reports.view`.
+
+### 16. Inventory Stock Concurrency & Low/Out-of-Stock Protection
+* **Migration**: `141_classroom_gifting_inventory_and_stock_concurrency.sql`.
+* **Stock Badges & Visual Count Indicators**:
+  - Products display exact live stock status across `MaterialProductCard.razor`, `MaterialsMarketplace.razor`, and `ClassroomGivingPage.razor`:
+    - Out of Stock ($= 0$): `● Out of stock (0 in stock)` badge (`#fee2e2`, `#991b1b`); ordering disabled (`Out of Stock`).
+    - Low Stock ($1 \dots 5$): `⚠️ Low stock: Only {count} left!` badge (`#fef3c7`, `#92400e`).
+    - In Stock ($> 5$): `● {count} in stock` badge (`#e6eee9`, `#31523c`).
+* **Input Quantity Bounding & Cart Limits**:
+  - Quantity selectors bind dynamically to `max="@availableStock"`.
+  - Cart addition and checkout validate available inventory; parents/teachers cannot order more than available units.
+* **Pessimistic Concurrency Locking & Race Condition Guards**:
+  - `sp_submit_classroom_gifting_order` locks corresponding `inventory_balances` rows using `SELECT available_stock FROM inventory_balances ... FOR UPDATE`.
+  - If a concurrent user/parent acquired items in the interim:
+    - If now out of stock: returns user-friendly error `Someone has already ordered "{product}" and it is now out of stock. Please remove it from your selection.`
+    - If partially available: returns `Someone has already ordered "{product}". Only {avail} item(s) remain in stock (you requested {qty}). Please adjust your quantity.`
+  - Upon successful order placement, `available_stock` is atomically decremented and `reserved_stock` incremented.
+  - When an admin rejects an order (`sp_approve_or_reject_gifting_order`), reserved stock is released back into `available_stock`.
+* **Daycare Marketplace Organization Resolution (`MaterialsMarketplace.razor`)**:
+  - Fixed `23503 (material_orders_organization_id_fkey)` bug by introducing `ResolveOrganizationIdAsync()`, which looks up active organizations for the logged-in user and tenant before falling back to the standard dev organization ID (`20000000-0000-0000-0000-000000000001`), completely eliminating non-existent fallback IDs.
+
+
 
 
 

@@ -43,13 +43,17 @@
         <span class="type-badge @Product.MaterialType.ToLowerInvariant()">
             @(isKit ? "Reusable Kit" : "Consumable")
         </span>
-        @if (bal != null && bal.AvailableStock > 0)
+        @if (bal == null || bal.AvailableStock <= 0)
         {
-            <span class="stock-badge available">● @bal.AvailableStock in stock</span>
+            <span class="stock-badge out-of-stock" style="background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; font-weight: 700;">● Out of stock (0 in stock)</span>
+        }
+        else if (bal.AvailableStock <= 5)
+        {
+            <span class="stock-badge low-stock" style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; font-weight: 700;">⚠️ Low stock: Only @bal.AvailableStock left!</span>
         }
         else
         {
-            <span class="stock-badge request">Borrow on request</span>
+            <span class="stock-badge available">● @bal.AvailableStock in stock</span>
         }
     </div>
 
@@ -95,9 +99,18 @@
             <button class="btn secondary" @onclick="() => OnViewDetails.InvokeAsync(Product)">
                 Details &amp; Safety
             </button>
-            <button class="primary" @onclick="() => OnAddToOrder.InvokeAsync(Product)">
-                + Add to Order
-            </button>
+            @if ((bal == null || bal.AvailableStock <= 0) && off?.AllowPurchase == true && off?.AllowBorrow != true)
+            {
+                <button class="btn secondary" disabled style="opacity: 0.55; cursor: not-allowed; font-weight: 700;">
+                    Out of Stock
+                </button>
+            }
+            else
+            {
+                <button class="primary" @onclick="() => OnAddToOrder.InvokeAsync(Product)">
+                    + Add to Order
+                </button>
+            }
         </div>
     </div>
 </div>
