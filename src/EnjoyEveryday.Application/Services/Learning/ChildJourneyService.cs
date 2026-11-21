@@ -1,7 +1,8 @@
+using EnjoyEveryday.Application.Constants;
+using EnjoyEveryday.Domain.Constants;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
-
 using EnjoyEveryday.Shared.Audit;
 
 namespace EnjoyEveryday.Application.Services;
@@ -71,8 +72,8 @@ public class ChildJourneyService : IChildJourneyService
             var cls = await _classroomRepository.GetByIdAsync(_tenantContext.TenantId, entry.ClassroomId.Value, cancellationToken);
             if (cls != null && cls.BranchId != Guid.Empty)
             {
-                await _dailyOpsService.ValidateBranchOperationsAllowedAsync(cls.BranchId, DateOnly.FromDateTime(DateTime.Today), "child journey observation", cancellationToken);
-                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(cls.Id, DateOnly.FromDateTime(DateTime.Today), "child journey observation", cancellationToken);
+                await _dailyOpsService.ValidateBranchOperationsAllowedAsync(cls.BranchId, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.ChildJourneyObservation, cancellationToken);
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(cls.Id, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.ChildJourneyObservation, cancellationToken);
             }
         }
         
@@ -94,8 +95,8 @@ public class ChildJourneyService : IChildJourneyService
         {
             TenantId = _tenantContext.TenantId,
             UserId = auditUserId,
-            Action = "JourneyCreated",
-            EntityType = "ChildJourneyEntry",
+            Action = AuditActions.Journey.Created,
+            EntityType = AuditEntityTypes.ChildJourneyEntry,
             EntityId = entry.Id,
             Details = new { entry.ChildId, entry.JourneyType, TeacherId = entry.TeacherId }
         }, cancellationToken);
@@ -120,8 +121,8 @@ public class ChildJourneyService : IChildJourneyService
         {
             TenantId = _tenantContext.TenantId,
             UserId = auditUserId,
-            Action = "JourneyUpdated",
-            EntityType = "ChildJourneyEntry",
+            Action = AuditActions.Journey.Updated,
+            EntityType = AuditEntityTypes.ChildJourneyEntry,
             EntityId = entry.Id,
             Details = new { entry.ChildId, entry.JourneyType, TeacherId = entry.TeacherId }
         }, cancellationToken);
@@ -165,8 +166,8 @@ public class ChildJourneyService : IChildJourneyService
         await _auditService.LogAsync(new AuditEntry
         {
             TenantId = _tenantContext.TenantId,
-            Action = "MilestoneCaptured",
-            EntityType = "ChildMilestone",
+            Action = AuditActions.Journey.MilestoneCaptured,
+            EntityType = AuditEntityTypes.ChildMilestone,
             EntityId = milestone.Id,
             Details = new { milestone.ChildId, Category = milestone.Title }
         }, cancellationToken);
@@ -190,8 +191,8 @@ public class ChildJourneyService : IChildJourneyService
         {
             TenantId = _tenantContext.TenantId,
             UserId = approvedByUserId,
-            Action = "JourneyApproved",
-            EntityType = "ChildJourneyEntry",
+            Action = AuditActions.Journey.Approved,
+            EntityType = AuditEntityTypes.ChildJourneyEntry,
             EntityId = entryId,
             Details = new { EntryId = entryId, ApprovedBy = approvedByUserId, ApprovedAt = DateTimeOffset.UtcNow }
         }, cancellationToken);

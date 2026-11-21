@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EnjoyEveryday.Domain.Constants;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
@@ -252,7 +253,7 @@ public class ChildDevelopmentPortfolioService : IChildDevelopmentPortfolioServic
             DateTimeOffset date = e.ObservationDate;
             bool isParentVis = e.IsParentVisible;
             bool isMilestone = e.IsMilestone;
-            string jType = e.JourneyType ?? "Observation";
+            string jType = e.JourneyType ?? JourneyTypes.Observation;
 
             var domainList = new List<string>();
             var domainIcons = new List<string>();

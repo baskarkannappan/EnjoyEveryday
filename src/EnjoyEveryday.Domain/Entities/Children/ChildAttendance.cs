@@ -10,6 +10,11 @@ public class ChildAttendance
     public Guid ClassroomId { get; set; }
     public Guid ChildId { get; set; }
     public DateTime AttendanceDate { get; set; }
+
+    /// <summary>
+    /// Attendance status (Present, CheckedOut, Late, Absent, Excused, Not marked).
+    /// See <see cref="Constants.AttendanceStatuses"/> for standard constants.
+    /// </summary>
     public string Status { get; set; } = string.Empty;
     public TimeSpan? ArrivalTime { get; set; }
     public TimeSpan? DepartureTime { get; set; }

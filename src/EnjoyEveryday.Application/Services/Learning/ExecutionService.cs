@@ -1,3 +1,4 @@
+using EnjoyEveryday.Application.Constants;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Tenancy;
@@ -86,7 +87,7 @@ public class ExecutionService
 
         if (_dailyOpsService != null && schedule.ClassroomId != Guid.Empty)
         {
-            await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(schedule.ClassroomId, schedule.ScheduledDate, "activity session");
+            await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(schedule.ClassroomId, schedule.ScheduledDate, DailyOperationReasons.ActivitySession);
         }
 
         if (schedule.Status == "Started" || schedule.Status == "Active" || schedule.Status == "Completed")

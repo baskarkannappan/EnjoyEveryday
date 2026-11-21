@@ -51,3 +51,19 @@ Tenant (Top-level SaaS partition)
 * Assigned to a primary classroom via `ClassroomId`.
 * Attendance tracked via `ChildAttendance` (`Status`, `ArrivalTime`, `DepartureTime`, `PickupPersonName`, `PickupVerificationMethod`).
 
+---
+
+## Type-Safe Constants & Enum Architecture
+To preserve 100% backward compatibility with PostgreSQL `varchar` columns and Dapper object-relational mapping without risk of runtime serialization breakage, domain statuses and options are modeled via type-safe string constants and read-only sets:
+
+| Namespace / Class | Purpose | Primary Constants |
+|:---|:---|:---|
+| `EnjoyEveryday.Domain.Constants.JourneyTypes` | Observation and portfolio entry categories | `Observation`, `ActivityObservation`, `LittleMoment`, `Discovery`, `Milestone`, `Attendance`, `ArtAndSensory` |
+| `EnjoyEveryday.Domain.Constants.ParentVisibilityStatuses` | Review workflow states for family sharing | `Draft`, `PendingReview`, `Approved` |
+| `EnjoyEveryday.Domain.Constants.AttendanceStatuses` | Attendance register states and helpers | `Present`, `CheckedOut`, `Late`, `Absent`, `Excused`, `NotMarked` |
+| `EnjoyEveryday.Domain.Constants.EnrollmentStages` | Admissions funnel stages | `Inquiry`, `TourScheduled`, `ApplicationSubmitted`, `Review`, `Waitlist`, `OfferSent`, `Enrolled`, `Withdrawn`, `Graduated` |
+| `EnjoyEveryday.Shared.Audit.AuditActions` | Structured audit log actions by domain module | `Journey.*`, `DailyCare.*`, `Attendance.*`, `Auth.*`, `Commercial.*`, `Parent.*`, `Operations.*` |
+| `EnjoyEveryday.Shared.Audit.AuditEntityTypes` | Entity names for audit entries | `ChildJourneyEntry`, `ChildMilestone`, `ChildCareEvent`, `ChildAttendance`, `User`, `Child` |
+| `EnjoyEveryday.Application.Constants.DailyOperationReasons` | Validations for operational day readiness | `ChildJourneyObservation`, `ChildAttendance`, `TeacherAttendance`, `NapRoutine`, `WakeUpRoutine`, `TeacherHandover` |
+
+

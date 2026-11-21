@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EnjoyEveryday.Application.Constants;
+using EnjoyEveryday.Domain.Constants;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Entities.Attendance;
 using EnjoyEveryday.Domain.Repositories;
@@ -102,15 +104,15 @@ public class AttendanceService
 
         if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "child attendance", new DateTimeOffset(DateTime.SpecifyKind(attendance.AttendanceDate.Date, DateTimeKind.Utc), TimeSpan.Zero));
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, DailyOperationReasons.ChildAttendance, new DateTimeOffset(DateTime.SpecifyKind(attendance.AttendanceDate.Date, DateTimeKind.Utc), TimeSpan.Zero));
         }
 
         if (_dailyOpsService != null && attendance.BranchId != Guid.Empty)
         {
-            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(attendance.BranchId, DateOnly.FromDateTime(attendance.AttendanceDate), "child attendance");
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(attendance.BranchId, DateOnly.FromDateTime(attendance.AttendanceDate), DailyOperationReasons.ChildAttendance);
             if (attendance.ClassroomId != Guid.Empty)
             {
-                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(attendance.ClassroomId, DateOnly.FromDateTime(attendance.AttendanceDate), "child attendance");
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(attendance.ClassroomId, DateOnly.FromDateTime(attendance.AttendanceDate), DailyOperationReasons.ChildAttendance);
             }
         }
 
@@ -128,12 +130,12 @@ public class AttendanceService
 
         if (_branchOperationalStatusService != null && attendance.BranchId != Guid.Empty)
         {
-            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, "teacher attendance", new DateTimeOffset(DateTime.SpecifyKind(attendance.AttendanceDate.Date, DateTimeKind.Utc), TimeSpan.Zero));
+            await _branchOperationalStatusService.EnsureBranchOperationalAsync(_tenantContext.TenantId, attendance.BranchId, DailyOperationReasons.TeacherAttendance, new DateTimeOffset(DateTime.SpecifyKind(attendance.AttendanceDate.Date, DateTimeKind.Utc), TimeSpan.Zero));
         }
 
         if (_dailyOpsService != null && attendance.BranchId != Guid.Empty)
         {
-            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(attendance.BranchId, DateOnly.FromDateTime(attendance.AttendanceDate), "teacher attendance");
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(attendance.BranchId, DateOnly.FromDateTime(attendance.AttendanceDate), DailyOperationReasons.TeacherAttendance);
         }
 
         attendance.TenantId = _tenantContext.TenantId;
@@ -177,18 +179,18 @@ public class AttendanceService
 
         var deduplicatedChildAtt = childAtt
             .GroupBy(a => a.ChildId)
-            .Select(g => g.OrderByDescending(a => a.Status == "CheckedOut" ? 2 : (a.Status == "Present" ? 1 : 0))
+            .Select(g => g.OrderByDescending(a => a.Status == AttendanceStatuses.CheckedOut ? 2 : (a.Status == AttendanceStatuses.Present ? 1 : 0))
                           .ThenByDescending(a => a.DepartureTime ?? a.ArrivalTime ?? TimeSpan.Zero)
                           .First())
             .ToList();
 
         var classRows = classrooms.Select(c => {
             var expectedC = allChildren.Count(ch => ch.ClassroomId == c.Id);
-            var presentC = deduplicatedChildAtt.Count(a => a.ClassroomId == c.Id && (a.Status == "Present" || a.Status == "Late"));
-            var pendingC = deduplicatedChildAtt.Count(a => a.ClassroomId == c.Id && a.Status == "Not marked");
+            var presentC = deduplicatedChildAtt.Count(a => a.ClassroomId == c.Id && AttendanceStatuses.IsPresentOrLate(a.Status));
+            var pendingC = deduplicatedChildAtt.Count(a => a.ClassroomId == c.Id && a.Status == AttendanceStatuses.NotMarked);
 
             var expectedT = 2;
-            var presentT = teacherAtt.Count(a => a.Status == "Present" || a.Status == "Late");
+            var presentT = teacherAtt.Count(a => AttendanceStatuses.IsPresentOrLate(a.Status));
             if (presentT > expectedT) presentT = expectedT;
 
             string status;
@@ -350,7 +352,7 @@ public class AttendanceService
                     Status = item.Status,
                     RecordedByUserId = recordedByUserId
                 };
-                if (item.Status == "Present" && item.In == "—") att.ArrivalTime = DateTime.Now.TimeOfDay;
+                if (item.Status == AttendanceStatuses.Present && item.In == "—") att.ArrivalTime = DateTime.Now.TimeOfDay;
                 await _attendanceRepository.RecordChildAttendanceAsync(att);
             }
             else
@@ -365,7 +367,7 @@ public class AttendanceService
                     Status = item.Status,
                     RecordedByUserId = recordedByUserId
                 };
-                if (item.Status == "Present" && item.In == "—") att.ClockInTime = DateTime.Now.TimeOfDay;
+                if (item.Status == AttendanceStatuses.Present && item.In == "—") att.ClockInTime = DateTime.Now.TimeOfDay;
                 await _attendanceRepository.RecordTeacherAttendanceAsync(att);
             }
         }
@@ -416,12 +418,12 @@ public class AttendanceService
             {
                 var roomChildrenCount = allChildren.Count(c => c.ClassroomId == room.Id);
                 var expectedC = Math.Max(roomChildrenCount, childAtt.Count(x => x.ClassroomId == room.Id));
-                var presentC = childAtt.Count(x => x.ClassroomId == room.Id && (x.Status == "Present" || x.Status == "Late"));
-                var markedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status != "Not marked");
+                var presentC = childAtt.Count(x => x.ClassroomId == room.Id && AttendanceStatuses.IsPresentOrLate(x.Status));
+                var markedC = childAtt.Count(x => x.ClassroomId == room.Id && x.Status != AttendanceStatuses.NotMarked);
                 var unmarkedC = Math.Max(0, expectedC - markedC);
 
                 var expectedT = 2;
-                var presentT = Math.Min(expectedT, teacherAtt.Count(x => x.Status == "Present" || x.Status == "Late"));
+                var presentT = Math.Min(expectedT, teacherAtt.Count(x => AttendanceStatuses.IsPresentOrLate(x.Status)));
 
                 string statusText = "Marked";
                 string statusCss = "green";

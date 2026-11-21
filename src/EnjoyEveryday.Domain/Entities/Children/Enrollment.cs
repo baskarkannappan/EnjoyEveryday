@@ -8,7 +8,12 @@ public class Enrollment
     public Guid ClassroomId { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
-    public string Status { get; set; } = "Enrolled"; // Enrolled, Withdrawn, Graduated, etc.
+
+    /// <summary>
+    /// Current enrollment status.
+    /// See <see cref="Constants.EnrollmentStatuses"/> for standard constants.
+    /// </summary>
+    public string Status { get; set; } = Constants.EnrollmentStatuses.Enrolled;
     public string ScheduleType { get; set; } = "Full Time";
     
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

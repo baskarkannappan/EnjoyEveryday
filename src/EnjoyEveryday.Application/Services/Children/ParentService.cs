@@ -1,3 +1,4 @@
+using EnjoyEveryday.Domain.Constants;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
@@ -476,7 +477,7 @@ public class ParentService : IParentService
         if (attendance != null)
         {
             if (attendance.ArrivalTime.HasValue && !entries.Any(e =>
-                string.Equals(e.JourneyType, "Attendance", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.JourneyType, JourneyTypes.Attendance, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(e.ParticipationType, "Arrival", StringComparison.OrdinalIgnoreCase) &&
                 e.ObservationDate.ToLocalTime().Date == DateTime.Today))
             {
@@ -486,18 +487,18 @@ public class ParentService : IParentService
                     Id = attendance.Id,
                     TenantId = effectiveTenantId,
                     ChildId = childId,
-                    JourneyType = "Attendance",
+                    JourneyType = JourneyTypes.Attendance,
                     Title = "Classroom Check-In",
                     Observation = $"Checked in at {arrTime:h:mm tt}.",
                     ObservationDate = new DateTimeOffset(arrTime, TimeZoneInfo.Local.GetUtcOffset(arrTime)),
                     ParticipationType = "Arrival",
                     IsParentVisible = true,
-                    ParentVisibilityStatus = "Approved"
+                    ParentVisibilityStatus = ParentVisibilityStatuses.Approved
                 });
             }
 
             if (attendance.DepartureTime.HasValue && !entries.Any(e =>
-                string.Equals(e.JourneyType, "Attendance", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(e.JourneyType, JourneyTypes.Attendance, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(e.ParticipationType, "Departure", StringComparison.OrdinalIgnoreCase) &&
                 e.ObservationDate.ToLocalTime().Date == DateTime.Today))
             {
@@ -510,13 +511,13 @@ public class ParentService : IParentService
                     Id = attendance.Id,
                     TenantId = effectiveTenantId,
                     ChildId = childId,
-                    JourneyType = "Attendance",
+                    JourneyType = JourneyTypes.Attendance,
                     Title = "Classroom Departure / Check-Out",
                     Observation = $"Checked out at {depTime:h:mm tt}. {pickupDesc}",
                     ObservationDate = new DateTimeOffset(depTime, TimeZoneInfo.Local.GetUtcOffset(depTime)),
                     ParticipationType = "Departure",
                     IsParentVisible = true,
-                    ParentVisibilityStatus = "Approved"
+                    ParentVisibilityStatus = ParentVisibilityStatuses.Approved
                 });
             }
         }
@@ -677,7 +678,7 @@ public class ParentService : IParentService
                     });
                 }
             }
-            else if (!string.IsNullOrEmpty(entry.Observation) && !string.Equals(entry.JourneyType, "Attendance", StringComparison.OrdinalIgnoreCase))
+            else if (!string.IsNullOrEmpty(entry.Observation) && !string.Equals(entry.JourneyType, JourneyTypes.Attendance, StringComparison.OrdinalIgnoreCase))
             {
                 mediaList.Add(new ParentMediaItem
                 {

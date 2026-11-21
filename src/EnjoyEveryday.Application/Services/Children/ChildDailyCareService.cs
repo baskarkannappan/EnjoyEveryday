@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EnjoyEveryday.Application.Constants;
+using EnjoyEveryday.Domain.Constants;
 using EnjoyEveryday.Domain.Entities;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Audit;
@@ -196,8 +198,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "CHILD_CARE_RECORDED",
-            EntityType = "ChildCareEvent",
+            Action = AuditActions.DailyCare.Recorded,
+            EntityType = AuditEntityTypes.ChildCareEvent,
             EntityId = eventId,
             Details = $"Recorded {ev.EventType} care event for child {child.FirstName} {child.LastName}."
         }, ct);
@@ -292,8 +294,8 @@ public class ChildDailyCareService : IChildDailyCareService
             {
                 TenantId = _tenantContext.TenantId,
                 UserId = _userContext.UserId,
-                Action = "BATCH_CHILD_CARE_RECORDED",
-                EntityType = "ChildCareEvent",
+                Action = AuditActions.DailyCare.BatchRecorded,
+                EntityType = AuditEntityTypes.ChildCareEvent,
                 Details = $"Recorded batch {eventType} event for {count} children with option: {detailOption}."
             }, ct);
         }
@@ -356,8 +358,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "CHILD_CARE_CORRECTED",
-            EntityType = "ChildCareEvent",
+            Action = AuditActions.DailyCare.Corrected,
+            EntityType = AuditEntityTypes.ChildCareEvent,
             EntityId = eventId,
             Details = $"Care event corrected. Reason: {correctionReason}"
         }, ct);
@@ -382,11 +384,11 @@ public class ChildDailyCareService : IChildDailyCareService
 
         if (_dailyOpsService != null && branchId != Guid.Empty)
         {
-            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId, DateOnly.FromDateTime(DateTime.Today), "nap routine", ct);
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.NapRoutine, ct);
             var room = classroomId ?? child.ClassroomId;
             if (room.HasValue && room.Value != Guid.Empty)
             {
-                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(room.Value, DateOnly.FromDateTime(DateTime.Today), "nap routine", ct);
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(room.Value, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.NapRoutine, ct);
             }
         }
 
@@ -431,8 +433,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "NAP_STARTED",
-            EntityType = "ChildNapSession",
+            Action = AuditActions.DailyCare.NapStarted,
+            EntityType = AuditEntityTypes.ChildNapSession,
             EntityId = session.Id,
             Details = $"Started nap for child {child.FirstName} {child.LastName}."
         }, ct);
@@ -448,10 +450,10 @@ public class ChildDailyCareService : IChildDailyCareService
 
         if (_dailyOpsService != null && activeSession.BranchId != Guid.Empty)
         {
-            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(activeSession.BranchId, DateOnly.FromDateTime(DateTime.Today), "wake-up routine", ct);
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(activeSession.BranchId, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.WakeUpRoutine, ct);
             if (activeSession.ClassroomId.HasValue && activeSession.ClassroomId.Value != Guid.Empty)
             {
-                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(activeSession.ClassroomId.Value, DateOnly.FromDateTime(DateTime.Today), "wake-up routine", ct);
+                await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(activeSession.ClassroomId.Value, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.WakeUpRoutine, ct);
             }
         }
 
@@ -491,8 +493,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "NAP_ENDED",
-            EntityType = "ChildNapSession",
+            Action = AuditActions.DailyCare.NapEnded,
+            EntityType = AuditEntityTypes.ChildNapSession,
             EntityId = activeSession.Id,
             Details = $"Ended nap for child {child?.FirstName} after {duration} minutes."
         }, ct);
@@ -716,8 +718,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "CARE_PLAN_UPDATED",
-            EntityType = "ChildCarePlan",
+            Action = AuditActions.DailyCare.PlanUpdated,
+            EntityType = AuditEntityTypes.ChildCarePlan,
             EntityId = planId,
             Details = $"Updated care plan for child {plan.ChildId} (version {plan.Version})."
         }, ct);
@@ -758,8 +760,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "CARE_SUPPLY_UPDATED",
-            EntityType = "ChildCareSupply",
+            Action = AuditActions.DailyCare.SupplyUpdated,
+            EntityType = AuditEntityTypes.ChildCareSupply,
             EntityId = supplyId,
             Details = $"Supply {supply.SupplyType} status updated to {supply.Status}."
         }, ct);
@@ -855,8 +857,8 @@ public class ChildDailyCareService : IChildDailyCareService
 
         if (_dailyOpsService != null && cls.BranchId != Guid.Empty)
         {
-            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(cls.BranchId, DateOnly.FromDateTime(DateTime.Today), "teacher handover", ct);
-            await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(cls.Id, DateOnly.FromDateTime(DateTime.Today), "teacher handover", ct);
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(cls.BranchId, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.TeacherHandover, ct);
+            await _dailyOpsService.ValidateClassroomOperationsAllowedAsync(cls.Id, DateOnly.FromDateTime(DateTime.Today), DailyOperationReasons.TeacherHandover, ct);
         }
 
         var id = await _repository.CreateHandoverAsync(handover, ct);
@@ -865,8 +867,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = _tenantContext.TenantId,
             UserId = handover.OutgoingTeacherUserId,
-            Action = "TeacherHandoverSubmitted",
-            EntityType = "TeacherHandover",
+            Action = AuditActions.DailyCare.HandoverSubmitted,
+            EntityType = AuditEntityTypes.TeacherHandover,
             EntityId = id,
             Details = new { handover.ClassroomId, handover.ShiftType, handover.IsCritical }
         }, ct);
@@ -886,8 +888,8 @@ public class ChildDailyCareService : IChildDailyCareService
         {
             TenantId = tenantId,
             UserId = userId,
-            Action = "TeacherHandoverAcknowledged",
-            EntityType = "TeacherHandover",
+            Action = AuditActions.DailyCare.HandoverAcknowledged,
+            EntityType = AuditEntityTypes.TeacherHandover,
             EntityId = handoverId,
             Details = new { AcknowledgedBy = userName }
         }, ct);

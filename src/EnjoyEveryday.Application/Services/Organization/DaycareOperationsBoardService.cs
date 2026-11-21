@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EnjoyEveryday.Application.Constants;
 using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
@@ -413,7 +414,7 @@ public class DaycareOperationsBoardService : IDaycareOperationsBoardService
 
         if (_dailyOpsService != null && branchId.HasValue && branchId.Value != Guid.Empty)
         {
-            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId.Value, DateOnly.FromDateTime(checkDate), "classroom readiness checklist", ct);
+            await _dailyOpsService.ValidateBranchOperationsAllowedAsync(branchId.Value, DateOnly.FromDateTime(checkDate), DailyOperationReasons.ReadinessChecklist, ct);
         }
 
         var orgId = _userContext.OrganizationId;

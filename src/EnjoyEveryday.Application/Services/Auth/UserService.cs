@@ -49,8 +49,8 @@ public class UserService
         {
             TenantId = _tenantContext.TenantId,
             UserId = _userContext.UserId,
-            Action = "Role.Assigned",
-            EntityType = "User",
+            Action = AuditActions.Auth.RoleAssigned,
+            EntityType = AuditEntityTypes.User,
             EntityId = targetUserId,
             Details = new { Role = canonical, OrganizationId = _userContext.OrganizationId }
         }, cancellationToken);
@@ -204,8 +204,8 @@ public class UserService
         {
             TenantId = tenantId,
             UserId = _userContext.UserId,
-            Action = "User.DeactivatedFromOrganization",
-            EntityType = "User",
+            Action = AuditActions.Auth.UserDeactivated,
+            EntityType = AuditEntityTypes.User,
             EntityId = targetUserId,
             Details = new { OrganizationId = targetOrgId }
         }, cancellationToken);
@@ -248,8 +248,8 @@ public class UserService
         {
             TenantId = tenantId,
             UserId = _userContext.UserId,
-            Action = "Teacher.PromotedToLead",
-            EntityType = "User",
+            Action = AuditActions.Auth.TeacherPromotedToLead,
+            EntityType = AuditEntityTypes.User,
             EntityId = targetUserId,
             Details = new
             {
@@ -293,8 +293,8 @@ public class UserService
         {
             TenantId = tenantId,
             UserId = _userContext.UserId,
-            Action = "Teacher.ClassroomsUpdated",
-            EntityType = "User",
+            Action = AuditActions.Auth.TeacherClassroomsUpdated,
+            EntityType = AuditEntityTypes.User,
             EntityId = targetUserId,
             Details = new
             {
