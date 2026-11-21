@@ -1,7 +1,5 @@
 using System.Security.Claims;
-using Dapper;
-using EnjoyEveryday.Infrastructure.Data;
-using EnjoyEveryday.Shared.Data;
+using EnjoyEveryday.Domain.Repositories;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -41,7 +39,7 @@ public static class AuthEndpoints
 
             var properties = new AuthenticationProperties { RedirectUri = $"/auth/callback?returnUrl={Uri.EscapeDataString(EnsureLocalUrl(returnUrl, "/"))}" };
             properties.SetParameter("prompt", "select_account");
-            
+
             if (!string.IsNullOrEmpty(inviteToken))
             {
                 properties.Items["InviteToken"] = inviteToken;
@@ -50,7 +48,7 @@ public static class AuthEndpoints
             return Results.Challenge(properties, new[] { GoogleDefaults.AuthenticationScheme });
         });
 
-        group.MapGet("/dev-login", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl, [FromQuery] string? email) =>
+        group.MapGet("/dev-login", async (HttpContext context, IPortalAuthRepository authRepo, IBranchRepository branchRepo, [FromQuery] string? returnUrl, [FromQuery] string? email) =>
         {
             if (!IsDevLoginPermitted(context))
             {
@@ -59,36 +57,33 @@ public static class AuthEndpoints
                 return Results.Redirect("/login");
             }
 
-            using var conn = await db.CreateConnectionAsync();
-            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
-                "fn_dev_login",
-                new { Email = email?.Trim() });
+            var syncResult = await authRepo.DevLoginAsync(email);
 
-            if (syncResult == null || syncResult.out_status != "success" || !syncResult.out_user_id.HasValue)
+            if (syncResult == null || syncResult.OutStatus != "success" || !syncResult.OutUserId.HasValue)
             {
                 return Results.Redirect("/login");
             }
 
-            Guid userId = syncResult.out_user_id.Value;
-            Guid effectiveTenantId = syncResult.out_effective_tenant_id ?? syncResult.out_tenant_id ?? Guid.Empty;
-            Guid? activeOrgId = syncResult.out_active_org_id;
-            string displayName = syncResult.out_display_name ?? syncResult.out_email ?? "Teacher";
+            Guid userId = syncResult.OutUserId.Value;
+            Guid effectiveTenantId = syncResult.OutEffectiveTenantId ?? syncResult.OutTenantId ?? Guid.Empty;
+            Guid? activeOrgId = syncResult.OutActiveOrgId;
+            string displayName = syncResult.OutDisplayName ?? syncResult.OutEmail ?? "Teacher";
 
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(ClaimTypes.Name, displayName),
                 new Claim("DisplayName", displayName),
-                new Claim(ClaimTypes.Email, syncResult.out_email ?? string.Empty),
+                new Claim(ClaimTypes.Email, syncResult.OutEmail ?? string.Empty),
                 new Claim("TenantId", effectiveTenantId.ToString())
             };
 
-            await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
+            await BuildAuthClaimsAsync(authRepo, claims, userId, activeOrgId);
 
-            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, activeOrgId, returnUrl, new AuthenticationProperties { IsPersistent = true });
+            return await FinalizeSignInAndRedirectAsync(context, branchRepo, claims, userId, activeOrgId, returnUrl, new AuthenticationProperties { IsPersistent = true });
         });
 
-        group.MapGet("/callback", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
+        group.MapGet("/callback", async (HttpContext context, IPortalAuthRepository authRepo, IBranchRepository branchRepo, [FromQuery] string? returnUrl) =>
         {
             var result = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             if (!result.Succeeded || result.Principal == null)
@@ -100,112 +95,95 @@ public static class AuthEndpoints
             if (string.IsNullOrEmpty(providerKey) || string.IsNullOrEmpty(email))
                 return Results.Redirect("/auth/access-denied?reason=invalid_claims");
 
-            var givenName = result.Principal.FindFirst(ClaimTypes.GivenName)?.Value 
-                         ?? result.Principal.FindFirst(ClaimTypes.Name)?.Value 
+            var givenName = result.Principal.FindFirst(ClaimTypes.GivenName)?.Value
+                         ?? result.Principal.FindFirst(ClaimTypes.Name)?.Value
                          ?? email.Split('@')[0];
             var surname = result.Principal.FindFirst(ClaimTypes.Surname)?.Value ?? "";
             var fullName = result.Principal.FindFirst(ClaimTypes.Name)?.Value ?? $"{givenName} {surname}".Trim();
             if (string.IsNullOrWhiteSpace(fullName)) fullName = email;
 
-            using var conn = await db.CreateConnectionAsync();
+            var syncResult = await authRepo.SyncExternalLoginAsync(
+                "Google",
+                providerKey,
+                email,
+                givenName,
+                surname,
+                fullName ?? givenName,
+                "Daycare");
 
-            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
-                "fn_sync_external_login",
-                new
-                {
-                    Provider = "Google",
-                    ProviderKey = providerKey,
-                    Email = email,
-                    FirstName = givenName,
-                    LastName = surname,
-                    DisplayName = fullName ?? givenName,
-                    Portal = "Daycare"
-                });
-
-            if (syncResult == null || syncResult.out_status != "success" || !syncResult.out_user_id.HasValue)
+            if (syncResult == null || syncResult.OutStatus != "success" || !syncResult.OutUserId.HasValue)
             {
                 await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                var reason = syncResult?.out_status ?? "auth_failed";
+                var reason = syncResult?.OutStatus ?? "auth_failed";
                 return Results.Redirect($"/access-denied?reason={reason}");
             }
 
-            Guid userId = syncResult.out_user_id.Value;
-            Guid effectiveTenantId = syncResult.out_effective_tenant_id ?? syncResult.out_tenant_id ?? Guid.Empty;
-            Guid? activeOrgId = syncResult.out_active_org_id;
-            string displayName = !string.IsNullOrWhiteSpace(fullName) && fullName != email 
-                ? fullName 
-                : (syncResult.out_display_name ?? fullName ?? givenName);
+            Guid userId = syncResult.OutUserId.Value;
+            Guid effectiveTenantId = syncResult.OutEffectiveTenantId ?? syncResult.OutTenantId ?? Guid.Empty;
+            Guid? activeOrgId = syncResult.OutActiveOrgId;
+            string displayName = !string.IsNullOrWhiteSpace(fullName) && fullName != email
+                ? fullName
+                : (syncResult.OutDisplayName ?? fullName ?? givenName);
 
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
                 new Claim(ClaimTypes.Name, displayName),
                 new Claim("DisplayName", displayName),
-                new Claim(ClaimTypes.Email, email ?? syncResult.out_email ?? string.Empty),
+                new Claim(ClaimTypes.Email, email ?? syncResult.OutEmail ?? string.Empty),
                 new Claim("TenantId", effectiveTenantId.ToString())
             };
 
             if (result.Properties?.Items.TryGetValue("InviteToken", out var inviteToken) == true && !string.IsNullOrWhiteSpace(inviteToken))
             {
-                await conn.ExecuteAsync(
-                    "SELECT * FROM fn_accept_organization_invitation(@p_token, @p_user_id)",
-                    new { p_token = inviteToken.Trim(), p_user_id = userId });
+                await authRepo.AcceptOrganizationInvitationAsync(inviteToken, userId);
             }
 
-            await BuildAuthClaimsAsync(conn, claims, userId, activeOrgId);
+            await BuildAuthClaimsAsync(authRepo, claims, userId, activeOrgId);
 
             var properties = new AuthenticationProperties { IsPersistent = true };
-            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, activeOrgId, returnUrl, properties);
+            return await FinalizeSignInAndRedirectAsync(context, branchRepo, claims, userId, activeOrgId, returnUrl, properties);
         });
 
-        group.MapGet("/accept-invite", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string token, [FromQuery] string? returnUrl) =>
+        group.MapGet("/accept-invite", async (HttpContext context, IPortalAuthRepository authRepo, IBranchRepository branchRepo, [FromQuery] string token, [FromQuery] string? returnUrl) =>
         {
             if (string.IsNullOrWhiteSpace(token))
             {
                 return Results.Redirect("/auth/activate?error=missing_token");
             }
 
-            using var conn = await db.CreateConnectionAsync();
-            var val = await conn.QuerySingleOrDefaultAsync<dynamic>(
-                "SELECT * FROM fn_validate_organization_invitation(@p_token)",
-                new { p_token = token.Trim() });
+            var val = await authRepo.ValidateOrganizationInvitationAsync(token);
 
-            if (val == null || !(bool)val.out_valid)
+            if (val == null || !val.Valid || !val.OrganizationId.HasValue || !val.TenantId.HasValue)
             {
                 return Results.Redirect($"/auth/activate?token={Uri.EscapeDataString(token)}&error=invalid_token");
             }
 
-            Guid orgId = (Guid)val.out_organization_id;
-            Guid tenantId = (Guid)val.out_tenant_id;
-            string adminEmail = (string)val.out_admin_email;
-            string orgName = (string)val.out_organization_name;
+            Guid orgId = val.OrganizationId.Value;
+            Guid tenantId = val.TenantId.Value;
+            string adminEmail = val.AdminEmail;
+            string orgName = val.OrganizationName;
 
-            var syncResult = await conn.QuerySingleFunctionAsync<AuthSyncResult>(
-                "fn_sync_external_login",
-                new
-                {
-                    Provider = "Invitation",
-                    ProviderKey = token.Trim(),
-                    Email = adminEmail,
-                    FirstName = "Admin",
-                    LastName = orgName,
-                    DisplayName = $"{adminEmail} ({orgName})",
-                    Portal = "Daycare"
-                });
+            var syncResult = await authRepo.SyncExternalLoginAsync(
+                "Invitation",
+                token.Trim(),
+                adminEmail,
+                "Admin",
+                orgName,
+                $"{adminEmail} ({orgName})",
+                "Daycare");
 
             Guid userId;
-            if (syncResult != null && syncResult.out_user_id.HasValue)
+            if (syncResult != null && syncResult.OutUserId.HasValue)
             {
-                userId = syncResult.out_user_id.Value;
+                userId = syncResult.OutUserId.Value;
             }
             else
             {
-                var userRow = await conn.QuerySingleOrDefaultAsync<dynamic>(
-                    "SELECT id FROM users WHERE normalized_email = UPPER(@Email) LIMIT 1",
-                    new { Email = adminEmail });
-                if (userRow != null)
+                var foundUserId = await authRepo.GetUserIdByEmailAsync(adminEmail);
+                if (foundUserId.HasValue)
                 {
-                    userId = (Guid)userRow.id;
+                    userId = foundUserId.Value;
                 }
                 else
                 {
@@ -213,10 +191,7 @@ public static class AuthEndpoints
                 }
             }
 
-            // Mark invitation accepted
-            await conn.ExecuteAsync(
-                "SELECT * FROM fn_accept_organization_invitation(@p_token, @p_user_id)",
-                new { p_token = token.Trim(), p_user_id = userId });
+            await authRepo.AcceptOrganizationInvitationAsync(token, userId);
 
             var claims = new List<Claim>
             {
@@ -228,19 +203,19 @@ public static class AuthEndpoints
                 new Claim(ClaimTypes.Role, "OrganizationAdmin")
             };
 
-            await BuildAuthClaimsAsync(conn, claims, userId, orgId);
+            await BuildAuthClaimsAsync(authRepo, claims, userId, orgId);
 
             var properties = new AuthenticationProperties { IsPersistent = true };
-            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, orgId, returnUrl ?? "/management/branch-dashboard", properties);
+            return await FinalizeSignInAndRedirectAsync(context, branchRepo, claims, userId, orgId, returnUrl ?? "/management/branch-dashboard", properties);
         });
 
-        group.MapPost("/set-organization", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
+        group.MapPost("/set-organization", async (HttpContext context, IPortalAuthRepository authRepo, IBranchRepository branchRepo, [FromQuery] string? returnUrl) =>
         {
             var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var email = context.User.FindFirst(ClaimTypes.Email)?.Value;
             var tenantId = context.User.FindFirst("TenantId")?.Value;
 
-            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId)) 
+            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
                 return Results.Redirect("/auth/login");
 
             Guid? organizationId = null;
@@ -253,21 +228,18 @@ public static class AuthEndpoints
                 }
             }
 
-            using var conn = await db.CreateConnectionAsync();
-            var validation = await conn.QuerySingleFunctionAsync<OrgValidationResult>(
-                "fn_validate_and_set_organization",
-                new { UserId = userId, OrganizationId = organizationId });
+            var validation = await authRepo.ValidateAndSetOrganizationAsync(userId, organizationId);
 
-            if (validation == null || !validation.is_valid)
+            if (validation == null || !validation.IsValid)
             {
                 return Results.Redirect("/auth/access-denied?reason=invalid_org");
             }
 
-            tenantId = validation.tenant_id?.ToString() ?? tenantId ?? string.Empty;
+            tenantId = validation.TenantId?.ToString() ?? tenantId ?? string.Empty;
 
-            var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value 
-                ?? context.User.FindFirst("DisplayName")?.Value 
-                ?? email 
+            var displayName = context.User.FindFirst(ClaimTypes.Name)?.Value
+                ?? context.User.FindFirst("DisplayName")?.Value
+                ?? email
                 ?? "Teacher";
 
             var claims = new List<Claim>
@@ -279,16 +251,16 @@ public static class AuthEndpoints
                 new Claim("TenantId", tenantId ?? "")
             };
 
-            await BuildAuthClaimsAsync(conn, claims, userId, organizationId);
+            await BuildAuthClaimsAsync(authRepo, claims, userId, organizationId);
 
             var properties = new AuthenticationProperties { IsPersistent = true };
-            return await FinalizeSignInAndRedirectAsync(context, conn, claims, userId, organizationId, returnUrl, properties);
+            return await FinalizeSignInAndRedirectAsync(context, branchRepo, claims, userId, organizationId, returnUrl, properties);
         }).DisableAntiforgery();
 
-        group.MapPost("/set-branch", async (HttpContext context, IDbConnectionFactory db, [FromQuery] string? returnUrl) =>
+        group.MapPost("/set-branch", async (HttpContext context, IPortalAuthRepository authRepo, IBranchRepository branchRepo, [FromQuery] string? returnUrl) =>
         {
             var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId)) 
+            if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
                 return Results.Redirect("/auth/login");
 
             var activeOrgIdStr = context.User.FindFirst("ActiveOrganizationId")?.Value;
@@ -308,22 +280,16 @@ public static class AuthEndpoints
             if (!branchId.HasValue)
                 return Results.Redirect("/select-branch");
 
-            using var conn = await db.CreateConnectionAsync();
-            
-            var assignedBranches = (await conn.QueryFunctionAsync<BranchRow>(
-                "fn_get_user_assigned_branches",
-                new { UserId = userId, OrganizationId = orgId })).ToList();
+            var assignedBranches = (await branchRepo.GetAssignedForUserAsync(userId, orgId)).ToList();
+            var matchedBranch = assignedBranches.FirstOrDefault(b => b.Id == branchId.Value);
+            (Guid Id, string Name)? targetBranch = matchedBranch != null ? (matchedBranch.Id, matchedBranch.Name) : null;
 
-            var targetBranch = assignedBranches.FirstOrDefault(b => b.id == branchId.Value);
             if (targetBranch == null)
             {
                 var isOrgAdmin = context.User.IsInRole("OrganizationAdmin") || context.User.IsInRole("OrganizationOwner") || context.User.IsInRole("PlatformAdmin");
                 if (isOrgAdmin)
                 {
-                    var allBranches = await conn.QueryAsync<BranchRow>(
-                        "SELECT id, name FROM branches WHERE id = @BranchId AND organization_id = @OrgId AND is_active = true",
-                        new { BranchId = branchId.Value, OrgId = orgId });
-                    targetBranch = allBranches.FirstOrDefault();
+                    targetBranch = await authRepo.GetActiveBranchInOrganizationAsync(branchId.Value, orgId);
                 }
             }
 
@@ -336,8 +302,8 @@ public static class AuthEndpoints
                 .Where(c => c.Type != "ActiveBranchId" && c.Type != "ActiveBranchName")
                 .ToList();
 
-            claims.Add(new Claim("ActiveBranchId", targetBranch.id.ToString()));
-            claims.Add(new Claim("ActiveBranchName", targetBranch.name));
+            claims.Add(new Claim("ActiveBranchId", targetBranch.Value.Id.ToString()));
+            claims.Add(new Claim("ActiveBranchName", targetBranch.Value.Name));
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
@@ -350,40 +316,38 @@ public static class AuthEndpoints
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.Redirect("/");
         });
-        
-        group.MapGet("/access-denied", ([FromQuery] string? reason) => 
+
+        group.MapGet("/access-denied", ([FromQuery] string? reason) =>
         {
             return Results.Redirect($"/access-denied?reason={Uri.EscapeDataString(reason ?? string.Empty)}");
         });
     }
 
-    private static async Task BuildAuthClaimsAsync(System.Data.IDbConnection conn, List<Claim> claims, Guid userId, Guid? activeOrgId)
+    private static async Task BuildAuthClaimsAsync(IPortalAuthRepository authRepo, List<Claim> claims, Guid userId, Guid? activeOrgId)
     {
         if (activeOrgId.HasValue)
         {
             claims.Add(new Claim("ActiveOrganizationId", activeOrgId.Value.ToString()));
         }
 
-        var authClaims = await conn.QueryFunctionAsync<AuthClaimRow>(
-            "fn_get_user_auth_claims",
-            new { UserId = userId, ActiveOrgId = activeOrgId });
+        var authClaims = await authRepo.GetUserAuthClaimsAsync(userId, activeOrgId);
 
         foreach (var row in authClaims)
         {
-            if (row.claim_type == "role" && !string.IsNullOrWhiteSpace(row.claim_value))
+            if (row.ClaimType == "role" && !string.IsNullOrWhiteSpace(row.ClaimValue))
             {
-                claims.Add(new Claim(ClaimTypes.Role, row.claim_value));
+                claims.Add(new Claim(ClaimTypes.Role, row.ClaimValue));
             }
-            else if (row.claim_type == "permission" && !string.IsNullOrWhiteSpace(row.claim_value))
+            else if (row.ClaimType == "permission" && !string.IsNullOrWhiteSpace(row.ClaimValue))
             {
-                claims.Add(new Claim("Permission", row.claim_value));
+                claims.Add(new Claim("Permission", row.ClaimValue));
             }
         }
     }
 
     private static async Task<IResult> FinalizeSignInAndRedirectAsync(
         HttpContext context,
-        System.Data.IDbConnection conn,
+        IBranchRepository branchRepo,
         List<Claim> claims,
         Guid userId,
         Guid? activeOrgId,
@@ -397,7 +361,7 @@ public static class AuthEndpoints
             return Results.Redirect("/select-organization");
         }
 
-        var isOrgAdmin = claims.Any(c => c.Type == ClaimTypes.Role && 
+        var isOrgAdmin = claims.Any(c => c.Type == ClaimTypes.Role &&
             (c.Value == "OrganizationAdmin" || c.Value == "OrganizationOwner" || c.Value == "PlatformAdmin"));
 
         if (isOrgAdmin)
@@ -407,14 +371,12 @@ public static class AuthEndpoints
             return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         }
 
-        var assignedBranches = (await conn.QueryFunctionAsync<BranchRow>(
-            "fn_get_user_assigned_branches",
-            new { UserId = userId, OrganizationId = activeOrgId.Value })).ToList();
+        var assignedBranches = (await branchRepo.GetAssignedForUserAsync(userId, activeOrgId.Value)).ToList();
 
         if (assignedBranches.Count == 1)
         {
-            claims.Add(new Claim("ActiveBranchId", assignedBranches[0].id.ToString()));
-            claims.Add(new Claim("ActiveBranchName", assignedBranches[0].name));
+            claims.Add(new Claim("ActiveBranchId", assignedBranches[0].Id.ToString()));
+            claims.Add(new Claim("ActiveBranchName", assignedBranches[0].Name));
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
             return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
@@ -431,37 +393,6 @@ public static class AuthEndpoints
             await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
             return Results.Redirect(EnsureLocalUrl(returnUrl, "/"));
         }
-    }
-
-    private sealed class BranchRow
-    {
-        public Guid id { get; set; }
-        public string name { get; set; } = string.Empty;
-        public string? location { get; set; }
-        public bool is_active { get; set; }
-    }
-
-    private sealed class AuthSyncResult
-    {
-        public string? out_status { get; set; }
-        public Guid? out_user_id { get; set; }
-        public Guid? out_tenant_id { get; set; }
-        public Guid? out_effective_tenant_id { get; set; }
-        public Guid? out_active_org_id { get; set; }
-        public string? out_email { get; set; }
-        public string? out_display_name { get; set; }
-    }
-
-    private sealed class OrgValidationResult
-    {
-        public bool is_valid { get; set; }
-        public Guid? tenant_id { get; set; }
-    }
-
-    private sealed class AuthClaimRow
-    {
-        public string? claim_type { get; set; }
-        public string? claim_value { get; set; }
     }
 
     private static bool IsDevLoginPermitted(HttpContext context)

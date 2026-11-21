@@ -593,6 +593,8 @@ public class MockBranchRepository : IBranchRepository
         Task.FromResult(Branches.FirstOrDefault(b => b.TenantId == tenantId && b.Id == id));
     public Task<IEnumerable<Branch>> GetByOrganizationIdAsync(Guid tenantId, Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult<IEnumerable<Branch>>(Branches.Where(b => b.TenantId == tenantId && b.OrganizationId == organizationId).ToList());
+    public Task<IEnumerable<Branch>> GetAssignedForUserAsync(Guid userId, Guid organizationId, CancellationToken ct = default) =>
+        Task.FromResult<IEnumerable<Branch>>(Branches.Where(b => b.OrganizationId == organizationId).ToList());
     public Task<Branch> AddAsync(Branch branch, CancellationToken ct = default) { Branches.Add(branch); return Task.FromResult(branch); }
     public Task UpdateAsync(Branch branch, CancellationToken ct = default) => Task.CompletedTask;
     public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default) => Task.CompletedTask;

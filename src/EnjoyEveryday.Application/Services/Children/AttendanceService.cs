@@ -12,7 +12,7 @@ using EnjoyEveryday.Shared.Tenancy;
 
 namespace EnjoyEveryday.Application.Services;
 
-public class AttendanceService
+public class AttendanceService : IAttendanceService
 {
     private readonly IAttendanceRepository _attendanceRepository;
     private readonly IClassroomRepository _classroomRepository;
@@ -25,6 +25,7 @@ public class AttendanceService
     private readonly IEndOfDayService? _endOfDayService;
     private readonly IDailyOperationsService? _dailyOpsService;
     private readonly IBranchOperationalStatusService? _branchOperationalStatusService;
+    private readonly IMonthlyRegisterService _monthlyRegisterService;
 
     public AttendanceService(
         IAttendanceRepository attendanceRepository,
@@ -57,7 +58,8 @@ public class AttendanceService
         ITenantPreferencesService? tenantPreferencesService,
         IEndOfDayService? endOfDayService = null,
         IDailyOperationsService? dailyOpsService = null,
-        IBranchOperationalStatusService? branchOperationalStatusService = null)
+        IBranchOperationalStatusService? branchOperationalStatusService = null,
+        IMonthlyRegisterService? monthlyRegisterService = null)
     {
         _attendanceRepository = attendanceRepository;
         _classroomRepository = classroomRepository;
@@ -70,6 +72,7 @@ public class AttendanceService
         _endOfDayService = endOfDayService;
         _dailyOpsService = dailyOpsService;
         _branchOperationalStatusService = branchOperationalStatusService;
+        _monthlyRegisterService = monthlyRegisterService ?? new MonthlyRegisterService(attendanceRepository, tenantContext);
     }
 
     public bool IsDaycareClosedForAttendance(DateTime date, Guid? branchId, out string reason)
@@ -475,231 +478,11 @@ public class AttendanceService
         return await _attendanceRepository.GetUserAccessibleBranchesAsync(_tenantContext.TenantId, userId, isOrgAdmin, ct);
     }
 
-    public async Task<(List<ChildMonthlyRegisterRow> Rows, MonthlyRegisterSummary Summary)> GetMonthlyChildRegisterAsync(
+    public Task<(List<ChildMonthlyRegisterRow> Rows, MonthlyRegisterSummary Summary)> GetMonthlyChildRegisterAsync(
         Guid branchId, int year, int month, Guid? classroomId = null, CancellationToken ct = default)
-    {
-        var rawRows = (await _attendanceRepository.GetMonthlyChildAttendanceAsync(
-            _tenantContext.TenantId, branchId, year, month, classroomId, ct)).ToList();
+        => _monthlyRegisterService.GetMonthlyChildRegisterAsync(branchId, year, month, classroomId, ct);
 
-        var daysInMonth = DateTime.DaysInMonth(year, month);
-        var today = DateTime.Today;
-
-        int workingDaysInMonth = 0;
-        int workingDaysElapsed = 0;
-
-        for (int d = 1; d <= daysInMonth; d++)
-        {
-            var date = new DateTime(year, month, d);
-            bool isWeekend = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
-            if (!isWeekend)
-            {
-                workingDaysInMonth++;
-                if (date <= today) workingDaysElapsed++;
-            }
-        }
-
-        var childGroups = rawRows
-            .GroupBy(r => r.ChildId)
-            .OrderBy(g => g.First().FullName)
-            .ToList();
-
-        var registerRows = new List<ChildMonthlyRegisterRow>();
-        int sNo = 1;
-
-        int totalPresent = 0;
-        int totalAbsent = 0;
-        int totalLate = 0;
-        int totalExcused = 0;
-
-        foreach (var group in childGroups)
-        {
-            var first = group.First();
-            var attByDay = group
-                .Where(x => x.DayOfMonth.HasValue && x.DayOfMonth.Value >= 1 && x.DayOfMonth.Value <= daysInMonth)
-                .GroupBy(x => x.DayOfMonth!.Value)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            var row = new ChildMonthlyRegisterRow
-            {
-                SerialNumber = sNo++,
-                ChildId = first.ChildId,
-                FirstName = first.FirstName,
-                LastName = first.LastName,
-                FullName = first.FullName,
-                PhotoUrl = first.PhotoUrl,
-                ClassroomId = first.ClassroomId,
-                ClassroomName = string.IsNullOrWhiteSpace(first.ClassroomName) ? "General" : first.ClassroomName,
-                WorkingDaysElapsed = workingDaysElapsed
-            };
-
-            for (int day = 1; day <= daysInMonth; day++)
-            {
-                var cellDate = new DateTime(year, month, day);
-                var cell = new DailyAttendanceCell
-                {
-                    DayNumber = day,
-                    Date = cellDate
-                };
-
-                if (attByDay.TryGetValue(day, out var record))
-                {
-                    cell.RawStatus = record.Status;
-                    cell.InTime = record.ArrivalTime;
-                    cell.OutTime = record.DepartureTime;
-                    cell.Notes = record.Notes;
-
-                    var code = cell.Code;
-                    if (code == "P") row.PresentCount++;
-                    else if (code == "L") row.LateCount++;
-                    else if (code == "A") row.AbsentCount++;
-                    else if (code == "E") row.ExcusedCount++;
-                }
-
-                row.DailyCells.Add(cell);
-            }
-
-            totalPresent += row.PresentCount;
-            totalAbsent += row.AbsentCount;
-            totalLate += row.LateCount;
-            totalExcused += row.ExcusedCount;
-
-            registerRows.Add(row);
-        }
-
-        int totalPossibleMarks = registerRows.Count * Math.Max(1, workingDaysElapsed);
-        double overallPct = totalPossibleMarks > 0
-            ? Math.Round(((double)(totalPresent + totalLate) / totalPossibleMarks) * 100.0, 1)
-            : 0.0;
-
-        var summary = new MonthlyRegisterSummary
-        {
-            Year = year,
-            Month = month,
-            DaysInMonth = daysInMonth,
-            WorkingDaysInMonth = workingDaysInMonth,
-            WorkingDaysElapsed = workingDaysElapsed,
-            TotalEnrolledOrStaff = registerRows.Count,
-            TotalPresentMarks = totalPresent,
-            TotalAbsentMarks = totalAbsent,
-            TotalLateMarks = totalLate,
-            TotalLeaveOrExcusedMarks = totalExcused,
-            OverallAttendanceRatePercent = overallPct
-        };
-
-        return (registerRows, summary);
-    }
-
-    public async Task<(List<TeacherMonthlyRegisterRow> Rows, MonthlyRegisterSummary Summary)> GetMonthlyTeacherRegisterAsync(
+    public Task<(List<TeacherMonthlyRegisterRow> Rows, MonthlyRegisterSummary Summary)> GetMonthlyTeacherRegisterAsync(
         Guid branchId, int year, int month, CancellationToken ct = default)
-    {
-        var rawRows = (await _attendanceRepository.GetMonthlyTeacherAttendanceAsync(
-            _tenantContext.TenantId, branchId, year, month, ct)).ToList();
-
-        var daysInMonth = DateTime.DaysInMonth(year, month);
-        var today = DateTime.Today;
-
-        int workingDaysInMonth = 0;
-        int workingDaysElapsed = 0;
-
-        for (int d = 1; d <= daysInMonth; d++)
-        {
-            var date = new DateTime(year, month, d);
-            bool isWeekend = date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday;
-            if (!isWeekend)
-            {
-                workingDaysInMonth++;
-                if (date <= today) workingDaysElapsed++;
-            }
-        }
-
-        var teacherGroups = rawRows
-            .GroupBy(r => r.TeacherId)
-            .OrderBy(g => g.First().FullName)
-            .ToList();
-
-        var registerRows = new List<TeacherMonthlyRegisterRow>();
-        int sNo = 1;
-
-        int totalPresent = 0;
-        int totalAbsent = 0;
-        int totalLate = 0;
-        int totalLeave = 0;
-
-        foreach (var group in teacherGroups)
-        {
-            var first = group.First();
-            var attByDay = group
-                .Where(x => x.DayOfMonth.HasValue && x.DayOfMonth.Value >= 1 && x.DayOfMonth.Value <= daysInMonth)
-                .GroupBy(x => x.DayOfMonth!.Value)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            var row = new TeacherMonthlyRegisterRow
-            {
-                SerialNumber = sNo++,
-                TeacherId = first.TeacherId,
-                EmployeeNumber = first.EmployeeNumber,
-                FirstName = first.FirstName,
-                LastName = first.LastName,
-                FullName = first.FullName,
-                JobTitle = string.IsNullOrWhiteSpace(first.JobTitle) ? "Educator" : first.JobTitle,
-                ProfilePhotoUrl = first.ProfilePhotoUrl,
-                WorkingDaysElapsed = workingDaysElapsed
-            };
-
-            for (int day = 1; day <= daysInMonth; day++)
-            {
-                var cellDate = new DateTime(year, month, day);
-                var cell = new DailyAttendanceCell
-                {
-                    DayNumber = day,
-                    Date = cellDate
-                };
-
-                if (attByDay.TryGetValue(day, out var record))
-                {
-                    cell.RawStatus = record.Status;
-                    cell.InTime = record.ClockInTime;
-                    cell.OutTime = record.ClockOutTime;
-                    cell.Notes = record.Notes;
-
-                    var code = cell.Code;
-                    if (code == "P") row.PresentCount++;
-                    else if (code == "L") row.LateCount++;
-                    else if (code == "A") row.AbsentCount++;
-                    else if (code == "LV") row.LeaveCount++;
-                }
-
-                row.DailyCells.Add(cell);
-            }
-
-            totalPresent += row.PresentCount;
-            totalAbsent += row.AbsentCount;
-            totalLate += row.LateCount;
-            totalLeave += row.LeaveCount;
-
-            registerRows.Add(row);
-        }
-
-        int totalPossibleMarks = registerRows.Count * Math.Max(1, workingDaysElapsed);
-        double overallPct = totalPossibleMarks > 0
-            ? Math.Round(((double)(totalPresent + totalLate) / totalPossibleMarks) * 100.0, 1)
-            : 0.0;
-
-        var summary = new MonthlyRegisterSummary
-        {
-            Year = year,
-            Month = month,
-            DaysInMonth = daysInMonth,
-            WorkingDaysInMonth = workingDaysInMonth,
-            WorkingDaysElapsed = workingDaysElapsed,
-            TotalEnrolledOrStaff = registerRows.Count,
-            TotalPresentMarks = totalPresent,
-            TotalAbsentMarks = totalAbsent,
-            TotalLateMarks = totalLate,
-            TotalLeaveOrExcusedMarks = totalLeave,
-            OverallAttendanceRatePercent = overallPct
-        };
-
-        return (registerRows, summary);
-    }
+        => _monthlyRegisterService.GetMonthlyTeacherRegisterAsync(branchId, year, month, ct);
 }

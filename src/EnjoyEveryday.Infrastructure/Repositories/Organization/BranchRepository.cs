@@ -33,6 +33,15 @@ public class BranchRepository : IBranchRepository
             cancellationToken: cancellationToken);
     }
 
+    public async Task<IEnumerable<Branch>> GetAssignedForUserAsync(Guid userId, Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+        return await connection.QueryFunctionAsync<Branch>(
+            "fn_get_user_assigned_branches",
+            new { UserId = userId, OrganizationId = organizationId },
+            cancellationToken: cancellationToken);
+    }
+
     public async Task<Branch> AddAsync(Branch branch, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);

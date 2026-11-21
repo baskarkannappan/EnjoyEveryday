@@ -18,5 +18,19 @@ public class Enrollment
     
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public void Withdraw(DateTime endDate)
+    {
+        Status = Constants.EnrollmentStatuses.Withdrawn;
+        EndDate = endDate;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void Graduate(DateTime endDate)
+    {
+        Status = Constants.EnrollmentStatuses.Graduated;
+        EndDate = endDate;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }
 

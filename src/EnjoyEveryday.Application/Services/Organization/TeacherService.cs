@@ -10,12 +10,21 @@ public class TeacherService : ITeacherService
     private readonly ITeacherRepository _teacherRepository;
     private readonly ILogger<TeacherService> _logger;
     private readonly IUserContext _userContext;
+    private readonly IStaffRosterRepository? _staffRosterRepository;
+    private readonly IUserRepository? _userRepository;
 
-    public TeacherService(ITeacherRepository teacherRepository, ILogger<TeacherService> logger, IUserContext userContext)
+    public TeacherService(
+        ITeacherRepository teacherRepository,
+        ILogger<TeacherService> logger,
+        IUserContext userContext,
+        IStaffRosterRepository? staffRosterRepository = null,
+        IUserRepository? userRepository = null)
     {
         _teacherRepository = teacherRepository;
         _logger = logger;
         _userContext = userContext;
+        _staffRosterRepository = staffRosterRepository;
+        _userRepository = userRepository;
     }
 
     public async Task<Teacher?> GetTeacherByIdAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default)
@@ -57,5 +66,27 @@ public class TeacherService : ITeacherService
         _logger.LogInformation("Deactivating teacher profile {TeacherId} for tenant {TenantId}", id, tenantId);
         
         await _teacherRepository.DeleteAsync(tenantId, id, cancellationToken);
+    }
+
+    public async Task AssignToClassroomAndBranchAsync(
+        Guid tenantId,
+        Guid organizationId,
+        Guid classroomId,
+        Guid? branchId,
+        Guid userId,
+        Guid assignedByUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_staffRosterRepository == null)
+        {
+            throw new InvalidOperationException("IStaffRosterRepository is required to assign a teacher to a classroom.");
+        }
+
+        await _staffRosterRepository.DispatchTeacherToClassroomAsync(tenantId, classroomId, userId, cancellationToken);
+
+        if (branchId.HasValue && branchId.Value != Guid.Empty && _userRepository != null)
+        {
+            await _userRepository.AssignBranchToUserAsync(tenantId, organizationId, branchId.Value, userId, assignedByUserId);
+        }
     }
 }

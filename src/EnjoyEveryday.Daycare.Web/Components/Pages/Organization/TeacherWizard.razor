@@ -2,8 +2,6 @@
 @page "/teachers/edit/{Id:guid}"
 @using EnjoyEveryday.Application.Services
 @using EnjoyEveryday.Domain.Entities
-@using EnjoyEveryday.Infrastructure.Data
-@using EnjoyEveryday.Shared.Data
 @using EnjoyEveryday.UI.Shared.Components
 
 @inject UserService UserService
@@ -16,8 +14,6 @@
 @inject EnjoyEveryday.Shared.Tenancy.IUserContext UserContext
 @inject SystemProvisioningService SystemProvisioning
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
-@inject IDbConnectionFactory DbConnectionFactory
-@inject EnjoyEveryday.Domain.Repositories.IUserRepository UserRepository
 
 <div class="teacher-wizard-container">
     <PageHero 
@@ -228,18 +224,16 @@
 
                 if (Guid.TryParse(model.AssignedClassroom, out var assignedCid) && assignedCid != Guid.Empty)
                 {
-                    using var conn = await DbConnectionFactory.CreateConnectionAsync();
-                    await conn.ExecuteProcedureAsync("sp_dispatch_teacher_to_classroom", new
-                    {
-                        TenantId = effectiveTenantId,
-                        ClassroomId = assignedCid,
-                        UserId = user.Id
-                    });
-
-                    if (Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty)
-                    {
-                        await UserRepository.AssignBranchToUserAsync(effectiveTenantId, targetOrgId, branchId, user.Id, UserContext.UserId);
-                    }
+                    Guid? assignedBranchId = Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty
+                        ? branchId
+                        : null;
+                    await TeacherService.AssignToClassroomAndBranchAsync(
+                        effectiveTenantId,
+                        targetOrgId,
+                        assignedCid,
+                        assignedBranchId,
+                        user.Id,
+                        UserContext.UserId);
                 }
             }
         }
@@ -298,18 +292,16 @@
 
             if (Guid.TryParse(model.AssignedClassroom, out var assignedCid) && assignedCid != Guid.Empty)
             {
-                using var conn = await DbConnectionFactory.CreateConnectionAsync();
-                await conn.ExecuteProcedureAsync("sp_dispatch_teacher_to_classroom", new
-                {
-                    TenantId = effectiveTenantId,
-                    ClassroomId = assignedCid,
-                    UserId = user.Id
-                });
-
-                if (Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty)
-                {
-                    await UserRepository.AssignBranchToUserAsync(effectiveTenantId, targetOrgId, branchId, user.Id, UserContext.UserId);
-                }
+                Guid? assignedBranchId = Guid.TryParse(model.AssignedBranch, out var branchId) && branchId != Guid.Empty
+                    ? branchId
+                    : null;
+                await TeacherService.AssignToClassroomAndBranchAsync(
+                    effectiveTenantId,
+                    targetOrgId,
+                    assignedCid,
+                    assignedBranchId,
+                    user.Id,
+                    UserContext.UserId);
             }
         }
     }

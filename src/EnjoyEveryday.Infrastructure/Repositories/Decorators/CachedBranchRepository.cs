@@ -43,6 +43,9 @@ public class CachedBranchRepository : IBranchRepository
             cancellationToken: cancellationToken);
     }
 
+    public Task<IEnumerable<Branch>> GetAssignedForUserAsync(Guid userId, Guid organizationId, CancellationToken cancellationToken = default)
+        => _inner.GetAssignedForUserAsync(userId, organizationId, cancellationToken);
+
     public async Task<Branch> AddAsync(Branch branch, CancellationToken cancellationToken = default)
     {
         var result = await _inner.AddAsync(branch, cancellationToken);

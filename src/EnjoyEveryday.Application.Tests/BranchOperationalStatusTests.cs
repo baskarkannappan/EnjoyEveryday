@@ -190,6 +190,7 @@ public class BranchOperationalStatusTests
         public void AddSeed(Branch b) => _items.Add(b);
         public Task<Branch?> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default) => Task.FromResult(_items.FirstOrDefault(x => x.TenantId == tenantId && x.Id == id));
         public Task<IEnumerable<Branch>> GetByOrganizationIdAsync(Guid tenantId, Guid organizationId, CancellationToken ct = default) => Task.FromResult<IEnumerable<Branch>>(_items.Where(x => x.TenantId == tenantId && x.OrganizationId == organizationId));
+        public Task<IEnumerable<Branch>> GetAssignedForUserAsync(Guid userId, Guid organizationId, CancellationToken ct = default) => Task.FromResult<IEnumerable<Branch>>(_items.Where(x => x.OrganizationId == organizationId));
         public Task<Branch> AddAsync(Branch branch, CancellationToken ct = default) { _items.Add(branch); return Task.FromResult(branch); }
         public Task UpdateAsync(Branch branch, CancellationToken ct = default) => Task.CompletedTask;
         public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default) => Task.CompletedTask;

@@ -3,20 +3,18 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using EnjoyEveryday.Infrastructure.Data;
-using EnjoyEveryday.Shared.Data;
-
+using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Shared.Authorization;
 
 namespace EnjoyEveryday.Daycare.Web.Services;
 
 public sealed class OrganizationPermissionService : IOrganizationPermissionService
 {
-    private readonly IDbConnectionFactory _db;
+    private readonly IOrganizationPermissionRepository _repository;
 
-    public OrganizationPermissionService(IDbConnectionFactory db)
+    public OrganizationPermissionService(IOrganizationPermissionRepository repository)
     {
-        _db = db;
+        _repository = repository;
     }
 
     public static readonly string[] ConfigurableRoles = new[]
@@ -409,13 +407,6 @@ public sealed class OrganizationPermissionService : IOrganizationPermissionServi
 
     public IReadOnlyList<FeatureDefinition> GetAllFeatures() => Features;
 
-    private sealed class PermissionRecord
-    {
-        public string role_name { get; set; } = string.Empty;
-        public string feature_key { get; set; } = string.Empty;
-        public bool is_allowed { get; set; }
-    }
-
     public async Task<Dictionary<(string RoleName, string FeatureKey), bool>> GetPermissionsMatrixAsync(
         Guid tenantId,
         Guid organizationId,
@@ -444,15 +435,11 @@ public sealed class OrganizationPermissionService : IOrganizationPermissionServi
         // 2. Overlay organization-specific overrides from the database
         try
         {
-            using var conn = await _db.CreateConnectionAsync(ct);
-            var records = await conn.QueryFunctionAsync<PermissionRecord>(
-                "fn_get_organization_role_permissions",
-                new { p_tenant_id = tenantId, p_organization_id = organizationId },
-                cancellationToken: ct);
+            var records = await _repository.GetOverridesAsync(tenantId, organizationId, ct);
 
             foreach (var row in records)
             {
-                result[(row.role_name, row.feature_key)] = row.is_allowed;
+                result[(row.RoleName, row.FeatureKey)] = row.IsAllowed;
             }
         }
         catch (Exception)
@@ -474,21 +461,15 @@ public sealed class OrganizationPermissionService : IOrganizationPermissionServi
             throw new ArgumentException("TenantId and OrganizationId must be valid Guids to persist permissions.");
         }
 
-        using var conn = await _db.CreateConnectionAsync(ct);
-
         foreach (var kvp in matrix)
         {
-            await conn.ExecuteProcedureAsync(
-                "sp_upsert_organization_role_permission",
-                new
-                {
-                    p_tenant_id = tenantId,
-                    p_organization_id = organizationId,
-                    p_role_name = kvp.Key.RoleName,
-                    p_feature_key = kvp.Key.FeatureKey,
-                    p_is_allowed = kvp.Value
-                },
-                cancellationToken: ct);
+            await _repository.UpsertOverrideAsync(
+                tenantId,
+                organizationId,
+                kvp.Key.RoleName,
+                kvp.Key.FeatureKey,
+                kvp.Value,
+                ct);
         }
     }
 
@@ -502,15 +483,7 @@ public sealed class OrganizationPermissionService : IOrganizationPermissionServi
             return;
         }
 
-        using var conn = await _db.CreateConnectionAsync(ct);
-        await conn.ExecuteProcedureAsync(
-            "sp_reset_organization_role_permissions",
-            new
-            {
-                p_tenant_id = tenantId,
-                p_organization_id = organizationId
-            },
-            cancellationToken: ct);
+        await _repository.ResetOverridesAsync(tenantId, organizationId, ct);
     }
 
     public async Task<bool> IsFeatureAllowedAsync(

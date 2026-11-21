@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace EnjoyEveryday.Application.Services;
 
-public class PlannerService
+public class PlannerService : IPlannerService
 {
     private readonly IExperienceScheduleRepository _scheduleRepository;
     private readonly IExperienceRepository? _experienceRepository;

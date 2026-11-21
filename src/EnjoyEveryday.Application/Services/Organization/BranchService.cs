@@ -136,4 +136,23 @@ public class BranchService
         _orgBranchesCache = null;
         _branchByIdCache.Remove(branch.Id);
     }
+
+    public async Task<IReadOnlyList<Branch>> GetAuthorizedBranchesForUserAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        var assigned = (await _branchRepository.GetAssignedForUserAsync(_userContext.UserId, organizationId, cancellationToken)).ToList();
+        if (assigned.Count > 0)
+        {
+            return assigned;
+        }
+
+        if (_userContext.Roles.Contains("OrganizationAdmin")
+            || _userContext.Roles.Contains("OrganizationOwner")
+            || _userContext.Roles.Contains("PlatformAdmin"))
+        {
+            var allOrgBranches = await GetBranchesAsync(organizationId, cancellationToken);
+            return allOrgBranches.Where(b => b.IsActive).OrderBy(b => b.Name).ToList();
+        }
+
+        return assigned;
+    }
 }

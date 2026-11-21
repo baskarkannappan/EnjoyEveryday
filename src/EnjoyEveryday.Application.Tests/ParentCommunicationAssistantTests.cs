@@ -461,6 +461,7 @@ public class ParentCommunicationAssistantTests
         }
 
         public Task<IEnumerable<Branch>> GetByOrganizationIdAsync(Guid tenantId, Guid organizationId, CancellationToken cancellationToken = default) => Task.FromResult(Branches.Values.Where(b => b.TenantId == tenantId && b.OrganizationId == organizationId));
+        public Task<IEnumerable<Branch>> GetAssignedForUserAsync(Guid userId, Guid organizationId, CancellationToken cancellationToken = default) => Task.FromResult(Branches.Values.Where(b => b.OrganizationId == organizationId));
         public Task<Branch> AddAsync(Branch branch, CancellationToken cancellationToken = default) => Task.FromResult(branch);
         public Task UpdateAsync(Branch branch, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DeleteAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;

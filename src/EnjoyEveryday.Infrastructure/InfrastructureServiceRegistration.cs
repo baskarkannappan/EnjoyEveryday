@@ -58,6 +58,8 @@ public static class InfrastructureServiceRegistration
             sp.GetRequiredService<EnjoyEveryday.Shared.Caching.ITenantMemoryCache>()));
         services.AddScoped<EnjoyEveryday.Domain.Repositories.IClassroomReadinessRepository, EnjoyEveryday.Infrastructure.Repositories.ClassroomReadinessRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IPortalAuthRepository, PortalAuthRepository>();
+        services.AddScoped<IOrganizationPermissionRepository, OrganizationPermissionRepository>();
         services.AddScoped<IChildRepository, ChildRepository>();
         services.AddScoped<IExperienceRepository, ExperienceRepository>();
         services.AddScoped<IExperienceMarketplaceRepository, ExperienceMarketplaceRepository>();

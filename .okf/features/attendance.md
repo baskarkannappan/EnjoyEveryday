@@ -26,6 +26,9 @@ tags:
 | **Staff Monthly Register** | `/attendance/monthly-teachers`, `/management/attendance/monthly-teachers` | `MonthlyTeacherAttendancePage.razor`, `MonthlyTeacherAttendanceGrid.razor` | Org Admin, Branch Admin, Lead Teacher, Teacher, Educator |
 | **Monthly Attendance Hub** | `/attendance/monthly`, `/management/attendance/monthly` | `MonthlyAttendanceHub.razor` | Org Admin, Branch Admin, Lead Teacher, Teacher, Educator |
 
+> [!NOTE]
+> Monthly child and teacher register aggregation is encapsulated in `IMonthlyRegisterService` (`MonthlyRegisterService`), with `AttendanceService` (`IAttendanceService`) delegating register queries while `ChildAttendance` exposes domain transition helpers (`CheckIn`, `CheckOut`, `MarkAbsent`).
+
 ## Component Hierarchy: `BranchDetailSection.razor`
 `BranchDetailSection.razor` renders:
 1. **Filters Bar**: Date selector, person search, type filter (`both`, `children`, `teachers`).

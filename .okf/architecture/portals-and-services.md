@@ -29,10 +29,13 @@ EnjoyEveryday.slnx
 ├── Shared & Core Libraries
 │   ├── EnjoyEveryday.UI.Shared     -> Reusable Razor components (Attendance, DailyCare, Modals)
 │   ├── EnjoyEveryday.Application   -> CQRS / Business services & workflows
-│   ├── EnjoyEveryday.Domain        -> Entities, repository interfaces, value objects
-│   ├── EnjoyEveryday.Infrastructure-> Dapper, PostgreSQL connections, file storage
+│   ├── EnjoyEveryday.Domain        -> Entities, repository interfaces (`IPortalAuthRepository`, `IOrganizationPermissionRepository`), value objects
+│   ├── EnjoyEveryday.Infrastructure-> Dapper, PostgreSQL connections, repositories, file storage
 │   └── EnjoyEveryday.Shared        -> Tenancy, Auth definitions (RoleTemplates, Permissions)
 ```
+
+> [!NOTE]
+> Web portals (`Daycare.Web`, `Admin.Web`, `Parent.Web`) delegate all authentication/branch/permission database access to `IPortalAuthRepository`, `IBranchRepository`, `IOrganizationPermissionRepository`, and `IPlatformAdminService` (no direct `Dapper` or `IDbConnectionFactory` usage in Razor pages or `AuthEndpoints`). Large Razor views use `.razor.cs` code-behinds.
 
 ## Running Port Map
 

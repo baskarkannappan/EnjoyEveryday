@@ -1,11 +1,10 @@
 @page "/select-branch"
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
 @using EnjoyEveryday.Shared.Tenancy
-@using EnjoyEveryday.Shared.Data
-@using EnjoyEveryday.Infrastructure.Data
-@using Dapper
 @inject IUserContext UserContext
 @inject NavigationManager NavManager
-@inject IDbConnectionFactory DbFactory
+@inject BranchService BranchService
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 <PageTitle>Daycare Web — Select Branch</PageTitle>
@@ -51,7 +50,7 @@
                             style="width: 100%; height: 46px; padding: 0 14px; border-radius: 0px; border: 1.5px solid var(--border, #e4e7df); background: var(--surface-soft, #f8f9f5); color: var(--text, #26332d); font-size: 15px; font-family: inherit; font-weight: 600; outline: none; cursor: pointer;">
                         @foreach (var b in _options)
                         {
-                            <option value="@b.id" selected="@(b.id == _currentBranchId)">@b.name @(!string.IsNullOrEmpty(b.location) ? $"({b.location})" : "")</option>
+                            <option value="@b.Id" selected="@(b.Id == _currentBranchId)">@b.Name @(!string.IsNullOrEmpty(b.Location) ? $"({b.Location})" : "")</option>
                         }
                     </select>
                 </div>
@@ -71,7 +70,7 @@
 </div>
 
 @code {
-    private List<BranchOption>? _options;
+    private IReadOnlyList<Branch>? _options;
     private Guid? _currentBranchId;
 
     protected override async Task OnInitializedAsync()
@@ -89,29 +88,6 @@
         }
 
         _currentBranchId = UserContext.BranchId;
-
-        using var conn = await DbFactory.CreateConnectionAsync();
-        var branches = await conn.QueryFunctionAsync<BranchOption>(
-            "fn_get_user_assigned_branches",
-            new { UserId = UserContext.UserId, OrganizationId = UserContext.OrganizationId.Value });
-
-        _options = branches.ToList();
-
-        // If user is Org Admin and has no explicit branch assignments, allow selecting from all org branches
-        if (_options.Count == 0 && (UserContext.Roles.Contains("OrganizationAdmin") || UserContext.Roles.Contains("OrganizationOwner") || UserContext.Roles.Contains("PlatformAdmin")))
-        {
-            var allBranches = await conn.QueryAsync<BranchOption>(
-                "SELECT id, name, location, is_active FROM branches WHERE organization_id = @OrgId AND is_active = true ORDER BY name",
-                new { OrgId = UserContext.OrganizationId.Value });
-            _options = allBranches.ToList();
-        }
-    }
-
-    private sealed class BranchOption
-    {
-        public Guid id { get; set; }
-        public string name { get; set; } = string.Empty;
-        public string? location { get; set; }
-        public bool is_active { get; set; }
+        _options = await BranchService.GetAuthorizedBranchesForUserAsync(UserContext.OrganizationId.Value);
     }
 }

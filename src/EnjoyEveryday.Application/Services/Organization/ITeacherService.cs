@@ -10,4 +10,5 @@ public interface ITeacherService
     Task<Teacher> CreateTeacherAsync(Teacher teacher, CancellationToken cancellationToken = default);
     Task UpdateTeacherAsync(Teacher teacher, CancellationToken cancellationToken = default);
     Task DeleteTeacherAsync(Guid tenantId, Guid id, CancellationToken cancellationToken = default);
+    Task AssignToClassroomAndBranchAsync(Guid tenantId, Guid organizationId, Guid classroomId, Guid? branchId, Guid userId, Guid assignedByUserId, CancellationToken cancellationToken = default);
 }

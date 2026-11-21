@@ -16,11 +16,13 @@ public static class ApplicationServiceRegistration
         services.AddScoped<SystemProvisioningService>();
         services.AddScoped<ClassroomService>();
         services.AddScoped<IClassroomService>(sp => sp.GetRequiredService<ClassroomService>());
+        services.AddScoped<IUserService, UserService>();
         services.AddScoped<UserService>();
         services.AddScoped<ChildService>();
         services.AddScoped<ExperienceService>();
         services.AddScoped<ExperienceCurationService>();
         services.AddScoped<ExperienceMarketplaceService>();
+        services.AddScoped<IPlannerService, PlannerService>();
         services.AddScoped<PlannerService>();
         services.AddScoped<ExecutionService>();
         services.AddScoped<EventService>();
@@ -42,7 +44,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<TenantPreferencesService>();
         services.AddScoped<ISystemLookupCatalog, SystemLookupCatalog>();
         services.AddScoped<SystemLookupCatalog>();
+        services.AddScoped<IAttendanceService, AttendanceService>();
         services.AddScoped<AttendanceService>();
+        services.AddScoped<IMonthlyRegisterService, MonthlyRegisterService>();
         services.AddScoped<ISecurePickupService, SecurePickupService>();
         services.AddScoped<SecurePickupService>();
         services.AddScoped<IStaffRosterService, StaffRosterService>();

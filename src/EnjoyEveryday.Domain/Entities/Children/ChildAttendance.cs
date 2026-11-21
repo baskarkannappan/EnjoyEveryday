@@ -31,4 +31,43 @@ public class ChildAttendance
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    public void CheckIn(TimeSpan arrivalTime, Guid? recordedByUserId = null, string? notes = null)
+    {
+        Status = Constants.AttendanceStatuses.Present;
+        ArrivalTime = arrivalTime;
+        RecordedByUserId = recordedByUserId ?? RecordedByUserId;
+        if (!string.IsNullOrWhiteSpace(notes)) Notes = notes;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void CheckOut(
+        TimeSpan departureTime,
+        string? pickupPersonName = null,
+        string? pickupRelationship = null,
+        string? verificationMethod = null,
+        Guid? authorizedPickupId = null,
+        Guid? verifiedByUserId = null,
+        string? pickupNotes = null)
+    {
+        Status = Constants.AttendanceStatuses.CheckedOut;
+        DepartureTime = departureTime;
+        PickupPersonName = pickupPersonName ?? PickupPersonName;
+        PickupPersonRelationship = pickupRelationship ?? PickupPersonRelationship;
+        PickupVerificationMethod = verificationMethod ?? PickupVerificationMethod;
+        AuthorizedPickupId = authorizedPickupId ?? AuthorizedPickupId;
+        DepartureVerifiedByUserId = verifiedByUserId ?? DepartureVerifiedByUserId;
+        if (!string.IsNullOrWhiteSpace(pickupNotes)) PickupNotes = pickupNotes;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void MarkAbsent(string? notes = null, Guid? recordedByUserId = null)
+    {
+        Status = Constants.AttendanceStatuses.Absent;
+        ArrivalTime = null;
+        DepartureTime = null;
+        RecordedByUserId = recordedByUserId ?? RecordedByUserId;
+        if (!string.IsNullOrWhiteSpace(notes)) Notes = notes;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }
