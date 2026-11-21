@@ -224,10 +224,13 @@ tags:
 * **Hierarchical Nested Grid Features**:
   - **Dynamic KPI Summary**: Total Invoiced, Total Collected, Outstanding Balance, Pending Verification Amount & collection rate with tabular number alignment.
   - **Filter Bar**: Cascading Branch -> Classroom dropdowns, Child search, Billing Period selector (defaults to `All Periods (Cumulative)` to prevent period filtering mismatches while supporting individual month drill-downs), Status pills (`All`, `Paid`, `Partially Paid`, `Unpaid`, `Overdue`, `Pending Verification`, `Not Invoiced`), and CSV Export.
-  - **Expandable Master Row**: Displays child avatar, classroom/branch, invoiced, paid, balance, and settlement badge.
-  - **Nested Sub-Tables**:
-    - **Invoices**: Breakdown of invoice numbers (`#INV-FEE-...`), billing period, fee method, formatted issue/due dates, total, paid, balance, status, and installment schedules.
-    - **Payments**: Transaction timeline with payment method, amount, reference/transaction ID, verification status badge, notes/verified-by details, and direct inline `Verify` / `Reject` action buttons for pending submissions.
+  - **Expandable Master Row**: Displays child avatar, child name (14px bold), classroom tag, branch subtitle, invoiced, paid, balance (with `✓ Settled` indicator when fully paid), settlement badge, and a dedicated `▼ Breakdown (X)` / `▲ Hide` button.
+  - **Detail Breakdown Toolbar & Sub-Tabs**:
+    - Summary metric strip displaying total invoice count, payment count, total billed, and net outstanding balance.
+    - Clean sub-tab switcher: `📄 Tuition Invoices (X)`, `💳 Payment History (Y)`, and `📋 View Both` to prevent vertical visual overload.
+  - **Nested Sub-Tables (Uncluttered Design)**:
+    - **Invoices**: Consolidated into 6 aligned columns (Invoice & Plan with inline installment schedule chips, Issue / Due Dates stack, Amount, Paid, Balance, Status) avoiding awkward spanning rows that disrupt grid tracks.
+    - **Payments**: Consolidated into 5 readable columns (Payment Date & Method with branded pill, Target Invoice # & Clean Reference ID, Amount Paid in bold green tabular numbers, Verification & Auditor badge with clean formatted email/names, and inline `Verify` / `Reject` / `✓ Confirmed` actions).
   - **Theme & Design System Alignment**:
     - Adheres to EnjoyEveryday design tokens (`--ee-font`, `--surface`, `--surface-soft`, `--border`, `--text`, `--muted`, `--accent`, `--accent-light`, `--accent-dark`, `--shadow`, `--radius: 18px`).
     - Tabular numeric alignment with `font-variant-numeric: tabular-nums` and `CurrencyService.Format(..., forceDecimals: true)`.

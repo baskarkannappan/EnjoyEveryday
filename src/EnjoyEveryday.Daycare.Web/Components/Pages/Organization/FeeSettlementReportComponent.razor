@@ -182,7 +182,7 @@
                             <th style="text-align: right;">Paid</th>
                             <th style="text-align: right;">Balance</th>
                             <th style="text-align: center;">Status</th>
-                            <th style="text-align: right; width: 110px;">Details</th>
+                            <th style="text-align: right; width: 140px;">Breakdown</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -190,20 +190,21 @@
                         {
                             var isExpanded = _expandedChildIds.Contains(item.ChildId);
                             var curr = string.IsNullOrWhiteSpace(item.Currency) ? _currency : item.Currency;
+                            var activeSubTab = GetChildDetailTab(item.ChildId);
                             <tr class="ee-master-row @(isExpanded ? "expanded" : "")" @onclick="() => ToggleExpand(item.ChildId)">
                                 <td style="text-align: center;">
                                     <span class="ee-chevron @(isExpanded ? "open" : "")">▶</span>
                                 </td>
                                 <td>
-                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
                                         <div class="ee-avatar">
                                             @GetInitials(item.ChildName)
                                         </div>
                                         <div>
-                                            <strong style="color: var(--text, #26332d); font-size: 13.5px;">@item.ChildName</strong>
+                                            <div class="ee-child-name">@item.ChildName</div>
                                             @if (item.PendingVerificationAmount > 0)
                                             {
-                                                <span class="ee-badge-amber" style="margin-left: 6px; font-size: 11px;" title="Has pending verification payments">
+                                                <span class="ee-badge-amber" style="margin-top: 3px;" title="Has pending verification payments">
                                                     ⏳ @FormatMoney(item.PendingVerificationAmount, curr) pending
                                                 </span>
                                             }
@@ -211,24 +212,30 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="ee-sub-pill">@item.ClassroomName</span>
-                                    <span class="ee-sub-pill ee-sub-pill-muted">@item.BranchName</span>
+                                    <div style="display: flex; flex-direction: column; gap: 3px;">
+                                        <span class="ee-classroom-pill">@item.ClassroomName</span>
+                                        <span class="ee-branch-label">@item.BranchName</span>
+                                    </div>
                                 </td>
-                                <td style="text-align: right; font-weight: 600;" class="ee-tnum">
+                                <td style="text-align: right; font-weight: 700; font-size: 14px;" class="ee-tnum">
                                     @FormatMoney(item.TotalInvoiced, curr)
                                 </td>
-                                <td style="text-align: right; color: #2e7d32; font-weight: 600;" class="ee-tnum">
+                                <td style="text-align: right; color: #2e7d32; font-weight: 750; font-size: 14px;" class="ee-tnum">
                                     @FormatMoney(item.TotalPaid, curr)
                                 </td>
-                                <td style="text-align: right; font-weight: 700; color: @(item.BalanceDue > 0 ? "#c62828" : "var(--text, #26332d)");" class="ee-tnum">
+                                <td style="text-align: right; font-weight: 800; font-size: 14px; color: @(item.BalanceDue > 0 ? "#c62828" : "#2e7d32");" class="ee-tnum">
                                     @FormatMoney(item.BalanceDue, curr)
+                                    @if (item.BalanceDue == 0 && item.TotalPaid > 0)
+                                    {
+                                        <div style="font-size: 11px; font-weight: 600; color: #2e7d32; margin-top: 1px;">✓ Settled</div>
+                                    }
                                 </td>
                                 <td style="text-align: center;">
                                     @RenderStatusBadge(item.SettlementStatus)
                                 </td>
                                 <td style="text-align: right;">
-                                    <button class="secondary ee-btn-xs" @onclick:stopPropagation="true" @onclick="() => ToggleExpand(item.ChildId)">
-                                        @(isExpanded ? "Hide" : "Breakdown")
+                                    <button class="ee-breakdown-btn @(isExpanded ? "open" : "")" @onclick:stopPropagation="true" @onclick="() => ToggleExpand(item.ChildId)">
+                                        @(isExpanded ? "▲ Hide" : $"▼ Breakdown ({item.Invoices.Count})")
                                     </button>
                                 </td>
                             </tr>
@@ -238,215 +245,232 @@
                                 <tr class="ee-detail-row">
                                     <td colspan="8">
                                         <div class="ee-detail-card">
-                                            <!-- Invoices Sub-Section -->
-                                            <div class="ee-sub-section">
-                                                <div class="ee-sub-header">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <span style="font-size: 14px;">📄</span>
-                                                        <h5>Tuition Invoices (@item.Invoices.Count)</h5>
-                                                    </div>
+                                            <!-- Detail Summary & Tab Switcher Bar -->
+                                            <div class="ee-detail-toolbar">
+                                                <div class="ee-detail-stats">
+                                                    <span class="ee-detail-stat"><strong>@item.Invoices.Count</strong> Invoices Issued</span>
+                                                    <span class="ee-stat-sep">·</span>
+                                                    <span class="ee-detail-stat"><strong>@item.Payments.Count</strong> Payments Recorded</span>
+                                                    <span class="ee-stat-sep">·</span>
+                                                    <span class="ee-detail-stat">Total Billed: <strong>@FormatMoney(item.TotalInvoiced, curr)</strong></span>
+                                                    <span class="ee-stat-sep">·</span>
+                                                    <span class="ee-detail-stat">Outstanding: <strong style="color: @(item.BalanceDue > 0 ? "#c62828" : "#2e7d32");">@FormatMoney(item.BalanceDue, curr)</strong></span>
                                                 </div>
-                                                @if (!item.Invoices.Any())
-                                                {
-                                                    <div class="ee-empty-sub">No tuition invoices issued for this period.</div>
-                                                }
-                                                else
-                                                {
-                                                    <div class="ee-sub-table-wrapper">
-                                                        <table class="ee-sub-table">
-                                                            <thead>
-                                                                <tr>
-                                                                    <th>Invoice #</th>
-                                                                    <th>Period</th>
-                                                                    <th>Fee Method</th>
-                                                                    <th>Issue Date</th>
-                                                                    <th>Due Date</th>
-                                                                    <th style="text-align: right;">Amount</th>
-                                                                    <th style="text-align: right;">Paid</th>
-                                                                    <th style="text-align: right;">Balance</th>
-                                                                    <th style="text-align: center;">Status</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                @foreach (var inv in item.Invoices)
-                                                                {
-                                                                    var invCurr = string.IsNullOrWhiteSpace(inv.Currency) ? curr : inv.Currency;
+                                                <div class="ee-sub-tab-bar">
+                                                    <button type="button" class="ee-sub-tab-btn @(activeSubTab == "Invoices" ? "active" : "")"
+                                                            @onclick:stopPropagation="true" @onclick='() => SetChildDetailTab(item.ChildId, "Invoices")'>
+                                                        📄 Tuition Invoices (@item.Invoices.Count)
+                                                    </button>
+                                                    <button type="button" class="ee-sub-tab-btn @(activeSubTab == "Payments" ? "active" : "")"
+                                                            @onclick:stopPropagation="true" @onclick='() => SetChildDetailTab(item.ChildId, "Payments")'>
+                                                        💳 Payment History (@item.Payments.Count)
+                                                    </button>
+                                                    <button type="button" class="ee-sub-tab-btn @(activeSubTab == "All" ? "active" : "")"
+                                                            @onclick:stopPropagation="true" @onclick='() => SetChildDetailTab(item.ChildId, "All")'>
+                                                        📋 View Both
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Invoices Sub-Section -->
+                                            @if (activeSubTab == "Invoices" || activeSubTab == "All")
+                                            {
+                                                <div class="ee-sub-section">
+                                                    <div class="ee-sub-header">
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <span style="font-size: 15px;">📄</span>
+                                                            <h5>Tuition Invoices (@item.Invoices.Count)</h5>
+                                                        </div>
+                                                    </div>
+                                                    @if (!item.Invoices.Any())
+                                                    {
+                                                        <div class="ee-empty-sub">No tuition invoices issued for this child.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="ee-sub-table-wrapper">
+                                                            <table class="ee-sub-table">
+                                                                <thead>
                                                                     <tr>
-                                                                        <td>
-                                                                            <strong style="color: var(--accent-dark, #31523c); font-family: monospace; font-size: 12px;">
-                                                                                @(string.IsNullOrWhiteSpace(inv.InvoiceNumber) ? "-" : $"#{inv.InvoiceNumber}")
-                                                                            </strong>
-                                                                        </td>
-                                                                        <td>
-                                                                            <span class="ee-period-badge">@(string.IsNullOrWhiteSpace(inv.BillingPeriod) ? "-" : inv.BillingPeriod)</span>
-                                                                        </td>
-                                                                        <td>
-                                                                            <span class="ee-sub-pill">@(string.IsNullOrWhiteSpace(inv.FeeMethod) ? (inv.FeePlanName ?? "-") : inv.FeeMethod)</span>
-                                                                        </td>
-                                                                        <td>@FormatDate(inv.IssueDate)</td>
-                                                                        <td>@FormatDate(inv.DueDate)</td>
-                                                                        <td style="text-align: right; font-weight: 600;" class="ee-tnum">
-                                                                            @FormatMoney(inv.EffectivePayable, invCurr)
-                                                                        </td>
-                                                                        <td style="text-align: right; color: #2e7d32; font-weight: 600;" class="ee-tnum">
-                                                                            @FormatMoney(inv.AmountPaid, invCurr)
-                                                                        </td>
-                                                                        <td style="text-align: right; font-weight: 700; color: @(inv.BalanceDue > 0 ? "#c62828" : "inherit");" class="ee-tnum">
-                                                                            @FormatMoney(inv.BalanceDue, invCurr)
-                                                                        </td>
-                                                                        <td style="text-align: center;">
-                                                                            @RenderInvoiceStatusBadge(inv.Status)
-                                                                        </td>
+                                                                        <th style="width: 32%;">Invoice &amp; Plan</th>
+                                                                        <th style="width: 20%;">Issue / Due Dates</th>
+                                                                        <th style="width: 14%; text-align: right;">Amount</th>
+                                                                        <th style="width: 14%; text-align: right;">Paid</th>
+                                                                        <th style="width: 10%; text-align: right;">Balance</th>
+                                                                        <th style="width: 10%; text-align: center;">Status</th>
                                                                     </tr>
-                                                                    @if (inv.Installments?.Any() == true)
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach (var inv in item.Invoices)
                                                                     {
+                                                                        var invCurr = string.IsNullOrWhiteSpace(inv.Currency) ? curr : inv.Currency;
                                                                         <tr>
-                                                                            <td colspan="9" class="ee-installment-row">
-                                                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                                                                    <strong style="color: var(--muted, #6c7870); font-size: 11px;">Installment Schedule:</strong>
-                                                                                    @foreach (var inst in inv.Installments)
-                                                                                    {
-                                                                                        <span class="ee-inst-pill">
-                                                                                            <strong>#@inst.InstallmentNumber:</strong> @FormatMoney(inst.AmountDue, invCurr)
-                                                                                            <span class="ee-tiny-muted">(Due: @inst.DueDate)</span>
-                                                                                        </span>
-                                                                                    }
+                                                                            <td>
+                                                                                <div class="ee-inv-num">@(string.IsNullOrWhiteSpace(inv.InvoiceNumber) ? "-" : $"#{inv.InvoiceNumber}")</div>
+                                                                                <div class="ee-inv-meta">
+                                                                                    <span class="ee-period-badge">@(string.IsNullOrWhiteSpace(inv.BillingPeriod) ? "-" : inv.BillingPeriod)</span>
+                                                                                    <span class="ee-sub-pill">@(string.IsNullOrWhiteSpace(inv.FeeMethod) ? (inv.FeePlanName ?? "Tuition") : inv.FeeMethod)</span>
                                                                                 </div>
+                                                                                @if (inv.Installments?.Any() == true)
+                                                                                {
+                                                                                    <div class="ee-installment-bar">
+                                                                                        <span class="ee-inst-label">Installments:</span>
+                                                                                        @foreach (var inst in inv.Installments)
+                                                                                        {
+                                                                                            <span class="ee-inst-chip">
+                                                                                                <strong>#@inst.InstallmentNumber:</strong> @FormatMoney(inst.AmountDue, invCurr)
+                                                                                                <span class="ee-inst-due">· Due @inst.DueDate</span>
+                                                                                            </span>
+                                                                                        }
+                                                                                    </div>
+                                                                                }
+                                                                            </td>
+                                                                            <td>
+                                                                                <div class="ee-date-stack">
+                                                                                    <div><span class="ee-date-lbl">Issued:</span> @FormatDate(inv.IssueDate)</div>
+                                                                                    <div><span class="ee-date-lbl">Due:</span> @FormatDate(inv.DueDate)</div>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td style="text-align: right; font-weight: 700;" class="ee-tnum">
+                                                                                @FormatMoney(inv.EffectivePayable, invCurr)
+                                                                            </td>
+                                                                            <td style="text-align: right; color: #2e7d32; font-weight: 700;" class="ee-tnum">
+                                                                                @FormatMoney(inv.AmountPaid, invCurr)
+                                                                            </td>
+                                                                            <td style="text-align: right; font-weight: 800; color: @(inv.BalanceDue > 0 ? "#c62828" : "#2e7d32");" class="ee-tnum">
+                                                                                @FormatMoney(inv.BalanceDue, invCurr)
+                                                                            </td>
+                                                                            <td style="text-align: center;">
+                                                                                @RenderInvoiceStatusBadge(inv.Status)
                                                                             </td>
                                                                         </tr>
                                                                     }
-                                                                }
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                }
-                                            </div>
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
 
                                             <!-- Payments Sub-Section -->
-                                            <div class="ee-sub-section" style="margin-top: 14px;">
-                                                <div class="ee-sub-header">
-                                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                                        <span style="font-size: 14px;">💳</span>
-                                                        <h5>Payment Transactions &amp; Verification History (@item.Payments.Count)</h5>
+                                            @if (activeSubTab == "Payments" || activeSubTab == "All")
+                                            {
+                                                <div class="ee-sub-section" style="@(activeSubTab == "All" ? "margin-top: 18px;" : "")">
+                                                    <div class="ee-sub-header">
+                                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                                            <span style="font-size: 15px;">💳</span>
+                                                            <h5>Payment Transactions &amp; Verification History (@item.Payments.Count)</h5>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                @if (!item.Payments.Any())
-                                                {
-                                                    <div class="ee-empty-sub">No payments recorded for this child.</div>
-                                                }
-                                                else
-                                                {
-                                                    <div class="ee-sub-table-wrapper">
-                                                        <table class="ee-sub-table">
-                                                            <thead>
-                                                                <tr>
-                                                                    <th>Date</th>
-                                                                    <th>Method</th>
-                                                                    <th>Invoice #</th>
-                                                                    <th>Reference / Txn ID</th>
-                                                                    <th style="text-align: right;">Amount</th>
-                                                                    <th style="text-align: center;">Verification</th>
-                                                                    <th>Verified By / Notes</th>
-                                                                    <th style="text-align: right; width: 140px;">Action</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                @foreach (var p in item.Payments)
-                                                                {
-                                                                    var payCurr = string.IsNullOrWhiteSpace(p.Currency) ? curr : p.Currency;
+                                                    @if (!item.Payments.Any())
+                                                    {
+                                                        <div class="ee-empty-sub">No payment transactions recorded for this child.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="ee-sub-table-wrapper">
+                                                            <table class="ee-sub-table">
+                                                                <thead>
                                                                     <tr>
-                                                                        <td style="white-space: nowrap;">@FormatDate(p.PaymentDate, includeTime: true)</td>
-                                                                        <td><span class="ee-sub-pill">@p.Method</span></td>
-                                                                        <td>
-                                                                            <span style="font-family: monospace; font-size: 11.5px; color: var(--accent-dark, #31523c);">
-                                                                                @(string.IsNullOrWhiteSpace(p.InvoiceNumber) ? "-" : $"#{p.InvoiceNumber}")
-                                                                            </span>
-                                                                        </td>
-                                                                        <td>
-                                                                            @if (!string.IsNullOrWhiteSpace(p.TransactionId))
-                                                                            {
-                                                                                <div style="font-weight: 600; font-family: monospace;">@p.TransactionId</div>
+                                                                        <th style="width: 22%;">Payment Date &amp; Method</th>
+                                                                        <th style="width: 26%;">Target Invoice &amp; Reference</th>
+                                                                        <th style="width: 14%; text-align: right;">Amount Paid</th>
+                                                                        <th style="width: 24%;">Verification &amp; Auditor</th>
+                                                                        <th style="width: 14%; text-align: right;">Action</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach (var p in item.Payments)
+                                                                    {
+                                                                        var payCurr = string.IsNullOrWhiteSpace(p.Currency) ? curr : p.Currency;
+                                                                        <tr>
+                                                                            <td>
+                                                                                <div style="font-weight: 700; color: var(--text, #26332d); font-size: 13.5px;">
+                                                                                    @FormatDate(p.PaymentDate, includeTime: true)
+                                                                                </div>
+                                                                                <div style="margin-top: 4px;">
+                                                                                    <span class="ee-method-badge">@FormatMethod(p.Method)</span>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td>
+                                                                                <div style="font-family: monospace; font-weight: 750; color: var(--accent-dark, #31523c); font-size: 13px;">
+                                                                                    @(string.IsNullOrWhiteSpace(p.InvoiceNumber) ? "-" : $"#{p.InvoiceNumber}")
+                                                                                </div>
+                                                                                @if (!string.IsNullOrWhiteSpace(p.TransactionId))
+                                                                                {
+                                                                                    <div class="ee-ref-pill">Txn: @p.TransactionId</div>
+                                                                                }
                                                                                 @if (!string.IsNullOrWhiteSpace(p.PaymentReference) && p.PaymentReference != p.TransactionId)
                                                                                 {
-                                                                                    <div class="ee-tiny-muted">Ref: @p.PaymentReference</div>
+                                                                                    <div class="ee-tiny-muted" style="margin-top: 2px;">Ref: @p.PaymentReference</div>
                                                                                 }
-                                                                            }
-                                                                            else if (!string.IsNullOrWhiteSpace(p.PaymentReference))
-                                                                            {
-                                                                                <div style="font-family: monospace;">@p.PaymentReference</div>
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                <span>-</span>
-                                                                            }
-                                                                        </td>
-                                                                        <td style="text-align: right; font-weight: 700; color: #2e7d32;" class="ee-tnum">
-                                                                            @FormatMoney(p.Amount, payCurr)
-                                                                        </td>
-                                                                        <td style="text-align: center;">
-                                                                            @if (p.Status == "Completed" && p.IsVerified)
-                                                                            {
-                                                                                <span class="ee-badge-green">Verified</span>
-                                                                            }
-                                                                            else if (p.Status == "PendingVerification")
-                                                                            {
-                                                                                <span class="ee-badge-amber">Pending Verification</span>
-                                                                            }
-                                                                            else if (p.Status == "Rejected")
-                                                                            {
-                                                                                <span class="ee-badge-red">Rejected</span>
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                <span class="ee-sub-pill">@p.Status</span>
-                                                                            }
-                                                                        </td>
-                                                                        <td>
-                                                                            @if (!string.IsNullOrWhiteSpace(p.VerifiedBy))
-                                                                            {
-                                                                                <div style="font-weight: 500; font-size: 11.5px;">@p.VerifiedBy</div>
-                                                                                @if (p.VerifiedAt.HasValue && p.VerifiedAt.Value.Year > 1)
+                                                                            </td>
+                                                                            <td style="text-align: right;" class="ee-tnum">
+                                                                                <span style="font-size: 15px; font-weight: 800; color: #2e7d32;">
+                                                                                    + @FormatMoney(p.Amount, payCurr)
+                                                                                </span>
+                                                                            </td>
+                                                                            <td>
+                                                                                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                                                                    @if (p.Status == "Completed" && p.IsVerified)
+                                                                                    {
+                                                                                        <span class="ee-badge-green">✓ Verified</span>
+                                                                                    }
+                                                                                    else if (p.Status == "PendingVerification")
+                                                                                    {
+                                                                                        <span class="ee-badge-amber">⏳ Pending Review</span>
+                                                                                    }
+                                                                                    else if (p.Status == "Rejected")
+                                                                                    {
+                                                                                        <span class="ee-badge-red">✕ Rejected</span>
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                        <span class="ee-sub-pill">@p.Status</span>
+                                                                                    }
+                                                                                </div>
+                                                                                @if (!string.IsNullOrWhiteSpace(p.VerifiedBy))
                                                                                 {
-                                                                                    <div class="ee-tiny-muted">at @FormatDate(p.VerifiedAt.Value, includeTime: true)</div>
+                                                                                    <div class="ee-auditor-line" title="@p.VerifiedBy">
+                                                                                        By <strong>@FormatAuditor(p.VerifiedBy)</strong>
+                                                                                        @if (p.VerifiedAt.HasValue && p.VerifiedAt.Value.Year > 1)
+                                                                                        {
+                                                                                            <span> · @FormatDate(p.VerifiedAt.Value, includeTime: true)</span>
+                                                                                        }
+                                                                                    </div>
                                                                                 }
                                                                                 @if (!string.IsNullOrWhiteSpace(p.Notes))
                                                                                 {
-                                                                                    <div class="ee-tiny-muted">@p.Notes</div>
+                                                                                    <div class="ee-note-tag" title="@p.Notes">
+                                                                                        @CleanNote(p.Notes)
+                                                                                    </div>
                                                                                 }
-                                                                            }
-                                                                            else if (!string.IsNullOrWhiteSpace(p.Notes))
-                                                                            {
-                                                                                <span style="font-size: 11.5px; color: var(--muted, #6c7870);">@p.Notes</span>
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                <span style="color: var(--muted, #6c7870);">-</span>
-                                                                            }
-                                                                        </td>
-                                                                        <td style="text-align: right;">
-                                                                            @if (p.Status == "PendingVerification")
-                                                                            {
-                                                                                <div style="display: flex; gap: 4px; justify-content: flex-end;">
-                                                                                    <button class="primary ee-btn-xs" @onclick="() => VerifyPaymentInlineAsync(p.Id)" title="Verify this payment">
-                                                                                        Verify
-                                                                                    </button>
-                                                                                    <button class="secondary ee-btn-xs" style="color: #9b2c2c;" @onclick="() => RejectPaymentInlineAsync(p.Id)" title="Reject this payment">
-                                                                                        Reject
-                                                                                    </button>
-                                                                                </div>
-                                                                            }
-                                                                            else if (p.IsVerified)
-                                                                            {
-                                                                                <span style="color: #2e7d32; font-size: 11.5px; font-weight: 600;">✓ Confirmed</span>
-                                                                            }
-                                                                        </td>
-                                                                    </tr>
-                                                                }
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                }
-                                            </div>
+                                                                            </td>
+                                                                            <td style="text-align: right;">
+                                                                                @if (p.Status == "PendingVerification")
+                                                                                {
+                                                                                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                                                                                        <button class="primary ee-btn-xs" @onclick="() => VerifyPaymentInlineAsync(p.Id)" title="Verify this payment">
+                                                                                            ✓ Verify
+                                                                                        </button>
+                                                                                        <button class="secondary ee-btn-xs" style="color: #9b2c2c;" @onclick="() => RejectPaymentInlineAsync(p.Id)" title="Reject this payment">
+                                                                                            ✕ Reject
+                                                                                        </button>
+                                                                                    </div>
+                                                                                }
+                                                                                else if (p.IsVerified)
+                                                                                {
+                                                                                    <span class="ee-confirmed-tag">✓ Confirmed</span>
+                                                                                }
+                                                                            </td>
+                                                                        </tr>
+                                                                    }
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
                                         </div>
                                     </td>
                                 </tr>
@@ -794,46 +818,158 @@
         border: 1px solid #e0e0e0;
     }
 
+    /* MASTER ROW EXTRAS */
+    .ee-child-name {
+        font-weight: 750;
+        font-size: 14px;
+        color: var(--text, #26332d);
+        line-height: 1.25;
+    }
+
+    .ee-classroom-pill {
+        display: inline-block;
+        padding: 2px 7px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #eef4f0;
+        color: var(--accent-dark, #31523c);
+        border: 1px solid #d4e3d7;
+        border-radius: 4px;
+        width: fit-content;
+    }
+
+    .ee-branch-label {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .ee-breakdown-btn {
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent-dark, #31523c);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .ee-breakdown-btn:hover {
+        background: var(--surface-soft, #f8f9f5);
+        border-color: var(--accent, #52745e);
+    }
+    .ee-breakdown-btn.open {
+        background: var(--accent-light, #e6eee9);
+        border-color: #c8dacd;
+        color: var(--accent-dark, #31523c);
+    }
+
     /* NESTED EXPANDED AREA */
     .ee-detail-row td {
         padding: 0 !important;
         border-bottom: 2px solid var(--border, #e4e7df);
+        background: #fbfcfb;
     }
 
     .ee-detail-card {
-        background: #f9fbf9;
-        padding: 16px 20px 20px 36px;
-        border-left: 4px solid var(--accent, #557c6c);
+        background: #ffffff;
+        padding: 20px 24px;
+        margin: 10px 14px 18px;
+        border-radius: 12px;
+        border: 1px solid var(--border, #e4e7df);
+        box-shadow: 0 4px 16px rgba(40,55,47,0.05);
     }
 
+    /* DETAIL TOOLBAR & TABS */
+    .ee-detail-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+
+    .ee-detail-stats {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-size: 12.5px;
+        color: var(--text, #26332d);
+    }
+
+    .ee-detail-stat strong {
+        font-weight: 750;
+    }
+
+    .ee-stat-sep {
+        color: var(--muted, #6c7870);
+        opacity: 0.5;
+        font-weight: 800;
+    }
+
+    .ee-sub-tab-bar {
+        display: inline-flex;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        padding: 3px;
+        gap: 3px;
+    }
+
+    .ee-sub-tab-btn {
+        background: transparent;
+        border: none;
+        border-radius: 6px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted, #6c7870);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .ee-sub-tab-btn:hover {
+        color: var(--text, #26332d);
+    }
+    .ee-sub-tab-btn.active {
+        background: #ffffff;
+        color: var(--accent-dark, #31523c);
+        font-weight: 750;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+
+    /* SUB-SECTION & TABLES */
     .ee-sub-section {
-        background: var(--surface, #ffffff);
+        background: #ffffff;
         border: 1px solid var(--border, #e4e7df);
         border-radius: 10px;
         padding: 14px 16px;
-        box-shadow: 0 2px 6px rgba(40,55,47,0.03);
+        box-shadow: 0 2px 6px rgba(40,55,47,0.02);
     }
 
     .ee-sub-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
         border-bottom: 1px solid var(--surface-soft, #f8f9f5);
-        padding-bottom: 6px;
     }
 
     .ee-sub-header h5 {
         margin: 0;
-        font-size: 13px;
+        font-size: 13.5px;
         font-weight: 750;
         color: var(--text, #26332d);
     }
 
     .ee-empty-sub {
-        font-size: 12.5px;
+        font-size: 13px;
         color: var(--muted, #6c7870);
-        padding: 12px;
+        padding: 20px;
         text-align: center;
         font-style: italic;
     }
@@ -846,31 +982,151 @@
     .ee-sub-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12px;
+        font-size: 13px;
     }
 
     .ee-sub-table th {
         background: var(--surface-soft, #f8f9f5);
-        padding: 8px 10px;
-        font-size: 10.5px;
+        padding: 9px 12px;
+        font-size: 11px;
         font-weight: 700;
         color: var(--muted, #6c7870);
         text-align: left;
         border-bottom: 1px solid var(--border, #e4e7df);
         text-transform: uppercase;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.4px;
     }
 
     .ee-sub-table td {
-        padding: 8px 10px;
-        border-bottom: 1px dashed var(--border, #e4e7df);
+        padding: 10px 12px;
+        border-bottom: 1px solid #f0f3ee;
         vertical-align: middle;
     }
 
-    .ee-installment-row {
+    .ee-sub-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    /* INVOICE FORMATTING */
+    .ee-inv-num {
+        font-family: monospace;
+        font-weight: 750;
+        color: var(--accent-dark, #31523c);
+        font-size: 13px;
+    }
+
+    .ee-inv-meta {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 3px;
+    }
+
+    .ee-installment-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+        padding: 4px 8px;
         background: #fbfdfb;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--border, #e4e7df);
+        border: 1px dashed #dbe5de;
+        border-radius: 6px;
+    }
+
+    .ee-inst-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted, #6c7870);
+    }
+
+    .ee-inst-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        background: #ffffff;
+        border: 1px solid var(--border, #e4e7df);
+        padding: 2px 7px;
+        border-radius: 4px;
+    }
+
+    .ee-inst-due {
+        color: var(--muted, #6c7870);
+        font-size: 10.5px;
+    }
+
+    .ee-date-stack {
+        font-size: 12.5px;
+        line-height: 1.4;
+    }
+
+    .ee-date-lbl {
+        color: var(--muted, #6c7870);
+        font-size: 11px;
+    }
+
+    /* PAYMENT FORMATTING */
+    .ee-method-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 4px;
+        color: var(--text, #26332d);
+    }
+
+    .ee-ref-pill {
+        display: inline-block;
+        font-family: monospace;
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        background: #fafbfa;
+        border: 1px solid #e8ede9;
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin-top: 3px;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ee-auditor-line {
+        font-size: 11.5px;
+        color: var(--muted, #6c7870);
+        margin-top: 3px;
+    }
+
+    .ee-auditor-line strong {
+        color: var(--text, #26332d);
+        font-weight: 600;
+    }
+
+    .ee-note-tag {
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+        background: #f9fbf9;
+        border-left: 2px solid var(--accent, #557c6c);
+        padding: 2px 6px;
+        margin-top: 3px;
+        max-width: 250px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ee-confirmed-tag {
+        display: inline-block;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: #2e7d32;
+        padding: 3px 8px;
+        background: #eef7ee;
+        border: 1px solid #cce5cc;
+        border-radius: 4px;
     }
 
     .ee-tiny-muted {
@@ -1004,6 +1260,45 @@
     private List<Classroom> _filteredClassrooms = new();
     private List<string> _availablePeriods = new();
     private HashSet<Guid> _expandedChildIds = new();
+    private Dictionary<Guid, string> _childDetailTabs = new();
+
+    private string GetChildDetailTab(Guid childId)
+    {
+        return _childDetailTabs.TryGetValue(childId, out var tab) ? tab : "Invoices";
+    }
+
+    private void SetChildDetailTab(Guid childId, string tab)
+    {
+        _childDetailTabs[childId] = tab;
+    }
+
+    private static string FormatAuditor(string? val)
+    {
+        if (string.IsNullOrWhiteSpace(val)) return "-";
+        return val.Contains('@') ? val.Split('@')[0] : val;
+    }
+
+    private static string FormatMethod(string? method)
+    {
+        if (string.IsNullOrWhiteSpace(method)) return "Payment";
+        return method.ToLowerInvariant() switch
+        {
+            "qrcode" or "qr" => "📱 QR Code",
+            "banktransfer" or "bank" => "🏦 Bank Transfer",
+            "cash" => "💵 Cash",
+            "razorpay" or "gateway" or "online" => "💳 Online Gateway",
+            _ => method
+        };
+    }
+
+    private static string CleanNote(string? note)
+    {
+        if (string.IsNullOrWhiteSpace(note)) return string.Empty;
+        var trimmed = note.Trim();
+        if (trimmed.Length > 55)
+            return trimmed[..52] + "...";
+        return trimmed;
+    }
 
     private FeeSettlementReportSummary _summary = new();
 
