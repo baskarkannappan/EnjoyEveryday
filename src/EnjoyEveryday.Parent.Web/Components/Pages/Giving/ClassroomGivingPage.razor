@@ -176,19 +176,51 @@
                         var price = prod.Offering?.PurchasePrice ?? 0m;
 
                         <div style="background: var(--surface, #fff); border: 2px solid @(isSelected ? "var(--accent-dark, #31523c)" : "var(--border, #e4e7df)"); border-radius: var(--radius, 18px); overflow: hidden; display: flex; flex-direction: column; transition: all 0.2s ease;">
-                            <div style="height: 160px; background: #fafafa; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
-                                @{
-                                    var img = !string.IsNullOrWhiteSpace(prod.ImageUrl) ? prod.ImageUrl : prod.ImageUrls.FirstOrDefault();
-                                }
-                                @if (!string.IsNullOrWhiteSpace(img))
+                            @{
+                                var prodImages = GetProductImages(prod);
+                                var hasImages = prodImages.Count > 0;
+                                var currentImgIdx = GetCardImageIndex(prod.Id, prodImages.Count);
+                                var currentImgUrl = hasImages ? prodImages[currentImgIdx] : null;
+                            }
+                            <div class="giving-card-media" 
+                                 style="height: 170px; background: #ffffff; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; cursor: @(hasImages ? "zoom-in" : "default"); border-bottom: 1px solid var(--border, #e4e7df);"
+                                 @onclick="() => { if (hasImages) OpenImagePopup(prod, currentImgIdx); }">
+                                @if (hasImages && !string.IsNullOrWhiteSpace(currentImgUrl))
                                 {
-                                    <img src="@img" alt="@prod.Name" style="width: 100%; height: 100%; object-fit: cover;" />
+                                    <img src="@currentImgUrl" alt="@prod.Name" style="width: 100%; height: 100%; object-fit: contain; padding: 6px; transition: transform 0.2s ease;" />
+
+                                    @if (prodImages.Count > 1)
+                                    {
+                                        <button type="button" 
+                                                class="giving-carousel-btn prev-btn" 
+                                                title="Previous image" 
+                                                @onclick="() => PrevCardImage(prod.Id, prodImages.Count)" 
+                                                @onclick:stopPropagation="true">‹</button>
+                                        <button type="button" 
+                                                class="giving-carousel-btn next-btn" 
+                                                title="Next image" 
+                                                @onclick="() => NextCardImage(prod.Id, prodImages.Count)" 
+                                                @onclick:stopPropagation="true">›</button>
+
+                                        <div class="giving-carousel-dots" @onclick:stopPropagation="true">
+                                            @for (int i = 0; i < prodImages.Count; i++)
+                                            {
+                                                var dotIdx = i;
+                                                <span class="giving-carousel-dot @(dotIdx == currentImgIdx ? "active" : "")"
+                                                      @onclick="() => SetCardImage(prod.Id, dotIdx)"></span>
+                                            }
+                                        </div>
+                                    }
+
+                                    <span class="giving-zoom-hint" title="Click to view all images in high resolution">
+                                        🔍 Click to Enlarge
+                                    </span>
                                 }
                                 else
                                 {
-                                    <span style="font-size: 40px;">🎨</span>
+                                    <div style="font-size: 42px; color: var(--muted); display: grid; place-items: center; height: 100%;">🎨</div>
                                 }
-                                <span style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; color: var(--text);">
+                                <span style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.92); padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; color: var(--text); border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.06); z-index: 3;">
                                     @prod.Category
                                 </span>
                             </div>
@@ -382,6 +414,321 @@
     }
 </div>
 
+<!-- ENLARGED IMAGE POPUP LIGHTBOX MODAL -->
+@if (_isImagePopupOpen && _popupProduct != null)
+{
+    var popupImages = GetProductImages(_popupProduct);
+    var popupHasImages = popupImages.Count > 0;
+    var safeIdx = Math.Clamp(_popupImageIndex, 0, Math.Max(0, popupImages.Count - 1));
+    var activePopupImg = popupHasImages ? popupImages[safeIdx] : null;
+
+    <div class="image-lightbox-backdrop" @onclick="CloseImagePopup">
+        <div class="image-lightbox-content" @onclick:stopPropagation="true">
+            <!-- Top bar -->
+            <div class="image-lightbox-header">
+                <div>
+                    <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent-dark, #31523c);">
+                        @_popupProduct.Category
+                    </div>
+                    <h3 style="margin: 2px 0 0; font-size: 17px; font-weight: 800; color: var(--text, #26332d);">
+                        @_popupProduct.Name
+                    </h3>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    @if (popupImages.Count > 1)
+                    {
+                        <span style="font-size: 12.5px; font-weight: 700; color: var(--muted, #6c7870); background: var(--surface-soft, #f8f9f5); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border, #e4e7df);">
+                            @(safeIdx + 1) / @popupImages.Count
+                        </span>
+                    }
+                    <button type="button" class="image-lightbox-close" @onclick="CloseImagePopup" title="Close">✕</button>
+                </div>
+            </div>
+
+            <!-- Main Image Viewport with Nav Arrows -->
+            <div class="image-lightbox-viewport">
+                @if (!string.IsNullOrWhiteSpace(activePopupImg))
+                {
+                    <img src="@activePopupImg" alt="@_popupProduct.Name" class="image-lightbox-img" />
+                }
+                else
+                {
+                    <div style="font-size: 60px; padding: 40px;">🎨</div>
+                }
+
+                @if (popupImages.Count > 1)
+                {
+                    <button type="button" class="lightbox-nav-btn prev" title="Previous Image" @onclick="PrevPopupImage">‹</button>
+                    <button type="button" class="lightbox-nav-btn next" title="Next Image" @onclick="NextPopupImage">›</button>
+                }
+            </div>
+
+            <!-- Thumbnail Strip -->
+            @if (popupImages.Count > 1)
+            {
+                <div class="image-lightbox-thumbnails">
+                    @for (int i = 0; i < popupImages.Count; i++)
+                    {
+                        var thumbIdx = i;
+                        var thumbUrl = popupImages[i];
+                        <button type="button" 
+                                class="lightbox-thumb-btn @(thumbIdx == safeIdx ? "active" : "")" 
+                                @onclick="() => SelectPopupImage(thumbIdx)">
+                            <img src="@thumbUrl" alt="" />
+                        </button>
+                    }
+                </div>
+            }
+
+            <!-- Footer Action Bar -->
+            <div class="image-lightbox-footer">
+                <div style="font-size: 13px; color: var(--muted, #6c7870); line-height: 1.4; max-width: 60%;">
+                    @_popupProduct.Description
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    @{
+                        var isSel = _cart.ContainsKey(_popupProduct.Id);
+                        var price = _popupProduct.Offering?.PurchasePrice ?? 0m;
+                    }
+                    <button type="button" class="primary" style="padding: 10px 22px; font-size: 13.5px;" @onclick="() => { AddToCart(_popupProduct); CloseImagePopup(); }">
+                        @(isSel ? "+ Add Another" : "+ Add to Gift") · @CurrencyService.Format(price, "INR")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .giving-card-media:hover .giving-zoom-hint {
+        opacity: 1;
+    }
+    .giving-zoom-hint {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent-dark, #31523c);
+        padding: 3px 8px;
+        opacity: 0;
+        transition: opacity 0.18s ease;
+        z-index: 3;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        pointer-events: none;
+    }
+    .giving-carousel-btn {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+        z-index: 4;
+        transition: all 0.15s ease;
+        padding-bottom: 2px;
+    }
+    .giving-carousel-btn:hover {
+        background: #ffffff;
+        transform: translateY(-50%) scale(1.12);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+    }
+    .giving-carousel-btn.prev-btn {
+        left: 8px;
+    }
+    .giving-carousel-btn.next-btn {
+        right: 8px;
+    }
+    .giving-carousel-dots {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        z-index: 4;
+        background: rgba(40, 55, 47, 0.5);
+        padding: 4px 8px;
+        border-radius: 12px;
+        backdrop-filter: blur(2px);
+    }
+    .giving-carousel-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.55);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .giving-carousel-dot.active {
+        background: #ffffff;
+        transform: scale(1.35);
+    }
+
+    /* Lightbox Modal */
+    .image-lightbox-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(18, 26, 22, 0.75);
+        backdrop-filter: blur(6px);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        animation: fadeInGiving 0.2s ease-out;
+    }
+    .image-lightbox-content {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        max-width: 820px;
+        width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: zoomInGiving 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .image-lightbox-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 22px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+    }
+    .image-lightbox-close {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        transition: all 0.15s ease;
+    }
+    .image-lightbox-close:hover {
+        background: #fee2e2;
+        color: #991b1b;
+        border-color: #fca5a5;
+    }
+    .image-lightbox-viewport {
+        position: relative;
+        background: #fbfbfa;
+        min-height: 340px;
+        max-height: 55vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        padding: 16px;
+    }
+    .image-lightbox-img {
+        max-width: 100%;
+        max-height: 52vh;
+        object-fit: contain;
+        border-radius: 6px;
+        box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+    }
+    .lightbox-nav-btn {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--text, #26332d);
+        font-size: 26px;
+        line-height: 1;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        transition: all 0.15s ease;
+        padding-bottom: 3px;
+        z-index: 10;
+    }
+    .lightbox-nav-btn:hover {
+        background: #ffffff;
+        transform: translateY(-50%) scale(1.1);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    }
+    .lightbox-nav-btn.prev {
+        left: 18px;
+    }
+    .lightbox-nav-btn.next {
+        right: 18px;
+    }
+    .image-lightbox-thumbnails {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        padding: 10px 18px;
+        background: #f6f7f3;
+        border-top: 1px solid var(--border, #e4e7df);
+        overflow-x: auto;
+    }
+    .lightbox-thumb-btn {
+        width: 52px;
+        height: 52px;
+        border-radius: 8px;
+        border: 2px solid transparent;
+        padding: 2px;
+        background: #ffffff;
+        cursor: pointer;
+        overflow: hidden;
+        transition: all 0.15s ease;
+    }
+    .lightbox-thumb-btn.active {
+        border-color: var(--accent-dark, #31523c);
+        box-shadow: 0 0 0 2px rgba(49, 82, 60, 0.2);
+    }
+    .lightbox-thumb-btn img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 5px;
+    }
+    .image-lightbox-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 22px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: var(--surface, #ffffff);
+        gap: 16px;
+    }
+    @@keyframes fadeInGiving {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @@keyframes zoomInGiving {
+        from { transform: scale(0.94); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+</style>
+
 @code {
     [SupplyParameterFromQuery(Name = "mode")]
     public string? InitialMode { get; set; }
@@ -406,6 +753,11 @@
     private bool _isSubmitting = false;
     private string? _statusMessage;
     private bool _isSuccess;
+
+    private Dictionary<Guid, int> _productImageIndices = new();
+    private MaterialProduct? _popupProduct;
+    private int _popupImageIndex;
+    private bool _isImagePopupOpen;
 
     private IEnumerable<MaterialProduct> FilteredProducts => _catalogProducts.Where(p =>
     {
@@ -621,6 +973,110 @@
         finally
         {
             _isSubmitting = false;
+        }
+    }
+
+    private List<string> GetProductImages(MaterialProduct prod)
+    {
+        if (prod == null) return new List<string>();
+        var list = new List<string>();
+        if (prod.ImageUrls != null && prod.ImageUrls.Count > 0)
+        {
+            list.AddRange(prod.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)));
+        }
+        if (list.Count == 0 && !string.IsNullOrWhiteSpace(prod.ImageUrl))
+        {
+            var trimmed = prod.ImageUrl.Trim();
+            if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+            {
+                try
+                {
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize<List<string>>(trimmed);
+                    if (parsed != null && parsed.Count > 0)
+                    {
+                        list.AddRange(parsed.Where(u => !string.IsNullOrWhiteSpace(u)));
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                list.Add(trimmed);
+            }
+        }
+        return list.Select(u => (!u.StartsWith("/") && !u.StartsWith("http", StringComparison.OrdinalIgnoreCase)) ? "/" + u : u).ToList();
+    }
+
+    private int GetCardImageIndex(Guid prodId, int totalImages)
+    {
+        if (totalImages <= 0) return 0;
+        if (!_productImageIndices.TryGetValue(prodId, out var idx))
+        {
+            return 0;
+        }
+        return Math.Clamp(idx, 0, totalImages - 1);
+    }
+
+    private void PrevCardImage(Guid prodId, int totalImages)
+    {
+        if (totalImages <= 1) return;
+        var current = GetCardImageIndex(prodId, totalImages);
+        _productImageIndices[prodId] = (current - 1 + totalImages) % totalImages;
+    }
+
+    private void NextCardImage(Guid prodId, int totalImages)
+    {
+        if (totalImages <= 1) return;
+        var current = GetCardImageIndex(prodId, totalImages);
+        _productImageIndices[prodId] = (current + 1) % totalImages;
+    }
+
+    private void SetCardImage(Guid prodId, int index)
+    {
+        _productImageIndices[prodId] = index;
+    }
+
+    private void OpenImagePopup(MaterialProduct prod, int index = 0)
+    {
+        _popupProduct = prod;
+        var images = GetProductImages(prod);
+        _popupImageIndex = images.Count > 0 ? Math.Clamp(index, 0, images.Count - 1) : 0;
+        _isImagePopupOpen = true;
+    }
+
+    private void CloseImagePopup()
+    {
+        _isImagePopupOpen = false;
+        _popupProduct = null;
+    }
+
+    private void PrevPopupImage()
+    {
+        if (_popupProduct == null) return;
+        var images = GetProductImages(_popupProduct);
+        if (images.Count > 1)
+        {
+            _popupImageIndex = (_popupImageIndex - 1 + images.Count) % images.Count;
+        }
+    }
+
+    private void NextPopupImage()
+    {
+        if (_popupProduct == null) return;
+        var images = GetProductImages(_popupProduct);
+        if (images.Count > 1)
+        {
+            _popupImageIndex = (_popupImageIndex + 1) % images.Count;
+        }
+    }
+
+    private void SelectPopupImage(int index)
+    {
+        if (_popupProduct == null) return;
+        var images = GetProductImages(_popupProduct);
+        if (index >= 0 && index < images.Count)
+        {
+            _popupImageIndex = index;
         }
     }
 }

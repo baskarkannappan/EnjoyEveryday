@@ -1,0 +1,90 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.FluentUI.AspNetCore.Components
+
+@if (IsLocked)
+{
+    <span class="@ComputedLockedClass" title="@(LockedTitle ?? "Unavailable – Branch Closed")" aria-disabled="true">
+        <span class="nav-lock-icon" aria-hidden="true">🔒</span>
+        <span>@(Text ?? Href)</span>
+    </span>
+}
+else
+{
+    <NavLink class="@ComputedClass" href="@Href" Match="@EffectiveMatch" @onclick="HandleClickAsync">
+        @if (ChildContent != null)
+        {
+            @ChildContent
+        }
+        else
+        {
+            @if (Icon != null)
+            {
+                @if (BadgeCount > 0)
+                {
+                    <div style="position: relative; display: flex; align-items: center;">
+                        <FluentIcon Value="@Icon" Color="@IconColor" CustomColor="@CustomColor" Width="@IconWidth" />
+                        <span class="nav-unread-dot"></span>
+                    </div>
+                }
+                else
+                {
+                    <FluentIcon Value="@Icon" Color="@IconColor" CustomColor="@CustomColor" Width="@IconWidth" />
+                }
+            }
+            <span>@Text</span>
+            @if (BadgeCount > 0)
+            {
+                <span class="nav-unread-badge">@BadgeCount</span>
+            }
+        }
+    </NavLink>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = string.Empty;
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public Icon? Icon { get; set; }
+    [Parameter] public Color? IconColor { get; set; } = Color.Custom;
+    [Parameter] public string? CustomColor { get; set; }
+    [Parameter] public string IconWidth { get; set; } = "20px";
+    [Parameter] public NavLinkMatch? Match { get; set; }
+    [Parameter] public bool IsLocked { get; set; } = false;
+    [Parameter] public string? LockedTitle { get; set; }
+    [Parameter] public int BadgeCount { get; set; } = 0;
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public bool IsSubmenuItem { get; set; } = false;
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [CascadingParameter(Name = "CloseMobileMenu")]
+    public Func<Task>? CloseMobileMenu { get; set; }
+
+    private NavLinkMatch EffectiveMatch => Match ?? (Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix);
+
+    private string ComputedClass =>
+        $"nav-item {(IsSubmenuItem ? "nav-sub-item" : "")} {(BadgeCount > 0 ? "nav-chat-item" : "")} {CssClass}".Trim();
+
+    private string ComputedLockedClass =>
+        $"nav-item nav-item-locked {(IsSubmenuItem ? "nav-sub-item" : "")} {CssClass}".Trim();
+
+    private async Task HandleClickAsync(MouseEventArgs e)
+    {
+        if (OnClick.HasDelegate)
+        {
+            await OnClick.InvokeAsync(e);
+        }
+        else if (CloseMobileMenu is not null)
+        {
+            try
+            {
+                await CloseMobileMenu.Invoke();
+            }
+            catch
+            {
+                // Ignore if mobile drawer is already closed or closing
+            }
+        }
+    }
+}

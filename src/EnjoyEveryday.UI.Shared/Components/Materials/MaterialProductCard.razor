@@ -17,7 +17,7 @@
         }
         @if (hasImages && !string.IsNullOrWhiteSpace(currentImg))
         {
-            <div class="carousel-container">
+            <div class="carousel-container" @onclick="OpenLightbox" style="cursor: zoom-in;" title="Click to view high-resolution image">
                 <img src="@currentImg" alt="@Product.Name" class="carousel-img" />
                 @if (images.Count > 1)
                 {
@@ -32,6 +32,7 @@
                         }
                     </div>
                 }
+                <span class="zoom-pill" title="Click to enlarge">🔍</span>
             </div>
         }
         else
@@ -115,23 +116,82 @@
     </div>
 </div>
 
+@if (_isLightboxOpen)
+{
+    var imgs = DisplayImages;
+    var safeIdx = Math.Clamp(_currentImageIndex, 0, Math.Max(0, imgs.Count - 1));
+    var activeImg = imgs.Count > 0 ? imgs[safeIdx] : null;
+
+    <div class="product-lightbox-backdrop" @onclick="CloseLightbox">
+        <div class="product-lightbox-modal" @onclick:stopPropagation="true">
+            <div class="product-lightbox-header">
+                <div>
+                    <span class="type-badge-static">@Product.Category</span>
+                    <h3 style="margin: 3px 0 0; font-size: 16px; font-weight: 750; color: var(--text, #26332d);">@Product.Name</h3>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    @if (imgs.Count > 1)
+                    {
+                        <span style="font-size: 12px; font-weight: 700; color: var(--muted, #6c7870); background: var(--surface-soft, #f8f9f5); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border, #e4e7df);">
+                            @(safeIdx + 1) / @imgs.Count
+                        </span>
+                    }
+                    <button type="button" class="product-lightbox-close" @onclick="CloseLightbox">✕</button>
+                </div>
+            </div>
+
+            <div class="product-lightbox-body">
+                @if (!string.IsNullOrWhiteSpace(activeImg))
+                {
+                    <img src="@activeImg" alt="@Product.Name" class="product-lightbox-img" />
+                }
+                else
+                {
+                    <div style="font-size: 60px;">🎨</div>
+                }
+
+                @if (imgs.Count > 1)
+                {
+                    <button type="button" class="lightbox-arrow prev" title="Previous image" @onclick="PrevImage">‹</button>
+                    <button type="button" class="lightbox-arrow next" title="Next image" @onclick="NextImage">›</button>
+                }
+            </div>
+
+            @if (imgs.Count > 1)
+            {
+                <div class="product-lightbox-thumbs">
+                    @for (int i = 0; i < imgs.Count; i++)
+                    {
+                        var tIdx = i;
+                        <button type="button" class="lightbox-thumb @(tIdx == safeIdx ? "active" : "")" @onclick="() => SelectImage(tIdx)">
+                            <img src="@imgs[tIdx]" alt="" />
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
 @code {
     [Parameter, EditorRequired] public MaterialProduct Product { get; set; } = null!;
     [Parameter] public EventCallback<MaterialProduct> OnViewDetails { get; set; }
     [Parameter] public EventCallback<MaterialProduct> OnAddToOrder { get; set; }
 
     private int _currentImageIndex = 0;
+    private bool _isLightboxOpen = false;
 
     private List<string> DisplayImages
     {
         get
         {
             if (Product == null) return new List<string>();
+            var rawList = new List<string>();
             if (Product.ImageUrls != null && Product.ImageUrls.Count > 0)
             {
-                return Product.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+                rawList.AddRange(Product.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)));
             }
-            if (!string.IsNullOrWhiteSpace(Product.ImageUrl))
+            if (rawList.Count == 0 && !string.IsNullOrWhiteSpace(Product.ImageUrl))
             {
                 var trimmed = Product.ImageUrl.Trim();
                 if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
@@ -141,15 +201,28 @@
                         var parsed = System.Text.Json.JsonSerializer.Deserialize<List<string>>(trimmed);
                         if (parsed != null && parsed.Count > 0)
                         {
-                            return parsed.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+                            rawList.AddRange(parsed.Where(u => !string.IsNullOrWhiteSpace(u)));
                         }
                     }
                     catch { }
                 }
-                return new List<string> { trimmed };
+                else
+                {
+                    rawList.Add(trimmed);
+                }
             }
-            return new List<string>();
+            return rawList.Select(u => (!u.StartsWith("/") && !u.StartsWith("http", StringComparison.OrdinalIgnoreCase)) ? "/" + u : u).ToList();
         }
+    }
+
+    private void OpenLightbox()
+    {
+        _isLightboxOpen = true;
+    }
+
+    private void CloseLightbox()
+    {
+        _isLightboxOpen = false;
     }
 
     private void PrevImage()

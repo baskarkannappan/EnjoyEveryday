@@ -63,6 +63,15 @@ EnjoyEveryday is a daycare and early-childhood education management platform.
   * **Branch Admin** (8 groups): Workspace, Branch Management, People & Admissions (with Admissions submenu), Daycare Operations (with Safety & Compliance submenu), Experiences, Child Development, Family Engagement, Reports & Settings.
   * **Lead Teacher** (7 groups): My Workspace, Classroom Management, Child Care, Experiences & Activities, Child Development, Family Engagement, My Account (with Safety submenu).
   * **Teacher / Educator** (6 groups): My Workspace, My Classroom, Daily Care, Activities, Child Development, My Account (with Safety submenu).
+* **Reusable Navigation Link Component (`AppNavLink.razor`)**:
+  * Shared component located at `src/EnjoyEveryday.UI.Shared/Components/AppNavLink.razor` under the `EnjoyEveryday.UI.Shared.Components` namespace.
+  * Replaces redundant boilerplate across `NavMenu.razor` by encapsulating:
+    * Operational branch lock detection and rendering (`IsLocked`, `LockedTitle`, `nav-item-locked` badge).
+    * FluentIcon integration (`Icon`, `IconColor`, `CustomColor`, `IconWidth`).
+    * Automatic `NavLinkMatch` resolution (`Match.All` for root `/`, `Match.Prefix` for sub-routes).
+    * Submenu styling (`IsSubmenuItem="true"` adds `nav-sub-item`).
+    * Realtime unread count badges & indicator dots (`BadgeCount`).
+    * Automatic mobile drawer close invocation via cascading parameter `CloseMobileMenu` or explicit `OnClick`.
 * **Typography & Casing**: Group headers, main menu items, and submenus are consistently formatted in Title Case / Camel Case (`My Workspace`, `Daycare Operations`, `People & Admissions`, `Child Development`) with `text-transform: none` to maintain a calm, natural, Scandinavian aesthetic rather than aggressive all-caps.
 * **Nested Submenus**: Multi-level hierarchical submenus use `HashSet<string> _openSubmenus` for independent expand/collapse states with `border-left: 1.5px solid var(--border)` visual rails.
 * **Context Display & Switchers**: Sidebar footer houses the user avatar, name, active role badge, quick workspace switchers (`/select-branch`, `/select-organization`), and view dropdown selector for multi-role users.

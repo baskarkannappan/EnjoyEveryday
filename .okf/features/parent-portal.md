@@ -39,7 +39,10 @@ Hosted in `src/EnjoyEveryday.Parent.Web` (port `7005`). Designed specifically fo
   - **Classroom Giving Page (`/giving`)**: Two giving modes:
     1. *Birthday Gift*: Select a celebrating classmate peer in the child's room (respecting privacy consent settings), add greeting message.
     2. *General Classroom Contribution*: Contribute educational toys, art kits, books, or activity supplies for general classroom use.
-  - **Product Catalog Reuse**: Dynamically queries existing marketplace products (`material_products` and `material_offerings`) without duplicating the product catalog.
+  - **Product Catalog Reuse & Multi-Image Lightbox**: Dynamically queries existing marketplace products (`material_products` and `material_offerings`) without duplicating the product catalog. Features:
+    * Interactive multi-image product carousels with next/previous arrow navigation (`‹` / `›`) and pagination dots.
+    * Click-to-enlarge full-resolution image popup lightbox modal with image scrolling arrows, thumbnails drawer, product details, and quick "Add to Gift" CTA.
+    * Real asset fallback supporting both uploaded WebP media endpoints (`/api/media/{id}/display`) and localized static educational assets.
   - **Mandatory Facility Destination**: Enforces delivery strictly to either the child's branch registered address or organization headquarters (pulled from `facility_profiles`). Home delivery is prohibited.
   - **Giving Orders Tracker (`/giving/orders`)**: Real-time order progress timeline, approval status, payment modal supporting 4 payment methods (Cash, Org Razorpay, UPI QR with UTR submission, Direct Bank Transfer), official receipt modal, and immutable audit timeline drawer.
 
