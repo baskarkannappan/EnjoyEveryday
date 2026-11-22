@@ -277,9 +277,10 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get
         {
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var orgClaim = User!.FindFirst("ActiveOrganizationId")?.Value ?? User!.FindFirst("OrganizationId")?.Value;
+                var orgClaim = user.FindFirst("ActiveOrganizationId")?.Value ?? user.FindFirst("OrganizationId")?.Value;
                 if (Guid.TryParse(orgClaim, out var orgId))
                     return orgId;
 
@@ -303,14 +304,23 @@ public class AppIdentityContext : IUserContext, ITenantContext
     {
         get
         {
-            if (HasValidAuthenticatedIdentity)
+            var user = User;
+            if (user?.Identity?.IsAuthenticated == true)
             {
-                var branchClaim = User!.FindFirst("ActiveBranchId")?.Value ?? User!.FindFirst("BranchId")?.Value;
+                var branchClaim = user.FindFirst("ActiveBranchId")?.Value ?? user.FindFirst("BranchId")?.Value;
                 if (Guid.TryParse(branchClaim, out var branchId))
                     return branchId;
 
                 return null;
             }
+
+            if (IsDevelopment())
+            {
+                var devBranch = _configuration["DevBranchId"];
+                if (Guid.TryParse(devBranch, out var devBranchId))
+                    return devBranchId;
+            }
+
             return null;
         }
     }
