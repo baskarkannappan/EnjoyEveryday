@@ -1,4 +1,4 @@
-﻿﻿﻿@* Streamlined Role-Tailored Collapsible Navigation Menu with Multiple Groups & Submenus *@
+﻿@* Streamlined Role-Tailored Collapsible Navigation Menu with Multiple Groups & Submenus *@
 @using Microsoft.AspNetCore.Components.Authorization
 @using EnjoyEveryday.Shared.Authorization
 @inject NavigationManager NavigationManager
@@ -17,7 +17,7 @@
     <div style="flex-grow: 1; overflow-y: auto; padding-right: 3px;">
     
     <!-- BRANDING HEADER -->
-    <a href="/" @onclick="HandleNavItemClickAsync" style="text-decoration: none; display: flex; gap: 9px; align-items: center; padding: 6px 8px 12px;">
+    <a href="/" @onclick="HandleNavItemClickAsync" style="text-decoration: none; display: flex; gap: 9px; align-items: center; padding: 6px 8px 10px;">
         <div style="width: 32px; height: 32px; border-radius: 0px; background: var(--accent-light, #e6eee9); color: var(--accent-dark, #31523c); display: grid; place-items: center; font-size: 16px; box-shadow: 0 2px 6px rgba(85, 124, 108, 0.12);">
             <img src="/images/logo.png" alt="EnjoyEveryday" style="width: 22px; height: 22px; object-fit: contain;" />
         </div>
@@ -44,6 +44,13 @@
         </div>
     </a>
 
+    <!-- QUICK SEARCH TRIGGER -->
+    <button type="button" class="nav-quick-search-btn" @onclick="HandleOpenQuickSearchAsync" title="Quick Search (Ctrl+K)">
+        <FluentIcon Value="@(new Icons.Regular.Size16.Search())" Color="Color.Custom" CustomColor="var(--muted, #6c7870)" />
+        <span class="nav-quick-search-text">Quick search…</span>
+        <kbd class="nav-quick-search-kbd">Ctrl K</kbd>
+    </button>
+
     @if (IsBranchUiLocked())
     {
         <div class="nav-branch-closed-pill" title="Unavailable – Branch Closed">
@@ -53,615 +60,57 @@
     }
 
     @* ========================================================================= *@
-    @* 1. TEACHER (EDUCATOR) MENU (5 Functional Groups - Collapsible)            *@
+    @* DATA-DRIVEN ROLE-TAILORED COLLAPSIBLE NAVIGATION                          *@
     @* ========================================================================= *@
-    @if (_currentNavView == "Teacher")
+    @foreach (var group in GetActiveNavGroups())
     {
-        <!-- GROUP 1: TODAY -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("t_workspace")'>
+        <div class="nav-group-header" @onclick="() => ToggleGroup(group.Key)">
             <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Width="15px" Color="Color.Custom" CustomColor="#b47836" />
-                <span class="nav-group-header-title">Today</span>
+                <FluentIcon Value="@group.Icon" Width="15px" Color="Color.Custom" CustomColor="@group.Color" />
+                <span class="nav-group-header-title">@group.Title</span>
             </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("t_workspace") ? "▾" : "▸")</span>
+            <span class="nav-group-header-chevron">@(IsGroupOpen(group.Key) ? "▾" : "▸")</span>
         </div>
-        @if (IsGroupOpen("t_workspace"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/" Text="My Dashboard" Icon="@(new Icons.Regular.Size20.WeatherSunny())" CustomColor="#31523c" Match="NavLinkMatch.All" IsLocked='@IsNavLocked("/")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/today-activities" Text="Today's Schedule" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#d97706" IsLocked='@IsNavLocked("/today-activities")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/notifications" Text="Notifications" Icon="@(new Icons.Regular.Size20.Alert())" CustomColor="#f59e0b" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 2: CLASSROOM & CARE -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("t_classroom")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.PeopleCommunity())" Width="15px" Color="Color.Custom" CustomColor="#1b7a54" />
-                <span class="nav-group-header-title">Classroom &amp; Care</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("t_classroom") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("t_classroom"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/children" Text="Children" Icon="@(new Icons.Regular.Size20.PersonAvailable())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/attendance" Text="Attendance" Icon="@(new Icons.Regular.Size20.CheckmarkCircle())" CustomColor="#1b7a54" Match="NavLinkMatch.All" IsLocked='@IsNavLocked("/management/attendance")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care" Text="Daily Care" Icon="@(new Icons.Regular.Size20.ClipboardTask())" CustomColor="#e11d48" IsLocked='@IsNavLocked("/daily-care")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/plans" Text="Care Plans" Icon="@(new Icons.Regular.Size20.Heart())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/supplies" Text="Supplies" Icon="@(new Icons.Regular.Size20.ClipboardTask())" CustomColor="#b45309" IsLocked='@IsNavLocked("/daily-care/supplies")' OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 3: LEARNING -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("t_activities")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Width="15px" Color="Color.Custom" CustomColor="#c06c3a" />
-                <span class="nav-group-header-title">Learning</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("t_activities") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("t_activities"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/experiences" Text="Experiences" Icon="@(new Icons.Regular.Size20.Library())" CustomColor="#0891b2" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/harvest" Text="Harvest" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#059669" IsLocked='@IsNavLocked("/harvest")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/journey" Text="Child Journey" Icon="@(new Icons.Regular.Size20.LeafOne())" CustomColor="#16a34a" IsLocked='@IsNavLocked("/journey")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/memories" Text="Memories" Icon="@(new Icons.Regular.Size20.Camera())" CustomColor="#db2777" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/events" Text="Events" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#8b5cf6" IsLocked='@IsNavLocked("/events")' OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 4: COMMS & SAFETY -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("t_care")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Width="15px" Color="Color.Custom" CustomColor="#1e6091" />
-                <span class="nav-group-header-title">Comms &amp; Safety</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("t_care") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("t_care"))
+        @if (IsGroupOpen(group.Key))
         {
             <div class="nav-group">
-                <AppNavLink Href="/classroom-messages" Text="Parent Chat" Icon="@(new Icons.Regular.Size20.Chat())" CustomColor="#31523c" BadgeCount="@_chatUnreadCount" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/announcements" Text="Announcements" Icon="@(new Icons.Regular.Size20.Megaphone())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-
-                <!-- Safety Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("t_safety") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("t_safety")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.Shield())" Color="Color.Custom" CustomColor="#dc2626" />
-                        <span>Safety &amp; Emergency</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("t_safety") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("t_safety"))
+                @foreach (var item in group.Items)
                 {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/safety-trust/floor-maps" Text="Floor Maps" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/safety-trust/emergency-contacts" Text="Emergency Contacts" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
+                    @if (item.SubItems is not null && !string.IsNullOrEmpty(item.SubmenuKey))
+                    {
+                        var submenuKey = item.SubmenuKey;
+                        <div class="nav-item nav-submenu-toggle @(IsSubmenuActive(submenuKey) ? "active-parent" : "")" @onclick="() => ToggleSubmenu(submenuKey)">
+                            <div style="display: flex; align-items: center; gap: 9px;">
+                                @if (item.Icon is not null)
+                                {
+                                    <FluentIcon Value="@item.Icon" Color="Color.Custom" CustomColor="@item.CustomColor" />
+                                }
+                                <span>@item.Text</span>
+                            </div>
+                            <span class="nav-submenu-chevron">@(IsSubmenuOpen(submenuKey) ? "▾" : "▸")</span>
+                        </div>
+                        @if (IsSubmenuOpen(submenuKey))
+                        {
+                            <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
+                                @foreach (var sub in item.SubItems)
+                                {
+                                    <AppNavLink Href="@sub.Href" Text="@sub.Text" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <AppNavLink Href="@item.Href"
+                                    Text="@item.Text"
+                                    Icon="@item.Icon"
+                                    CustomColor="@item.CustomColor"
+                                    Match="@(item.MatchAll ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                                    IsLocked="@(item.CheckBranchLock && IsNavLocked(item.Href))"
+                                    BadgeCount="@GetBadgeCount(item.BadgeKey)"
+                                    OnClick="HandleNavItemClickAsync" />
+                    }
                 }
-            </div>
-        }
-
-        <!-- GROUP 5: ACCOUNT -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("t_account")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Person())" Width="15px" Color="Color.Custom" CustomColor="#5c4a72" />
-                <span class="nav-group-header-title">Account</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("t_account") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("t_account"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/profile" Text="My Profile" Icon="@(new Icons.Regular.Size20.Person())" CustomColor="#6366f1" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/branch-info" Text="Campus Info" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/support" Text="Help &amp; Support" Icon="@(new Icons.Regular.Size20.QuestionCircle())" CustomColor="#0ea5e9" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/version" Text="Version" Icon="@(new Icons.Regular.Size20.Info())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-    }
-    @* ========================================================================= *@
-    @* 2. LEAD TEACHER MENU (6 Functional Groups - Collapsible)                  *@
-    @* ========================================================================= *@
-    else if (_currentNavView == "LeadTeacher")
-    {
-        <!-- GROUP 1: TODAY -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("lt_workspace")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.WeatherSunny())" Width="15px" Color="Color.Custom" CustomColor="#b47836" />
-                <span class="nav-group-header-title">Today</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("lt_workspace") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("lt_workspace"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/" Text="My Dashboard" Icon="@(new Icons.Regular.Size20.WeatherSunny())" CustomColor="#31523c" Match="NavLinkMatch.All" IsLocked='@IsNavLocked("/")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/today-activities" Text="Today's Schedule" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#d97706" IsLocked='@IsNavLocked("/today-activities")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/notifications" Text="Notifications" Icon="@(new Icons.Regular.Size20.Alert())" CustomColor="#f59e0b" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 2: CLASSROOM & CARE -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("lt_care")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.PeopleCommunity())" Width="15px" Color="Color.Custom" CustomColor="#1b7a54" />
-                <span class="nav-group-header-title">Classroom &amp; Care</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("lt_care") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("lt_care"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/children" Text="Children" Icon="@(new Icons.Regular.Size20.PersonAvailable())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/attendance" Text="Attendance" Icon="@(new Icons.Regular.Size20.CheckmarkCircle())" CustomColor="#1b7a54" Match="NavLinkMatch.All" IsLocked='@IsNavLocked("/management/attendance")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care" Text="Daily Care &amp; Handover" Icon="@(new Icons.Regular.Size20.ClipboardTask())" CustomColor="#e11d48" IsLocked='@IsNavLocked("/daily-care")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/plans" Text="Care Plans" Icon="@(new Icons.Regular.Size20.Heart())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/supplies" Text="Supplies" Icon="@(new Icons.Regular.Size20.ClipboardTask())" CustomColor="#b45309" IsLocked='@IsNavLocked("/daily-care/supplies")' OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 3: LEAD & ROSTER -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("lt_classroom")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Width="15px" Color="Color.Custom" CustomColor="#2b5c8f" />
-                <span class="nav-group-header-title">Lead &amp; Roster</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("lt_classroom") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("lt_classroom"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/classrooms" Text="My Classrooms" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/roster" Text="Staff Coverage" Icon="@(new Icons.Regular.Size20.PersonCall())" CustomColor="#dc2626" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 4: LEARNING -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("lt_activities")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Width="15px" Color="Color.Custom" CustomColor="#c06c3a" />
-                <span class="nav-group-header-title">Learning</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("lt_activities") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("lt_activities"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/experiences" Text="Experiences" Icon="@(new Icons.Regular.Size20.Library())" CustomColor="#0891b2" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/marketplace" Text="Marketplace" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/studio" Text="Studio" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#9333ea" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/planning" Text="Planning" Icon="@(new Icons.Regular.Size20.CalendarLtr())" CustomColor="#b47836" IsLocked='@IsNavLocked("/planning")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/harvest" Text="Harvest" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#d97706" IsLocked='@IsNavLocked("/harvest")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/materials-marketplace" Text="Materials" Icon="@(new Icons.Regular.Size20.Receipt())" CustomColor="#c2410c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/journey" Text="Child Journey" Icon="@(new Icons.Regular.Size20.LeafOne())" CustomColor="#16a34a" IsLocked='@IsNavLocked("/journey")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/memories" Text="Memories" Icon="@(new Icons.Regular.Size20.Camera())" CustomColor="#db2777" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/insights" Text="Progress &amp; Insights" Icon="@(new Icons.Regular.Size20.BrainCircuit())" CustomColor="#7c3aed" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 5: COMMS & SAFETY -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("lt_family")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Width="15px" Color="Color.Custom" CustomColor="#1e6091" />
-                <span class="nav-group-header-title">Comms &amp; Safety</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("lt_family") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("lt_family"))
-        {
-            <div class="nav-group">
-                <AppNavLink Href="/classroom-messages" Text="Parent Chat" Icon="@(new Icons.Regular.Size20.Chat())" CustomColor="#31523c" BadgeCount="@_chatUnreadCount" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/announcements" Text="Announcements" Icon="@(new Icons.Regular.Size20.Megaphone())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-
-                <!-- Safety Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("lt_safety") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("lt_safety")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.Shield())" Color="Color.Custom" CustomColor="#dc2626" />
-                        <span>Safety &amp; Emergency</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("lt_safety") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("lt_safety"))
-                {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/safety-trust/floor-maps" Text="Floor Maps" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/safety-trust/emergency-contacts" Text="Emergency Contacts" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
-                }
-            </div>
-        }
-
-        <!-- GROUP 6: ACCOUNT -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("lt_account")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Person())" Width="15px" Color="Color.Custom" CustomColor="#5c4a72" />
-                <span class="nav-group-header-title">Account</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("lt_account") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("lt_account"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/profile" Text="My Profile" Icon="@(new Icons.Regular.Size20.Person())" CustomColor="#6366f1" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/branch-info" Text="Campus Info" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/support" Text="Help &amp; Support" Icon="@(new Icons.Regular.Size20.QuestionCircle())" CustomColor="#0ea5e9" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/version" Text="Version" Icon="@(new Icons.Regular.Size20.Info())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-    }
-    @* ========================================================================= *@
-    @* 3. BRANCH ADMIN MENU (7 Functional Groups - Collapsible)                  *@
-    @* ========================================================================= *@
-    else if (_currentNavView == "BranchAdmin")
-    {
-        <!-- GROUP 1: TODAY -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_workspace")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Board())" Width="15px" Color="Color.Custom" CustomColor="#31523c" />
-                <span class="nav-group-header-title">Today</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_workspace") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_workspace"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/" Text="Branch Dashboard" Icon="@(new Icons.Regular.Size20.Board())" CustomColor="#31523c" Match="NavLinkMatch.All" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/today-activities" Text="Today's Live" Icon="@(new Icons.Regular.Size20.WeatherSunny())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/notifications" Text="Notifications" Icon="@(new Icons.Regular.Size20.Alert())" CustomColor="#f59e0b" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 2: BRANCH & STAFF -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_branch")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Building())" Width="15px" Color="Color.Custom" CustomColor="#31523c" />
-                <span class="nav-group-header-title">Branch &amp; Staff</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_branch") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_branch"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/classrooms" Text="Classrooms" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/roster" Text="Staff Roster" Icon="@(new Icons.Regular.Size20.PersonCall())" CustomColor="#dc2626" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/teachers" Text="Teachers" Icon="@(new Icons.Regular.Size20.Person())" CustomColor="#4f46e5" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/users-by-role" Text="Role Assignments" Icon="@(new Icons.Regular.Size20.PeopleTeam())" CustomColor="#4f46e5" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/branches" Text="Branch Settings" Icon="@(new Icons.Regular.Size20.Settings())" CustomColor="#4b5563" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/profile-customizer" Text="Customize Profile" Icon="@(new Icons.Regular.Size20.Edit())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/branch-info" Text="Campus Info" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 3: PEOPLE & ADMISSIONS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_people")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Width="15px" Color="Color.Custom" CustomColor="#2b5c8f" />
-                <span class="nav-group-header-title">People &amp; Admissions</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_people") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_people"))
-        {
-            <div class="nav-group">
-                <AppNavLink Href="/children" Text="Children" Icon="@(new Icons.Regular.Size20.PersonAvailable())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/inquiries" Text="Inquiries" Icon="@(new Icons.Regular.Size20.Mail())" CustomColor="#31523c" OnClick="HandleNavItemClickAsync" />
-
-                <!-- Admissions Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("ba_admissions") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("ba_admissions")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.CalendarAdd())" Color="Color.Custom" CustomColor="#0284c7" />
-                        <span>Admissions</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("ba_admissions") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("ba_admissions"))
-                {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/enrollment?action=new-inquiry" Text="New Inquiry" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/enrollment" Text="Pipeline" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/children" Text="Enrolled" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
-                }
-            </div>
-        }
-
-        <!-- GROUP 4: OPERATIONS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_ops")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.CalendarClock())" Width="15px" Color="Color.Custom" CustomColor="#b85d43" />
-                <span class="nav-group-header-title">Operations</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_ops") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_ops"))
-        {
-            <div class="nav-group">
-                <AppNavLink Href="/management/attendance" Text="Attendance" Icon="@(new Icons.Regular.Size20.CheckmarkCircle())" CustomColor="#1b7a54" Match="NavLinkMatch.All" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/attendance/monthly-children" Text="Child Register" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#0284c7" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/attendance/monthly-teachers" Text="Staff Register" Icon="@(new Icons.Regular.Size20.PeopleCommunity())" CustomColor="#6366f1" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care" Text="Daily Care" Icon="@(new Icons.Regular.Size20.Heart())" CustomColor="#e11d48" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/plans" Text="Care Plans" Icon="@(new Icons.Regular.Size20.Heart())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/supplies" Text="Supplies" Icon="@(new Icons.Regular.Size20.ClipboardTask())" CustomColor="#b45309" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/events" Text="Events" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#8b5cf6" OnClick="HandleNavItemClickAsync" />
-
-                <!-- Safety Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("ba_safety") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("ba_safety")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.ShieldCheckmark())" Color="Color.Custom" CustomColor="#059669" />
-                        <span>Safety &amp; Compliance</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("ba_safety") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("ba_safety"))
-                {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/safety-compliance" Text="Compliance" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/safety-trust/floor-maps" Text="Floor Maps" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/safety-trust/emergency-contacts" Text="Emergency Contacts" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
-                }
-            </div>
-        }
-
-        <!-- GROUP 5: LEARNING & EXPERIENCES -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_exp")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Width="15px" Color="Color.Custom" CustomColor="#c06c3a" />
-                <span class="nav-group-header-title">Learning &amp; Experiences</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_exp") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_exp"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/experiences" Text="Experiences" Icon="@(new Icons.Regular.Size20.Library())" CustomColor="#0891b2" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/marketplace" Text="Marketplace" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/studio" Text="Studio" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#9333ea" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/planning" Text="Planning" Icon="@(new Icons.Regular.Size20.CalendarLtr())" CustomColor="#b47836" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/harvest" Text="Harvest" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/journey" Text="Child Journey" Icon="@(new Icons.Regular.Size20.LeafOne())" CustomColor="#16a34a" IsLocked='@IsNavLocked("/journey")' OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/memories" Text="Memories" Icon="@(new Icons.Regular.Size20.Camera())" CustomColor="#db2777" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/materials-marketplace" Text="Materials" Icon="@(new Icons.Regular.Size20.Receipt())" CustomColor="#c2410c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/gifting-orders" Text="Gifting Orders" Icon="@(new Icons.Regular.Size20.Gift())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/gifting-reports" Text="Gifting Reports" Icon="@(new Icons.Regular.Size20.ChartMultiple())" CustomColor="#2563eb" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 6: COMMS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_family")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Width="15px" Color="Color.Custom" CustomColor="#1e6091" />
-                <span class="nav-group-header-title">Comms</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_family") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_family"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/classroom-messages" Text="Parent Chat" Icon="@(new Icons.Regular.Size20.Chat())" CustomColor="#31523c" BadgeCount="@_chatUnreadCount" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/announcements" Text="Announcements" Icon="@(new Icons.Regular.Size20.Megaphone())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 7: REPORTS & ACCOUNT -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("ba_reports")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.BrainCircuit())" Width="15px" Color="Color.Custom" CustomColor="#7c3aed" />
-                <span class="nav-group-header-title">Reports &amp; Account</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("ba_reports") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("ba_reports"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/insights" Text="Branch Reports" Icon="@(new Icons.Regular.Size20.BrainCircuit())" CustomColor="#7c3aed" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/attendance/monthly" Text="Monthly Attendance" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#0284c7" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/profile" Text="My Profile" Icon="@(new Icons.Regular.Size20.Person())" CustomColor="#6366f1" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/support" Text="Help &amp; Support" Icon="@(new Icons.Regular.Size20.QuestionCircle())" CustomColor="#0ea5e9" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/version" Text="Version" Icon="@(new Icons.Regular.Size20.Info())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-    }
-    @* ========================================================================= *@
-    @* 4. ORGANIZATION ADMIN MENU (7 Functional Groups - Collapsible)            *@
-    @* ========================================================================= *@
-    else
-    {
-        <!-- GROUP 1: TODAY -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_workspace")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Board())" Width="15px" Color="Color.Custom" CustomColor="#31523c" />
-                <span class="nav-group-header-title">Today</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_workspace") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_workspace"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/" Text="Dashboard" Icon="@(new Icons.Regular.Size20.Board())" CustomColor="#31523c" Match="NavLinkMatch.All" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/insights" Text="Org Overview" Icon="@(new Icons.Regular.Size20.BrainCircuit())" CustomColor="#7c3aed" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/notifications" Text="Notifications" Icon="@(new Icons.Regular.Size20.Alert())" CustomColor="#f59e0b" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 2: ORG -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_mgmt")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Building())" Width="15px" Color="Color.Custom" CustomColor="#2b5c8f" />
-                <span class="nav-group-header-title">Org</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_mgmt") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_mgmt"))
-        {
-            <div class="nav-group">
-                <AppNavLink Href="/organization/profile" Text="Org Profile" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#31523c" OnClick="HandleNavItemClickAsync" />
-
-                <!-- Branch Management Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("org_branches") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("org_branches")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.Building())" Color="Color.Custom" CustomColor="#4f46e5" />
-                        <span>Branches</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("org_branches") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("org_branches"))
-                {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/organization/branches" Text="All Branches" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/management/branches/new" Text="New Branch" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
-                }
-
-                <!-- Organization Staff & Roles Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("org_staff") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("org_staff")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.PeopleTeam())" Color="Color.Custom" CustomColor="#4f46e5" />
-                        <span>Staff &amp; Roles</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("org_staff") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("org_staff"))
-                {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/users-by-role" Text="All Staff" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/teachers" Text="Teachers" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/management/roster" Text="Coverage Roster" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
-                }
-
-                <AppNavLink Href="/roles" Text="Role Matrix" Icon="@(new Icons.Regular.Size20.Key())" CustomColor="#b45309" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 3: PEOPLE & ADMISSIONS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_people")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.PersonAvailable())" Width="15px" Color="Color.Custom" CustomColor="#059669" />
-                <span class="nav-group-header-title">People &amp; Admissions</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_people") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_people"))
-        {
-            <div class="nav-group">
-                <AppNavLink Href="/children" Text="Children &amp; Families" Icon="@(new Icons.Regular.Size20.PersonAvailable())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/inquiries" Text="Inquiries" Icon="@(new Icons.Regular.Size20.Mail())" CustomColor="#31523c" OnClick="HandleNavItemClickAsync" />
-
-                <!-- Admissions Submenu -->
-                <div class="nav-item nav-submenu-toggle @(IsSubmenuActive("org_admissions") ? "active-parent" : "")" @onclick='() => ToggleSubmenu("org_admissions")'>
-                    <div style="display: flex; align-items: center; gap: 9px;">
-                        <FluentIcon Value="@(new Icons.Regular.Size20.CalendarAdd())" Color="Color.Custom" CustomColor="#0284c7" />
-                        <span>Admissions</span>
-                    </div>
-                    <span class="nav-submenu-chevron">@(IsSubmenuOpen("org_admissions") ? "▾" : "▸")</span>
-                </div>
-                @if (IsSubmenuOpen("org_admissions"))
-                {
-                    <div class="nav-submenu-group" @onclick="HandleNavItemClickAsync">
-                        <AppNavLink Href="/enrollment?action=new-inquiry" Text="New Inquiry" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/enrollment" Text="Pipeline" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                        <AppNavLink Href="/children" Text="Enrolled" IsSubmenuItem="true" OnClick="HandleNavItemClickAsync" />
-                    </div>
-                }
-            </div>
-        }
-
-        <!-- GROUP 4: OPERATIONS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_ops")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.CalendarClock())" Width="15px" Color="Color.Custom" CustomColor="#b85d43" />
-                <span class="nav-group-header-title">Operations</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_ops") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_ops"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/classrooms" Text="Classrooms" Icon="@(new Icons.Regular.Size20.Board())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/attendance" Text="Attendance" Icon="@(new Icons.Regular.Size20.CheckmarkCircle())" CustomColor="#1b7a54" Match="NavLinkMatch.All" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/attendance/monthly-children" Text="Child Register" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#0284c7" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/attendance/monthly-teachers" Text="Staff Register" Icon="@(new Icons.Regular.Size20.PeopleCommunity())" CustomColor="#6366f1" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/plans" Text="Care Plans" Icon="@(new Icons.Regular.Size20.Heart())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/daily-care/supplies" Text="Supplies" Icon="@(new Icons.Regular.Size20.ClipboardTask())" CustomColor="#b45309" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/events" Text="Events" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#8b5cf6" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 5: LEARNING & EXPERIENCES -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_exp")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Sparkle())" Width="15px" Color="Color.Custom" CustomColor="#c06c3a" />
-                <span class="nav-group-header-title">Learning &amp; Experiences</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_exp") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_exp"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/experiences" Text="Experiences" Icon="@(new Icons.Regular.Size20.Library())" CustomColor="#0891b2" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/marketplace" Text="Marketplace" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/studio" Text="Studio" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#9333ea" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/planning" Text="Planning" Icon="@(new Icons.Regular.Size20.CalendarMonth())" CustomColor="#b47836" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/today-activities" Text="Live Execution" Icon="@(new Icons.Regular.Size20.WeatherSunny())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/harvest" Text="Harvest" Icon="@(new Icons.Regular.Size20.Sparkle())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/journey" Text="Child Journey" Icon="@(new Icons.Regular.Size20.LeafOne())" CustomColor="#16a34a" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/memories" Text="Memories" Icon="@(new Icons.Regular.Size20.Camera())" CustomColor="#db2777" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/materials-marketplace" Text="Materials" Icon="@(new Icons.Regular.Size20.Receipt())" CustomColor="#c2410c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/gifting-orders" Text="Gifting Orders" Icon="@(new Icons.Regular.Size20.Gift())" CustomColor="#d97706" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/gifting-reports" Text="Gifting Reports" Icon="@(new Icons.Regular.Size20.ChartMultiple())" CustomColor="#2563eb" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 6: COMMS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_family")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Chat())" Width="15px" Color="Color.Custom" CustomColor="#1e6091" />
-                <span class="nav-group-header-title">Comms</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_family") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_family"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/classroom-messages" Text="Parent Chat" Icon="@(new Icons.Regular.Size20.Chat())" CustomColor="#31523c" BadgeCount="@_chatUnreadCount" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/announcements" Text="Announcements" Icon="@(new Icons.Regular.Size20.Megaphone())" CustomColor="#ea580c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/stories" Text="Family Stories" Icon="@(new Icons.Regular.Size20.Chat())" CustomColor="#0284c7" OnClick="HandleNavItemClickAsync" />
-            </div>
-        }
-
-        <!-- GROUP 7: BILLING & SETTINGS -->
-        <div class="nav-group-header" @onclick='() => ToggleGroup("org_business")'>
-            <div class="nav-group-header-label">
-                <FluentIcon Value="@(new Icons.Regular.Size20.Receipt())" Width="15px" Color="Color.Custom" CustomColor="#b47836" />
-                <span class="nav-group-header-title">Billing &amp; Settings</span>
-            </div>
-            <span class="nav-group-header-chevron">@(IsGroupOpen("org_business") ? "▾" : "▸")</span>
-        </div>
-        @if (IsGroupOpen("org_business"))
-        {
-            <div class="nav-group" @onclick="HandleNavItemClickAsync">
-                <AppNavLink Href="/management/billing" Text="Parent Billing" Icon="@(new Icons.Regular.Size20.Receipt())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/fee-reports" Text="Fee Reports" Icon="@(new Icons.Regular.Size20.DataTrending())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                @if (_isOrgAdmin)
-                {
-                <AppNavLink Href="/management/payment-gateway" Text="Payment Gateway" Icon="@(new Icons.Regular.Size20.Payment())" CustomColor="#31523c" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/platform-billing" Text="Platform Billing" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/management/subscription" Text="Subscription" Icon="@(new Icons.Regular.Size20.Ribbon())" CustomColor="#31523c" OnClick="HandleNavItemClickAsync" />
-                }
-                <AppNavLink Href="/billing/reports" Text="Financial Reports" Icon="@(new Icons.Regular.Size20.ChartMultiple())" CustomColor="#0891b2" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/audit" Text="Audit Book" Icon="@(new Icons.Regular.Size20.Book())" CustomColor="#475569" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/settings" Text="Org Settings" Icon="@(new Icons.Regular.Size20.Settings())" CustomColor="#4b5563" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/profile-customizer" Text="Customize Profile" Icon="@(new Icons.Regular.Size20.Edit())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/branch-info" Text="Campus Info" Icon="@(new Icons.Regular.Size20.Building())" CustomColor="#059669" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/organization/storage-metrics" Text="Storage &amp; Media" Icon="@(new Icons.Regular.Size20.Storage())" CustomColor="#0d9488" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/settings/ai-agents" Text="AI Agents" Icon="@(new Icons.Regular.Size20.Bot())" CustomColor="#7c3aed" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/profile" Text="My Profile" Icon="@(new Icons.Regular.Size20.Person())" CustomColor="#6366f1" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/support" Text="Help &amp; Support" Icon="@(new Icons.Regular.Size20.QuestionCircle())" CustomColor="#0ea5e9" OnClick="HandleNavItemClickAsync" />
-                <AppNavLink Href="/version" Text="Version" Icon="@(new Icons.Regular.Size20.Info())" CustomColor="#52745e" OnClick="HandleNavItemClickAsync" />
             </div>
         }
     }
@@ -1086,6 +535,47 @@
 
     .nav-view-select:hover, .nav-view-select:focus {
         border-color: var(--accent, #52745e);
+    }
+
+    .nav-quick-search-btn {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        width: 100%;
+        padding: 7px 9px;
+        margin: 0 0 6px 0;
+        background: var(--surface-soft, #f8f9f5);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 8px;
+        cursor: pointer;
+        color: var(--muted, #6c7870);
+        font-size: 11.5px;
+        font-weight: 500;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .nav-quick-search-btn:hover {
+        background: var(--accent-light, #e6eee9);
+        border-color: #c8dacd;
+        color: var(--accent-dark, #31523c);
+    }
+
+    .nav-quick-search-text {
+        flex: 1;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .nav-quick-search-kbd {
+        font-size: 9.5px;
+        font-weight: 700;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        color: var(--muted, #6c7870);
     }
 </style>
 

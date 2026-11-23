@@ -1,0 +1,35 @@
+@namespace EnjoyEveryday.UI.Shared.Components
+@using Microsoft.AspNetCore.Components.Routing
+@inject IJSRuntime JSRuntime
+
+<NavigationLock ConfirmExternalNavigation="@IsDirty"
+                OnBeforeInternalNavigation="HandleBeforeInternalNavigationAsync" />
+
+@code {
+    [Parameter]
+    public bool IsDirty { get; set; }
+
+    [Parameter]
+    public string Message { get; set; } = "You have unsaved changes. Leave this page without saving?";
+
+    private async Task HandleBeforeInternalNavigationAsync(LocationChangingContext context)
+    {
+        if (!IsDirty)
+        {
+            return;
+        }
+
+        try
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", Message);
+            if (!confirmed)
+            {
+                context.PreventNavigation();
+            }
+        }
+        catch
+        {
+            // Allow navigation if JS interop is unavailable
+        }
+    }
+}

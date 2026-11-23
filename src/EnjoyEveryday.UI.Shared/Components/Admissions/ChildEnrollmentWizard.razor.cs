@@ -474,8 +474,13 @@ public partial class ChildEnrollmentWizard
         if (currentStep > 1) currentStep--;
     }
 
+    private bool _hasUnsavedChanges;
+
+    private void MarkDirty() => _hasUnsavedChanges = true;
+
     private void Cancel()
     {
+        _hasUnsavedChanges = false;
         NavigationManager.NavigateTo("/children");
     }
 
@@ -486,7 +491,8 @@ public partial class ChildEnrollmentWizard
             var format = "image/avif";
             var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
             var buffer = new byte[resizedImage.Size];
-            await resizedImage.OpenReadStream().ReadAsync(buffer);
+            await using var stream = resizedImage.OpenReadStream();
+            await stream.ReadExactlyAsync(buffer);
             childPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
         }
         catch (Exception ex)
@@ -502,7 +508,8 @@ public partial class ChildEnrollmentWizard
             var format = "image/avif";
             var resizedImage = await e.File.RequestImageFileAsync(format, 200, 200);
             var buffer = new byte[resizedImage.Size];
-            await resizedImage.OpenReadStream().ReadAsync(buffer);
+            await using var stream = resizedImage.OpenReadStream();
+            await stream.ReadExactlyAsync(buffer);
             parentPhotoPreview = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
         }
         catch (Exception ex)
@@ -514,6 +521,7 @@ public partial class ChildEnrollmentWizard
     private async Task CompleteEnrollment()
     {
         _stepErrorMessage = null;
+        _hasUnsavedChanges = false;
         if (_draftChild != null)
         {
             try
@@ -629,6 +637,7 @@ public partial class ChildEnrollmentWizard
                 try
                 {
                     await ChildService.DeleteChildAsync(Id.Value);
+                    _hasUnsavedChanges = false;
                     await NotificationService.ShowSuccessAsync("Child deleted successfully.");
                     NavigationManager.NavigateTo("/children");
                 }

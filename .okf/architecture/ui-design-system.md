@@ -109,12 +109,13 @@ To eliminate inconsistent font families, oversized headings, illegible micro-tex
    * `.person`: standard border, 0px border-radius, 16px padding.
    * `.person h3`: 14px 750 weight; `.person p`: 12px `var(--muted)`; `.person-interest`: 12px with uppercase 10.5px bold tag. Replaces legacy illegible 9px text.
 
-## 9. Mobile Viewport Reflow & Touch Standards (390px Viewports)
-* **Touch Targets**: Accordion headers, category toggles, and drawer items enforce minimum touch targets (`min-height: 36px` to `38px`) with explicit `-webkit-tap-highlight-color: transparent` and active touch states.
-* **Alert & Banner Reflow**: Multi-column alert banners (e.g. `Morning Operations Gate`) collapse to `flex-direction: column` with full-width primary action buttons on screens $\le 640\text{px}$ to prevent single-word vertical wrapping.
-* **Multi-Selector Form Rows**: Selectors sharing horizontal rows (such as Branch, Classroom, and Child in `ChildJourneyView`) stack vertically with `100%` width on mobile to prevent child selectors from being pushed off-screen.
-* **Badges & Observation Wraps**: Classification pills and descriptive observations in journey panels stack vertically with `insight-pill-row` above statement text, preventing margin cutoff on small touchscreens.
-* **Horizontal Data Grids & Matrices**: Tables with $\ge 5$ columns (such as `RolePermissionMatrixView`) provide smooth touch scrolling (`-webkit-overflow-scrolling: touch`), minimum table width, and explicit mobile horizontal swipe affordance banners.
+## 10. Navigation, Global Search & Reconnection Architecture
+* **Data-Driven `NavMenu`**: Replaces hardcoded duplicate role sections with a unified `NavGroupConfig` / `NavItemConfig` model filtered dynamically by active view (`Teacher`, `LeadTeacher`, `BranchAdmin`, `OrgAdmin`).
+* **Global Quick Search (`GlobalQuickSearch.razor`)**: Accessible via `Ctrl+K` / `Cmd+K` keyboard shortcut and mobile header search button. Indexes navigable pages from active role configuration and scoped children via `ChildService.GetChildrenAsync()`.
+* **SignalR Reconnection Banner**: Non-intrusive top-center floating status banner (`#components-reconnect-modal`) styled to reflect reconnecting, paused, and expired states without obscuring active work.
+* **Unsaved Changes Guard (`UnsavedChangesGuard.razor`)**: Reusable Blazor `<NavigationLock>` component preventing accidental internal and external navigation away from dirty forms (`ChildEnrollmentWizard`, `Settings`).
+* **Universal Confirmation (`ConfirmModal.razor`)**: Accessible Scandinavian-styled confirmation dialog replacing native browser `window.confirm(...)`.
+
 
 
 

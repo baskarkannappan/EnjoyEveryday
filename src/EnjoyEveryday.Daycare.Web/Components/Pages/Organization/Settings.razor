@@ -9,6 +9,8 @@
 @inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
 @inject NavigationManager Navigation
 
+<UnsavedChangesGuard IsDirty="@_isDirty" />
+
 <div class="content">
     <PageHero Eyebrow="CONFIGURATION"
               Title="Settings"
@@ -29,9 +31,9 @@
                      OnConfigure='() => Navigation.NavigateTo("/settings/ai-agents")' />
 
         <ApiIntegrationCard ApiKey="@_aiApiKey"
-                            ApiKeyChanged="@(val => _aiApiKey = val)"
+                            ApiKeyChanged="@(val => { _aiApiKey = val; _isDirty = true; })"
                             Provider="@_aiProvider"
-                            ProviderChanged="@(val => _aiProvider = val)"
+                            ProviderChanged="@(val => { _aiProvider = val; _isDirty = true; })"
                             SaveMessage="@_saveMessage"
                             OnSave="SaveApiKeyAsync" />
     </div>
@@ -42,6 +44,7 @@
     private string? _aiApiKey;
     private string _aiProvider = "GoogleGemini";
     private string? _saveMessage;
+    private bool _isDirty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -70,6 +73,7 @@
         if (!string.IsNullOrWhiteSpace(_aiApiKey))
         {
             await TenantSettingsService.SetAiSettingsAsync(TenantContext.TenantId, _aiApiKey, _aiProvider);
+            _isDirty = false;
             _saveMessage = $"{_aiProvider} settings saved successfully.";
 
             // Clear message after 3 seconds

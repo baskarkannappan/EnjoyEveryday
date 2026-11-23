@@ -1,0 +1,513 @@
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Icons = Microsoft.FluentUI.AspNetCore.Components.Icons
+@using EnjoyEveryday.Application.Services
+@using EnjoyEveryday.Domain.Entities
+@using EnjoyEveryday.Shared.Authorization
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject EnjoyEveryday.Daycare.Web.Services.IPageAuthorizationService PageAuth
+@inject EnjoyEveryday.Daycare.Web.Services.IUserViewPreferenceService ViewPreference
+@inject EnjoyEveryday.Daycare.Web.Services.IBranchOperationalUiGuard BranchUiGuard
+@inject ChildService ChildService
+@implements IAsyncDisposable
+
+@if (_isOpen)
+{
+    <div class="gqs-backdrop" @onclick="Close" role="dialog" aria-modal="true" aria-label="Quick search">
+        <div class="gqs-modal" @onclick:stopPropagation="true" @onkeydown="HandleKeyDownAsync">
+            <div class="gqs-search-bar">
+                <FluentIcon Value="@(new Icons.Regular.Size20.Search())" Color="Color.Custom" CustomColor="var(--muted, #6c7870)" />
+                <input @ref="_inputRef"
+                       class="gqs-input"
+                       type="text"
+                       placeholder="Search pages or children..."
+                       value="@_query"
+                       @oninput="HandleInput" />
+                <button type="button" class="gqs-esc-btn" @onclick="Close" title="Close (Esc)">Esc</button>
+            </div>
+
+            <div class="gqs-results">
+                @if (_isLoading)
+                {
+                    <div class="gqs-empty">Loading quick search...</div>
+                }
+                else if (_results.Count == 0)
+                {
+                    <div class="gqs-empty">No matching pages or children found.</div>
+                }
+                else
+                {
+                    @for (var i = 0; i < _results.Count; i++)
+                    {
+                        var index = i;
+                        var item = _results[i];
+                        var isSelected = index == _selectedIndex;
+                        <div class="gqs-item @(isSelected ? "selected" : "") @(item.IsLocked ? "locked" : "")"
+                             role="button"
+                             tabindex="0"
+                             @onclick="() => SelectItem(item)"
+                             @onkeydown="e => HandleItemKeyDown(e, item)"
+                             @onmouseenter="() => _selectedIndex = index">
+                            <span class="gqs-item-badge @(item.Kind == "Child" ? "gqs-badge-child" : "gqs-badge-page")">
+                                @(item.Kind == "Child" ? "Child" : "Page")
+                            </span>
+                            <div class="gqs-item-main">
+                                <span class="gqs-item-title">@item.Title</span>
+                                <span class="gqs-item-sub">@item.Subtitle</span>
+                            </div>
+                            @if (item.IsLocked)
+                            {
+                                <span class="gqs-lock" title="Unavailable – Branch Closed">🔒</span>
+                            }
+                            else
+                            {
+                                <span class="gqs-enter" title="Open">↵</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="gqs-footer">
+                <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
+                <span><kbd>↵</kbd> Open</span>
+                <span><kbd>Esc</kbd> Close</span>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .gqs-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(38, 51, 45, 0.36);
+        backdrop-filter: blur(2px);
+        z-index: 2500;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 72px 16px 24px;
+    }
+
+    .gqs-modal {
+        width: 100%;
+        max-width: 560px;
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: var(--radius, 18px);
+        box-shadow: 0 20px 50px rgba(38, 51, 45, 0.18);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .gqs-search-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border, #e4e7df);
+        background: var(--surface, #ffffff);
+    }
+
+    .gqs-input {
+        flex: 1;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text, #26332d);
+        min-width: 0;
+    }
+
+    .gqs-input::placeholder {
+        color: var(--muted, #6c7870);
+    }
+
+    .gqs-esc-btn {
+        border: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        color: var(--muted, #6c7870);
+        border-radius: 6px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .gqs-results {
+        max-height: 380px;
+        overflow-y: auto;
+        overflow-x: hidden !important;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        box-sizing: border-box;
+    }
+
+    .gqs-empty {
+        padding: 28px 16px;
+        text-align: center;
+        font-size: 13px;
+        color: var(--muted, #6c7870);
+    }
+
+    .gqs-item {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        text-align: left;
+        background: var(--surface, #ffffff) !important;
+        border: 1px solid var(--border, #e4e7df) !important;
+        border-radius: 8px !important;
+        padding: 8px 12px !important;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.12s ease, border-color 0.12s ease;
+    }
+
+    .gqs-item.selected,
+    .gqs-item:hover {
+        background: var(--accent-light, #e6eee9) !important;
+        border-color: var(--accent, #52745e) !important;
+    }
+
+    .gqs-item.locked {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .gqs-item-badge {
+        font-size: 10px !important;
+        font-weight: 750 !important;
+        padding: 3px 7px !important;
+        border-radius: 4px !important;
+        flex-shrink: 0 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.4px !important;
+        line-height: 1 !important;
+        display: inline-block !important;
+        max-width: none !important;
+        margin: 0 !important;
+    }
+
+    .gqs-item-badge.gqs-badge-page {
+        background: #eef2ef !important;
+        color: #31523c !important;
+        border: 1px solid #c8dacd !important;
+    }
+
+    .gqs-item-badge.gqs-badge-child {
+        background: #fbf5eb !important;
+        color: #8a5314 !important;
+        border: 1px solid #ebd9be !important;
+    }
+
+    .gqs-item-main {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 2px !important;
+        overflow: hidden !important;
+    }
+
+    .gqs-item-title {
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        color: var(--text, #26332d) !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        line-height: 1.3 !important;
+    }
+
+    .gqs-item-sub {
+        font-size: 11px !important;
+        font-weight: 500 !important;
+        color: var(--muted, #6c7870) !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        line-height: 1.2 !important;
+    }
+
+    .gqs-enter,
+    .gqs-lock {
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        color: var(--muted, #6c7870) !important;
+        flex-shrink: 0 !important;
+        padding-left: 4px !important;
+    }
+
+    .gqs-item.selected .gqs-enter {
+        color: var(--accent-dark, #31523c) !important;
+    }
+
+    .gqs-footer {
+        display: flex;
+        gap: 16px;
+        padding: 8px 14px;
+        border-top: 1px solid var(--border, #e4e7df);
+        background: var(--surface-soft, #f8f9f5);
+        font-size: 11px;
+        color: var(--muted, #6c7870);
+    }
+
+    .gqs-footer kbd {
+        background: var(--surface, #ffffff);
+        border: 1px solid var(--border, #e4e7df);
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text, #26332d);
+    }
+</style>
+
+@code {
+    private sealed record SearchResultItem(string Kind, string Title, string Subtitle, string Href, bool IsLocked);
+
+    private bool _isOpen;
+    private bool _isLoading;
+    private bool _shouldFocus;
+    private bool _childrenLoaded;
+    private bool _isDisposed;
+    private string _query = "";
+    private int _selectedIndex;
+    private ElementReference _inputRef;
+    private DotNetObjectReference<GlobalQuickSearch>? _dotNetRef;
+
+    private List<SearchResultItem> _pageItems = new();
+    private List<SearchResultItem> _childItems = new();
+    private List<SearchResultItem> _results = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _dotNetRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("eval", @"
+                    if (!window.__eeQuickSearchBound) {
+                        window.__eeQuickSearchBound = true;
+                        window.__eeRegisterQuickSearch = function(dotNetRef) {
+                            window.__eeQuickSearchRef = dotNetRef;
+                            if (!window.__eeQuickSearchHandler) {
+                                window.__eeQuickSearchHandler = function(e) {
+                                    if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'k') {
+                                        e.preventDefault();
+                                        if (window.__eeQuickSearchRef) {
+                                            window.__eeQuickSearchRef.invokeMethodAsync('OpenFromShortcutAsync');
+                                        }
+                                    }
+                                };
+                                document.addEventListener('keydown', window.__eeQuickSearchHandler);
+                            }
+                        };
+                    }
+                ");
+                await JS.InvokeVoidAsync("window.__eeRegisterQuickSearch", _dotNetRef);
+            }
+            catch
+            {
+                // Ignore JS interop failures during prerendering
+            }
+        }
+
+        if (_isOpen && _shouldFocus)
+        {
+            _shouldFocus = false;
+            try
+            {
+                await _inputRef.FocusAsync();
+            }
+            catch
+            {
+                // Ignore focus race
+            }
+        }
+    }
+
+    [JSInvokable]
+    public Task OpenFromShortcutAsync() => OpenAsync();
+
+    public async Task OpenAsync()
+    {
+        if (_isDisposed) return;
+
+        _isOpen = true;
+        _shouldFocus = true;
+        _query = "";
+        _selectedIndex = 0;
+        _isLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        await LoadSearchIndexAsync();
+        RebuildResults();
+
+        _isLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Close()
+    {
+        _isOpen = false;
+    }
+
+    private void HandleInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _selectedIndex = 0;
+        RebuildResults();
+    }
+
+    private void HandleKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            Close();
+            return;
+        }
+
+        if (_results.Count == 0) return;
+
+        if (e.Key == "ArrowDown")
+        {
+            _selectedIndex = (_selectedIndex + 1) % _results.Count;
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _selectedIndex = (_selectedIndex - 1 + _results.Count) % _results.Count;
+        }
+        else if (e.Key == "Enter")
+        {
+            SelectItem(_results[_selectedIndex]);
+        }
+    }
+
+    private void SelectItem(SearchResultItem item)
+    {
+        if (item.IsLocked) return;
+        _isOpen = false;
+        NavigationManager.NavigateTo(item.Href);
+    }
+
+    private void HandleItemKeyDown(KeyboardEventArgs e, SearchResultItem item)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            SelectItem(item);
+        }
+    }
+
+    private async Task LoadSearchIndexAsync()
+    {
+        try
+        {
+            var profile = await PageAuth.GetUserProfileAsync();
+            var navView = !string.IsNullOrEmpty(ViewPreference.CurrentView)
+                ? ViewPreference.CurrentView
+                : profile.IsOrgAdmin ? "OrgAdmin"
+                : profile.IsBranchAdmin ? "BranchAdmin"
+                : profile.IsLeadTeacher ? "LeadTeacher"
+                : "Teacher";
+
+            var lockBranchClosed = navView is "Teacher" or "LeadTeacher";
+            var groups = NavMenu.GetNavGroupsForView(navView, profile.IsOrgAdmin);
+
+            var pages = new List<SearchResultItem>();
+            foreach (var group in groups)
+            {
+                foreach (var item in group.Items)
+                {
+                    if (item.SubItems is not null)
+                    {
+                        foreach (var sub in item.SubItems)
+                        {
+                            pages.Add(new SearchResultItem(
+                                "Page",
+                                sub.Text,
+                                $"{group.Title} › {item.Text}",
+                                sub.Href,
+                                lockBranchClosed && BranchUiGuard.IsOperationalNavItemLocked(sub.Href)));
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(item.Href))
+                    {
+                        pages.Add(new SearchResultItem(
+                            "Page",
+                            item.Text,
+                            group.Title,
+                            item.Href,
+                            lockBranchClosed && item.CheckBranchLock && BranchUiGuard.IsOperationalNavItemLocked(item.Href)));
+                    }
+                }
+            }
+            _pageItems = pages;
+
+            if (!_childrenLoaded)
+            {
+                _childrenLoaded = true;
+                // ChildService.GetChildrenAsync() already enforces tenant, branch, and classroom scope via IResourceAuthorizer.
+                var scopedChildren = await ChildService.GetChildrenAsync();
+
+                _childItems = scopedChildren
+                    .Select(c =>
+                    {
+                        var name = string.IsNullOrWhiteSpace(c.FullName) ? $"{c.FirstName} {c.LastName}".Trim() : c.FullName;
+                        var sub = !string.IsNullOrWhiteSpace(c.EnrollmentStatus) ? $"Child Profile • {c.EnrollmentStatus}" : "Child Profile";
+                        return new SearchResultItem(
+                            "Child",
+                            name,
+                            sub,
+                            $"/journey/{c.Id}",
+                            lockBranchClosed && BranchUiGuard.IsOperationalNavItemLocked("/journey"));
+                    })
+                    .OrderBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+        }
+        catch
+        {
+            // Keep existing items if lookup fails
+        }
+    }
+
+    private void RebuildResults()
+    {
+        var q = _query.Trim();
+        if (string.IsNullOrEmpty(q))
+        {
+            _results = _pageItems.Take(8).ToList();
+            return;
+        }
+
+        var matchedChildren = _childItems
+            .Where(c => c.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                        c.Subtitle.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Take(6);
+
+        var matchedPages = _pageItems
+            .Where(p => p.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                        p.Subtitle.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                        p.Href.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Take(8);
+
+        _results = matchedChildren.Concat(matchedPages).Take(12).ToList();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _isDisposed = true;
+        _dotNetRef?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
