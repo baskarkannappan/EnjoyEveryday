@@ -89,13 +89,13 @@ To guarantee high Lighthouse performance scores across all portals (`Daycare.Web
 To eliminate inconsistent font families, oversized headings, illegible micro-text, and fragmented modal styles across portals:
 1. **Universal Font Family**: All DOM elements (`*, *::before, *::after`) cascade to `var(--ee-font)` (`"Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`). Fluent UI components receive `:root` token overrides (`--font-family`, `--body-font`, `--type-ramp-*`, `--colorNeutralForeground*`).
 2. **Standardized Typography Ramp**:
-   * **Heading 1 / Page Title**: 22px (`--fs-2xl`), font-weight 800, letter-spacing -0.4px, `var(--text, #26332d)`.
-   * **Heading 2 / Section Title**: 17px (`--fs-xl`), font-weight 750, letter-spacing -0.3px, `var(--text, #26332d)`.
-   * **Heading 3 / Subheader / Card Title**: 14px–15px (`--fs-lg`), font-weight 750, `var(--text, #26332d)`.
-   * **Heading 4 / Micro-header**: 13.5px (`--fs-md`), font-weight 700.
-   * **Body Text**: 12.5px (`--fs-base`), line-height 1.45, `var(--text, #26332d)`.
-   * **Subtitles & Secondary Text**: 11.5px–12px (`--fs-sm`), `var(--muted, #6c7870)`.
-   * **Eyebrows & Micro-labels**: 10px–10.5px (`--fs-xs`), font-weight 800 uppercase, letter-spacing 0.8px, `var(--accent, #557c6c)`.
+   * **Heading 1 / Page Title**: 23px (`--fs-2xl`), font-weight 800, letter-spacing -0.4px, `var(--text, #26332d)`.
+   * **Heading 2 / Section Title**: 18px (`--fs-xl`), font-weight 750, letter-spacing -0.3px, `var(--text, #26332d)`.
+   * **Heading 3 / Subheader / Card Title**: 15.5px–16px (`--fs-lg`), font-weight 750, `var(--text, #26332d)`.
+   * **Heading 4 / Micro-header**: 14px–14.5px (`--fs-md`), font-weight 700.
+   * **Body Text**: 13.5px (`--fs-base`), line-height 1.45, `var(--text, #26332d)`.
+   * **Subtitles & Secondary Text**: 12.5px (`--fs-sm`), `var(--muted, #6c7870)`.
+   * **Eyebrows & Micro-labels**: 11.5px (`--fs-xs`), font-weight 800 uppercase, letter-spacing 0.8px, `var(--accent, #557c6c)`.
    * **Action Buttons**: 12px, font-weight 700, padding 5px 12px, border-radius 0px. Primary: `#31523c` (`#23412f` hover); Secondary: white with `var(--border)`.
    * **Stat & Metric Numbers**: 24px–28px, font-weight 800, `var(--text, #26332d)`.
 3. **Universal Dialog & Modal System**:
