@@ -306,6 +306,25 @@ public partial class Memories : ComponentBase
         _selectedMemory = null;
     }
 
+    private string GetDownloadZipUrl()
+    {
+        var queryParts = new List<string>();
+        if (_selectedBranchId != Guid.Empty) queryParts.Add($"branchId={_selectedBranchId}");
+        if (_selectedClassroomId != Guid.Empty) queryParts.Add($"classroomId={_selectedClassroomId}");
+        if (_selectedChildId != Guid.Empty) queryParts.Add($"childId={_selectedChildId}");
+        return queryParts.Count == 0
+            ? "/api/media/download-zip"
+            : $"/api/media/download-zip?{string.Join("&", queryParts)}";
+    }
+
+    private string GetDownloadLabel()
+    {
+        if (_selectedChildId != Guid.Empty) return "Download Child Photos";
+        if (_selectedClassroomId != Guid.Empty) return "Download Classroom Photos";
+        if (_selectedBranchId != Guid.Empty) return "Download Branch Photos";
+        return "Download All Photos";
+    }
+
     private string GetCategoryCssClass(string category) => category switch
     {
         "Learning Experiences" => "cat-exp",

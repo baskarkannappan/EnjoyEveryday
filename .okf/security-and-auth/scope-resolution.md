@@ -112,3 +112,14 @@ Task<ClassroomScopeRecord?> GetClassroomScopeAsync(Guid tenantId, Guid classroom
   - **Organization Admin**: Retrieves the entire organization tree, all branches, all branch admins, classrooms, lead teachers, teachers, and enrolled students.
   - **Branch Admin**: Scoped strictly to assigned branches in `user_branch_assignments` (`revoked_at IS NULL`). Classrooms, staff, and enrolled students outside their assigned branch(es) are excluded at the database query level.
 - Supports interactive canvas features: Zoom (60% - 140%), Expand/Collapse all, search highlighting, and deep links to teacher profiles, branch management, and child journeys.
+
+## Role-Scoped Media & Photo Download Authorization (`MediaService` & `MediaEndpoints`)
+- **Database Columns (Migration 142)**: `public.media_assets` stores `organization_id`, `branch_id`, `classroom_id`, and `child_id` (populated on upload in `MediaService.UploadMediaVariantsAsync` via `IUserContext` / `IAccessScopeRepository.GetChildScopeAsync`, with `sp_create_media_asset` and `fn_get_media_asset_by_id` updated).
+- **Single Photo & Bulk ZIP Endpoints (`MediaEndpoints.cs`)**:
+  - `GET /api/media/{id:guid}/{variant}?download=true&fileName=...`: Enforces `IMediaService.CanAccessMediaAsync` and sets `Content-Disposition: attachment` when `download=true`.
+  - `GET /api/media/download-zip?branchId=...&classroomId=...&childId=...&fromDate=...&toDate=...`: Streams up to 100 authorized display photos as a ZIP archive via `IMediaService.GetScopedAssetsForDownloadAsync` and logs `Media.BulkDownloaded` in `audit_log`.
+- **Strict Role Boundaries**:
+  - **Organization Admin / Owner (`RoleScope.Organization`)**: Restricted to `media_assets` within the active organization (`OrganizationId` / `TenantId`).
+  - **Branch Admin (`RoleScope.Branch`)**: Restricted to branches in `IAccessScopeRepository.GetAssignedBranchIdsAsync`.
+  - **Lead Teacher / Teacher (`RoleScope.Classroom`)**: Restricted to classrooms in `IAccessScopeRepository.GetAssignedClassroomIdsAsync`.
+  - **Parent (`RoleScope.Family`)**: Restricted strictly to `child_id` belonging to verified active children from `IParentRepository.GetAuthorizedChildrenAsync` (never other children's or unlinked classroom photos).

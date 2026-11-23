@@ -7,6 +7,8 @@ public class MediaAsset
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
     public Guid? OrganizationId { get; set; }
+    public Guid? BranchId { get; set; }
+    public Guid? ClassroomId { get; set; }
     public Guid? ChildId { get; set; }
     public string EntityType { get; set; } = string.Empty;
     public Guid? EntityId { get; set; }

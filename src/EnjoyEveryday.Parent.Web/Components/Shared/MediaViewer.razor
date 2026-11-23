@@ -17,11 +17,20 @@
                     <span class="media-viewer-title">@CurrentItem.Title</span>
                     <span class="media-viewer-date">@CurrentItem.Date.ToString("MMMM dd, yyyy · h:mm tt")</span>
                 </div>
-                <button class="media-viewer-close-btn" 
-                        @onclick="HandleClose" 
-                        aria-label="Close media viewer">
-                    ✕
-                </button>
+                <div class="media-viewer-actions">
+                    <a href="@GetDownloadUrl(CurrentItem.Url, CurrentItem.Title)"
+                       download
+                       data-enhance-nav="false"
+                       class="media-viewer-download-btn"
+                       title="Download photo">
+                        ⬇ Download
+                    </a>
+                    <button class="media-viewer-close-btn" 
+                            @onclick="HandleClose" 
+                            aria-label="Close media viewer">
+                        ✕
+                    </button>
+                </div>
             </div>
 
             <!-- Main media content -->
@@ -126,6 +135,32 @@
     .media-viewer-date {
         color: #a0b2a6;
         font-size: 11.5px;
+    }
+
+    .media-viewer-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .media-viewer-download-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: rgba(82, 116, 94, 0.9);
+        color: #ffffff;
+        text-decoration: none;
+        font-size: 12.5px;
+        font-weight: 700;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        transition: background 0.15s ease;
+    }
+
+    .media-viewer-download-btn:hover {
+        background: #31523c;
+        color: #ffffff;
     }
 
     .media-viewer-close-btn {
@@ -245,6 +280,17 @@
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnPrevious { get; set; }
     [Parameter] public EventCallback OnNext { get; set; }
+
+    private static string GetDownloadUrl(string url, string? title)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !url.StartsWith("/api/media/", StringComparison.OrdinalIgnoreCase))
+        {
+            return url;
+        }
+        var sep = url.Contains('?') ? "&" : "?";
+        var safeTitle = string.IsNullOrWhiteSpace(title) ? "child-photo" : Uri.EscapeDataString(title.Trim());
+        return $"{url}{sep}download=true&fileName={safeTitle}";
+    }
 
     private async Task HandleClose() => await OnClose.InvokeAsync();
     private async Task HandlePrevious() => await OnPrevious.InvokeAsync();

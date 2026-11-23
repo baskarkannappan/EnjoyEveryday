@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +10,7 @@ using EnjoyEveryday.Domain.Repositories;
 using EnjoyEveryday.Domain.Storage;
 using EnjoyEveryday.Shared.Audit;
 using EnjoyEveryday.Shared.Auth;
+using EnjoyEveryday.Shared.Authorization;
 using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.Logging;
 
@@ -19,6 +22,8 @@ public class UploadMediaVariantRequest
     public Guid? EntityId { get; set; }
     public Guid? ChildId { get; set; }
     public Guid? OrganizationId { get; set; }
+    public Guid? BranchId { get; set; }
+    public Guid? ClassroomId { get; set; }
 
     public byte[] DisplayBytes { get; set; } = Array.Empty<byte>();
     public string DisplayContentType { get; set; } = string.Empty;
@@ -38,6 +43,16 @@ public interface IMediaService
     Task<(Stream Content, string ContentType)?> GetMediaStreamAsync(MediaAsset asset, string variant, CancellationToken ct = default);
     Task<MediaAsset?> GetMediaAssetAsync(Guid mediaId, CancellationToken ct = default);
     Task<bool> DeleteMediaAssetAsync(Guid mediaId, CancellationToken ct = default);
+    Task<bool> CanAccessMediaAsync(MediaAsset asset, IParentRepository? parentRepo = null, CancellationToken ct = default);
+    Task<IReadOnlyList<MediaAsset>> GetScopedAssetsForDownloadAsync(
+        Guid? branchId,
+        Guid? classroomId,
+        Guid? childId,
+        DateTimeOffset? fromDate,
+        DateTimeOffset? toDate,
+        IParentRepository? parentRepo = null,
+        CancellationToken ct = default);
+    Task LogBulkDownloadAuditAsync(int photoCount, Guid? branchId, Guid? classroomId, Guid? childId, CancellationToken ct = default);
 }
 
 public class MediaService : IMediaService
@@ -49,6 +64,7 @@ public class MediaService : IMediaService
     private readonly IObjectStorageRegistry _storageRegistry;
     private readonly ITenantContext _tenantContext;
     private readonly IUserContext? _userContext;
+    private readonly IAccessScopeRepository? _accessScopeRepository;
     private readonly IAuditService _auditService;
     private readonly ILogger<MediaService> _logger;
 
@@ -58,7 +74,8 @@ public class MediaService : IMediaService
         ITenantContext tenantContext,
         IAuditService auditService,
         ILogger<MediaService> logger,
-        IUserContext? userContext = null)
+        IUserContext? userContext = null,
+        IAccessScopeRepository? accessScopeRepository = null)
     {
         _repository = repository;
         _storageRegistry = storageRegistry;
@@ -66,6 +83,7 @@ public class MediaService : IMediaService
         _auditService = auditService;
         _logger = logger;
         _userContext = userContext;
+        _accessScopeRepository = accessScopeRepository;
     }
 
     public async Task<MediaAsset> UploadMediaVariantsAsync(UploadMediaVariantRequest request, CancellationToken ct = default)
@@ -154,11 +172,29 @@ public class MediaService : IMediaService
                     ct);
             }
 
+            var resolvedOrgId = request.OrganizationId ?? _userContext?.OrganizationId;
+            var resolvedBranchId = request.BranchId ?? _userContext?.BranchId;
+            var resolvedClassroomId = request.ClassroomId;
+
+            if (request.ChildId.HasValue && _accessScopeRepository != null &&
+                (!resolvedBranchId.HasValue || !resolvedClassroomId.HasValue || !resolvedOrgId.HasValue))
+            {
+                var childScope = await _accessScopeRepository.GetChildScopeAsync(tenantId, request.ChildId.Value, ct);
+                if (childScope != null)
+                {
+                    resolvedOrgId ??= childScope.OrganizationId;
+                    resolvedBranchId ??= childScope.BranchId;
+                    resolvedClassroomId ??= childScope.ClassroomId;
+                }
+            }
+
             var asset = new MediaAsset
             {
                 Id = mediaId,
                 TenantId = tenantId,
-                OrganizationId = request.OrganizationId,
+                OrganizationId = resolvedOrgId,
+                BranchId = resolvedBranchId,
+                ClassroomId = resolvedClassroomId,
                 ChildId = request.ChildId,
                 EntityType = request.EntityType,
                 EntityId = request.EntityId,
@@ -282,6 +318,328 @@ public class MediaService : IMediaService
         }, ct);
 
         return true;
+    }
+
+    public async Task<bool> CanAccessMediaAsync(MediaAsset asset, IParentRepository? parentRepo = null, CancellationToken ct = default)
+    {
+        if (asset == null) return false;
+
+        // Public marketing & catalog assets can be viewed publicly
+        if (string.Equals(asset.EntityType, "FacilityProfile", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(asset.EntityType, "FacilityGallery", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(asset.EntityType, "MaterialProduct", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(asset.EntityType, "Marketplace", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var roles = _userContext?.Roles ?? Array.Empty<string>();
+        var scope = ResolveHighestRoleScope(roles);
+        if (scope == null) return false;
+        if (scope == RoleScope.Platform) return true;
+
+        var userId = _userContext?.UserId ?? Guid.Empty;
+        if (userId == Guid.Empty) return false;
+
+        var effectiveOrgId = _userContext?.OrganizationId ?? Guid.Empty;
+        var effectiveTenantId = _tenantContext.TenantId != Guid.Empty
+            ? _tenantContext.TenantId
+            : effectiveOrgId;
+
+        bool isSameOrg = effectiveTenantId != Guid.Empty &&
+            (asset.TenantId == effectiveTenantId ||
+             (asset.OrganizationId.HasValue && asset.OrganizationId.Value == effectiveTenantId) ||
+             (effectiveOrgId != Guid.Empty && asset.OrganizationId.HasValue && asset.OrganizationId.Value == effectiveOrgId));
+
+        if (scope == RoleScope.Organization)
+        {
+            return isSameOrg;
+        }
+
+        if (scope == RoleScope.Branch)
+        {
+            if (!isSameOrg || _accessScopeRepository == null) return false;
+
+            var orgForScope = effectiveOrgId != Guid.Empty ? effectiveOrgId : asset.TenantId;
+            var assignedBranches = await _accessScopeRepository.GetAssignedBranchIdsAsync(asset.TenantId, orgForScope, userId, ct);
+            if (assignedBranches.Count == 0) return false;
+
+            var branchId = asset.BranchId;
+            if (!branchId.HasValue && asset.ChildId.HasValue)
+            {
+                var childScope = await _accessScopeRepository.GetChildScopeAsync(asset.TenantId, asset.ChildId.Value, ct);
+                branchId = childScope?.BranchId;
+            }
+
+            return branchId.HasValue && assignedBranches.Contains(branchId.Value);
+        }
+
+        if (scope == RoleScope.Classroom)
+        {
+            if (!isSameOrg || _accessScopeRepository == null) return false;
+
+            var orgForScope = effectiveOrgId != Guid.Empty ? effectiveOrgId : asset.TenantId;
+            var assignedClassrooms = await _accessScopeRepository.GetAssignedClassroomIdsAsync(
+                asset.TenantId, userId, orgForScope, _userContext?.BranchId, ct);
+            if (assignedClassrooms.Count == 0) return false;
+
+            var classroomId = asset.ClassroomId;
+            if (!classroomId.HasValue && asset.ChildId.HasValue)
+            {
+                var childScope = await _accessScopeRepository.GetChildScopeAsync(asset.TenantId, asset.ChildId.Value, ct);
+                classroomId = childScope?.ClassroomId;
+            }
+
+            return classroomId.HasValue && assignedClassrooms.Contains(classroomId.Value);
+        }
+
+        // RoleScope.Family (Parent): strictly their own verified active children only
+        if (parentRepo == null) return false;
+
+        var authorizedChildren = (await parentRepo.GetAuthorizedChildrenAsync(effectiveTenantId, userId, ct)).ToList();
+        if (asset.ChildId.HasValue)
+        {
+            return authorizedChildren.Any(c =>
+                c.TenantId == asset.TenantId &&
+                c.ChildId == asset.ChildId.Value);
+        }
+
+        // Fallback for approved child journey entries or approved classroom events whose media_assets.child_id is null
+        var assetIdText = asset.Id.ToString("D");
+        foreach (var child in authorizedChildren.Where(c => c.TenantId == asset.TenantId))
+        {
+            var entries = await parentRepo.GetApprovedJourneyEntriesAsync(child.TenantId, child.ChildId, ct);
+            if (entries.Any(e => e.Photos != null && e.Photos.Any(p => p.Contains(assetIdText, StringComparison.OrdinalIgnoreCase))))
+            {
+                return true;
+            }
+
+            var events = await parentRepo.GetApprovedEventsForChildAsync(child.TenantId, child.ChildId, ct);
+            if (events.Any(ev => ev.PhotoUrls != null && ev.PhotoUrls.Any(p => p.Contains(assetIdText, StringComparison.OrdinalIgnoreCase))))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public async Task<IReadOnlyList<MediaAsset>> GetScopedAssetsForDownloadAsync(
+        Guid? branchId,
+        Guid? classroomId,
+        Guid? childId,
+        DateTimeOffset? fromDate,
+        DateTimeOffset? toDate,
+        IParentRepository? parentRepo = null,
+        CancellationToken ct = default)
+    {
+        var roles = _userContext?.Roles ?? Array.Empty<string>();
+        var scope = ResolveHighestRoleScope(roles);
+        var userId = _userContext?.UserId ?? Guid.Empty;
+        if (scope == null || userId == Guid.Empty)
+        {
+            return Array.Empty<MediaAsset>();
+        }
+
+        var effectiveOrgId = _userContext?.OrganizationId ?? Guid.Empty;
+        var effectiveTenantId = _tenantContext.TenantId != Guid.Empty
+            ? _tenantContext.TenantId
+            : effectiveOrgId;
+
+        if (scope == RoleScope.Family)
+        {
+            if (parentRepo == null) return Array.Empty<MediaAsset>();
+
+            var authorizedChildren = (await parentRepo.GetAuthorizedChildrenAsync(effectiveTenantId, userId, ct)).ToList();
+            if (authorizedChildren.Count == 0) return Array.Empty<MediaAsset>();
+
+            if (childId.HasValue && childId.Value != Guid.Empty)
+            {
+                var match = authorizedChildren.FirstOrDefault(c => c.ChildId == childId.Value);
+                if (match == null) return Array.Empty<MediaAsset>();
+
+                var linkedMediaIds = await GetParentLinkedMediaIdsAsync(parentRepo, match.TenantId, match.ChildId, ct);
+                return await _repository.GetScopedAssetsAsync(new ScopedMediaQuery
+                {
+                    TenantId = match.TenantId,
+                    AllowedChildIds = new[] { match.ChildId },
+                    AllowedMediaIds = linkedMediaIds,
+                    FilterChildId = match.ChildId,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    MaxResults = 100
+                }, ct);
+            }
+
+            // Aggregate across all authorized children (grouping by TenantId in case children span tenants)
+            var allParentAssets = new List<MediaAsset>();
+            foreach (var group in authorizedChildren.GroupBy(c => c.TenantId))
+            {
+                var linkedMediaIds = new HashSet<Guid>();
+                foreach (var child in group)
+                {
+                    foreach (var mid in await GetParentLinkedMediaIdsAsync(parentRepo, child.TenantId, child.ChildId, ct))
+                    {
+                        linkedMediaIds.Add(mid);
+                    }
+                }
+
+                var assets = await _repository.GetScopedAssetsAsync(new ScopedMediaQuery
+                {
+                    TenantId = group.Key,
+                    AllowedChildIds = group.Select(c => c.ChildId).ToArray(),
+                    AllowedMediaIds = linkedMediaIds,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    MaxResults = 100
+                }, ct);
+                allParentAssets.AddRange(assets);
+            }
+            return allParentAssets.OrderByDescending(a => a.CreatedAt).Take(100).ToList();
+        }
+
+        if (effectiveTenantId == Guid.Empty) return Array.Empty<MediaAsset>();
+
+        var query = new ScopedMediaQuery
+        {
+            TenantId = effectiveTenantId,
+            OrganizationId = effectiveOrgId != Guid.Empty ? effectiveOrgId : null,
+            FilterBranchId = branchId,
+            FilterClassroomId = classroomId,
+            FilterChildId = childId,
+            FromDate = fromDate,
+            ToDate = toDate,
+            MaxResults = 100
+        };
+
+        if (scope == RoleScope.Branch)
+        {
+            if (_accessScopeRepository == null) return Array.Empty<MediaAsset>();
+            var orgForScope = effectiveOrgId != Guid.Empty ? effectiveOrgId : effectiveTenantId;
+            var assignedBranches = await _accessScopeRepository.GetAssignedBranchIdsAsync(effectiveTenantId, orgForScope, userId, ct);
+            if (assignedBranches.Count == 0) return Array.Empty<MediaAsset>();
+            if (branchId.HasValue && branchId.Value != Guid.Empty && !assignedBranches.Contains(branchId.Value))
+            {
+                return Array.Empty<MediaAsset>();
+            }
+            query.AllowedBranchIds = assignedBranches;
+        }
+        else if (scope == RoleScope.Classroom)
+        {
+            if (_accessScopeRepository == null) return Array.Empty<MediaAsset>();
+            var orgForScope = effectiveOrgId != Guid.Empty ? effectiveOrgId : effectiveTenantId;
+            var assignedClassrooms = await _accessScopeRepository.GetAssignedClassroomIdsAsync(
+                effectiveTenantId, userId, orgForScope, _userContext?.BranchId, ct);
+            if (assignedClassrooms.Count == 0) return Array.Empty<MediaAsset>();
+            if (classroomId.HasValue && classroomId.Value != Guid.Empty && !assignedClassrooms.Contains(classroomId.Value))
+            {
+                return Array.Empty<MediaAsset>();
+            }
+            query.AllowedClassroomIds = assignedClassrooms;
+        }
+
+        return await _repository.GetScopedAssetsAsync(query, ct);
+    }
+
+    public async Task LogBulkDownloadAuditAsync(int photoCount, Guid? branchId, Guid? classroomId, Guid? childId, CancellationToken ct = default)
+    {
+        var tenantId = _tenantContext.TenantId != Guid.Empty
+            ? _tenantContext.TenantId
+            : (_userContext?.OrganizationId ?? Guid.Empty);
+        if (tenantId == Guid.Empty) return;
+
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = tenantId,
+            UserId = _userContext?.UserId != null && _userContext.UserId != Guid.Empty ? _userContext.UserId : null,
+            Action = "Media.BulkDownloaded",
+            EntityType = nameof(MediaAsset),
+            Details = new { photoCount, branchId, classroomId, childId }
+        }, ct);
+    }
+
+    private static async Task<IReadOnlyCollection<Guid>> GetParentLinkedMediaIdsAsync(
+        IParentRepository parentRepo,
+        Guid tenantId,
+        Guid childId,
+        CancellationToken ct)
+    {
+        var ids = new HashSet<Guid>();
+
+        var entries = await parentRepo.GetApprovedJourneyEntriesAsync(tenantId, childId, ct);
+        foreach (var entry in entries)
+        {
+            if (entry.Photos == null) continue;
+            foreach (var url in entry.Photos)
+            {
+                if (TryExtractMediaId(url, out var mid)) ids.Add(mid);
+            }
+        }
+
+        var events = await parentRepo.GetApprovedEventsForChildAsync(tenantId, childId, ct);
+        foreach (var ev in events)
+        {
+            if (ev.PhotoUrls == null) continue;
+            foreach (var url in ev.PhotoUrls)
+            {
+                if (TryExtractMediaId(url, out var mid)) ids.Add(mid);
+            }
+        }
+
+        return ids;
+    }
+
+    private static bool TryExtractMediaId(string? url, out Guid mediaId)
+    {
+        mediaId = Guid.Empty;
+        if (string.IsNullOrWhiteSpace(url)) return false;
+
+        const string prefix = "/api/media/";
+        var idx = url.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return false;
+
+        var remainder = url[(idx + prefix.Length)..];
+        var slashIdx = remainder.IndexOf('/');
+        var guidPart = slashIdx >= 0 ? remainder[..slashIdx] : remainder;
+        return Guid.TryParse(guidPart, out mediaId);
+    }
+
+    private static RoleScope? ResolveHighestRoleScope(IEnumerable<string> roles)
+    {
+        RoleScope? best = null;
+        foreach (var raw in roles)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var normalized = raw.Trim();
+            if (normalized.Equals("Superadmin", StringComparison.OrdinalIgnoreCase))
+            {
+                return RoleScope.Platform;
+            }
+            if (normalized.Equals("Org Admin", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = RoleTemplates.OrganizationAdmin;
+            }
+            else if (normalized.Equals("Branch Admin", StringComparison.OrdinalIgnoreCase) ||
+                     normalized.Equals("Branch Director", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = RoleTemplates.BranchAdmin;
+            }
+            else if (normalized.Equals("Lead Teacher", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = RoleTemplates.LeadTeacher;
+            }
+
+            var scope = RoleTemplates.ScopeOf(normalized);
+            if (scope == null) continue;
+
+            // Lower enum value = broader scope (Platform=0 < Organization=1 < Branch=2 < Classroom=3 < Family=4)
+            if (best == null || scope.Value < best.Value)
+            {
+                best = scope.Value;
+            }
+        }
+        return best;
     }
 
     private static (bool IsValid, string MimeType) ValidateImageSignature(byte[] bytes)

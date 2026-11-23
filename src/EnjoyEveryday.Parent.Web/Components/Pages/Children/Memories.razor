@@ -29,26 +29,36 @@ else
                       Title="@($"{SessionState.SelectedChild.FirstName}'s Memories & Photos")"
                       Subtitle="Explore classroom moments, celebration photos, and learning discoveries captured by educators.">
         <RightContent>
-            <div class="memories-date-filter-box">
-                <label class="memories-date-label" for="memoriesCalendarInput">
-                    <span>📅</span>
-                    <span>Filter by Date</span>
-                </label>
-                <div class="memories-date-controls">
-                    <input id="memoriesCalendarInput"
-                           type="date"
-                           class="memories-date-input"
-                           value="@(_selectedDate?.ToString("yyyy-MM-dd") ?? string.Empty)"
-                           @onchange="OnDateFilterChanged" />
-                    @if (_selectedDate.HasValue)
-                    {
-                        <button type="button"
-                                class="btn-clear-date"
-                                title="Show all dates"
-                                @onclick="ClearDateFilter">
-                            All Dates ✕
-                        </button>
-                    }
+            <div class="memories-header-actions">
+                <a href="@GetDownloadZipUrl()"
+                   download
+                   data-enhance-nav="false"
+                   class="btn-download-child-photos"
+                   title="Download photos of your child">
+                    <span>⬇</span>
+                    <span>Download Photos</span>
+                </a>
+                <div class="memories-date-filter-box">
+                    <label class="memories-date-label" for="memoriesCalendarInput">
+                        <span>📅</span>
+                        <span>Filter by Date</span>
+                    </label>
+                    <div class="memories-date-controls">
+                        <input id="memoriesCalendarInput"
+                               type="date"
+                               class="memories-date-input"
+                               value="@(_selectedDate?.ToString("yyyy-MM-dd") ?? string.Empty)"
+                               @onchange="OnDateFilterChanged" />
+                        @if (_selectedDate.HasValue)
+                        {
+                            <button type="button"
+                                    class="btn-clear-date"
+                                    title="Show all dates"
+                                    @onclick="ClearDateFilter">
+                                All Dates ✕
+                            </button>
+                        }
+                    </div>
                 </div>
             </div>
         </RightContent>
@@ -73,6 +83,34 @@ else
 }
 
 <style>
+    .memories-header-actions {
+        display: flex;
+        align-items: stretch;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .btn-download-child-photos {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 14px;
+        background: var(--accent, #52745e);
+        color: #ffffff;
+        border: 1px solid var(--accent-dark, #31523c);
+        border-radius: 10px;
+        font-size: 12.5px;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    .btn-download-child-photos:hover {
+        background: var(--accent-dark, #31523c);
+        color: #ffffff;
+    }
+
     .memories-date-filter-box {
         display: flex;
         flex-direction: column;
@@ -251,6 +289,18 @@ else
         {
             _activeItem = list[idx + 1];
         }
+    }
+
+    private string GetDownloadZipUrl()
+    {
+        if (SessionState.SelectedChild == null) return "#";
+        var url = $"/api/media/download-zip?childId={SessionState.SelectedChild.ChildId}";
+        if (_selectedDate.HasValue)
+        {
+            var d = _selectedDate.Value.ToString("yyyy-MM-dd");
+            url += $"&fromDate={d}&toDate={d}";
+        }
+        return url;
     }
 
     public void Dispose()

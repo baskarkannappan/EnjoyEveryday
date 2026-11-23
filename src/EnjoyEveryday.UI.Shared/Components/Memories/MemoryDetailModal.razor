@@ -57,6 +57,16 @@
 
             <div class="modal-footer-custom">
                 <button class="btn secondary" @onclick="OnClose">Close</button>
+                @if (!string.IsNullOrEmpty(Memory.MediaUrl))
+                {
+                    <a href="@GetDownloadUrl(Memory.MediaUrl, Memory.Title)"
+                       download
+                       data-enhance-nav="false"
+                       class="btn secondary"
+                       style="text-decoration: none;">
+                        ⬇ Download Photo
+                    </a>
+                }
                 @if (Memory.ChildId.HasValue)
                 {
                     <a href="/journey/@Memory.ChildId.Value" class="btn primary" style="text-decoration: none;">
@@ -71,6 +81,17 @@
 @code {
     [Parameter] public MemoryEvent? Memory { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+
+    private static string GetDownloadUrl(string mediaUrl, string? title)
+    {
+        if (!mediaUrl.StartsWith("/api/media/", StringComparison.OrdinalIgnoreCase))
+        {
+            return mediaUrl;
+        }
+        var sep = mediaUrl.Contains('?') ? "&" : "?";
+        var safeTitle = string.IsNullOrWhiteSpace(title) ? "memory-photo" : Uri.EscapeDataString(title.Trim());
+        return $"{mediaUrl}{sep}download=true&fileName={safeTitle}";
+    }
 
     private static string GetCategoryCssClass(string category) => category switch
     {
