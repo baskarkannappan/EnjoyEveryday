@@ -54,3 +54,17 @@ The **Storage & Media Explorer** provides Platform Administrators and Organizati
 * Displays storage key, content type, size in KB, upload date, and active storage engine badge (`Local Disk` vs `Azure Blob Storage`).
 * **Links Only**: Each record provides an asset link (`🔗 Open Link`) pointing to `/api/media/{id}/display`, allowing administrators to open the file in a new tab without downloading images on page load.
 
+---
+
+## 4. 3-Month Photo Retention & Storage Purge Policy
+
+To balance privacy, statutory limits, and storage resource consumption:
+* **Retention Window**: 90 days (3 months) for student journey moments, classroom activities, and event photos (`Child`, `General`, `Event`, `ChildJourneyEvidence`). Facility profiles, staff photos, and marketplace catalog media remain protected.
+* **Parent Notice**: Parents are advised upon portal login via an auto-fading 10-second banner to download photos before the 3-month expiration.
+* **Administrative Purge Workflow**:
+  - Available to Platform Admins and Organization Admins in `StorageExplorerView.razor`.
+  - **Check Expired (90+ Days)**: Calls `GetRetentionCleanupPreviewAsync` to calculate the eligible photo count and reclaimable megabytes.
+  - **Confirmation Dialog**: Requires explicit administrator confirmation prior to purge.
+  - **Storage & Database Execution**: Invokes `ExecuteRetentionCleanupAsync` which removes the physical/cloud storage blobs (both display and thumbnail variants) via `IObjectStorage`, deletes database entries from `media_assets`, and writes an immutable entry to the audit log (`Media.RetentionPurge`).
+
+

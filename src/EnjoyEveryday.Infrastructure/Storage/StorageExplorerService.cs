@@ -6,7 +6,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using EnjoyEveryday.Application.Services.Storage;
+using EnjoyEveryday.Domain.Storage;
+using EnjoyEveryday.Shared.Audit;
 using EnjoyEveryday.Shared.Data;
+using EnjoyEveryday.Shared.Tenancy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -16,16 +19,25 @@ public class StorageExplorerService : IStorageExplorerService
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly IConfiguration _configuration;
+    private readonly IObjectStorageRegistry _storageRegistry;
+    private readonly IAuditService _auditService;
+    private readonly IUserContext? _userContext;
     private readonly ILogger<StorageExplorerService> _logger;
 
     public StorageExplorerService(
         IDbConnectionFactory connectionFactory,
         IConfiguration configuration,
-        ILogger<StorageExplorerService> logger)
+        IObjectStorageRegistry storageRegistry,
+        IAuditService auditService,
+        ILogger<StorageExplorerService> logger,
+        IUserContext? userContext = null)
     {
         _connectionFactory = connectionFactory;
         _configuration = configuration;
+        _storageRegistry = storageRegistry;
+        _auditService = auditService;
         _logger = logger;
+        _userContext = userContext;
     }
 
     public async Task<StorageExplorerModel> GetStorageExplorerDataAsync(Guid? tenantId = null, CancellationToken ct = default)
@@ -150,6 +162,134 @@ public class StorageExplorerService : IStorageExplorerService
         }
 
         return model;
+    }
+
+    public async Task<RetentionCleanupResultDto> GetRetentionCleanupPreviewAsync(int retentionDays = 90, Guid? tenantId = null, CancellationToken ct = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(ct);
+        const string sql = """
+            SELECT 
+                COUNT(*) AS EligibleCount,
+                COALESCE(SUM(m.display_size_bytes + m.thumbnail_size_bytes), 0) AS TotalSizeBytes
+            FROM public.media_assets m
+            WHERE (@TenantId IS NULL OR m.tenant_id = @TenantId)
+              AND m.entity_type IN ('Child', 'General', 'Event', 'ChildJourneyEvidence')
+              AND m.created_at < NOW() - (@RetentionDays || ' days')::INTERVAL;
+            """;
+
+        var result = await connection.QuerySingleOrDefaultAsync<(int EligibleCount, long TotalSizeBytes)>(
+            sql, new { TenantId = tenantId, RetentionDays = retentionDays });
+
+        return new RetentionCleanupResultDto
+        {
+            EligibleCount = result.EligibleCount,
+            ReclaimedBytes = result.TotalSizeBytes,
+            Message = result.EligibleCount > 0
+                ? $"{result.EligibleCount} photos/media items older than {retentionDays} days are eligible for cleanup."
+                : $"No photos or media items older than {retentionDays} days found."
+        };
+    }
+
+    public async Task<RetentionCleanupResultDto> ExecuteRetentionCleanupAsync(int retentionDays = 90, Guid? tenantId = null, CancellationToken ct = default)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync(ct);
+
+        const string selectSql = """
+            SELECT 
+                m.id,
+                m.tenant_id AS TenantId,
+                m.display_container AS DisplayContainer,
+                m.display_key AS DisplayKey,
+                m.thumbnail_container AS ThumbnailContainer,
+                m.thumbnail_key AS ThumbnailKey,
+                m.display_size_bytes AS DisplaySizeBytes,
+                m.thumbnail_size_bytes AS ThumbnailSizeBytes
+            FROM public.media_assets m
+            WHERE (@TenantId IS NULL OR m.tenant_id = @TenantId)
+              AND m.entity_type IN ('Child', 'General', 'Event', 'ChildJourneyEvidence')
+              AND m.created_at < NOW() - (@RetentionDays || ' days')::INTERVAL;
+            """;
+
+        var expiredAssets = (await connection.QueryAsync<ExpiredAssetRecord>(
+            selectSql, new { TenantId = tenantId, RetentionDays = retentionDays })).ToList();
+
+        if (expiredAssets.Count == 0)
+        {
+            return new RetentionCleanupResultDto
+            {
+                EligibleCount = 0,
+                DeletedCount = 0,
+                ReclaimedBytes = 0,
+                Message = $"No photos older than {retentionDays} days found to clean up."
+            };
+        }
+
+        var storage = _storageRegistry.Default;
+        int deletedCount = 0;
+        long reclaimedBytes = 0;
+
+        foreach (var asset in expiredAssets)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            try
+            {
+                // Delete physical/cloud storage blobs
+                if (!string.IsNullOrWhiteSpace(asset.DisplayKey))
+                {
+                    await storage.DeleteAsync(new ObjectLocation(storage.ProviderId, asset.DisplayContainer, asset.DisplayKey), ct);
+                }
+                if (!string.IsNullOrWhiteSpace(asset.ThumbnailKey))
+                {
+                    await storage.DeleteAsync(new ObjectLocation(storage.ProviderId, asset.ThumbnailContainer, asset.ThumbnailKey), ct);
+                }
+
+                // Delete database records
+                await connection.ExecuteAsync(
+                    "DELETE FROM public.media_assets WHERE id = @Id AND tenant_id = @TenantId;",
+                    new { Id = asset.Id, TenantId = asset.TenantId });
+
+                deletedCount++;
+                reclaimedBytes += (asset.DisplaySizeBytes + asset.ThumbnailSizeBytes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to purge expired media asset {MediaId} during retention cleanup.", asset.Id);
+            }
+        }
+
+        _logger.LogInformation("Retention cleanup executed: {DeletedCount}/{Total} photos purged, {ReclaimedMb} MB reclaimed.",
+            deletedCount, expiredAssets.Count, Math.Round((double)reclaimedBytes / (1024 * 1024), 2));
+
+        // Audit log entry
+        await _auditService.LogAsync(new AuditEntry
+        {
+            TenantId = tenantId ?? Guid.Empty,
+            UserId = _userContext?.UserId != null && _userContext.UserId != Guid.Empty ? _userContext.UserId : null,
+            Action = "Media.RetentionPurge",
+            EntityType = "MediaAsset",
+            Details = new { RetentionDays = retentionDays, DeletedCount = deletedCount, ReclaimedBytes = reclaimedBytes }
+        }, ct);
+
+        return new RetentionCleanupResultDto
+        {
+            EligibleCount = expiredAssets.Count,
+            DeletedCount = deletedCount,
+            ReclaimedBytes = reclaimedBytes,
+            Message = $"Successfully purged {deletedCount} photo(s) older than {retentionDays} days ({Math.Round((double)reclaimedBytes / (1024 * 1024), 2)} MB reclaimed)."
+        };
+    }
+
+    private class ExpiredAssetRecord
+    {
+        public Guid Id { get; set; }
+        public Guid TenantId { get; set; }
+        public string DisplayContainer { get; set; } = string.Empty;
+        public string DisplayKey { get; set; } = string.Empty;
+        public string ThumbnailContainer { get; set; } = string.Empty;
+        public string ThumbnailKey { get; set; } = string.Empty;
+        public long DisplaySizeBytes { get; set; }
+        public long ThumbnailSizeBytes { get; set; }
     }
 
     private class RawStorageRecord

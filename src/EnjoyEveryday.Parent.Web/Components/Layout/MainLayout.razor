@@ -5,6 +5,23 @@
 <PageTitle>Parent Portal</PageTitle>
 
 <div class="parent-portal-app">
+    <!-- RETENTION NOTICE TOAST / BANNER (Disappears after 10 seconds) -->
+    @if (_showRetentionNotice)
+    {
+        <div class="photo-retention-banner @(_isDismissingRetentionNotice ? "fading-out" : "")" role="alert" aria-live="polite">
+            <div class="retention-content">
+                <span class="retention-icon">📸</span>
+                <div class="retention-text">
+                    <strong>Photo Storage Notice:</strong> Classroom photos &amp; celebration memories are stored for <strong>3 months</strong>. Please download photos you wish to keep before they expire.
+                </div>
+            </div>
+            <div class="retention-actions">
+                <a href="/memories" class="retention-link">Go to Memories &amp; Download</a>
+                <button type="button" class="retention-close" title="Dismiss" @onclick="DismissRetentionNotice">✕</button>
+            </div>
+        </div>
+    }
+
     <!-- MOBILE TOPBAR -->
     <header class="mobile-portal-topbar" aria-label="Mobile Header">
         <div class="mobile-brand">
@@ -51,9 +68,56 @@
 <FluentProviders />
 
 @code {
+    private bool _showRetentionNotice;
+    private bool _isDismissingRetentionNotice;
+    private CancellationTokenSource? _retentionCts;
+
     protected override void OnInitialized()
     {
         SessionState.OnChildChanged += HandleChildChanged;
+
+        if (!SessionState.HasSeenPhotoRetentionNotice)
+        {
+            SessionState.HasSeenPhotoRetentionNotice = true;
+            _showRetentionNotice = true;
+            StartRetentionAutoDismiss();
+        }
+    }
+
+    private void StartRetentionAutoDismiss()
+    {
+        _retentionCts?.Cancel();
+        _retentionCts = new CancellationTokenSource();
+        var token = _retentionCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(10000, token);
+                if (!token.IsCancellationRequested)
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        _isDismissingRetentionNotice = true;
+                        StateHasChanged();
+                        await Task.Delay(400, token);
+                        _showRetentionNotice = false;
+                        StateHasChanged();
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Task was dismissed manually or disposed
+            }
+        }, token);
+    }
+
+    private void DismissRetentionNotice()
+    {
+        _retentionCts?.Cancel();
+        _showRetentionNotice = false;
     }
 
     private void HandleChildChanged()
@@ -63,6 +127,8 @@
 
     public void Dispose()
     {
+        _retentionCts?.Cancel();
+        _retentionCts?.Dispose();
         SessionState.OnChildChanged -= HandleChildChanged;
     }
 }

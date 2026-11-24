@@ -4,6 +4,8 @@ namespace EnjoyEveryday.Parent.Web.Services;
 
 public class ParentSessionState
 {
+    public bool HasSeenPhotoRetentionNotice { get; set; }
+
     public ParentAuthorizedChild? SelectedChild { get; private set; }
     public IReadOnlyList<ParentAuthorizedChild> AuthorizedChildren { get; private set; } = Array.Empty<ParentAuthorizedChild>();
 

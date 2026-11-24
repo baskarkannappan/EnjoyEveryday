@@ -58,3 +58,13 @@ public class StorageExplorerModel
     public List<StorageFileRecordDto> Files { get; set; } = new();
 }
 
+public class RetentionCleanupResultDto
+{
+    public int EligibleCount { get; set; }
+    public int DeletedCount { get; set; }
+    public long ReclaimedBytes { get; set; }
+    public double ReclaimedMb => Math.Round((double)ReclaimedBytes / (1024 * 1024), 2);
+    public string Message { get; set; } = string.Empty;
+}
+
+

@@ -25,7 +25,11 @@ Hosted in `src/EnjoyEveryday.Parent.Web` (port `7005`). Designed specifically fo
 ## Primary Pages & Features
 * **Today's Overview (`/`, `/today`)**: Live updates on daily care (naps, diaper changes, meals, bottle ounces) recorded by teachers in the Daycare app, verified attendance badges, and the **Daily Experience Story Card** showcasing the classroom's developmental activity, inquiry wonder prompts, **Bedtime Conversation Starters**, and **Try-at-Home** family extensions.
 * **Child Journey (`/journey`)**: Developmental milestones, curiosity pillars, educator observations, and child voice moments.
-* **Memories (`/memories`)**: Visual chronological photo and moment gallery with media consent gating.
+* **Memories (`/memories`)**: Visual chronological photo and moment gallery with media consent gating and bulk photo download feature.
+* **Photo Storage & Retention Policy Notice**:
+  - A top-bar notification banner renders on the Parent Portal (`MainLayout.razor`) when parents log in.
+  - Informs parents that photos and media are stored for **3 months** and encourages downloading cherished moments before expiration.
+  - Automatically fades out and disappears after **10 seconds** (with an immediate "✕" dismissal option) and tracks dismissal within `ParentSessionState` to prevent spamming sub-navigation.
 * **Classroom Messages (`/messages`)**: Direct, secure messaging with verified classroom educators with quiet hours enforcement (`IsQuietHours` mutes push sounds after 8:00 PM and before 7:00 AM) and quick replies. Backed by stored procedures `sp_get_parent_messages`, `sp_send_parent_message`, and SignalR real-time notification broadcasting.
 * **Family Profile (`/family`, `/profile`, `/settings`)**: Connected guardians, emergency contacts, authorized pickups (synced to educator checkout gates), and self-service language and communication preferences.
 * **Native Consent Signing (`/consent/sign/{Token}`, `/consent/document/{DocumentId}`)**:
