@@ -34,6 +34,7 @@ public partial class TeacherWorkspace
     // Classroom Live Cockpit State
     private List<ClassroomChildCareStatusDto> _classroomChildren = new();
     private string _rosterFilter = "All";
+    private string _childSearchQuery = string.Empty;
     private Guid? _activeDiaperChildId;
     private Guid? _activeMealChildId;
 
@@ -1274,7 +1275,7 @@ public partial class TeacherWorkspace
 
     private IEnumerable<ClassroomChildCareStatusDto> GetFilteredChildren()
     {
-        return _rosterFilter switch
+        IEnumerable<ClassroomChildCareStatusDto> query = _rosterFilter switch
         {
             "Present" => _classroomChildren.Where(c => c.IsCheckedIn),
             "Expected" => _classroomChildren.Where(c => !c.IsCheckedIn && c.AttendanceStatus != "Absent" && c.AttendanceStatus != "CheckedOut"),
@@ -1282,6 +1283,14 @@ public partial class TeacherWorkspace
             "Resting" => _classroomChildren.Where(c => c.IsCheckedIn && c.ActiveNapSession != null),
             _ => _classroomChildren
         };
+
+        if (!string.IsNullOrWhiteSpace(_childSearchQuery))
+        {
+            var term = _childSearchQuery.Trim();
+            query = query.Where(c => !string.IsNullOrWhiteSpace(c.ChildName) && c.ChildName.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return query;
     }
 
     private string GetChildInitials(string name)

@@ -40,7 +40,7 @@ tags:
 * **Responsive Dashboard Snapshot Metrics (`/today`, `/management/dashboard`, `/branch-dashboard`)**: `ee-foundation.css`, `OrgAdminDashboard.razor.css`, and `BranchAdminDashboard.razor.css` enforce a responsive 2-column grid (`repeat(2, 1fr) !important; gap: 8px !important;`) on mobile `<= 768px` for `.snapshot-metrics-grid`, with the 5th metric card spanning full width horizontally (`grid-column: 1 / -1 !important;`). This keeps all key operational numbers (children in care, attendance status, experiences, staff ratios, messages) above the fold with 20px typography and 10px compact padding, preventing vertical card blowout.
 
 ## Teacher Workspace Everyday Productivity Suite (`/classroom`, `/my-classroom`)
-`src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` provides 6 high-speed educator features designed for fast, frictionless daily classroom routines:
+`src/EnjoyEveryday.Daycare.Web/Components/Pages/TeacherWorkspace.razor` provides a 2-column Classroom Command Center (`.workspace-layout-grid`) matching the `OrgAdminDashboard` and `BranchAdminDashboard` visual hierarchy (`<PageHero>`, 4-card `.snapshot-metrics-grid`, unified `.unified-routine-bar`, instant child search `_childSearchQuery`, left-column live roster, and right-column experience, Lead Teacher coordination, schedule, and tools rail) with 10 high-speed educator features designed for fast, frictionless daily classroom routines:
 0. **Daily Operational Gate, Branch Lockdown & Classroom Open/Close Workflow**:
    - **Strict Higher-Level Branch Closed Lockdown**: When a branch is closed, all classroom operations are completely blocked:
      - No teacher attendance or staff breaks (`ToggleStaffBreak`).
