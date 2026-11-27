@@ -200,6 +200,10 @@ public static class AuthEndpoints
         var remoteIp = context.Connection.RemoteIpAddress;
         if (remoteIp != null && !System.Net.IPAddress.IsLoopback(remoteIp))
         {
+            if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
             return false;
         }
 

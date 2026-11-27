@@ -42,7 +42,7 @@ Task<bool> EnsureAuthorizedAsync(string relativePath, Guid? resourceId = null, s
 ### 3. Production Authentication Hardening (`IsDevLoginPermitted`)
 * **Multi-Layer Defensive Guards**:
   - `IWebHostEnvironment.IsDevelopment()` must be true.
-  - Remote IP address must be a loopback address (`IPAddress.IsLoopback`).
+  - Remote IP address must be a loopback address (`IPAddress.IsLoopback`) or recognized Docker container bridge gateway when `DOTNET_RUNNING_IN_CONTAINER=true` and request host is `localhost`.
   - Request host must resolve to `localhost`, `127.0.0.1`, or `[::1]`.
   - Configuration flag `Authentication:AllowDevLogin` must not be explicitly disabled (`false`).
 * **Enforcement**: Disallows dev-login endpoints and development mock shortcuts across `Admin.Web`, `Daycare.Web`, and `Parent.Web` in production, public cloud hosting, and non-loopback network calls.
