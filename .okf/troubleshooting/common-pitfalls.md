@@ -78,6 +78,15 @@ tags:
 
 ## 8. Mobile Viewport `zoom: 0.82` Reset & Action List Grids
 * **Problem**: `ee-foundation.css` applies `zoom: 0.82` to desktop containers. On mobile viewports (e.g., iPhone SE 375px), un-reset `zoom` inflates the coordinate layout (`375 / 0.82 = 457px`), pushing cards and grids offscreen. Additionally, trying to force 2-column grids on horizontal action cards with icons, long titles, and subtitles causes text truncation and container overflows.
+* **Fix**: Reset `zoom: 1` in `@media (max-width: 768px)` media queries and use 1-column layout for horizontal descriptive action cards.
+
+## 9. Docker Desktop & WSL2 Resource Crashes (Solo Dev Setup)
+* **Problem**: Running Kubernetes in Docker Desktop alongside 5 multi-stage .NET Dockerfiles consumes 6GB+ RAM and balloons WSL2 `ext4.vhdx` disk images by caching SDKs and copying `database/backups` dumps (350MB+ per build) into the build daemon. Additionally, CI workflows triggering on `[self-hosted, Windows]` locally overwhelm the laptop's CPU.
+* **Fix**:
+  1. Add `**/database/backups/**`, `**/*.dump`, and `**/*.sql` to `.dockerignore`.
+  2. Set `local-dev-deploy.yml` to manual `workflow_dispatch` only.
+  3. Turn off Kubernetes inside Docker Desktop and limit WSL2 memory to 6GB in `%USERPROFILE%\.wslconfig`.
+  4. Offload heavy Docker image compilation and migration tests to cloud-hosted GitHub Actions runners.
 * **Fix**: Always reset `zoom: 1 !important;` under `@media (max-width: 768px)` in `ee-foundation.css`. On mobile phones (`<= 640px`), convert dense multi-column shortcut grids to clean full-width single-column list cards with right arrow chevrons (`→`).
 
 ## 9. `roles` Table Schema & Tenant Role Instantiation
