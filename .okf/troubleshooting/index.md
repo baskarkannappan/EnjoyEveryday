@@ -21,4 +21,5 @@ This bundle documents common pitfalls, operational runbooks, and performance gui
 
 * **[common-pitfalls.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/troubleshooting/common-pitfalls.md)**: Role string formatting with spaces, tab/filter desynchronization, MSBuild sandbox process locks, and CSS flex issues.
 * **[diagnostics-runbook.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/.okf/troubleshooting/diagnostics-runbook.md)**: Fast SQL diagnostics, hypothesis-first triage, 0/0 metric debugging, and targeted compilation commands.
+* **[COMPLETE_SOLO_DEVELOPER_HANDBOOK.md](file:///c:/MyDrive/ProjectDrive/EnjoyEveryDay/docs/COMPLETE_SOLO_DEVELOPER_HANDBOOK.md)**: Master handbook covering Docker, persistent volumes, solo CI/CD, production Google OAuth, and error dictionaries.
 

@@ -43,7 +43,20 @@ function Get-DeployHistory {
     if (Test-Path $HistoryFile) {
         $raw = Get-Content $HistoryFile -Raw
         if (-not [string]::IsNullOrWhiteSpace($raw)) {
-            return $raw | ConvertFrom-Json -AsHashtable
+            $ht = @{}
+            try {
+                $parsed = $raw | ConvertFrom-Json
+                foreach ($prop in $parsed.PSObject.Properties) {
+                    $ht[$prop.Name] = @{
+                        current   = $prop.Value.current
+                        previous  = $prop.Value.previous
+                        updatedAt = $prop.Value.updatedAt
+                    }
+                }
+            } catch {
+                # Fallback if unparseable
+            }
+            return $ht
         }
     }
     return @{}
