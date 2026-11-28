@@ -160,26 +160,23 @@ $env:PGPASSWORD="postgres"
 
 # 6. Git Branch Architecture: master, release, develop
 
-To keep your code organized like a professional engineering team while remaining simple for a solo developer:
+Your software lifecycle follows an enterprise 3-tier release pipeline:
 
-```
-master (Default Branch - Golden Production Baseline)
-  ▲
-  │ (Merge when ready for production release)
-  │
-release (Pre-Production Branch - Automatic Cloud Docker Builds)
-  ▲
-  │ (Pull Request from develop)
-  │
-develop (Your Daily Working Branch - Where You Code & Test)
+```mermaid
+flowchart LR
+    Dev["1. develop branch\n(Your Daily Coding)"] -->|PR & Merge| Rel["2. release branch\n(Build Containers & Local Test)"]
+    Rel -->|Update Local| Docker["3. Docker Desktop\n(Verify Local Experience)"]
+    Docker -->|All OK: Trigger Deploy| Gate{"🛑 4. Approval Gate\n(Click 'Approve and deploy')"}
+    Gate -->|Deploy| Prod["5. Production Live\n(Perform PIV Verification)"]
+    Prod -->|PIV Complete: PR & Merge| Master["6. master branch\n(Golden Production Source of Truth)"]
 ```
 
-| Branch Name | Role & Purpose | Direct Commits Allowed? |
+| Branch Name | Role & Responsibility in Lifecycle | How Code Enters |
 |:---|:---|:---:|
-| **`develop`** | **Your daily workbench.** All features, fixes, and experimental changes are written and tested here. | **YES** |
-| **`release`** | **Staging & container build trigger.** Pushing or merging a PR into `release` triggers GitHub Actions to build `:release` Docker images. | **Via PR** |
-| **`master`** | **Golden production archive.** Contains verified, production-stable code. Default branch on GitHub. | **Via PR / Merge** |
-| `old-develop` / `old-release` | Archived legacy branches kept for reference. | Read-only |
+| **`develop`** | **Daily Active Workbench**: Where you write code, add features, fix bugs, and test natively using `dotnet run` (Port 7003). | Direct Commits / Feature branches |
+| **`release`** | **Release Candidate & Local Staging**: Holds code ready for containerization. Merging code here triggers cloud Docker builds. You pull this to your laptop Docker Desktop to test and verify before going live. | Pull Request from `develop` |
+| **`master`** | **Golden Production Baseline**: Holds the exact, verified code running live in production *after* successful deployment and Post-Implementation Verification (PIV). | Pull Request from `release` (Post-PIV) |
+| `old-develop` / `old-release` | Archived legacy branches kept for historical reference. | Read-only |
 
 *(Note: The old default branch `HiCanadaMain` has been safely retired and deleted).*
 
@@ -245,6 +242,20 @@ Open your PowerShell terminal and run:
 .\scripts\update-local-from-release.cmd
 ```
 This single command pulls the new `:release` image and restarts only the web container in **~5 seconds**. Your database container is untouched, and your data remains 100% intact!
+
+#### Step 6: Verify Locally, then Approve & Deploy to Production
+1. Open `http://localhost:8081` and verify your changes in Docker Desktop.
+2. When satisfied, go to **[GitHub Actions ➔ Production Deploy](https://github.com/baskarkannappan/EnjoyEveryday/actions/workflows/production-deploy.yml)**.
+3. Click **"Run workflow"** (Branch: `release`, Tag: `release`, Service: `all`).
+4. GitHub verifies the images and **pauses at the Production Gate**.
+5. Click **"Review deployments"** ➔ check `production` ➔ click **"Approve and deploy"**!
+
+#### Step 7: PIV Verification & Merge to `master` (The Golden Archive)
+1. Perform your Post-Implementation Verification (PIV) on the live production environment.
+2. Once verified and healthy, open GitHub and create a Pull Request: **`release` ➔ `master`**.
+3. Merge the PR.
+4. **`master`** now officially holds the verified, working version running in production!
+
 
 ---
 
