@@ -143,6 +143,7 @@ try {
             throw "Specify an individual service when using -Rollback."
         }
         $targetTag = if ([string]::IsNullOrWhiteSpace($Tag)) { "latest" } else { $Tag }
+        $history = Get-DeployHistory
         Write-Host "==> Ensuring PostgreSQL (db) is running and healthy..." -ForegroundColor Cyan
         docker compose up -d db
         if (-not (Wait-ServiceHealthy -Svc "db" -TimeoutSec $HealthTimeoutSeconds)) {

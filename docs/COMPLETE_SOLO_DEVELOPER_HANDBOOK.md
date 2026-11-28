@@ -13,11 +13,13 @@
 2. [The 6 Core Components of EnjoyEveryday](#2-the-6-core-components-of-enjoyeveryday)
 3. [The Resource Battle: Why Your Laptop Crashed & How We Solved It](#3-the-resource-battle-why-your-laptop-crashed--how-we-solved-it)
 4. [Your Database: Why It Was Never Lost (Persistent Volumes)](#4-your-database-why-it-was-never-lost-persistent-volumes)
-5. [The Zero-Data-Loss Database Migration Strategy](#5-the-zero-data-loss-database-migration-strategy)
-6. [The 4-Step Daily Routine (Morning, Day, Evening, Night)](#6-the-4-step-daily-routine-morning-day-evening-night)
-7. [Authentication Deep Dive: Dev-Login vs. Real Google OAuth](#7-authentication-deep-dive-dev-login-vs-real-google-oauth)
-8. [The Production Deployment & 3-Second Rollback Runbook](#8-the-production-deployment--3-second-rollback-runbook)
-9. [Troubleshooting Dictionary: Every Error Encountered & The Exact Fix](#9-troubleshooting-dictionary-every-error-encountered--the-exact-fix)
+5. [The Zero-Data-Loss Database Strategy & 1-Click Backup](#5-the-zero-data-loss-database-strategy--1-click-backup)
+6. [Git Branch Architecture: master, release, develop](#6-git-branch-architecture-master-release-develop)
+7. [The Solo Developer Daily Pipeline (Option 2 Workflow)](#7-the-solo-developer-daily-pipeline-option-2-workflow)
+8. [Demystifying GitHub Actions: Cloud CI vs. Local Database](#8-demystifying-github-actions-cloud-ci-vs-local-database)
+9. [Authentication Deep Dive: Dev-Login vs. Real Google OAuth](#9-authentication-deep-dive-dev-login-vs-real-google-oauth)
+10. [The Production Deployment & 3-Second Rollback Runbook](#10-the-production-deployment--3-second-rollback-runbook)
+11. [Troubleshooting Dictionary: Every Error Encountered & The Exact Fix](#11-troubleshooting-dictionary-every-error-encountered--the-exact-fix)
 
 ---
 
@@ -32,40 +34,41 @@ flowchart TD
     subgraph Laptop ["1. Local Development Laptop"]
         IDE["Visual Studio / VS Code"]
         NativeRun["dotnet run (Instant hot reload, 0% Docker build load)"]
-        LocalDB["enjoyeveryday_db (PostgreSQL on port 5433)"]
-        Git["Git Master Branch"]
+        LocalDB["enjoyeveryday_db (PostgreSQL on port 5433 - Permanent Volume)"]
+        GitDev["Git: develop branch"]
         IDE --> NativeRun
         NativeRun --> LocalDB
-        IDE --> Git
+        IDE --> GitDev
     end
 
-    subgraph GitHub ["2. GitHub Actions Cloud (Free 7 GB RAM CI Sandbox)"]
-        GHA_DB["Spins up temporary Postgres & validates SQL syntax"]
-        GHA_Build["Compiles 5 .NET & Python multi-stage Dockerfiles"]
-        GHCR["Publishes lean ~115 MB images to GitHub Container Registry"]
-        Git --> GHA_DB
-        Git --> GHA_Build --> GHCR
+    subgraph GitHub ["2. GitHub Cloud (Free Compilation & Registry Factory)"]
+        PR["Pull Request: develop ➔ release"]
+        GHA_Build["GitHub Actions Cloud Runner (Ubuntu VM)"]
+        GHCR["ghcr.io Container Registry (:release tags)"]
+        GitDev --> PR
+        PR -- Merge --> GHA_Build
+        GHA_Build --> GHCR
     end
 
-    subgraph Production ["3. Production Server (or Local Prod Simulation)"]
-        Snap["Step A: Pre-deploy backup (scripts/backup.cmd)"]
-        SQL["Step B: Transactional SQL migration (BEGIN...COMMIT)"]
-        Pull["Step C: Pulls lean pre-compiled images from GHCR"]
-        Health{"Step D: 60-Second Health Check"}
-        Live["System Live!"]
-        Rollback["deploy.ps1 -Rollback (Instant 3-second revert)"]
-
-        GHCR --> Pull
-        Snap --> SQL --> Pull --> Health
-        Health -- Pass --> Live
-        Health -- Fail --> Rollback
+    subgraph DockerDesktop ["3. Local Docker Desktop (Production Simulation)"]
+        UpdateCmd["scripts/update-local-from-release.cmd"]
+        WebContainer["enjoyeveryday_web:release (Port 8081)"]
+        APIContainer["enjoyeveryday_api:release (Port 8082)"]
+        AIContainer["enjoyeveryday_ai_service:release (Port 8000)"]
+        
+        GHCR --> UpdateCmd
+        UpdateCmd --> WebContainer
+        UpdateCmd --> APIContainer
+        UpdateCmd --> AIContainer
+        WebContainer --> LocalDB
+        APIContainer --> LocalDB
     end
 ```
 
 ### The Golden Philosophy:
-* **Your Laptop** is for writing code and fast feedback.
-* **GitHub Actions** is your heavy-lifting compilation factory (costs you 0 MB disk and 0% CPU).
-* **Production / Docker Desktop** is for running lean, finished images.
+* **Your Laptop** is for writing code and fast feedback (using native `dotnet run`).
+* **GitHub Actions** is your heavy-lifting compilation factory (costs you 0 MB disk and 0% CPU on your laptop).
+* **Docker Desktop** is for running lean, finished images to verify before production.
 
 ---
 
@@ -114,7 +117,7 @@ services:
     image: postgres:15-alpine
     container_name: enjoyeveryday_db
     volumes:
-      - postgres_data:/var/lib/postgresql/data # <--- Dedicated disk space
+      - postgres_data:/var/lib/postgresql/data # <--- Dedicated permanent disk space
 ```
 
 ### What This Means:
@@ -129,86 +132,142 @@ services:
 
 ---
 
-# 5. The Zero-Data-Loss Database Migration Strategy
+# 5. The Zero-Data-Loss Database Strategy & 1-Click Backup
 
-When updating tables in production, you cannot just drop tables or run unchecked commands.
-
-### Rule 1: Always Use Transactional DDL (`BEGIN; ... COMMIT;`)
-PostgreSQL allows DDL (schema alterations) inside transactions. If line 4 fails, lines 1, 2, and 3 are completely undone:
-```sql
-BEGIN;
-
--- Add new column with safe default (Metadata-only in Postgres 11+, zero table lock)
-ALTER TABLE children 
-    ADD COLUMN IF NOT EXISTS dietary_allergies TEXT DEFAULT '';
-
--- Add index safely
-CREATE INDEX IF NOT EXISTS idx_children_allergies ON children(tenant_id, dietary_allergies);
-
-COMMIT;
-```
-
-### Rule 2: The Expand-and-Contract Pattern (Never Break Old Code)
-* **Step 1 (Expand)**: Add the new column with `DEFAULT` or allowing `NULL`.
-* **Step 2 (Deploy Code)**: Deploy your new app container. If the new code has bugs and you need to roll back, the old container can still run because you didn't delete the old column!
-* **Step 3 (Contract - days later)**: Drop or archive the deprecated column once the new release is proven stable.
-
-### Rule 3: The Routine Rollback vs Nuclear Restore Rule
-* **If code fails**: Run `.\scripts\deploy.ps1 -Service web -Rollback` (Takes 3 seconds, 0 data loss).
-* **Never restore a database backup just because code has a bug!** Restoring a backup destroys every attendance, check-in, and meal logged by teachers between the backup and the restore! Backup restores are only for catastrophic disk failure or accidental table drops.
-
----
-
-# 6. The 4-Step Daily Routine
-
-### Step 1: Morning Startup (5 Seconds)
-When you sit down to work:
+### 1-Click Safety Backup Tool: `scripts\backup-db.cmd`
+Whenever you want to take an instant snapshot before doing experimental work, run:
 ```powershell
-docker compose up -d
+.\scripts\backup-db.cmd
 ```
-All 6 services will start up with green icons in Docker Desktop:
-* Daycare Web: `http://localhost:8081`
-* Admin Web: `http://localhost:8084`
-* Parent Portal: `http://localhost:8085`
-* Backend API: `http://localhost:8082/swagger`
-* Database: `localhost:5433`
+This script automatically:
+1. Connects to `localhost:5433` via PostgreSQL CLI.
+2. Creates a timestamped **compressed binary archive (`.dump`)** in `database\backups\`.
+3. Creates a timestamped **plain text SQL script (`.sql`)** in `database\backups\`.
+4. Verifies the files are written safely to disk.
+
+### How to Restore (If Ever Needed):
+```powershell
+$env:PGPASSWORD="postgres"
+& "C:\Program Files\PostgreSQL\18\bin\pg_restore.exe" -h localhost -p 5433 -U postgres -d enjoyeveryday --clean --if-exists database\backups\enjoyeveryday_backup_YYYYMMDD_HHMMSS.dump
+```
+
+### The 3 Golden Rules of Database Changes:
+1. **Always Use Transactional DDL (`BEGIN; ... COMMIT;`)**: If line 4 fails, the entire transaction rolls back automatically.
+2. **Expand-and-Contract Pattern**: Always add new columns with `DEFAULT` or `NULL` first. Never delete old columns until the new code has run in production for days.
+3. **Code Bug $\neq$ Database Restore**: If your application crashes or has a UI bug, roll back the container image using `deploy.ps1 -Rollback`. **Never restore an old database snapshot to fix a code bug**, because restoring a database wipes out all check-ins, attendance, and logs created since that snapshot!
 
 ---
 
-### Step 2: Daily Coding (Fast Native Mode - No Heavy Docker Rebuilding)
-If you are developing a new Blazor feature or fixing a C# bug in `EnjoyEveryday.Daycare.Web`:
-1. Keep the database running in Docker (`localhost:5433`).
-2. Run your web app directly on your laptop using .NET CLI (or press F5 in Visual Studio):
-   ```powershell
-   dotnet run --project src/EnjoyEveryday.Daycare.Web/EnjoyEveryday.Daycare.Web.csproj
-   ```
-3. Open `http://localhost:7003` with instant hot-reload.
+# 6. Git Branch Architecture: master, release, develop
+
+To keep your code organized like a professional engineering team while remaining simple for a solo developer:
+
+```
+master (Default Branch - Golden Production Baseline)
+  ▲
+  │ (Merge when ready for production release)
+  │
+release (Pre-Production Branch - Automatic Cloud Docker Builds)
+  ▲
+  │ (Pull Request from develop)
+  │
+develop (Your Daily Working Branch - Where You Code & Test)
+```
+
+| Branch Name | Role & Purpose | Direct Commits Allowed? |
+|:---|:---|:---:|
+| **`develop`** | **Your daily workbench.** All features, fixes, and experimental changes are written and tested here. | **YES** |
+| **`release`** | **Staging & container build trigger.** Pushing or merging a PR into `release` triggers GitHub Actions to build `:release` Docker images. | **Via PR** |
+| **`master`** | **Golden production archive.** Contains verified, production-stable code. Default branch on GitHub. | **Via PR / Merge** |
+| `old-develop` / `old-release` | Archived legacy branches kept for reference. | Read-only |
+
+*(Note: The old default branch `HiCanadaMain` has been safely retired and deleted).*
 
 ---
 
-### Step 3: Pushing Your Changes
-When your feature or fix is ready:
+# 7. The Solo Developer Daily Pipeline (Option 2 Workflow)
+
+This is the automated, effortless pipeline designed for your single laptop:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Baskar (Laptop)
+    participant LocalCode as develop branch
+    participant GitHub as GitHub (PR & Actions)
+    participant GHCR as GitHub Container Registry
+    participant Docker as Local Docker Desktop
+
+    Dev->>LocalCode: Write code & test with dotnet run
+    Dev->>GitHub: git push origin develop
+    Dev->>GitHub: Create PR: develop ➔ release
+    Dev->>GitHub: Click "Merge pull request"
+    Note over GitHub: GitHub Actions builds Docker images (0% laptop RAM)
+    GitHub->>GHCR: Publishes :release container images
+    Dev->>Docker: Run .\scripts\update-local-from-release.cmd
+    Note over Docker: Pulls new image & restarts container (5 seconds)
+    Dev->>Docker: Open localhost:8081 (See live changes!)
+```
+
+### Step-by-Step Instructions:
+
+#### Step 1: Write Code on `develop`
+Make sure you are on the `develop` branch:
+```powershell
+git checkout develop
+```
+Develop features using native .NET (fast hot reload on `http://localhost:7003`):
+```powershell
+dotnet run --project src/EnjoyEveryday.Daycare.Web/EnjoyEveryday.Daycare.Web.csproj
+```
+
+#### Step 2: Commit & Push to `develop`
 ```powershell
 git add .
-git commit -m "feat: descriptive message of what you changed"
-git push origin master
+git commit -m "feat(ui): add new classroom dashboard widget"
+git push origin develop
 ```
-* GitHub Actions will automatically test your database migration on a cloud throwaway database, compile your Docker containers in the cloud, and push new images to GitHub Packages (`ghcr.io`).
 
----
+#### Step 3: Open and Merge Pull Request to `release`
+1. Open GitHub in browser: **[Create PR: develop ➔ release](https://github.com/baskarkannappan/EnjoyEveryday/compare/release...develop)**
+2. Click **"Create pull request"**.
+3. Click **"Merge pull request"** and confirm.
 
-### Step 4: Bedtime Shutdown (Free RAM & Battery)
-Before turning off your laptop:
+#### Step 4: Watch GitHub Actions Build
+Open: **[GitHub Actions Runs](https://github.com/baskarkannappan/EnjoyEveryday/actions)**
+* The **UI CI**, **API CI**, or **AI Service CI** workflow will run in GitHub's cloud.
+* When finished (green checkmark), it automatically publishes the image to:
+  `ghcr.io/baskarkannappan/enjoyeveryday-ui:release`
+
+#### Step 5: Update Local Docker Desktop in 1 Click!
+Open your PowerShell terminal and run:
 ```powershell
-docker compose down
+.\scripts\update-local-from-release.cmd
 ```
-*(Containers stop, RAM is freed, all database data is 100% saved in the persistent volume).*
+This single command pulls the new `:release` image and restarts only the web container in **~5 seconds**. Your database container is untouched, and your data remains 100% intact!
 
 ---
 
-# 7. Authentication Deep Dive: Dev-Login vs. Real Google OAuth
+# 8. Demystifying GitHub Actions: Cloud CI vs. Local Database
 
-This was the source of the `google_not_configured` and "Priya Sharma" confusion during our session. Here is how authentication works under the hood:
+### Why did "Database CI" fail in GitHub Actions with a Red `(X)`?
+During our pipeline test, you saw a red cross on `Database CI (PostgreSQL Migrations)`. **Do not panic!**
+
+Here are the facts:
+1. **GitHub Actions runs in GitHub Cloud (Microsoft Azure)**:
+   It runs on an Ubuntu Linux virtual machine in GitHub’s remote datacenter.
+2. **GitHub has ZERO access to your laptop**:
+   GitHub servers cannot connect to your laptop, cannot see port 5433, and have no network credentials to your machine. **GitHub can NEVER touch or destroy your local database.**
+3. **What failed?**
+   In GitHub's cloud, it spun up a temporary, blank throwaway database to test if all 142 historical SQL migration files could run sequentially from scratch. An older migration script had a syntax issue on a blank database. It has zero effect on your working local database.
+4. **Notice the other workflows passed**:
+   - `UI CI (.NET Blazor Portals)`: **Passed (Green Check)**
+   - `API CI (.NET ASP.NET Core)`: **Passed (Green Check)**
+   - `AI Service CI (FastAPI)`: **Passed (Green Check)**
+
+---
+
+# 9. Authentication Deep Dive: Dev-Login vs. Real Google OAuth
 
 ### 1. Dev-Login Mode (`ASPNETCORE_ENVIRONMENT=Development`)
 * **When to use**: Quick local development and automated testing without internet or Google accounts.
@@ -216,15 +275,11 @@ This was the source of the `google_not_configured` and "Priya Sharma" confusion 
   * You click "Sign In".
   * It routes to `/auth/dev-login`.
   * The PostgreSQL stored procedure `fn_dev_login` logs you in automatically.
-  * *Why Priya Sharma?* In `fn_dev_login`, if no email parameter is passed in the URL, it defaults to:
-    ```sql
-    WHERE normalized_email = 'PRIYA@LITTLESTARS.COM'
-    ```
-    Priya Sharma is the pre-seeded lead teacher of *Little Stars Daycare*.
+  * *Why Priya Sharma?* In `fn_dev_login`, if no email parameter is passed in the URL, it defaults to `PRIYA@LITTLESTARS.COM` (pre-seeded lead teacher).
   * *To log in as yourself in Dev Mode*:
-    Open: `http://localhost:8081/auth/dev-login?email=baskar.kannappan@gmail.com`
+    `http://localhost:8081/auth/dev-login?email=baskar.kannappan@gmail.com`
   * *To log in as Platform Admin in Dev Mode*:
-    Open: `http://localhost:8081/auth/dev-login?email=admin@littlestars.com`
+    `http://localhost:8081/auth/dev-login?email=admin@littlestars.com`
 
 ### 2. Production Simulation Mode (`ASPNETCORE_ENVIRONMENT=Production`)
 * **When to use**: To test the exact production authentication flow.
@@ -243,37 +298,30 @@ GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 ```
 
-### The Google Cloud Console Configuration:
-Under [Google Cloud Console Credentials](https://console.cloud.google.com/auth/clients?project=enjoyeveryday) $\rightarrow$ `EnjoyEveryday Local Web`:
-**Authorized redirect URIs**:
-* `http://localhost:8081/signin-google`
-* `http://localhost:8084/signin-google`
-* `http://localhost:8085/signin-google`
-
 ---
 
-# 8. The Production Deployment & 3-Second Rollback Runbook
+# 10. The Production Deployment & 3-Second Rollback Runbook
 
 Whenever you deploy to your production server:
 
 ### Step 1: Take Pre-Deployment Backup Snapshot
 ```powershell
-scripts\backup.cmd
+.\scripts\backup-db.cmd
 ```
-*(Creates `database\backups\enjoyeveryday_backup_YYYYMMDD_HHMM.dump` and `.sql`. Verify file size > 0!)*
+*(Creates `database\backups\enjoyeveryday_backup_YYYYMMDD_HHMMSS.dump` and `.sql`).*
 
-### Step 2: Apply Database Changes
+### Step 2: Apply Database Changes (If Any)
 ```powershell
-psql -h localhost -p 5433 -U postgres -d enjoyeveryday -f scripts\migrations\your_migration.sql
+scripts\db.cmd -f database\migrations\your_new_migration.sql
 ```
 
 ### Step 3: Deploy the Updated Containers
 ```powershell
 # Deploy single service:
-.\scripts\deploy.ps1 -Service web -Tag sha-xxxxxxx
+.\scripts\deploy.ps1 -Service web -Tag release
 
 # Or deploy all services:
-.\scripts\deploy.ps1 -Service all -Tag sha-xxxxxxx
+.\scripts\deploy.ps1 -Service all -Tag release
 ```
 
 ### Step 4: Emergency Rollback (If Code Has Bugs)
@@ -281,13 +329,13 @@ If the new code crashes or has bugs:
 ```powershell
 .\scripts\deploy.ps1 -Service web -Rollback
 ```
-* Reverts to the previous Git SHA tag in **3 seconds**.
+* Reverts to the previous image in **3 seconds**.
 * Database is untouched.
 * Zero data loss.
 
 ---
 
-# 9. Troubleshooting Dictionary: Every Error Encountered & The Exact Fix
+# 11. Troubleshooting Dictionary: Every Error Encountered & The Exact Fix
 
 Keep this dictionary handy. If you see any of these errors in the future, here is the exact diagnosis:
 
@@ -302,16 +350,14 @@ Keep this dictionary handy. If you see any of these errors in the future, here i
 ---
 
 ### Error 2: `google_not_configured` in Development Mode
-* **Cause**: Two possible reasons:
-  1. `ASPNETCORE_ENVIRONMENT=Production` was set, which disables dev login.
-  2. Inside Docker, `RemoteIpAddress` is the internal Docker gateway (`::ffff:172.19.0.1`). The old code required `IPAddress.IsLoopback(remoteIp)`, which returned `false`.
+* **Cause**: Inside Docker, `RemoteIpAddress` is the internal Docker gateway (`::ffff:172.19.0.1`). The old code required `IPAddress.IsLoopback(remoteIp)`, which returned `false`.
 * **Fix**: Added `DOTNET_RUNNING_IN_CONTAINER=true` check in `AuthEndpoints.cs` so local Docker requests are recognized.
 
 ---
 
 ### Error 3: `ai-service:sha-xxxxxxx: not found` on `-Service all`
 * **Cause**: In GitHub Actions, `AI Service CI` only triggers when `src/EnjoyEveryday.AiAgent/` files change. If your latest commit only modified `.Web` files, GitHub never built a new AI image with that commit SHA.
-* **Fix**: In `.env`, specify the latest tag where that service was actually built (e.g. `UI_TAG=sha-d47df94` and `AI_TAG=sha-6d2b1cd`).
+* **Fix**: Use branch tags like `:release` or specify individual service tags in `.env`.
 
 ---
 
@@ -343,6 +389,18 @@ Keep this dictionary handy. If you see any of these errors in the future, here i
   Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
   Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
   ```
+
+---
+
+### Error 8: `GitHub Push Protection` Blocks Push Due to Secret
+* **Cause**: Real Google OAuth Client Secret or API key accidentally pasted into markdown docs or git-tracked files.
+* **Fix**: Replace real secrets with placeholders like `your-google-client-secret` in docs. Keep all real secrets inside `.env` (which is in `.gitignore`). Amend the git commit and push.
+
+---
+
+### Error 9: `Database CI (PostgreSQL Migrations)` Fails on GitHub Actions
+* **Cause**: GitHub Actions spins up a temporary PostgreSQL instance on an Ubuntu cloud runner to test legacy migration files from scratch.
+* **Fix**: This does **not** touch or affect your local machine. You can safely ignore cloud migration test failures as long as your local database has the migrations applied, or update the cloud migration script.
 
 ---
 
