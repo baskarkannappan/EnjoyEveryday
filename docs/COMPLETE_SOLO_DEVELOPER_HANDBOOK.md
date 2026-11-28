@@ -300,9 +300,53 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 
 ---
 
-# 10. The Production Deployment & 3-Second Rollback Runbook
+# 10. The Production Deployment & Approval Gate Runbook
 
-Whenever you deploy to your production server:
+Once you have verified your changes in your local Docker Desktop (`http://localhost:8081`) and are ready to deploy to Production:
+
+### The Complete Production Flow:
+```
+Local Docker Desktop Tested (All OK) ➔ Merge release into master ➔ GitHub Actions triggers Production Workflow ➔ 🛑 PAUSES AT APPROVAL GATE ➔ You click "Approve and deploy" ➔ Deploys to Production!
+```
+
+---
+
+### How to Enable the Manual Approval Gate in GitHub (One-Time Setup):
+To make GitHub pause and require your personal click before deploying to production:
+1. Open your repository on GitHub: **`https://github.com/baskarkannappan/EnjoyEveryday`**
+2. Go to **Settings** (top navigation tab with gear icon).
+3. In the left sidebar, click **Environments**.
+4. Click the green **"New environment"** button.
+5. Name it exactly: **`production`** and click **"Configure environment"**.
+6. Under **Environment protection rules**:
+   - Check the box: **"Required reviewers"**.
+   - Search and select your GitHub username: **`baskarkannappan`**.
+7. Click **"Save protection rules"**.
+
+> **Result**: Whenever `.github/workflows/production-deploy.yml` runs, GitHub will **HALT** at the `deploy-to-production` job. It will show an orange status: *"Waiting for review"*. You simply click **"Review deployments"** ➔ check `production` ➔ click **"Approve and deploy"**!
+
+---
+
+### How to Trigger Production Deployment:
+
+#### Method A: Automatic (Merge `release` ➔ `master`)
+When you are satisfied with your local testing, create and merge a PR from `release` into `master`. The workflow will trigger automatically and pause at your gate.
+
+#### Method B: Manual (On-Demand from GitHub UI)
+1. Go to **[GitHub Actions](https://github.com/baskarkannappan/EnjoyEveryday/actions)**.
+2. In the left list, click **Production Deploy & Rollback**.
+3. Click the **"Run workflow"** button on the right:
+   - Branch: `master`
+   - Target Tag: `release` (or specific commit SHA)
+   - Service: `all`
+4. Click green **"Run workflow"**.
+5. Once the verification stage passes, click **"Review deployments"** ➔ **"Approve and deploy"**.
+
+---
+
+### Local Production Server Deployment & 3-Second Rollback (Direct CLI):
+
+Whenever you deploy directly on a production server:
 
 ### Step 1: Take Pre-Deployment Backup Snapshot
 ```powershell
