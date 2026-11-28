@@ -42,3 +42,17 @@ tags:
 $env:PGPASSWORD="postgres"; & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d enjoyeveryday -c "<SQL_QUERY>"
 ```
 
+## Local Safety Backup & Restore Procedures
+* **Storage Location**: `database/backups/` (git-ignored, excluded from Docker build context).
+* **1-Click Backup Command**:
+  ```powershell
+  .\scripts\backup-db.cmd
+  ```
+  Creates timestamped compressed archive (`.dump`) and plain text script (`.sql`).
+* **Direct Restore Command**:
+  ```powershell
+  $env:PGPASSWORD="postgres"
+  & "C:\Program Files\PostgreSQL\18\bin\pg_restore.exe" -h localhost -p 5433 -U postgres -d enjoyeveryday --clean --if-exists database\backups\<filename>.dump
+  ```
+
+
